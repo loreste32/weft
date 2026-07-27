@@ -1,6 +1,6 @@
 # Versioning (0.3.x)
 
-We’re staying on branch **`0.3.1`** and only bumping the patch number until **0.3.35**.
+Version line is **0.3.x** through **0.3.35**. The published git default branch is **`main`** (GitHub: `loreste32/weft`).
 
 ```text
 0.3.1 → 0.3.2 → … → 0.3.35
@@ -28,6 +28,6 @@ Bugfixes, stdlib additions, tooling, docs, gold corpus, small language ergonomic
 
 ## Before you tag a bump
 
-1. Still on branch `0.3.1`, version `0.3.N` with N ≤ 35  
+1. Version `0.3.N` with N ≤ 35 (on `main` unless cutting a release branch)  
 2. `go test ./...` and `scripts/ci.sh` pass  
 3. `weft train eval --quiet` still looks right (100% unless you meant to change gold)  

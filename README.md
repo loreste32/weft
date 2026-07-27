@@ -2,6 +2,9 @@
 
 Weave agents into code.
 
+[![CI](https://github.com/loreste32/weft/actions/workflows/ci.yml/badge.svg)](https://github.com/loreste32/weft/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
 ![Wifty — Weft mascot](assets/brand/wifty.jpg)
 
 Weft is a small scripting language aimed at LLM agents, HTTP glue, and ops scripts. One Go binary, no Python on the core path, packages vendored like `go mod`. Syntax is its own (braces, `:=`, `?` for errors) — not Python with braces.
@@ -10,7 +13,7 @@ Weft is a small scripting language aimed at LLM agents, HTTP glue, and ops scrip
 |--|--|
 | CLI | `weft` |
 | Files | `.weft` |
-| Version | 0.3.27 (branch `0.3.1`, patch line through 0.3.35) |
+| Version | 0.3.27 (git `main`, patch line through 0.3.35) |
 | Mascot | Wifty |
 | Brand | [docs/BRAND.md](docs/BRAND.md) |
 
@@ -35,7 +38,7 @@ Still rough: types are gradual, LSP/fmt are practical but not gofmt/IDE-grade, s
 
 ## Where we hope to go
 
-Through **0.3.35** (still on branch `0.3.1`) we want the boring parts to feel ordinary: clearer errors, sturdier check/test/fmt, stdlib only where scripts hurt, better modules, a less painful editor story, and honest docs.
+Through **0.3.35** we want the boring parts to feel ordinary: clearer errors, sturdier check/test/fmt, stdlib only where scripts hurt, better modules, a less painful editor story, and honest docs.
 
 We are **not** aiming at NumPy, in-process training, or `async`/`await`. A public registry or fancier packaging only if path/git becomes a real tax.
 
@@ -350,8 +353,10 @@ make install       # ~/.local/bin/weft
 ```
 
 ```bash
-bash scripts/ci.sh
+bash scripts/ci.sh   # same gate as GitHub Actions
 ```
+
+Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · Security: [SECURITY.md](SECURITY.md).
 
 ## License
 
