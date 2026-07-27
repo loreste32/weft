@@ -1,0 +1,38 @@
+// schema module — structured parse + tool params for agents
+//   weft get schema ./packages/schema && weft install
+//   weft run examples/schema_ai.weft
+
+use schema
+
+fn main -> Result {
+    Person := schema.model({
+        "name": "str!",
+        "age": schema.integer({"min": 0, "max": 150, "desc": "years"})?,
+        "tags": ["str"],
+        "active": schema.boolean({"default": true})?,
+    })?
+
+    raw := "{\"name\":\"Ada\",\"age\":36,\"tags\":[\"math\",\"cs\"]}"
+    p := schema.parse(Person, raw)?
+    n := p["name"]
+    a := p["age"]
+    act := p["active"]
+    say("name=$n age=$a active=$act")
+
+    // bad input
+    bad := schema.parse(Person, "{\"age\":-1}")
+    if !bad.ok {
+        say("rejected:", json.stringify(schema.errors(bad)))
+    }
+
+    // JSON Schema + tool params for providers
+    js := schema.json_schema(Person, "Person")
+    say("schema type:", js["type"])
+    tp := schema.tool_params(Person)
+    say("tool props:", json.stringify(tp["properties"]))
+
+    // fenced model output
+    fenced := "```json\n{\"name\":\"Bob\",\"age\":20,\"tags\":[]}\n```"
+    b := schema.extract(Person, fenced)?
+    say("extracted:", b["name"])
+}

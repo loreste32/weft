@@ -1,0 +1,129 @@
+// Emit JSON Schema and OpenAI tool parameter objects.
+
+pub fn json_schema(model, title) {
+    fields := model_fields(model)
+    props := {}
+    req := {}
+    mut rn := 0
+    for name in fields {
+        f := fields[name]
+        props[name] = field_schema(f)
+        if f["required"] == true {
+            req["$rn"] = name
+            rn = rn + 1
+        }
+    }
+    // materialize required as list via json
+    mut rjson := "["
+    mut i := 0
+    while i < rn {
+        if i > 0 {
+            rjson = rjson + ","
+        }
+        rjson = rjson + json.stringify(req["$i"])
+        i = i + 1
+    }
+    rjson = rjson + "]"
+    // parse may fail only on empty/malformed; keep map even if required list fails
+    r := json.parse(rjson)
+    out := {
+        "type": "object",
+        "properties": props,
+        "additionalProperties": false,
+    }
+    if title != null && title != "" {
+        out["title"] = title
+    }
+    if rn > 0 && r.ok {
+        out["required"] = r.value
+    }
+    out
+}
+
+pub fn tool_params(model) {
+    js := json_schema(model, null)
+    {
+        "type": "object",
+        "properties": js["properties"],
+        "required": js["required"],
+        "additionalProperties": false,
+    }
+}
+
+fn model_fields(model) {
+    if model["fields"] != null {
+        return model["fields"]
+    }
+    model
+}
+
+fn field_schema(f) {
+    mut typ := f["type"]
+    if typ == null {
+        typ = "any"
+    }
+    out := {}
+    if f["desc"] != null {
+        out["description"] = f["desc"]
+    }
+    if f["description"] != null {
+        out["description"] = f["description"]
+    }
+    if typ == "str" {
+        out["type"] = "string"
+        if f["min_len"] != null {
+            out["minLength"] = f["min_len"]
+        }
+        if f["max_len"] != null {
+            out["maxLength"] = f["max_len"]
+        }
+        return out
+    }
+    if typ == "int" {
+        out["type"] = "integer"
+        if f["min"] != null {
+            out["minimum"] = f["min"]
+        }
+        if f["max"] != null {
+            out["maximum"] = f["max"]
+        }
+        return out
+    }
+    if typ == "float" || typ == "number" {
+        out["type"] = "number"
+        if f["min"] != null {
+            out["minimum"] = f["min"]
+        }
+        if f["max"] != null {
+            out["maximum"] = f["max"]
+        }
+        return out
+    }
+    if typ == "bool" {
+        out["type"] = "boolean"
+        return out
+    }
+    if typ == "list" {
+        out["type"] = "array"
+        item := f["items"]
+        if item != null {
+            out["items"] = field_schema(item)
+        } else {
+            out["items"] = {}
+        }
+        return out
+    }
+    if typ == "object" || typ == "map" {
+        out["type"] = "object"
+        if f["fields"] != null {
+            nested := json_schema({"fields": f["fields"]}, null)
+            out["properties"] = nested["properties"]
+            if nested["required"] != null {
+                out["required"] = nested["required"]
+            }
+            out["additionalProperties"] = false
+        }
+        return out
+    }
+    out
+}

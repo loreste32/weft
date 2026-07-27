@@ -1,0 +1,73 @@
+// schema — structured models for agent / LLM work (pure Weft module).
+//
+//   weft get schema ./packages/schema
+//   weft install
+//   use schema
+
+use "./fields.weft" as F
+use "./validate.weft" as V
+use "./emit.weft" as E
+
+// --- field builders (names avoid shadowing host str/int packages) ------------
+
+pub fn field(name, typ, opts) -> Result {
+    f := F.base_open(typ, opts)?
+    f["name"] = name
+    Ok(f)
+}
+
+// Prefer these names in new code
+pub fn string(opts) -> Result { F.f_str(opts) }
+pub fn integer(opts) -> Result { F.f_int(opts) }
+pub fn float(opts) -> Result { F.f_float(opts) }
+pub fn boolean(opts) -> Result { F.f_bool(opts) }
+pub fn any(opts) -> Result { F.f_any(opts) }
+pub fn list(item, opts) -> Result { F.f_list(item, opts) }
+pub fn object(fields, opts) -> Result { F.f_object(fields, opts) }
+
+// short aliases used in docs
+pub fn str(opts) -> Result { F.f_str(opts) }
+pub fn int(opts) -> Result { F.f_int(opts) }
+pub fn bool(opts) -> Result { F.f_bool(opts) }
+
+// --- model ------------------------------------------------------------------
+
+pub fn model(fields) -> Result {
+    expanded := F.expand_fields(fields)?
+    Ok({
+        "kind": "schema.model",
+        "fields": expanded,
+    })
+}
+
+// --- validate / parse / extract ---------------------------------------------
+
+pub fn validate(model, data) -> Result {
+    V.validate_mut(model, data)
+}
+
+pub fn parse(model, raw) -> Result {
+    V.parse(model, raw)
+}
+
+pub fn extract(model, text) -> Result {
+    V.extract(model, text)
+}
+
+pub fn errors(result) {
+    V.errors(result)
+}
+
+pub fn ok(result) {
+    V.ok(result)
+}
+
+// --- emit -------------------------------------------------------------------
+
+pub fn json_schema(model, title) {
+    E.json_schema(model, title)
+}
+
+pub fn tool_params(model) {
+    E.tool_params(model)
+}

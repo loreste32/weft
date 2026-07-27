@@ -1,0 +1,68 @@
+// schema package tests
+//   weft mod check packages/schema --tests
+use "./lib.weft" as schema
+
+fn person_model() {
+    schema.model({
+        "name": "str!",
+        "age": schema.integer({"min": 0, "max": 150})?,
+        "email": "str?",
+        "tags": ["str"],
+        "active": schema.boolean({"default": true})?,
+    })?
+}
+
+fn test_parse_ok {
+    m := person_model()
+    r := schema.parse(m, "{\"name\":\"Ada\",\"age\":36,\"tags\":[\"math\"]}")?
+    test.eq(r["name"], "Ada")
+    test.eq(r["age"], 36)
+    test.eq(r["active"], true) // default
+}
+
+fn test_required {
+    m := person_model()
+    r := schema.parse(m, "{\"age\":1}")
+    test.eq(r.ok, false)
+}
+
+fn test_min {
+    m := person_model()
+    r := schema.parse(m, "{\"name\":\"x\",\"age\":-1}")
+    test.eq(r.ok, false)
+}
+
+fn test_json_schema {
+    m := person_model()
+    js := schema.json_schema(m, "Person")
+    test.eq(js["type"], "object")
+    test.eq(js["title"], "Person")
+    test.eq(js["properties"]["name"]["type"], "string")
+    test.eq(js["properties"]["age"]["type"], "integer")
+}
+
+fn test_tool_params {
+    m := person_model()
+    p := schema.tool_params(m)
+    test.eq(p["type"], "object")
+    test.eq(p["properties"]["name"]["type"], "string")
+}
+
+fn test_extract_fences {
+    m := person_model()
+    raw := "```json\n{\"name\":\"Bob\",\"age\":20,\"tags\":[]}\n```"
+    r := schema.extract(m, raw)?
+    test.eq(r["name"], "Bob")
+}
+
+fn test_nested {
+    m := schema.model({
+        "user": schema.object({
+            "id": "str!",
+            "n": "int",
+        }, null)?,
+    })?
+    r := schema.parse(m, "{\"user\":{\"id\":\"u1\",\"n\":2}}")?
+    test.eq(r["user"]["id"], "u1")
+    test.eq(r["user"]["n"], 2)
+}

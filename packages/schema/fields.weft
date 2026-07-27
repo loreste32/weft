@@ -1,0 +1,97 @@
+// Field builders — long form field maps used by model / validate / emit.
+// Avoid names str/int/bool at package scope — they shadow stdlib packages.
+
+// Return Result (do not unwrap with ?) so callers can use ?.
+fn base(typ, opts) -> Result {
+    m := {"type": typ, "required": true}
+    if opts != null {
+        for k in opts {
+            m[k] = opts[k]
+        }
+    }
+    if m["optional"] == true {
+        m["required"] = false
+    }
+    json.parse(json.stringify(m))
+}
+
+// exported for lib.field
+pub fn base_open(typ, opts) -> Result { base(typ, opts) }
+
+pub fn f_str(opts) -> Result { base("str", opts) }
+pub fn f_int(opts) -> Result { base("int", opts) }
+pub fn f_float(opts) -> Result { base("float", opts) }
+pub fn f_bool(opts) -> Result { base("bool", opts) }
+pub fn f_any(opts) -> Result { base("any", opts) }
+
+pub fn f_list(item, opts) -> Result {
+    f := base("list", opts)?
+    f["items"] = item
+    json.parse(json.stringify(f))
+}
+
+pub fn f_object(fields, opts) -> Result {
+    f := base("object", opts)?
+    f["fields"] = fields
+    json.parse(json.stringify(f))
+}
+
+pub fn expand_fields(fields) -> Result {
+    src := json.parse(json.stringify(fields))?
+    out := {}
+    for k in src {
+        out[k] = expand_one(src[k])?
+    }
+    Ok(out)
+}
+
+fn expand_one(spec) -> Result {
+    s0 := json.stringify(spec)
+    if str.starts_with(s0, "[") {
+        arr := spec
+        mut item := {"type": "any", "required": true}
+        if len(arr) > 0 {
+            item = expand_one(arr[0])?
+        }
+        return Ok({"type": "list", "required": true, "items": item})
+    }
+    if str.starts_with(s0, "{") {
+        if spec["type"] != null {
+            return Ok(normalize(spec)?)
+        }
+        nested := expand_fields(spec)?
+        return Ok({"type": "object", "required": true, "fields": nested})
+    }
+    if !str.starts_with(s0, "\"") {
+        return Ok({"type": "any", "required": true})
+    }
+    mut s := str.slice(s0, 1, len(s0) - 1)
+    mut required := true
+    mut typ := s
+    if str.ends_with(s, "!") {
+        typ = str.slice(s, 0, len(s) - 1)
+        required = true
+    }
+    if str.ends_with(s, "?") {
+        typ = str.slice(s, 0, len(s) - 1)
+        required = false
+    }
+    Ok({"type": typ, "required": required})
+}
+
+fn normalize(f) -> Result {
+    m := json.parse(json.stringify(f))?
+    if m["required"] == null {
+        m["required"] = true
+    }
+    if m["optional"] == true {
+        m["required"] = false
+    }
+    if m["type"] == "object" && m["fields"] != null {
+        m["fields"] = expand_fields(m["fields"])?
+    }
+    if m["type"] == "list" && m["items"] != null {
+        m["items"] = expand_one(m["items"])?
+    }
+    Ok(m)
+}

@@ -13,6 +13,12 @@
       "path": "./tokensave",
       "version": "0.5.0",
       "summary": "Model brain: clarify asks, relevant context, memory, teach → train"
+    },
+    {
+      "name": "schema",
+      "path": "./schema",
+      "version": "0.1.0",
+      "summary": "Structured models, validation, JSON Schema / tool params for agents"
     }
   ]
 }

@@ -1,0 +1,31 @@
+{
+  "name": "schema",
+  "version": "0.1.0",
+  "description": "Structured models for AI work — validate, coerce, JSON Schema, tool params",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": [
+    "model",
+    "field",
+    "str",
+    "string",
+    "int",
+    "integer",
+    "float",
+    "bool",
+    "boolean",
+    "list",
+    "object",
+    "any",
+    "parse",
+    "validate",
+    "extract",
+    "json_schema",
+    "tool_params",
+    "errors",
+    "ok"
+  ],
+  "license": "Apache-2.0",
+  "keywords": ["schema", "validate", "json-schema", "llm", "tools", "structured"],
+  "deps": {}
+}
