@@ -78,6 +78,7 @@ var packages = []struct {
 	{"amqp", packageAMQP},
 	{"mongo", packageMongo},
 	{"graphql", packageGraphQL},
+	{"pcap", func(env *runtime.Env) runtime.Value { return packagePcap() }},
 	{"log", packageLog},
 	{"crypto", func(env *runtime.Env) runtime.Value { return packageCrypto() }},
 	{"re", func(env *runtime.Env) runtime.Value { return packageRe() }},
