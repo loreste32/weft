@@ -2,7 +2,15 @@
 
 **Modules are how third parties grow the language surface** — new APIs, domain helpers, shared pipelines, optional domains like **ML** — without forking the Go binary.
 
-Example optional domain: [`packages/ml`](../packages/ml) (embeddings / RAG / metrics). Core stays lean; install with `weft get ml ./packages/ml`.
+Example optional domains (all modules, never built-ins):
+
+| Package | Role |
+|---------|------|
+| [`packages/ml`](../packages/ml) | embeddings / RAG / metrics — `weft get ml ./packages/ml` |
+| [`packages/mold`](../packages/mold) | structured models for agents — `weft get mold ./packages/mold` |
+| [`packages/tokensave`](../packages/tokensave) | memory / teach → train |
+
+Core stays lean; install only what an app needs.
 
 Anyone can publish libraries that other Weft apps install with `weft get` — **no environment activation, no central registry required**. Modules are folders of `.weft` source + `weft.json`.
 

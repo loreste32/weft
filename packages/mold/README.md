@@ -1,11 +1,13 @@
 # mold — pour data into shape
 
-Pure Weft module for agent work: define **molds**, validate JSON, emit **JSON Schema** / **tool parameters**.
+**Optional installable module** — not stdlib, not compiled into the `weft` binary.
+Same class as [`ml`](../ml/) and [`tokensave`](../tokensave/): `weft get` → `vendor/` → `use mold`.
 
-Name: you pour LLM or API JSON into a mold and get clean maps out.
+Pure Weft for agent work: define **molds**, validate JSON, emit **JSON Schema** / **tool parameters**.
+You pour LLM or API JSON into a mold and get clean maps out.
 
 ```bash
-weft get mold ./packages/mold
+weft get mold ./packages/mold   # monorepo path (or git@tag)
 weft install
 ```
 

@@ -1,6 +1,6 @@
 # Weft packages (optional modules)
 
-Not core stdlib — install what you need.
+**Not core stdlib.** Nothing here is built into the `weft` binary — apps install what they need with `weft get` / `weft packages get`.
 
 | Package | Role |
 |---------|------|
