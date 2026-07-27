@@ -428,6 +428,7 @@ weft install
 - `weft.lock` records content hashes  
 - Lite version constraints: `"version": "^0.1.0"`  
 - Catalog: `weft packages list` · `WEFT_CATALOG_URL` for remote index  
+- Optional monorepo modules (`ml`, `mold`, `tokensave`): not stdlib — [MOLD.md](MOLD.md), [ML.md](ML.md), [packages.md](packages.md)
 
 Details: [packages.md](packages.md), [modules.md](modules.md).
 
@@ -435,7 +436,7 @@ Details: [packages.md](packages.md), [modules.md](modules.md).
 
 ## 15. Stdlib surface
 
-Packages live in the binary. List them with:
+**Stdlib** packages live in the binary. List them with:
 
 ```bash
 weft stdlib
@@ -444,7 +445,9 @@ weft stdlib http
 
 High-traffic packages: `fs`, `http`, `json`, `str`, `time`, `env`, `cli`, `llm`, `web`, `db`, `log`, `test`, `yaml` / `toml` / `ini`, `math`, `re`, `csv`, `table`, …
 
-Overview: [STDLIB.md](STDLIB.md). Domain guides: [web.md](web.md), [cli.md](cli.md), [data.md](data.md), [LLM_PROVIDERS.md](LLM_PROVIDERS.md).
+Optional **modules** (install into `vendor/`): `mold` (structured models), `ml` (embeddings), `tokensave` (context thrift).
+
+Overview: [STDLIB.md](STDLIB.md). Domain guides: [web.md](web.md), [cli.md](cli.md), [data.md](data.md), [LLM_PROVIDERS.md](LLM_PROVIDERS.md), [MOLD.md](MOLD.md).
 
 ---
 
