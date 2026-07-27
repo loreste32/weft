@@ -540,8 +540,13 @@ func (c *Compiler) emitLoop(loopStart int, pos token.Pos) {
 }
 
 func (c *Compiler) addConst(v runtime.Value) uint16 {
+	idx := len(c.chunk.Consts)
+	if idx >= 1<<16 {
+		c.errorf(token.Pos{}, "too many constants (max 65535)")
+		return 0
+	}
 	c.chunk.Consts = append(c.chunk.Consts, v)
-	return uint16(len(c.chunk.Consts) - 1)
+	return uint16(idx)
 }
 
 func (c *Compiler) localSlot(name string) (int, local, bool) {

@@ -1,16 +1,14 @@
 # Fine-tune models to write Weft
 
-**Weft does not need Python.** The language, runtime, packages, agents, and default fine-tune path are pure Go / HTTP.
+The language, runtime, packages, agents, and default fine-tune path are pure Go / HTTP.
 
-Python appears **only** if you opt into local open-weight LoRA via Hugging Face (`--backend trl`). That is the ML ecosystem’s baggage, not Weft’s.
-
-## Recommended: zero-Python fine-tune (API)
+## Recommended: API fine-tune
 
 ```bash
-# 1) Build dataset (Go only)
+# 1) Build dataset
 weft train prepare -o weft-sft --expand
 
-# 2) Fine-tune via OpenAI-compatible API (Go HTTP — no pip)
+# 2) Fine-tune via OpenAI-compatible API
 export OPENAI_API_KEY=sk-...
 weft train finetune --backend openai --wait
 
@@ -26,7 +24,7 @@ export OPENAI_BASE_URL=https://api.your-provider.com/v1
 weft train finetune --backend openai --model <their-base-model> --wait
 ```
 
-## Optional: local GPU LoRA (Python/PyTorch)
+## Optional: local GPU LoRA
 
 Only if you want open-weight adapters on *your* machine:
 
@@ -35,12 +33,12 @@ weft train finetune --backend trl --install-deps
 # or: pip install -r weft-sft/requirements-train.txt yourself first
 ```
 
-This shells out to a small `train_trl.py` because **training** open LLMs today is dominated by PyTorch. Running Weft scripts never uses that stack.
+This shells out to a small training script because open-weight LLM training today is dominated by PyTorch. Running Weft scripts never uses that stack.
 
 ## No fine-tune at all
 
 ```bash
-weft prompt --few 8    # system card for ChatGPT / Claude / Cursor
+weft prompt --few 8    # system card for ChatGPT / Cursor / etc.
 ```
 
 ## Dataset only
@@ -61,7 +59,7 @@ weft run generated.weft
 weft eval examples/realworld/
 ```
 
-## Grow data (still no Python)
+## Grow data
 
 Edit `llm-pack/train.jsonl` → copy to `internal/llmpack/train.jsonl` →  
 `weft train validate && weft train prepare -o weft-sft --expand`

@@ -30,7 +30,7 @@ type GenOptions struct {
 	Quiet bool
 }
 
-// Gen asks an LLM (HTTP API, no Python) to write Weft, validates it, optionally runs it.
+// Gen asks an LLM (HTTP API) to write Weft, validates it, optionally runs it.
 func Gen(opts GenOptions) error {
 	if strings.TrimSpace(opts.Task) == "" {
 		return fmt.Errorf("usage: weft gen \"describe what you want\"")

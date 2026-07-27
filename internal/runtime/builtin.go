@@ -89,15 +89,7 @@ func (e *Env) RegisterPrelude() {
 		return Unit(), nil
 	})
 	e.Globals["println"] = printlnFn
-	// say is the preferred name; same builtin so pipelines can use `|> say`.
-	e.Globals["say"] = MakeBuiltin("say", -1, func(args []Value) (Value, error) {
-		parts := make([]string, len(args))
-		for i, a := range args {
-			parts[i] = a.String()
-		}
-		fmt.Fprintln(e.Stdout, strings.Join(parts, " "))
-		return Unit(), nil
-	})
+	e.Globals["say"] = printlnFn
 	e.Globals["print"] = MakeBuiltin("print", -1, func(args []Value) (Value, error) {
 		parts := make([]string, len(args))
 		for i, a := range args {
@@ -260,7 +252,7 @@ func (e *Env) RegisterPrelude() {
 		case KindMap:
 			return Int(int64(len(args[0].Obj.(*MapObj).Vals))), nil
 		case KindStr:
-			return Int(int64(len(args[0].S))), nil
+			return Int(int64(len([]rune(args[0].S)))), nil
 		case KindNull:
 			return Int(0), nil
 		default:
@@ -351,6 +343,10 @@ func (e *Env) RegisterPrelude() {
 		}
 		if end < start {
 			return List(), nil
+		}
+		const maxRange = 10_000_000
+		if end-start > maxRange {
+			return Null(), fmt.Errorf("range too large (%d elements, max %d)", end-start, maxRange)
 		}
 		items := make([]Value, 0, end-start)
 		for i := start; i < end; i++ {

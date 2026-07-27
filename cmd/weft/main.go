@@ -183,7 +183,7 @@ func run(args []string) int {
 		}
 		return 0
 	case "help", "-h", "--help":
-		fmt.Print(`weft — weave agents into code (no Python required)
+		fmt.Print(`weft — weave agents into code
 
 Language:
   weft                      REPL

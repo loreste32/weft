@@ -19,6 +19,7 @@ func binAdd(a, b runtime.Value) (runtime.Value, error) {
 
 func binNum(a, b runtime.Value, op func(x, y float64) float64) (runtime.Value, error) {
 	if a.Kind == runtime.KindInt && b.Kind == runtime.KindInt {
+		// ponytail: float64 round-trip loses precision past 2^53; acceptable for a scripting VM
 		return runtime.Int(int64(op(float64(a.I), float64(b.I)))), nil
 	}
 	af, aok := asFloat(a)
@@ -105,10 +106,11 @@ func getIndex(x, idx runtime.Value) (runtime.Value, error) {
 		if err != nil {
 			return runtime.Null(), err
 		}
-		if i < 0 || int(i) >= len(x.S) {
+		runes := []rune(x.S)
+		if i < 0 || int(i) >= len(runes) {
 			return runtime.Null(), fmt.Errorf("index out of range")
 		}
-		return runtime.Str(string(x.S[i])), nil
+		return runtime.Str(string(runes[i])), nil
 	default:
 		return runtime.Null(), fmt.Errorf("cannot index %s", x.KindName())
 	}

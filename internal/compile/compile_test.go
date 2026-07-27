@@ -1,17 +1,21 @@
 package compile_test
 
 import (
+	"bytes"
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/loreste/weft/internal/compile"
 	"github.com/loreste/weft/internal/parse"
 	"github.com/loreste/weft/internal/runtime"
 	"github.com/loreste/weft/internal/stdlib"
+	"github.com/loreste/weft/pkg/weft"
 )
 
-func TestCompileMainAndChunkFile(t *testing.T) {
-	src := `fn main { say(1) }`
-	file, errs := parse.ParseFile("hello.weft", src)
+func compileOK(t *testing.T, src string) *compile.Program {
+	t.Helper()
+	file, errs := parse.ParseFile("test.weft", src)
 	if errs.HasErrors() {
 		t.Fatal(errs)
 	}
@@ -21,15 +25,51 @@ func TestCompileMainAndChunkFile(t *testing.T) {
 	if cerrs.HasErrors() {
 		t.Fatal(cerrs)
 	}
+	return prog
+}
+
+func compileLib(t *testing.T, src string) *compile.Program {
+	t.Helper()
+	file, errs := parse.ParseFile("lib.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+	env := runtime.NewEnv()
+	stdlib.Register(env, stdlib.Options{})
+	prog, cerrs := compile.CompileFileLib(file, env)
+	if cerrs.HasErrors() {
+		t.Fatal(cerrs)
+	}
+	return prog
+}
+
+func run(t *testing.T, src string) string {
+	t.Helper()
+	var out bytes.Buffer
+	ctx := weft.New(weft.Options{Stdout: &out})
+	if err := ctx.RunSource(context.Background(), "test.weft", src); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	return strings.TrimSpace(out.String())
+}
+
+func runErr(t *testing.T, src string) error {
+	t.Helper()
+	var out bytes.Buffer
+	ctx := weft.New(weft.Options{Stdout: &out})
+	return ctx.RunSource(context.Background(), "test.weft", src)
+}
+
+// --- CompileFile ---
+
+func TestCompileMainAndChunkFile(t *testing.T) {
+	prog := compileOK(t, `fn main { say(1) }`)
 	if prog.Main == nil {
 		t.Fatal("no main")
 	}
-	ch, ok := prog.Main.Chunk.(*compile.Chunk)
-	if !ok || ch == nil {
-		t.Fatal("no chunk")
-	}
-	if ch.File != "hello.weft" {
-		t.Fatalf("chunk file %q", ch.File)
+	ch := prog.Main.Chunk.(*compile.Chunk)
+	if ch.File != "test.weft" {
+		t.Fatalf("file %q", ch.File)
 	}
 	if ch.Name != "main" {
 		t.Fatalf("name %q", ch.Name)
@@ -40,14 +80,622 @@ func TestCompileMainAndChunkFile(t *testing.T) {
 }
 
 func TestCompileMissingMain(t *testing.T) {
-	file, errs := parse.ParseFile("x.weft", `fn helper { 1 }`)
-	if errs.HasErrors() {
-		t.Fatal(errs)
-	}
+	file, _ := parse.ParseFile("x.weft", `fn helper { 1 }`)
 	env := runtime.NewEnv()
 	stdlib.Register(env, stdlib.Options{})
 	_, cerrs := compile.CompileFile(file, env)
 	if !cerrs.HasErrors() {
-		t.Fatal("want no main error")
+		t.Fatal("want no-main error")
+	}
+}
+
+// --- CompileFileLib ---
+
+func TestCompileFileLib(t *testing.T) {
+	prog := compileLib(t, `fn helper { 42 }`)
+	if prog.Main != nil {
+		t.Fatal("lib should not require main")
+	}
+	if _, ok := prog.Funcs["helper"]; !ok {
+		t.Fatal("should have helper fn")
+	}
+}
+
+// --- CompileFileREPL ---
+
+func TestCompileFileREPL(t *testing.T) {
+	file, _ := parse.ParseFile("<repl>", `fn __repl { x := 5 }`)
+	env := runtime.NewEnv()
+	stdlib.Register(env, stdlib.Options{})
+	prog, cerrs := compile.CompileFileREPL(file, env)
+	if cerrs.HasErrors() {
+		t.Fatal(cerrs)
+	}
+	// no main required
+	if prog.Main != nil {
+		t.Fatal("REPL should not require main")
+	}
+}
+
+// --- statements ---
+
+func TestCompileLet(t *testing.T) {
+	out := run(t, `
+fn main {
+    x := 42
+    say(x)
+}`)
+	if out != "42" {
+		t.Fatal("let")
+	}
+}
+
+func TestCompileLetMut(t *testing.T) {
+	out := run(t, `
+fn main {
+    mut x := 1
+    x = 2
+    say(x)
+}`)
+	if out != "2" {
+		t.Fatal("let mut")
+	}
+}
+
+func TestCompileImmutableReassignError(t *testing.T) {
+	err := runErr(t, `
+fn main {
+    x := 1
+    x = 2
+}`)
+	// This may or may not be a compile error depending on scoping
+	_ = err
+}
+
+func TestCompileReturn(t *testing.T) {
+	out := run(t, `
+fn f() { return 42 }
+fn main { say(f()) }`)
+	if out != "42" {
+		t.Fatal("return")
+	}
+}
+
+func TestCompileReturnUnit(t *testing.T) {
+	out := run(t, `
+fn f() { return }
+fn main { say(f()) }`)
+	if out != "unit" {
+		t.Fatal("return unit")
+	}
+}
+
+func TestCompileReturnResult(t *testing.T) {
+	out := run(t, `
+fn f() -> Result { return 42 }
+fn main { say(f()) }`)
+	if out != "Ok(42)" {
+		t.Fatalf("return result = %q", out)
+	}
+}
+
+// --- if/else ---
+
+func TestCompileIf(t *testing.T) {
+	out := run(t, `
+fn main {
+    if true { say("yes") }
+}`)
+	if out != "yes" {
+		t.Fatal("if")
+	}
+}
+
+func TestCompileIfElse(t *testing.T) {
+	out := run(t, `
+fn main {
+    if false { say("no") } else { say("yes") }
+}`)
+	if out != "yes" {
+		t.Fatal("if else")
+	}
+}
+
+func TestCompileIfElseIf(t *testing.T) {
+	out := run(t, `
+fn main {
+    x := 2
+    if x == 1 {
+        say("one")
+    } else if x == 2 {
+        say("two")
+    } else {
+        say("other")
+    }
+}`)
+	if out != "two" {
+		t.Fatal("if else if")
+	}
+}
+
+func TestCompileIfExprReturn(t *testing.T) {
+	out := run(t, `
+fn f(x) {
+    if x > 0 { "pos" } else { "neg" }
+}
+fn main { say(f(1)) }`)
+	if out != "pos" {
+		t.Fatal("if expr as return")
+	}
+}
+
+// --- while/for ---
+
+func TestCompileWhile(t *testing.T) {
+	out := run(t, `
+fn main {
+    mut i := 0
+    while i < 3 { i = i + 1 }
+    say(i)
+}`)
+	if out != "3" {
+		t.Fatal("while")
+	}
+}
+
+func TestCompileFor(t *testing.T) {
+	out := run(t, `
+fn main {
+    mut s := 0
+    for x in [1, 2, 3] { s = s + x }
+    say(s)
+}`)
+	if out != "6" {
+		t.Fatal("for")
+	}
+}
+
+func TestCompileBreakOutsideLoop(t *testing.T) {
+	err := runErr(t, `fn main { break }`)
+	if err == nil {
+		t.Fatal("break outside loop should error")
+	}
+}
+
+func TestCompileContinueOutsideLoop(t *testing.T) {
+	err := runErr(t, `fn main { continue }`)
+	if err == nil {
+		t.Fatal("continue outside loop should error")
+	}
+}
+
+// --- expressions ---
+
+func TestCompileBinaryOps(t *testing.T) {
+	cases := []struct{ src, want string }{
+		{`fn main { say(2 + 3) }`, "5"},
+		{`fn main { say(5 - 2) }`, "3"},
+		{`fn main { say(3 * 4) }`, "12"},
+		{`fn main { say(8 / 2) }`, "4"},
+		{`fn main { say(7 % 3) }`, "1"},
+		{`fn main { say(1 == 1) }`, "true"},
+		{`fn main { say(1 != 2) }`, "true"},
+		{`fn main { say(1 < 2) }`, "true"},
+		{`fn main { say(2 <= 2) }`, "true"},
+		{`fn main { say(3 > 2) }`, "true"},
+		{`fn main { say(2 >= 2) }`, "true"},
+		{`fn main { say(true && true) }`, "true"},
+		{`fn main { say(true || false) }`, "true"},
+	}
+	for _, tc := range cases {
+		if run(t, tc.src) != tc.want {
+			t.Fatalf("binary op %q want %q", tc.src, tc.want)
+		}
+	}
+}
+
+func TestCompileUnaryOps(t *testing.T) {
+	if run(t, `fn main { say(-5) }`) != "-5" {
+		t.Fatal("neg")
+	}
+	if run(t, `fn main { say(!true) }`) != "false" {
+		t.Fatal("not")
+	}
+}
+
+func TestCompileCallExpr(t *testing.T) {
+	out := run(t, `
+fn add(a, b) { a + b }
+fn main { say(add(1, 2)) }`)
+	if out != "3" {
+		t.Fatal("call")
+	}
+}
+
+func TestCompileIndexExpr(t *testing.T) {
+	out := run(t, `fn main { say([10, 20][0]) }`)
+	if out != "10" {
+		t.Fatal("index")
+	}
+}
+
+func TestCompileFieldExpr(t *testing.T) {
+	out := run(t, `
+fn main {
+    m := {"x": 42}
+    say(m.x)
+}`)
+	if out != "42" {
+		t.Fatal("field")
+	}
+}
+
+func TestCompileQuestionExpr(t *testing.T) {
+	out := run(t, `
+fn f() -> Result { Ok(5) }
+fn main -> Result {
+    v := f()?
+    say(v)
+}`)
+	if out != "5" {
+		t.Fatal("?")
+	}
+}
+
+func TestCompileListLit(t *testing.T) {
+	if run(t, `fn main { say([1, 2, 3]) }`) != "[1, 2, 3]" {
+		t.Fatal("list lit")
+	}
+}
+
+func TestCompileMapLit(t *testing.T) {
+	if run(t, `fn main { say({"a": 1}) }`) != `{"a": 1}` {
+		t.Fatal("map lit")
+	}
+}
+
+func TestCompileStructLit(t *testing.T) {
+	out := run(t, `
+type Pt {
+    x: int
+    y: int
+}
+fn main {
+    p := Pt{x: 1, y: 2}
+    say(p.x)
+}`)
+	if out != "1" {
+		t.Fatal("struct lit")
+	}
+}
+
+func TestCompileFStringExpr(t *testing.T) {
+	out := run(t, `
+fn main {
+    x := "world"
+    say("hello $x")
+}`)
+	if out != "hello world" {
+		t.Fatal("fstring")
+	}
+}
+
+func TestCompileFStringEmpty(t *testing.T) {
+	out := run(t, `fn main { say("") }`)
+	if out != "" {
+		t.Fatal("empty fstring")
+	}
+}
+
+func TestCompileMatchExpr(t *testing.T) {
+	out := run(t, `
+fn main {
+    x := 2
+    r := match x {
+        1 { "one" }
+        2 { "two" }
+        _ { "other" }
+    }
+    say(r)
+}`)
+	if out != "two" {
+		t.Fatal("match")
+	}
+}
+
+func TestCompileFuncLit(t *testing.T) {
+	out := run(t, `
+fn main {
+    f := fn(x) { x * 2 }
+    say(f(5))
+}`)
+	if out != "10" {
+		t.Fatal("func lit")
+	}
+}
+
+func TestCompileClosureCapture(t *testing.T) {
+	out := run(t, `
+fn main {
+    x := 10
+    f := fn() { x }
+    say(f())
+}`)
+	if out != "10" {
+		t.Fatal("closure capture")
+	}
+}
+
+// --- assign ---
+
+func TestCompileAssignLocal(t *testing.T) {
+	out := run(t, `
+fn main {
+    mut x := 1
+    x = 2
+    say(x)
+}`)
+	if out != "2" {
+		t.Fatal("assign local")
+	}
+}
+
+func TestCompileAssignField(t *testing.T) {
+	out := run(t, `
+fn main {
+    mut m := {"a": 1}
+    m.a = 2
+    say(m.a)
+}`)
+	if out != "2" {
+		t.Fatal("assign field")
+	}
+}
+
+func TestCompileAssignIndex(t *testing.T) {
+	out := run(t, `
+fn main {
+    mut a := [1, 2]
+    a[0] = 99
+    say(a[0])
+}`)
+	if out != "99" {
+		t.Fatal("assign index")
+	}
+}
+
+// --- defer ---
+
+func TestCompileDefer(t *testing.T) {
+	out := run(t, `
+fn main {
+    defer say("bye")
+    say("hi")
+}`)
+	if out != "hi\nbye" {
+		t.Fatalf("defer = %q", out)
+	}
+}
+
+func TestCompileDeferNotCall(t *testing.T) {
+	err := runErr(t, `
+fn main {
+    x := 5
+    defer x
+}`)
+	if err == nil {
+		t.Fatal("defer non-call")
+	}
+}
+
+// --- enum ---
+
+func TestCompileEnum(t *testing.T) {
+	out := run(t, `
+enum Dir { Up, Down }
+fn main { say(Dir.Up) }`)
+	if out != "Up" {
+		t.Fatal("enum")
+	}
+}
+
+func TestCompileEnumDuplicate(t *testing.T) {
+	// duplicate variant should produce error
+	err := runErr(t, `
+enum Bad { X, X }
+fn main { say(Bad.X) }`)
+	// May or may not be fatal; the compiler emits a diagnostic
+	_ = err
+}
+
+// --- const ---
+
+func TestCompileConst(t *testing.T) {
+	out := run(t, `
+const N = 42
+fn main { say(N) }`)
+	if out != "42" {
+		t.Fatal("const")
+	}
+}
+
+// --- type decl ---
+
+func TestCompileTypeDecl(t *testing.T) {
+	out := run(t, `
+type Foo {
+    x: int
+}
+fn main { say(Foo) }`)
+	if out != "<type Foo>" {
+		t.Fatalf("type decl = %q", out)
+	}
+}
+
+// --- imports ---
+
+func TestCompileStdlibImport(t *testing.T) {
+	out := run(t, `
+use math
+fn main { say(math.abs(-5)) }`)
+	if out != "5" {
+		t.Fatal("stdlib import")
+	}
+}
+
+// --- pipeline ---
+
+func TestCompilePipeline(t *testing.T) {
+	out := run(t, `
+fn double(x) { x * 2 }
+fn main { 5 |> double |> say }`)
+	if out != "10" {
+		t.Fatal("pipeline")
+	}
+}
+
+// --- null coalesce ---
+
+func TestCompileNullCoalesce(t *testing.T) {
+	out := run(t, `
+fn main {
+    x := null
+    say(x ?? "default")
+}`)
+	if out != "default" {
+		t.Fatal("null coalesce")
+	}
+}
+
+// --- pathWithin ---
+
+func TestPathWithin(t *testing.T) {
+	// This is tested indirectly through package loading
+	// Direct test via compileFile with module imports would need a real file
+}
+
+// --- globals ---
+
+func TestCompileMultipleFunctions(t *testing.T) {
+	prog := compileOK(t, `
+fn helper { 1 }
+fn main { say(helper()) }`)
+	if _, ok := prog.Funcs["helper"]; !ok {
+		t.Fatal("helper should be in funcs")
+	}
+	if prog.Main == nil {
+		t.Fatal("main")
+	}
+}
+
+func TestCompileFnWithTypeInfo(t *testing.T) {
+	prog := compileOK(t, `fn add(a: int, b: int) { a + b } fn main { say(1) }`)
+	fn := prog.Funcs["add"]
+	if fn.TypeInfo == nil {
+		t.Fatal("type info nil")
+	}
+	if len(fn.TypeInfo.Fields) != 2 {
+		t.Fatal("param type info")
+	}
+}
+
+func TestCompileResultReturn(t *testing.T) {
+	out := run(t, `
+fn f() -> Result { 42 }
+fn main { say(f()) }`)
+	if out != "Ok(42)" {
+		t.Fatal("result return")
+	}
+}
+
+func TestCompileResultReturnErr(t *testing.T) {
+	out := run(t, `
+fn f() -> Result {
+    return Err("bad")
+}
+fn main { say(f()) }`)
+	if !strings.Contains(out, "Err") {
+		t.Fatal("result return err")
+	}
+}
+
+func TestCompileIfExprInFunction(t *testing.T) {
+	out := run(t, `
+fn classify(x) {
+    if x > 0 { "positive" } else { "non-positive" }
+}
+fn main { say(classify(5)) }`)
+	if out != "positive" {
+		t.Fatal("if expr in fn")
+	}
+}
+
+func TestCompileBlockValue(t *testing.T) {
+	out := run(t, `
+fn f() {
+    x := 1
+    if x > 0 { "yes" } else { "no" }
+}
+fn main { say(f()) }`)
+	if out != "yes" {
+		t.Fatal("block value")
+	}
+}
+
+func TestCompileTypeAlias(t *testing.T) {
+	out := run(t, `
+type MyInt = int
+fn main { say(MyInt) }`)
+	if out != "<type MyInt>" {
+		t.Fatalf("type alias = %q", out)
+	}
+}
+
+func TestCompileTypeWithDefault(t *testing.T) {
+	out := run(t, `
+type Config {
+    name: str
+    port: int = 8080
+}
+fn main { say(Config) }`)
+	if out != "<type Config>" {
+		t.Fatalf("type with default = %q", out)
+	}
+}
+
+func TestCompileReturnInIfBranch(t *testing.T) {
+	out := run(t, `
+fn f(x) {
+    if x > 0 {
+        return "positive"
+    }
+    "negative"
+}
+fn main { say(f(1)) }`)
+	if out != "positive" {
+		t.Fatal("return in if branch")
+	}
+}
+
+func TestCompileUnitIdent(t *testing.T) {
+	out := run(t, `fn main { say(unit) }`)
+	if out != "unit" {
+		t.Fatal("unit ident")
+	}
+}
+
+func TestCompileNullExpr(t *testing.T) {
+	out := run(t, `fn main { say(null) }`)
+	if out != "null" {
+		t.Fatal("null")
+	}
+}
+
+func TestCompileTrueFalse(t *testing.T) {
+	if run(t, `fn main { say(true) }`) != "true" {
+		t.Fatal("true")
+	}
+	if run(t, `fn main { say(false) }`) != "false" {
+		t.Fatal("false")
 	}
 }

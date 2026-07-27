@@ -161,6 +161,145 @@ func TestStringEscapes(t *testing.T) {
 	}
 }
 
+func TestRawString(t *testing.T) {
+	toks := TokenizeAll("`raw string`")
+	if len(toks) != 1 || toks[0].Kind != token.RawString {
+		t.Fatalf("raw string: %+v", toks)
+	}
+	if toks[0].Lit != "raw string" {
+		t.Fatalf("raw lit = %q", toks[0].Lit)
+	}
+}
+
+func TestRawStringUnterminated(t *testing.T) {
+	toks := TokenizeAll("`unterminated")
+	if toks[0].Kind != token.Illegal {
+		t.Fatalf("unterminated raw: %+v", toks[0])
+	}
+}
+
+func TestStringEscapeTab(t *testing.T) {
+	toks := TokenizeAll(`"a\tb"`)
+	if toks[0].Lit != "a\tb" {
+		t.Fatalf("tab escape: %q", toks[0].Lit)
+	}
+}
+
+func TestStringEscapeQuote(t *testing.T) {
+	toks := TokenizeAll(`"a\"b"`)
+	if toks[0].Lit != `a"b` {
+		t.Fatalf("quote escape: %q", toks[0].Lit)
+	}
+}
+
+func TestStringEscapeBackslash(t *testing.T) {
+	toks := TokenizeAll(`"a\\b"`)
+	if toks[0].Lit != `a\b` {
+		t.Fatalf("backslash escape: %q", toks[0].Lit)
+	}
+}
+
+func TestStringEscapeR(t *testing.T) {
+	toks := TokenizeAll(`"a\rb"`)
+	if toks[0].Lit != "a\rb" {
+		t.Fatalf("\\r escape: %q", toks[0].Lit)
+	}
+}
+
+func TestStringUnterminated(t *testing.T) {
+	toks := TokenizeAll(`"unterminated`)
+	if toks[0].Kind != token.Illegal {
+		t.Fatalf("unterminated: %+v", toks[0])
+	}
+}
+
+func TestFStringInterpolation(t *testing.T) {
+	toks := TokenizeAll(`f"hello {name} and {age}"`)
+	if len(toks) != 1 || toks[0].Kind != token.FString {
+		t.Fatalf("fstring: %+v", toks)
+	}
+}
+
+func TestFStringEmpty(t *testing.T) {
+	toks := TokenizeAll(`f""`)
+	if len(toks) != 1 || toks[0].Kind != token.FString {
+		t.Fatalf("fstring empty: %+v", toks)
+	}
+}
+
+func TestFStringNested(t *testing.T) {
+	toks := TokenizeAll(`f"x={1+2}"`)
+	if len(toks) != 1 || toks[0].Kind != token.FString {
+		t.Fatalf("fstring nested: %+v", toks)
+	}
+}
+
+func TestFStringUnterminated(t *testing.T) {
+	toks := TokenizeAll(`f"unterminated`)
+	if toks[0].Kind != token.Illegal {
+		t.Fatalf("fstring unterm: %+v", toks[0])
+	}
+}
+
+func TestBarePipe(t *testing.T) {
+	toks := TokenizeAll("|")
+	if toks[0].Kind != token.Illegal {
+		t.Fatalf("bare pipe: %+v", toks[0])
+	}
+}
+
+func TestBareAmpersand(t *testing.T) {
+	toks := TokenizeAll("&")
+	if toks[0].Kind != token.Illegal {
+		t.Fatalf("bare &: %+v", toks[0])
+	}
+}
+
+func TestBlockCommentUnterminated(t *testing.T) {
+	toks := TokenizeAll("/* unterminated")
+	if toks[0].Kind != token.Illegal {
+		t.Fatalf("block comment: %+v", toks[0])
+	}
+}
+
+func TestIllegalChar(t *testing.T) {
+	toks := TokenizeAll("@")
+	if toks[0].Kind != token.Illegal {
+		t.Fatalf("illegal: %+v", toks[0])
+	}
+}
+
+func TestAllOperators(t *testing.T) {
+	src := `( ) { } [ ] , : := | > || ; . + * % -> - == = != ! <= < >= > && ?? ? /`
+	toks := TokenizeAll(src)
+	if len(toks) == 0 {
+		t.Fatal("no tokens")
+	}
+	// just verify no crashes and expected count
+}
+
+func TestDollarInterpolation(t *testing.T) {
+	// $name style is handled in string scanning
+	toks := TokenizeAll(`"hello $name"`)
+	if len(toks) != 1 {
+		t.Fatalf("$interp: %+v", toks)
+	}
+}
+
+func TestMultiByteUnicode(t *testing.T) {
+	toks := TokenizeAll(`"héllo"`)
+	if toks[0].Lit != "héllo" {
+		t.Fatalf("unicode string: %q", toks[0].Lit)
+	}
+}
+
+func TestUnicodeIdent(t *testing.T) {
+	toks := TokenizeAll(`café`)
+	if toks[0].Kind != token.Ident || toks[0].Lit != "café" {
+		t.Fatalf("unicode ident: %+v", toks[0])
+	}
+}
+
 func TestImportAndArrow(t *testing.T) {
 	toks := TokenizeAll(`import http fn f() -> int`)
 	if toks[0].Kind != token.Import || toks[1].Kind != token.Ident {

@@ -156,6 +156,312 @@ say(add(1))
 	}
 }
 
+func TestFormatType(t *testing.T) {
+	src := `type Point {
+    x: int
+    y: float
+}
+fn main { say(1) }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "type Point") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatTypeAlias(t *testing.T) {
+	src := `type ID = str
+fn main { say(1) }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "type ID = str") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatIf(t *testing.T) {
+	src := `fn main {
+if true{say(1)}else{say(2)}
+}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "if true {") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatIfElseIf(t *testing.T) {
+	src := `fn main {
+if true{say(1)}else if false{say(2)}else{say(3)}
+}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "} else if") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatWhile(t *testing.T) {
+	src := `fn main {
+while true{break}
+}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "while true {") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatFor(t *testing.T) {
+	src := `fn main {
+for x in [1,2]{say(x)}
+}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "for x in") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatReturn(t *testing.T) {
+	src := `fn f() { return 42 }
+fn main { say(f()) }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "return 42") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatDefer(t *testing.T) {
+	src := `fn main{defer say("bye")
+say("hi")}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "defer say") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatConst(t *testing.T) {
+	src := `const N = 42
+fn main { say(N) }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "const N = 42") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatPub(t *testing.T) {
+	src := `pub fn helper{1}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "pub fn helper") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatFuncLit(t *testing.T) {
+	src := `fn main {
+f := fn(x, y) { x + y }
+say(f(1, 2))
+}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "fn(x, y)") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatListLiteral(t *testing.T) {
+	src := `fn main {
+x := [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
+say(x)
+}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "[") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatResultFn(t *testing.T) {
+	src := `fn f() -> Result { 42 }
+fn main { say(f()) }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "-> Result") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatFString(t *testing.T) {
+	src := "fn main {\n    say(f\"hello {name}\")\n}\n"
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = out
+}
+
+func TestFormatDollarInterp(t *testing.T) {
+	src := "fn main {\n    name := \"world\"\n    say(\"hello $name\")\n}\n"
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = out
+}
+
+func TestFormatImport(t *testing.T) {
+	src := `use http
+use json
+fn main { say(1) }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "use http") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatImportPath(t *testing.T) {
+	src := `import "./util.weft" as util
+fn main { say(1) }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"./util.weft"`) {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatStructLit(t *testing.T) {
+	src := `type Pt { x: int, y: int }
+fn main {
+    p := Pt{x: 1, y: 2}
+    say(p)
+}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Pt{") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatPipeline(t *testing.T) {
+	src := `fn double(x) { x * 2 }
+fn main { 5 |> double |> say }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// formatter may desugar pipelines to calls
+	_ = out
+}
+
+func TestFormatNullCoalesce(t *testing.T) {
+	src := `fn main {
+    x := null
+    say(x ?? 42)
+}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "??") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatQuestion(t *testing.T) {
+	src := `fn f() -> Result {
+    Ok(1)?
+}
+fn main { say(f()) }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "?") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatAssignField(t *testing.T) {
+	src := `fn main {
+    mut m := {"a": 1}
+    m.a = 2
+    m["b"] = 3
+    say(m)
+}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "m.a = 2") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatParseError(t *testing.T) {
+	_, err := format.Source("bad.weft", "@@@")
+	if err == nil {
+		t.Fatal("parse error should propagate")
+	}
+}
+
 func TestFormatPreservesNumberLits(t *testing.T) {
 	// fmt must keep source forms (hex/bin/oct/sci/underscores), not rewrite to decimal.
 	src := `fn main {

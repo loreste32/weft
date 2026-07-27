@@ -11,7 +11,7 @@ import (
 	"github.com/loreste/weft/internal/pkgman"
 )
 
-// Doctor reports environment readiness for Weft (no Python required).
+// Doctor reports environment readiness for Weft.
 func Doctor() error {
 	fmt.Printf("weft %s\n", Version)
 	fmt.Printf("go:   %s %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH)

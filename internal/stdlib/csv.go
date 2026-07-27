@@ -8,7 +8,7 @@ import (
 	"github.com/loreste/weft/internal/runtime"
 )
 
-// packageCSV — simple CSV for data-processing CLIs (no Python/pandas).
+// packageCSV — simple CSV for data-processing CLIs.
 func packageCSV() runtime.Value {
 	p := pkg()
 
