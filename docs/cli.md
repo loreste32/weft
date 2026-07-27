@@ -6,9 +6,10 @@ Weft is a strong fit for **small ops tools** and **pipe-friendly data jobs**: on
 
 | Package | Role |
 |---------|------|
-| `cli` | argv, flags, usage, exit codes |
-| `sh` | run / capture external commands |
-| `fs` | read/write/list/glob/lines/paths |
+| `cli` | argv, flags, **subcommands**, usage, `prompt`, exit codes |
+| `sh` / `shlex` | run / capture / lines / code; safe split/quote |
+| `fs` | read/write/glob/lines/paths/`stem`/`read_bytes`/… |
+| `signal` | listen / received / reset (SIGINT/SIGTERM) |
 | `io` | stdin lines, stderr log |
 | `str` | split/join/trim/fields/lines |
 | `json` | parse/stringify pipelines |
@@ -56,9 +57,30 @@ weft run mytool.weft -- --env=prod path/to/file
 |-------|--|
 | `help` | true if `-h` / `--help` |
 | `usage` | generated help text |
-| `args` | positional arguments (list) |
+| `command` | matched subcommand name, or `""` |
+| `args` | remaining positionals (after command if any) |
 | `flags` | map of flag values |
 | *name* | each flag also flat on the result (`p.env`) |
+
+### Subcommands (built-in)
+
+```weft
+p := cli.parse({
+    "about": "ctl",
+    "flags": {"env": {"short": "e", "default": "dev"}},
+    "commands": {
+        "deploy": {"help": "ship it"},
+        "status": {"help": "show status"},
+    },
+})?
+if p.help || p.command == "" {
+    say(p.usage)
+    cli.exit(0)
+}
+if p.command == "deploy" { /* … */ }
+```
+
+Also: `cli.prompt("name: ")?` reads one line from stdin.
 
 ### Exit
 
@@ -190,6 +212,7 @@ weft run examples/cli_tool.weft -- --help
 weft run examples/cli_tool.weft -- greet Ada -e prod
 weft run examples/cli_tool.weft -- lines examples/hello.weft
 weft run examples/cli_tool.weft -- shell "uname -s"
+weft run examples/tier_ab.weft -- demo
 
 # JSONL filter pipeline
 weft run examples/data_pipeline.weft -- \
@@ -200,17 +223,6 @@ weft run examples/csv_report.weft -- -i examples/data/metrics.csv -c /tmp/m.html
 ```
 
 ## Patterns
-
-### Subcommands
-
-```weft
-cmd := "help"
-if len(p.args) > 0 { cmd = p.args[0] }
-
-if cmd == "deploy" { ... }
-if cmd == "status" { ... }
-cli.die("unknown command: " + cmd)
-```
 
 ### Config from env + flags
 

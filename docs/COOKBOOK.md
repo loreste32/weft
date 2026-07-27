@@ -2,7 +2,7 @@
 
 Paste-ready recipes for common jobs. All examples target **0.3.x** Weft. For the full language rules see [LANGUAGE.md](LANGUAGE.md); for package APIs see [STDLIB.md](STDLIB.md). New to Weft? Start with the [tutorial](TUTORIAL.md).
 
-**Runnable offline samples** live in [`examples/cookbook/`](../examples/cookbook/) (`01_hello.weft` … `12_cli.weft`). This page keeps the wider set, including network/LLM/server sketches.
+**Runnable offline samples** live in [`examples/cookbook/`](../examples/cookbook/) (`01_hello.weft` … `13_agent.weft`). Ops/A–B surface demo: [`examples/tier_ab.weft`](../examples/tier_ab.weft). This page keeps the wider set, including network/LLM/server sketches.
 
 Run a snippet by saving it as `x.weft` and:
 
