@@ -190,5 +190,17 @@ func packageURL() runtime.Value {
 		return runtime.Str(u.String()), nil
 	}, 2)
 
+	// url.path_unescape(s) -> Result[str]
+	set(p, "path_unescape", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 {
+			return errRes("url.path_unescape(s)", "url"), nil
+		}
+		s, err := url.PathUnescape(args[0].String())
+		if err != nil {
+			return errRes(err.Error(), "url"), nil
+		}
+		return runtime.Ok(runtime.Str(s)), nil
+	}, 1)
+
 	return p
 }

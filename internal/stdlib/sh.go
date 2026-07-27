@@ -126,6 +126,28 @@ func packageSH(env *runtime.Env) runtime.Value {
 		return runtime.Ok(runtime.List(items...)), nil
 	}, 3)
 
+	// sh.code(cmd, args?, opts?) -> Result[int]  exit code only
+	set(p, "code", func(args []runtime.Value) (runtime.Value, error) {
+		cmd, argv, opts, err := parseShArgs(args)
+		if err != nil {
+			return errRes(err.Error(), "sh"), nil
+		}
+		res, err := runCmd(env, cmd, argv, opts, false)
+		if err != nil {
+			return res, err
+		}
+		if res.Kind != runtime.KindResult {
+			return res, nil
+		}
+		ro := res.Obj.(*runtime.ResultObj)
+		if !ro.Ok {
+			// timeout / start failure
+			return res, nil
+		}
+		c, _ := mapGet(ro.Val, "code")
+		return runtime.Ok(c), nil
+	}, 3)
+
 	return p
 }
 

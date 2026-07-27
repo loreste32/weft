@@ -89,6 +89,30 @@ func packageINI() runtime.Value {
 		return runtime.Null(), nil
 	}, 4)
 
+	// ini.sections(cfg) -> list[str]
+	set(p, "sections", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 || args[0].Kind != runtime.KindMap {
+			return runtime.List(), nil
+		}
+		mo := args[0].Obj.(*runtime.MapObj)
+		var out []runtime.Value
+		for _, k := range mo.Keys {
+			if k == "DEFAULT" {
+				continue
+			}
+			out = append(out, runtime.Str(k))
+		}
+		return runtime.List(out...), nil
+	}, 1)
+
+	// ini.has_section(cfg, name) -> bool
+	set(p, "has_section", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 2 {
+			return runtime.Bool(false), nil
+		}
+		return runtime.Bool(sectionMap(args[0], args[1].String()).Kind == runtime.KindMap), nil
+	}, 2)
+
 	return p
 }
 

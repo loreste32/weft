@@ -1,7 +1,9 @@
 package stdlib
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/loreste/weft/internal/runtime"
@@ -128,6 +130,23 @@ func packageCLI(env *runtime.Env) runtime.Value {
 			fmt.Fprintln(env.Stdout, args[0].String())
 		}
 		return runtime.Null(), &runtime.ExitSignal{Code: 0}
+	}, 1)
+
+	// cli.prompt(msg?) -> Result[str]  read one line from stdin
+	set(p, "prompt", func(args []runtime.Value) (runtime.Value, error) {
+		msg := ""
+		if len(args) >= 1 {
+			msg = args[0].String()
+		}
+		if msg != "" {
+			fmt.Fprint(env.Stderr, msg)
+		}
+		r := bufio.NewReader(os.Stdin)
+		line, err := r.ReadString('\n')
+		if err != nil && len(line) == 0 {
+			return errRes(err.Error(), "cli"), nil
+		}
+		return runtime.Ok(runtime.Str(strings.TrimRight(line, "\r\n"))), nil
 	}, 1)
 
 	return p

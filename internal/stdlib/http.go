@@ -450,6 +450,11 @@ func doRequest(env *runtime.Env, method, urlStr, body string, headers map[string
 		if n := mapGetInt(opts, "timeout", 0); n > 0 {
 			timeout = time.Duration(n) * time.Second
 		}
+		if s := mapGetStr(opts, "timeout", ""); s != "" && timeout == 0 {
+			if d, err := time.ParseDuration(s); err == nil {
+				timeout = d
+			}
+		}
 		if n := mapGetInt(opts, "timeout_ms", 0); n > 0 {
 			timeout = time.Duration(n) * time.Millisecond
 		}

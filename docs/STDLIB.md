@@ -19,18 +19,19 @@ What we keep vs won’t: **[STDLIB_GAPS.md](STDLIB_GAPS.md)**.
 
 | Job | Packages |
 |-----|----------|
-| Files & paths | `fs`, `io`, `archive` |
+| Files & paths | `fs`, `io`, `archive`, `copy` |
 | HTTP client / tiny server | `http`, `web`, `url`, `ws`, `webrtc` |
 | JSON / config | `json`, `jsonl`, `yaml`, `toml`, `ini`, `xml` |
-| Text | `str`, `re`, `html`, `base64`, `mime` |
+| Text | `str`, `re`, `html`, `base64`, `mime`, `difflib` |
 | Time | `time` |
 | Env / process | `env`, `platform`, `sh`, `shlex`, `signal`, `cli`, `log`, `secrets` |
-| Numbers | `math`, `decimal`, `random`, `uuid`, `ip` |
+| Numbers | `math`, `decimal`, `random`, `uuid`, `ip`, `binstruct` |
 | Data tables | `csv`, `table`, `db`, `redis`, `mongo` |
 | Messaging | `nats`, `amqp`, `email`, `socket` |
 | LLM | `llm`, `ollama`, `vllm` |
-| Collections helpers | `iter`, `collections`, `heap`, `bisect`, `pipe` |
+| Collections helpers | `iter`, `collections`, `heap`, `bisect`, `pipe`, `functools` |
 | Crypto | `crypto` |
+| Errors | `traceback` |
 | Charts | `viz` |
 | GraphQL | `graphql` |
 | Tests | `test` (no import required in tests) |

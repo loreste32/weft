@@ -50,6 +50,66 @@ func packageFS() runtime.Value {
 		}
 		return runtime.Str(base), nil
 	}, 1)
+	// fs.read_bytes / write_bytes — same storage as str but named for binary intent
+	set(p, "read_bytes", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 {
+			return errRes("fs.read_bytes(path)", "fs"), nil
+		}
+		b, err := os.ReadFile(args[0].String())
+		if err != nil {
+			return errRes(err.Error(), "fs"), nil
+		}
+		return runtime.Ok(runtime.Str(string(b))), nil
+	}, 1)
+	set(p, "write_bytes", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 2 {
+			return errRes("fs.write_bytes(path, data)", "fs"), nil
+		}
+		path := args[0].String()
+		if dir := filepath.Dir(path); dir != "" && dir != "." {
+			_ = os.MkdirAll(dir, 0o755)
+		}
+		if err := os.WriteFile(path, []byte(args[1].String()), 0o644); err != nil {
+			return errRes(err.Error(), "fs"), nil
+		}
+		return runtime.Ok(runtime.Unit()), nil
+	}, 2)
+	// fs.with_suffix(path, suffix) -> str
+	set(p, "with_suffix", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 2 {
+			return runtime.Str(""), nil
+		}
+		path := args[0].String()
+		suf := args[1].String()
+		ext := filepath.Ext(path)
+		if ext != "" {
+			path = path[:len(path)-len(ext)]
+		}
+		if suf != "" && !strings.HasPrefix(suf, ".") {
+			suf = "." + suf
+		}
+		return runtime.Str(path + suf), nil
+	}, 2)
+	// fs.parents(path) -> list[str]
+	set(p, "parents", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 {
+			return runtime.List(), nil
+		}
+		p0 := filepath.Clean(args[0].String())
+		var out []runtime.Value
+		for {
+			dir := filepath.Dir(p0)
+			if dir == p0 {
+				break
+			}
+			out = append(out, runtime.Str(dir))
+			if dir == string(filepath.Separator) || dir == "." {
+				break
+			}
+			p0 = dir
+		}
+		return runtime.List(out...), nil
+	}, 1)
 	// fs.append(path, text) -> Result
 	set(p, "append", func(args []runtime.Value) (runtime.Value, error) {
 		if len(args) < 2 {

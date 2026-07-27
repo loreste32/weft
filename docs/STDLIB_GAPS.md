@@ -1,32 +1,52 @@
-# Stdlib: what we keep, what we won’t
+# Stdlib Tier A / B (0.3.29)
 
-Live list: `weft stdlib`.
+Honest map of the completed ops/agent surface. Live list: `weft stdlib`.
 
-## Keep (ops / agents actually use)
+## Tier A — done (with tests)
 
-| Need | Package |
-|------|---------|
-| Shell args safely | `shlex` (split / quote / join) |
-| Run commands | `sh` (+ `lines`, timeout duration string, `merge` opt) |
-| Graceful stop flags | `signal` (listen / received / reset) |
-| Tokens | `secrets.token_hex` / `token_urlsafe` / `compare` |
-| JSON logs | `log.set_json` |
-| Path stem | `fs.stem` |
-| XML walk | `xml.find` / `findall` |
-| HTML hrefs | `html.links` |
-| Query merge | `url.merge_query` |
+| Area | API |
+|------|-----|
+| Shell tokens | `shlex.split` / `quote` / `join` |
+| Process | `sh.run/capture/ok/shell/which/lines/code`; opts: `dir`, `env`, `stdin`, `timeout` (sec or `"5s"`), `merge`, `check` |
+| Signals | `signal.listen` / `received` / `reset` |
+| Paths / bytes | `fs.stem` / `with_suffix` / `parents` / `read_bytes` / `write_bytes` |
+| Prompt | `cli.prompt` (line from stdin) |
+| Secrets | `secrets.token_hex` / `token_urlsafe` / `compare` (+ require/get/from/unwrap) |
+| Logging | `log.set_json` + field maps on log calls |
+| Copy | `copy.copy` / `copy.deepcopy` |
+| Functools | `functools.partial` / `once` |
+| Errors | `traceback.format` / `is_err` / `err_msg` |
+| Crypto | `crypto.hash` / `hmac_sha512` (+ existing hashes/hmac_sha256) |
+| URL | `url.merge_query` / `path_unescape` (+ parse/build/…) |
+| XML | `xml.find` / `findall` / `text` / `attr` |
+| HTML | `html.links` (+ escape/strip_tags) |
+| INI | `ini.sections` / `has_section` (+ parse/get/…) |
+| Test | `test.assert` (+ existing eq/ok/…) |
+| HTTP | timeout as duration string; existing retries/headers/form |
+| DB | existing `query` / `exec` / `begin` / `tx` (already deep enough for glue) |
+| CSV | existing header/comma dialects |
 
-## Won’t add (or already deleted)
+## Tier B — done (with tests)
 
-| Temptation | Why not |
-|------------|---------|
-| `copy` / `functools` / `traceback` packages | Prelude has `deepcopy`; rest was unused wrappers |
-| `binstruct` / `difflib` | Rare for our scripts; big code for little use |
-| Binascii aliases (`b2a_*`) | Same as existing base64/hex helpers |
-| Fake `getpass` | Echoed stdin is not a password API |
-| `crypto.hash` dispatcher | Call `sha256` / `md5` directly |
-| Full stdlib parity | Binary bloat; not the product |
+| Area | API |
+|------|-----|
+| Binary pack | `binstruct.pack` / `unpack` / `size` |
+| Diffs | `difflib.unified_diff` / `ndiff` |
+| Stats | `math.quantile` / `mode` (+ mean/stdev/…) |
+| IP network | `ip.network` (+ parse/in_network/…) |
 
-## Rule
+## Tier C — permanent non-goals
 
-If a script never needs it, don’t put it in the binary. Prefer `packages/*` or `sh` for one-offs.
+GUI, `asyncio` event-loop API, multiprocessing/shared memory, ctypes/mmap, venv/pip model, heavy scientific arrays, full mail servers, pdb-as-stdlib.
+
+## Tests
+
+| File | Covers |
+|------|--------|
+| `shlex_test.go` | unit split/quote/join |
+| `binstruct_test.go` | unit pack/unpack |
+| `difflib_test.go` | unit diffs |
+| `ops_surface_test.go` | integration for kept ops |
+| `tier_ab_test.go` | end-to-end A/B surface |
+
+Rule: every new behavior lands with tests. See CONTRIBUTING.md.

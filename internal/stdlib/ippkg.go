@@ -96,5 +96,27 @@ func packageIP() runtime.Value {
 		return runtime.Bool(prefix.Contains(addr)), nil
 	}, 2)
 
+	// ip.network(cidr) -> Result[{network, bits, addr}]
+	set(p, "network", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 {
+			return errRes("ip.network(cidr)", "ip"), nil
+		}
+		prefix, err := netip.ParsePrefix(args[0].String())
+		if err != nil {
+			return errRes(err.Error(), "ip"), nil
+		}
+		prefix = prefix.Masked()
+		m := runtime.NewMap()
+		mo := m.Obj.(*runtime.MapObj)
+		put := func(k string, v runtime.Value) {
+			mo.Keys = append(mo.Keys, k)
+			mo.Vals[k] = v
+		}
+		put("network", runtime.Str(prefix.String()))
+		put("bits", runtime.Int(int64(prefix.Bits())))
+		put("addr", runtime.Str(prefix.Addr().String()))
+		return runtime.Ok(m), nil
+	}, 1)
+
 	return p
 }

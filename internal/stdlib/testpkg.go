@@ -156,6 +156,18 @@ func packageTest() runtime.Value {
 		return runtime.Null(), fmt.Errorf("%s", msg)
 	}, 1)
 
+	// test.assert(cond, msg?) — cond must be truthy
+	set(p, "assert", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 || !args[0].IsTruthy() {
+			msg := "test.assert failed"
+			if len(args) >= 2 && args[1].String() != "" {
+				msg = "test.assert: " + args[1].String()
+			}
+			return runtime.Null(), fmt.Errorf("%s", msg)
+		}
+		return runtime.Unit(), nil
+	}, 2)
+
 	// test.skip(msg?) — runner marks as skipped
 	set(p, "skip", func(args []runtime.Value) (runtime.Value, error) {
 		msg := "skipped"

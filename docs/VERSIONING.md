@@ -6,7 +6,7 @@ Version line is **0.3.x** through **0.3.35**. The published git default branch i
 0.3.1 → 0.3.2 → … → 0.3.35
 ```
 
-Current toolchain string: **0.3.28** (`pkg/weft.Version`, also `weft version`).
+Current toolchain string: **0.3.29** (`pkg/weft.Version`, also `weft version`).
 
 No `0.4.x` until that ceiling is intentional. After 0.3.35 we can open a new line if we need breaking changes.
 
