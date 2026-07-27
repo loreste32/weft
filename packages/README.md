@@ -50,5 +50,5 @@ No central registry required — path/git + lock is enough until discovery hurts
 
 ## Non-goals for packages/
 
-- Native GPU / torch wheels (use sidecars + HTTP)
+- Native GPU / binary wheels (use sidecars + HTTP)
 - Replacing core (`http`, `llm`, `fs`, …)
