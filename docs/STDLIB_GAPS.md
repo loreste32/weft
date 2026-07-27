@@ -62,16 +62,26 @@ weft run examples/cli_tool.weft -- --help
 | `tier_ab_fullcover2_test.go` | secrets/html/ip/crypto/url/ini/xml/log/test edges |
 | `cli_test.go` | flags + subcommands |
 
-## Coverage (A/B core packages)
+## Coverage
 
-Target: **full statement coverage** of dedicated A/B packages. As of 0.3.30:
+### A/B core packages (~99% statements)
 
-| Package | Typical func coverage |
-|---------|----------------------|
-| `shlex`, `signal`, `functools`, `traceback` | **100%** |
-| `binstruct`, `difflib`, `copy` | **~93–100%** |
-| Related (secrets, html, ip, log, …) | high; exercised by FullCover + Comp tests |
+| Package | Coverage |
+|---------|----------|
+| `shlex`, `signal`, `functools`, `traceback`, `copy` | **100%** |
+| `binstruct`, `difflib` | **~97–100%** |
 
-Whole `internal/stdlib` remains ~47% overall (many pre-existing packages outside A/B). A/B surface is what “fully covered” means here.
+### Whole `internal/stdlib` (ongoing)
+
+Raised from ~47% → **~66%** statements with pure-package fullcover, FS/HTTP/CLI matrix, and LLM helper unit tests.
+
+Still intentionally thin (need live services or long agent loops):
+
+| Package | Why low |
+|---------|---------|
+| `mongo`, `redis`, `nats`, `amqp` | Real dials; arity paths only offline |
+| `llm` agent `run` / streaming | Full multi-step HTTP agent loops |
+| `websocket`, `webrtc`, `web` serve | Long-lived servers |
+| `ollama` / `vllm` live | Need daemons |
 
 Rule: every new behavior lands with tests. See CONTRIBUTING.md.
