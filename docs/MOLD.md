@@ -2,6 +2,8 @@
 
 **Optional module** (not stdlib). Pour LLM/API JSON into clean maps; emit JSON Schema and tool parameters.
 
+Fits the agent stack (`llm` → mold → tokensave / ml): **[ECOSYSTEM.md](ECOSYSTEM.md)**.
+
 | | |
 |--|--|
 | **Location** | [`packages/mold`](../packages/mold/) |

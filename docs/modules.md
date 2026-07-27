@@ -1,18 +1,19 @@
 # Expanding Weft with modules
 
-**Modules are how third parties grow the language surface** — new APIs, domain helpers, shared pipelines, optional domains like **ML** — without forking the Go binary.
+**Modules are how third parties grow the language surface** — new APIs, domain helpers, shared pipelines, optional domains — without forking the Go binary.
 
-Example optional domains (all modules, never built-ins):
+**How modules sit next to stdlib and agents:** [ECOSYSTEM.md](ECOSYSTEM.md).  
+**Consuming packages:** [packages.md](packages.md). **Catalog:** [`packages/README.md`](../packages/README.md).
 
-| Package | Role |
-|---------|------|
+### Monorepo examples (never built-ins)
+
 | Package | Role | Docs |
 |---------|------|------|
-| [`packages/ml`](../packages/ml) | embeddings / RAG / metrics | [ML.md](ML.md) · `weft get ml ./packages/ml` |
-| [`packages/mold`](../packages/mold) | structured models for agents | [MOLD.md](MOLD.md) · `weft get mold ./packages/mold` |
-| [`packages/tokensave`](../packages/tokensave) | memory / teach → train | `weft get tokensave ./packages/tokensave` |
+| [`packages/mold`](../packages/mold) | structured models for agents | [MOLD.md](MOLD.md) |
+| [`packages/ml`](../packages/ml) | embeddings / RAG / metrics | [ML.md](ML.md) |
+| [`packages/tokensave`](../packages/tokensave) | memory / teach → train | package README |
 
-Core stays lean; install only what an app needs. **None of these are built-ins.**
+Core stays lean; install only what an app needs.
 
 Anyone can publish libraries that other Weft apps install with `weft get` — **no environment activation, no central registry required**. Modules are folders of `.weft` source + `weft.json`.
 

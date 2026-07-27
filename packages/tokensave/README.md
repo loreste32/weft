@@ -1,6 +1,9 @@
 # tokensave — model brain with memory (external)
 
-**Not core stdlib.** A thrift **brain** for **local and paid** models:
+**Optional module** — not core stdlib, not in the `weft` binary.  
+Stack map (with `llm` / `mold` / `ml`): [docs/ECOSYSTEM.md](../../docs/ECOSYSTEM.md).
+
+A thrift **brain** for **local and paid** models:
 
 | Step | What happens |
 |------|----------------|

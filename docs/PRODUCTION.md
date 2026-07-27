@@ -2,6 +2,8 @@
 
 Practical defaults for agents, small APIs, queue workers, and CLIs on one binary. This is not a full ops platform — just what the runtime already does for timeouts, secrets, and similar.
 
+Stack + trust map: [ECOSYSTEM.md](ECOSYSTEM.md) · full threat model: [SECURITY.md](../SECURITY.md).
+
 ## Checklist
 
 | Concern | How |

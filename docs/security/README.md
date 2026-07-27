@@ -1,8 +1,11 @@
 # Security documentation
 
-Weft is a **host-power** scripting runtime (shell + HTTP toolkit), not a multi-tenant sandbox. Operator checklist and threat model live in the repo root:
+Weft is a **host-power** scripting runtime (shell + HTTP toolkit), not a multi-tenant sandbox.
 
-**→ [SECURITY.md](../../SECURITY.md)**
+| | |
+|--|--|
+| Threat model + checklist | **[SECURITY.md](../../SECURITY.md)** |
+| Where trust sits in the stack | [ECOSYSTEM.md](../ECOSYSTEM.md#trust-path) |
 
 ## Audits
 

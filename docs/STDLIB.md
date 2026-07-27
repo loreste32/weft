@@ -176,7 +176,8 @@ If something is huge or domain-specific, prefer a **module** under `packages/` r
 
 ### Optional modules (not stdlib)
 
-Install with `weft get` / `weft packages get` — pure `.weft`, not in the binary:
+Not listed by `weft stdlib` — they live under `packages/` and install into `vendor/`.  
+**Map of how they fit with `llm` / web:** [ECOSYSTEM.md](ECOSYSTEM.md).
 
 | Module | Job | Doc |
 |--------|-----|-----|

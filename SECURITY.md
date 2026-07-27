@@ -1,5 +1,7 @@
 # Security
 
+How trust boundaries sit next to language, stdlib, and modules: **[docs/ECOSYSTEM.md](docs/ECOSYSTEM.md#trust-path)**.
+
 ## Supported versions
 
 Weft is pre-1.0 (0.3.x). Fixes land on the current published line; there is no long-term support branch yet.

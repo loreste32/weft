@@ -1,6 +1,13 @@
 # Weft cookbook
 
-Paste-ready recipes for common jobs. All examples target **0.3.x** Weft. For the full language rules see [LANGUAGE.md](LANGUAGE.md); for package APIs see [STDLIB.md](STDLIB.md). New to Weft? Start with the [tutorial](TUTORIAL.md).
+Paste-ready recipes for common jobs. All examples target **0.3.x** Weft.
+
+| Before you paste | |
+|------------------|--|
+| How pieces fit | [ECOSYSTEM.md](ECOSYSTEM.md) |
+| Language rules | [LANGUAGE.md](LANGUAGE.md) |
+| Stdlib map | [STDLIB.md](STDLIB.md) |
+| First hour | [TUTORIAL.md](TUTORIAL.md) |
 
 **Runnable offline samples** live in [`examples/cookbook/`](../examples/cookbook/) (`01_hello.weft` … `14_mold.weft`). Ops/A–B surface demo: [`examples/tier_ab.weft`](../examples/tier_ab.weft). This page keeps the wider set, including network/LLM/server sketches.
 
@@ -677,11 +684,10 @@ Examples: `examples/realworld/tool_agent.weft`, `examples/ollama_chat.weft`.
 
 ### Structured models (`mold` module)
 
-Optional package (not stdlib): pour LLM/API JSON into clean maps, emit JSON Schema / tool params.
+Optional module in the agent stack (with `llm` / `tokensave` / `ml`): [ECOSYSTEM.md](ECOSYSTEM.md) · full guide [MOLD.md](MOLD.md).
 
 ```bash
-weft get mold ./packages/mold   # monorepo
-weft install
+weft packages get mold && weft install
 ```
 
 ```weft
@@ -705,7 +711,7 @@ fn main -> Result {
 }
 ```
 
-Runnable: `examples/cookbook/14_mold.weft` · package docs: [`packages/mold`](../packages/mold/).
+Runnable: `examples/cookbook/14_mold.weft`.
 
 ---
 

@@ -2,12 +2,13 @@
 
 **Balance:** close the *scripting* ML gap (embeddings, RAG, metrics, private train glue) without turning Weft into a full numeric / deep-learning stack.
 
+How this fits with `llm`, `mold`, and `tokensave`: **[ECOSYSTEM.md](ECOSYSTEM.md)**.
+
 | Layer | Where | Role |
 |-------|--------|------|
 | **Core binary** | `llm` · `ollama` · `vllm` · `weft train` | chat, local providers, fine-tune orchestration |
 | **`packages/ml`** | installable Weft module | light vectors / embeddings / metrics for RAG |
-
-Related optional modules: **[`mold`](MOLD.md)** (structured JSON / tool params) · **[`tokensave`](../packages/tokensave/)** (context thrift).
+| **Sibling modules** | `mold` · `tokensave` | structured JSON / tool params · context thrift |
 | **External** | GPU train (TRL), heavy science | optional training toolchains, notebooks, remote services |
 
 ## Why a separate module?

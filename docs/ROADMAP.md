@@ -17,7 +17,8 @@ We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.3.
 - Concurrency without `async`/`await` (map/filter fan-out, spawn, channels)  
 - Packages: path/git, vendor, lock; monorepo catalog (`ml`, `tokensave`, `mold`); optional `WEFT_CATALOG_URL`  
 - Catalog CLI: `packages list|search|info|get[@constraint]` with suggestions  
-- Optional modules documented: [MOLD.md](MOLD.md) · [ML.md](ML.md) · [packages.md](packages.md)  
+- Stack map for language / stdlib / modules / agents / trust: [ECOSYSTEM.md](ECOSYSTEM.md)  
+- Optional modules: [MOLD.md](MOLD.md) · [ML.md](ML.md) · [packages.md](packages.md)  
 - `web` HTMX surface: partials, OOB, forms/files, cookies, `app.before` ([web.md](web.md))  
 - Security hardening + threat model ([SECURITY.md](../SECURITY.md))  
 - `weft doctor` surfaces catalog + project deps/vendor health (CI smoke)  

@@ -428,9 +428,9 @@ weft install
 - `weft.lock` records content hashes  
 - Lite version constraints: `"version": "^0.1.0"`  
 - Catalog: `weft packages list` · `WEFT_CATALOG_URL` for remote index  
-- Optional monorepo modules (`ml`, `mold`, `tokensave`): not stdlib — [MOLD.md](MOLD.md), [ML.md](ML.md), [packages.md](packages.md)
+- Optional monorepo modules (`ml`, `mold`, `tokensave`): not stdlib — [ECOSYSTEM.md](ECOSYSTEM.md)
 
-Details: [packages.md](packages.md), [modules.md](modules.md).
+Details: [packages.md](packages.md), [modules.md](modules.md), [ECOSYSTEM.md](ECOSYSTEM.md).
 
 ---
 

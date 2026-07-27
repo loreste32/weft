@@ -6,6 +6,8 @@ A few rules we try not to break. Syntax and the stdlib follow from these.
 
 Agents, tools, streaming, and basic structured decode belong in the language and stdlib — not only in a third-party framework. You should be able to write a simple agent without installing a stack.
 
+Optional depth (`mold` / `ml` / `tokensave`) stays **modules**, not core. How the stack layers: [ECOSYSTEM.md](ECOSYSTEM.md).
+
 ## 2. Own syntax
 
 Code should look like **Weft**. Examples, modules, tests, and model prompts use that surface — not a dialect of another language with different braces or keywords.

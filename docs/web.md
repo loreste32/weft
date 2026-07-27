@@ -93,6 +93,8 @@ Custom:
 
 Weft treats HTMX as first-class: every request exposes `req.htmx`, and `web.htmx*` helpers set the response headers HTMX understands.
 
+Web path in the overall stack: [ECOSYSTEM.md](ECOSYSTEM.md#web-path).
+
 ### Request (`req.htmx`)
 
 | Field | Source header |

@@ -1,45 +1,51 @@
 # Weft packages (optional modules)
 
-**Not core stdlib.** Nothing here is built into the `weft` binary — apps install what they need with `weft get` / `weft packages get`.
+**Not stdlib. Not in the `weft` binary.**  
+Same install model for all three: `weft get` → `vendor/` → `use name`.
 
-| Package | Role |
-|---------|------|
-| Package | Role | Docs |
-|---------|------|------|
-| [`ml`](ml/) | embeddings, vectors, RAG index, metrics | [docs/ML.md](../docs/ML.md) |
-| [`tokensave`](tokensave/) | model brain — clarify asks, memory, train export | package README |
-| [`mold`](mold/) | pour LLM/API JSON into shape — validate, JSON Schema, tool params | [docs/MOLD.md](../docs/MOLD.md) |
-
-```bash
-weft get ml ./packages/ml   # monorepo path
-weft get mold ./packages/mold
-weft packages get tokensave
-weft install
-```
-
-```weft
-use ml
-fn main -> Result {
-    say(ml.topk([1.0, 0.0], [{"id":"a","vec":[1.0,0.0]}], 1))
-}
-```
+How this fits the rest of Weft: **[docs/ECOSYSTEM.md](../docs/ECOSYSTEM.md)**.
 
 ## Catalog
 
-Monorepo index (not a public registry): [`index.json`](index.json).
+| Module | Role | Caps (typical) | Docs |
+|--------|------|----------------|------|
+| [`mold`](mold/) | Structured models — validate LLM/API JSON, JSON Schema, tool params | none (pure) | [docs/MOLD.md](../docs/MOLD.md) |
+| [`ml`](ml/) | Embeddings, vectors, RAG index, metrics | `@agent` + fs + env | [docs/ML.md](../docs/ML.md) |
+| [`tokensave`](tokensave/) | Context thrift, memory, teach → train export | `@agent` + fs + env | [README](tokensave/README.md) |
+
+Index file (not a public registry): [`index.json`](index.json).
 
 ```bash
-weft packages list              # or: weft list packages
-weft packages get tokensave    # adds path dep from catalog
+weft packages list
+weft packages get mold      # or ml / tokensave
 weft install
 
-# or explicit path
-weft get tokensave ./packages/tokensave
+# equivalent path form
+weft get mold ./packages/mold
 weft get ml ./packages/ml
-
-# outside monorepo:
-# export WEFT_PACKAGES=/path/to/weft/packages
+weft get tokensave ./packages/tokensave
 ```
+
+```weft
+use mold
+
+fn main -> Result {
+    M := mold.model({"name": "str!"})?
+    p := mold.parse(M, "{\"name\":\"Ada\"}")?
+    say(p["name"])
+}
+```
+
+## Agent stack (which module when)
+
+```text
+llm (stdlib)  →  chat / tools / stream
+mold          →  shape & validate structured JSON
+tokensave     →  thrift context + memory → train gold
+ml            →  embeddings / RAG vectors
+```
+
+Full picture: [docs/ECOSYSTEM.md](../docs/ECOSYSTEM.md).
 
 ## Author another module
 
@@ -50,8 +56,9 @@ weft mod check
 # consumers: weft get mykit ./path-or-git@tag
 ```
 
-Capabilities: [`docs/modules.md`](../docs/modules.md) (`@data`, `@host`, …).  
-No central registry required — path/git + lock is enough until discovery hurts.
+Capabilities: [docs/modules.md](../docs/modules.md).  
+Consumer package manager: [docs/packages.md](../docs/packages.md).  
+Trust model: [SECURITY.md](../SECURITY.md).
 
 ## Non-goals for packages/
 

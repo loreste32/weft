@@ -1,6 +1,7 @@
 # ml — Weft ML module (not core)
 
-**Balanced ML for agent/RAG scripts** — pure `.weft`, installable, not baked into the `weft` binary.
+**Optional module** — pure `.weft`, not baked into the `weft` binary.  
+Stack map: [docs/ECOSYSTEM.md](../../docs/ECOSYSTEM.md) · guide: [docs/ML.md](../../docs/ML.md).
 
 | In scope | Out of scope (stay external) |
 |----------|------------------------------|

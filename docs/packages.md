@@ -2,6 +2,9 @@
 
 Weft installs pure source packages into the project — no global site-packages, no environment-activation ceremony.
 
+**Big picture** (stdlib vs modules vs agents): [ECOSYSTEM.md](ECOSYSTEM.md).  
+**Authoring modules:** [modules.md](modules.md). **Monorepo catalog:** [`packages/README.md`](../packages/README.md).
+
 | Idea | Weft |
 |------|------|
 | Install scope | **Project `vendor/` only** |
@@ -67,11 +70,13 @@ weft packages get tokensave@^0.5.0   # constraint checked against catalog versio
 
 #### Monorepo catalog (`packages/index.json`)
 
-| Name | Role | Docs |
-|------|------|------|
-| `ml` | embeddings, vectors, RAG index, metrics | [ML.md](ML.md) · [`packages/ml`](../packages/ml/) |
-| `mold` | structured models, validate, JSON Schema / tool params | [MOLD.md](MOLD.md) · [`packages/mold`](../packages/mold/) |
-| `tokensave` | context thrift, memory, teach → train | [`packages/tokensave`](../packages/tokensave/) |
+See the single catalog table in [`packages/README.md`](../packages/README.md) and the agent stack in [ECOSYSTEM.md](ECOSYSTEM.md).
+
+| Name | One-liner | Docs |
+|------|-----------|------|
+| `mold` | structure & validate agent JSON | [MOLD.md](MOLD.md) |
+| `ml` | embeddings / RAG | [ML.md](ML.md) |
+| `tokensave` | context thrift + memory | [tokensave README](../packages/tokensave/) |
 
 These are **modules**, not stdlib: nothing under `packages/` is compiled into the `weft` binary.
 

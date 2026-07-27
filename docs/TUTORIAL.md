@@ -246,11 +246,11 @@ Packages with `vendor/`: [packages.md](packages.md). Try later: `weft new module
 
 ### Optional catalog modules (later)
 
-Not in the binary — install when you need them:
+Not in the binary — same install path for all. Full map: [ECOSYSTEM.md](ECOSYSTEM.md).
 
 ```bash
 weft packages list
-weft get mold ./packages/mold && weft install
+weft packages get mold && weft install
 ./weft run examples/cookbook/14_mold.weft   # structured models for agents
 ```
 

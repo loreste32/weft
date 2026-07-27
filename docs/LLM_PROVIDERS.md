@@ -2,6 +2,8 @@
 
 Weft talks HTTP only — no vendor SDKs. One env switch, same `llm.*` / `weft gen` / `weft train chat`.
 
+**Stack map** (`llm` + optional `mold` / `tokensave` / `ml`): [ECOSYSTEM.md](ECOSYSTEM.md).
+
 | Provider | Flag | Key / host | Protocol |
 |----------|------|------------|----------|
 | **OpenAI** | `WEFT_PROVIDER=openai` (default) | `OPENAI_API_KEY` · `OPENAI_BASE_URL` | OpenAI chat/completions |
@@ -58,28 +60,15 @@ fn main -> Result {
 | `llm.extract` | JSON object from the model |
 | `llm.tool` | Bind a Weft `fn` as a tool |
 
-**Context thrift (all providers):** use the external module [`packages/tokensave`](../packages/tokensave) — `tokensave.brain` / `pick` so models get only relevant context (local or paid).
+**Optional modules** (not in the binary — install only what you need):
 
-**Structured models / tool params:** optional module [`mold`](MOLD.md) — define molds, `mold.parse` / `mold.extract` model JSON, emit `mold.tool_params` / `mold.json_schema` for providers. Not in the binary:
+| Module | When | Doc |
+|--------|------|-----|
+| [mold](MOLD.md) | Validate tool/model JSON; emit tool params / JSON Schema | `weft packages get mold` |
+| [tokensave](../packages/tokensave/) | Thrift context, memory, teach → train | `weft packages get tokensave` |
+| [ml](ML.md) | Embeddings / RAG vectors | `weft packages get ml` |
 
-```bash
-weft get mold ./packages/mold && weft install
-```
-
-```weft
-use mold
-
-Args := mold.model({
-    "city": mold.str({"desc": "city name"})?,
-})?
-
-fn main -> Result {
-    a := mold.parse(Args, "{\"city\":\"Paris\"}")?
-    say(json.stringify(mold.tool_params(Args)))
-}
-```
-
-Cookbook: `examples/cookbook/14_mold.weft`.
+See [ECOSYSTEM.md](ECOSYSTEM.md#agent-path-cohesive-recipe) for the full agent path. Cookbook: `examples/cookbook/13_agent.weft`, `14_mold.weft`.
 
 ### Env keys and custom `base_url`
 

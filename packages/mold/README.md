@@ -1,10 +1,11 @@
 # mold — pour data into shape
 
-**Optional installable module** — not stdlib, not compiled into the `weft` binary.
-Same class as [`ml`](../ml/) and [`tokensave`](../tokensave/): `weft get` → `vendor/` → `use mold`.
+**Optional module** — not stdlib, not in the `weft` binary.  
+Same install path as [`ml`](../ml/) and [`tokensave`](../tokensave/): `weft get` → `vendor/` → `use mold`.
+
+Stack map: [docs/ECOSYSTEM.md](../../docs/ECOSYSTEM.md) · full guide: [docs/MOLD.md](../../docs/MOLD.md).
 
 Pure Weft for agent work: define **molds**, validate JSON, emit **JSON Schema** / **tool parameters**.
-You pour LLM or API JSON into a mold and get clean maps out.
 
 ```bash
 weft get mold ./packages/mold   # monorepo path (or git@tag)

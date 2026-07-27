@@ -107,33 +107,37 @@ weft run examples/cookbook/14_mold.weft
 weft run examples/mold_ai.weft
 ```
 
-## Optional packages
+## How it fits together
 
-Not in the binary — install what you need ([docs/packages.md](docs/packages.md)):
+```text
+app  →  optional modules (mold · ml · tokensave)
+     →  stdlib (llm · web · http · …)  →  language/VM
+```
 
-| Package | Role |
-|---------|------|
-| [`mold`](packages/mold/) | Structured models, validate LLM JSON, JSON Schema / tool params — [docs/MOLD.md](docs/MOLD.md) |
-| [`ml`](packages/ml/) | Embeddings, vectors, RAG index — [docs/ML.md](docs/ML.md) |
-| [`tokensave`](packages/tokensave/) | Context thrift, memory, teach → train |
+**Map:** [docs/ECOSYSTEM.md](docs/ECOSYSTEM.md) · **catalog:** [packages/](packages/)
+
+| Module | Role |
+|--------|------|
+| [`mold`](packages/mold/) | Structure & validate agent JSON — [docs/MOLD.md](docs/MOLD.md) |
+| [`ml`](packages/ml/) | Embeddings / RAG — [docs/ML.md](docs/ML.md) |
+| [`tokensave`](packages/tokensave/) | Context thrift + memory |
 
 ```bash
 weft packages list
-weft packages get mold
+weft packages get mold && weft install
 ```
 
 ## Documentation
 
 | Doc | |
 |-----|--|
-| [docs/README.md](docs/README.md) | Index |
+| [docs/ECOSYSTEM.md](docs/ECOSYSTEM.md) | **How pieces fit** (start here for the stack) |
+| [docs/README.md](docs/README.md) | Full docs index |
 | [docs/TUTORIAL.md](docs/TUTORIAL.md) | Guided first hour |
 | [docs/LANGUAGE.md](docs/LANGUAGE.md) | Language reference |
 | [docs/COOKBOOK.md](docs/COOKBOOK.md) | Recipes |
-| [docs/SYSOPS.md](docs/SYSOPS.md) | Ops / runbooks |
 | [docs/STDLIB.md](docs/STDLIB.md) | Stdlib map |
-| [docs/MOLD.md](docs/MOLD.md) | Structured models module |
-| [docs/web.md](docs/web.md) | HTTP servers + HTMX |
+| [docs/web.md](docs/web.md) | HTTP + HTMX |
 | [SECURITY.md](SECURITY.md) | Threat model / capabilities |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Now / next / never |
 
