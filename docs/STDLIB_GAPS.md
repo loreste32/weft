@@ -1,4 +1,4 @@
-# Stdlib Tier A / B (0.3.30)
+# Stdlib Tier A / B (0.3.x)
 
 Honest map of the ops/agent surface. Live list: `weft stdlib`.
 
@@ -24,8 +24,8 @@ Honest map of the ops/agent surface. Live list: `weft stdlib`.
 | INI | `sections` / `has_section` (+ parse/get/save/load) | `Comp_INIFull` |
 | Test | `test.assert` (+ eq/ok/…) | `Comp_TestAssert*`, `TestAB_TestAssert` |
 | HTTP | timeout sec/`"5s"`, retries, headers, form, **`insecure`** | `TestAB_HTTP*` |
-| DB | `query` / `exec` / `begin` / `tx` | existing `db_test.go` |
-| CSV | header + comma dialect | `Comp_CSVHeaderDialect` |
+| DB | `query` / `exec` / `begin` / `tx` | `db_test.go`, `TestDB_TxBeginPing` |
+| CSV | header + comma dialect | `Comp_CSVHeaderDialect`, `TestCSV_AllPaths` |
 
 ## Tier B — complete
 
@@ -36,9 +36,22 @@ Honest map of the ops/agent surface. Live list: `weft stdlib`.
 | Stats | `math.quantile` / `mode` | `Comp_MathQuantileMode`, `TestAB_IPNetworkMath` |
 | IP network | `ip.network` (+ parse/in_network/…) | `Comp_IPNetworkParse`, `TestAB_IPNetworkMath` |
 
-## Tier C — non-goals
+## Tier C — permanent non-goals
 
-GUI, `asyncio` event-loop API, multiprocessing/shared memory, ctypes/mmap, venv/pip model, heavy scientific arrays, full mail servers, pdb-as-stdlib.
+**Not a backlog.** These stay out of the language/stdlib by design (Weft is ops/agent lite, not a Python clone):
+
+| Non-goal | Why |
+|----------|-----|
+| GUI toolkits | Different product surface |
+| `asyncio`-style event-loop API | Tasks + channels cover concurrency without a loop rewrite |
+| Multiprocessing / shared memory | Host process model, not in-process forks |
+| ctypes / mmap | Host escape; security + portability |
+| venv / pip packaging model | Packages/vendor + capabilities already ship |
+| Heavy scientific arrays (NumPy-class) | Explicit non-goal; keep `ml` light |
+| Full mail *servers* | Client `email` parse/build/send is fine; MTA is not |
+| pdb-as-stdlib | Debugger tooling is separate from stdlib |
+
+If something looks like C, reject it or park it outside this map.
 
 ## Demos
 
@@ -56,10 +69,12 @@ weft run examples/cli_tool.weft -- --help
 | `binstruct_test.go` | unit pack/unpack/errors |
 | `difflib_test.go` | unit diffs |
 | `ops_surface_test.go` | smoke integration |
-| `tier_ab_test.go` | A/B end-to-end |
-| `tier_ab_comprehensive_test.go` | opts, shallow copy, INI/CSV/URL/IP/math matrix |
-| `tier_ab_fullcover_test.go` | direct package unit coverage (all format codes, signal delivery, error paths) |
-| `tier_ab_fullcover2_test.go` | secrets/html/ip/crypto/url/ini/xml/log/test edges |
+| `tier_ab_*.go` | A/B end-to-end + fullcover |
+| `brokers_offline_cover_test.go` | redis miniredis, nats/amqp/mongo offline |
+| `ws_webrtc_cover_test.go` | websocket frames + webrtc hub |
+| `ollama_vllm_httptest_test.go` | ollama/vllm HTTP mocks |
+| `pure_ops_more_cover_test.go` | archive/csv/email/json/table/db/socket/circuit |
+| `llm_mock_cover_test.go` | LLMDo chat/ask/agent/stream |
 | `cli_test.go` | flags + subcommands |
 
 ## Coverage
@@ -77,17 +92,19 @@ weft run examples/cli_tool.weft -- --help
 |-----------|------------|
 | Before fullcover push | ~47% |
 | Pure packages + FS/CLI/HTTP | ~66% |
-| + **LLMDo mocks** (chat/ask/agent/stream) + web handlers | **~68%** |
+| + LLMDo + web/httptest | ~68% |
+| + redis/miniredis, ws/webrtc, ollama/vllm | ~75% |
+| + archive/csv/email/json/table/db/socket | **~79%** |
 
 Still thin without live brokers/daemons:
 
 | Package | Why low |
 |---------|---------|
-| `mongo`, `redis`, `nats`, `amqp` | Real dials |
-| `websocket`, `webrtc` | Long-lived connections |
-| `ollama` / `vllm` live API | Need daemons |
-| `web` listen path | process-bound server |
+| `amqp` wrap (queue ops) | Needs RabbitMQ |
+| `mongo` collection ops | Needs MongoDB |
+| `nats` full sub loop | Needs NATS (optional live test if present) |
+| `web` `ServeHTTP` / listen | Process-bound server |
 
-Covered offline with mocks: **llm** chat/ask/agent/stream via `LLMDo`, **http** methods via `httptest`, **web** routes via `app.handle`.
+Covered offline: **llm** via `LLMDo`, **http**/`web.handle`, **redis** via miniredis, **websocket** frames, **webrtc** hub fakes, **ollama/vllm** httptest, **sqlite** db/tx, **archive/csv/email/json/table**.
 
 Rule: every new behavior lands with tests. See CONTRIBUTING.md.

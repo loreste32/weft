@@ -228,10 +228,9 @@ func wrapSQLConn(env *runtime.Env, db *sql.DB) runtime.Value {
 	})
 
 	// conn.begin() -> Result[tx]
+	// Context must outlive the returned handle: canceling BeginTx's ctx rolls the tx back.
 	put("begin", 0, func(args []runtime.Value) (runtime.Value, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		tx, err := db.BeginTx(ctx, nil)
+		tx, err := db.BeginTx(env.Context(), nil)
 		if err != nil {
 			return errRes(err.Error(), "db"), nil
 		}
