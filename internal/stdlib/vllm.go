@@ -250,7 +250,10 @@ func vllmListModels(env *runtime.Env, base string) ([]string, error) {
 }
 
 func vllmPing(env *runtime.Env, url string) error {
-	client := &http.Client{Timeout: 3 * time.Second}
+	client := env.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 3 * time.Second}
+	}
 	req, err := http.NewRequestWithContext(env.Context(), "GET", url, nil)
 	if err != nil {
 		return err

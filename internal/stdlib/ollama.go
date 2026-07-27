@@ -325,8 +325,9 @@ func ollamaPOST(env *runtime.Env, url string, body []byte) ([]byte, error) {
 }
 
 func ollamaPOSTTimeout(env *runtime.Env, url string, body []byte, timeout time.Duration) ([]byte, error) {
+	// Prefer host-injected client (tests / custom transport); otherwise default + timeout.
 	client := env.HTTPClient
-	if client == nil || timeout > 0 {
+	if client == nil {
 		c := DefaultHTTPClient()
 		c.Timeout = timeout
 		client = c
