@@ -116,7 +116,7 @@ Resolution order:
 
 **Archives:** zip/tar installs reject path traversal, absolute paths, and symlinks.
 
-**Capabilities:** third-party modules default-deny `sh` / `secrets` / `cli` / `db` / `redis` / `mongo` / `nats` / `amqp` unless listed under `capabilities` (or `"*"`).
+**Capabilities:** third-party modules default-deny high-risk packages (`sh`, `secrets`, `cli`, `env`, `fs`, `http`, `llm`/`ollama`/`vllm`, `web`, `archive`, `graphql`, data-plane brokers, `socket`, `email`, `pickle`) unless listed under `capabilities` or a `capability_profile` (`@agent`, `@io`, `@data`, `@host`, `@full`, …). Apps and path-local scripts stay unrestricted.
 
 **Network:** package URL fetches use SSRF-safe dialing (no metadata, no RFC1918 unless `WEFT_HTTP_ALLOW_PRIVATE=1`). Archives capped at 100 MiB download / 200 MiB uncompressed.
 

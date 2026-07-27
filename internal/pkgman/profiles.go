@@ -10,14 +10,22 @@ import (
 //
 // Profiles are balanced: each is the least privilege for a common module job.
 var Profiles = map[string][]string{
-	// none / empty: only non-restricted packages (json, fs, http, …)
+	// none / empty: pure helpers only (json, math, str, …) — no FS/net/LLM
 	"none": {},
+	// filesystem + archives
+	"io": {"fs", "archive"},
+	// outbound HTTP only
+	"http": {"http"},
+	// model providers (needs grant for modules that call llm.*)
+	"llm": {"llm", "ollama", "vllm"},
+	// agent-style modules: models + outbound HTTP
+	"agent": {"llm", "ollama", "vllm", "http"},
 	// data-plane connectors (SQL / KV / messaging)
 	"data": {"db", "redis", "mongo", "nats", "amqp"},
 	// raw network + SMTP (not process exec)
-	"net": {"socket", "email"},
-	// host-level: shell, secrets, CLI, plus net + pickle
-	"host": {"sh", "secrets", "cli", "socket", "email", "pickle"},
+	"net": {"socket", "email", "http"},
+	// host-level: shell, secrets, env, CLI, FS, plus net
+	"host": {"sh", "secrets", "cli", "env", "fs", "http", "socket", "email", "pickle", "archive"},
 	// everything restricted
 	"full": {CapsAll},
 }

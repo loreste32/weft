@@ -146,6 +146,10 @@ func getField(x runtime.Value, name string) (runtime.Value, error) {
 	switch x.Kind {
 	case runtime.KindStruct:
 		so := x.Obj.(*runtime.StructObj)
+		// Secrets: never expose raw value via field access — use secrets.unwrap.
+		if so.TypeName == "Secret" {
+			return runtime.Null(), fmt.Errorf("Secret fields are sealed; use secrets.unwrap")
+		}
 		v, ok := so.Fields[name]
 		if !ok {
 			return runtime.Null(), fmt.Errorf("no field %q on %s", name, so.TypeName)

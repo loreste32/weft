@@ -14,11 +14,23 @@ import (
 	"strings"
 	"time"
 
+	"github.com/loreste/weft/internal/netsafe"
 	"github.com/loreste/weft/internal/runtime"
 )
 
 func jsonBytes(v runtime.Value) ([]byte, error) {
 	return json.Marshal(valueToGo(v))
+}
+
+// httpHeaderSafe rejects CR/LF and other CTL that enable response splitting.
+func httpHeaderSafe(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\r' || c == '\n' || c == '\x00' {
+			return false
+		}
+	}
+	return true
 }
 
 const (
@@ -303,6 +315,9 @@ func writeWeftResponse(w http.ResponseWriter, ret runtime.Value) {
 			mo := v.Obj.(*runtime.MapObj)
 			for _, k := range mo.Keys {
 				val := mo.Vals[k].String()
+				if !httpHeaderSafe(k) || !httpHeaderSafe(val) {
+					continue // drop CRLF / CTL injection
+				}
 				// Set-Cookie must use Add (multiple cookies)
 				if strings.EqualFold(k, "Set-Cookie") {
 					w.Header().Add("Set-Cookie", val)
@@ -316,12 +331,12 @@ func writeWeftResponse(w http.ResponseWriter, ret runtime.Value) {
 			switch v.Kind {
 			case runtime.KindList:
 				for _, it := range v.Obj.(*runtime.ListObj).Items {
-					if s := it.String(); s != "" {
+					if s := it.String(); s != "" && httpHeaderSafe(s) {
 						w.Header().Add("Set-Cookie", s)
 					}
 				}
 			case runtime.KindStr:
-				if v.S != "" {
+				if v.S != "" && httpHeaderSafe(v.S) {
 					w.Header().Add("Set-Cookie", v.S)
 				}
 			}
@@ -532,7 +547,8 @@ func doRequest(env *runtime.Env, method, urlStr, body string, headers map[string
 			headers["Content-Type"] = ctype
 		}
 	}
-	// TLS skip-verify for local/dev only (opts.insecure=true)
+	// TLS skip-verify for local/dev only (opts.insecure=true).
+	// Keep SSRF-safe dial/redirect policy — insecure must not open private nets.
 	if insecure {
 		tr := http.DefaultTransport.(*http.Transport).Clone()
 		if tr.TLSClientConfig == nil {
@@ -541,10 +557,17 @@ func doRequest(env *runtime.Env, method, urlStr, body string, headers map[string
 			tr.TLSClientConfig = tr.TLSClientConfig.Clone()
 		}
 		tr.TLSClientConfig.InsecureSkipVerify = true //nolint:gosec // explicit opt-in for local TLS
+		timeout := client.Timeout
+		if timeout <= 0 {
+			timeout = 30 * time.Second
+		}
+		safe := netsafe.SafeHTTPClient(timeout)
+		// Prefer SafeTransport on the insecure TLS config
+		baseTr := tr
 		client = &http.Client{
-			Timeout:       client.Timeout,
-			Transport:     tr,
-			CheckRedirect: client.CheckRedirect,
+			Timeout:       timeout,
+			Transport:     netsafe.SafeTransport(baseTr),
+			CheckRedirect: safe.CheckRedirect,
 			Jar:           client.Jar,
 		}
 	}

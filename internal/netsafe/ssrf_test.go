@@ -19,6 +19,8 @@ func TestIsBlockedIP(t *testing.T) {
 		{"10.0.0.1", true},
 		{"192.168.1.1", true},
 		{"172.16.0.1", true},
+		{"100.64.0.1", true}, // CGNAT
+		{"100.100.100.200", true},
 	}
 	for _, tc := range cases {
 		ip := net.ParseIP(tc.ip)

@@ -599,11 +599,25 @@ func matchPattern(parts []routePart, urlPath string) (map[string]string, bool) {
 }
 
 func (a *webApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// WebSocket upgrade
+	// WebSocket upgrade (still runs before hooks)
 	if isWebSocketRequest(r) {
 		a.serveWS(w, r)
 		return
 	}
+
+	body, _ := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes))
+	_ = r.Body.Close()
+	req := buildRequest(r, string(body), nil)
+	if a.env.Call == nil {
+		http.Error(w, "runtime Call not configured", 500)
+		return
+	}
+	// before hooks apply to routes AND static (auth cannot be bypassed via static/)
+	if short, stop := a.runBefores(req); stop {
+		writeWeftResponse(w, short)
+		return
+	}
+
 	// static
 	a.mu.RLock()
 	statics := append([]webStatic(nil), a.statics...)
@@ -619,39 +633,38 @@ func (a *webApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	body, _ := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes))
-	_ = r.Body.Close()
 	params, handler, ok := a.findRoute(r.Method, r.URL.Path)
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	req := buildRequest(r, string(body), params)
-	if a.env.Call == nil {
-		http.Error(w, "runtime Call not configured", 500)
-		return
-	}
-	// before hooks (auth, logging, …)
-	a.mu.RLock()
-	befores := append([]runtime.Value(nil), a.befores...)
-	a.mu.RUnlock()
-	for _, bfn := range befores {
-		br, err := a.env.Call(bfn, []runtime.Value{req})
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		if short, ok := middlewareResponse(br); ok {
-			writeWeftResponse(w, short)
-			return
-		}
-	}
+	// rebuild request with path params
+	req = buildRequest(r, string(body), params)
 	ret, err := a.env.Call(handler, []runtime.Value{req})
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 	writeWeftResponse(w, ret)
+}
+
+func (a *webApp) runBefores(req runtime.Value) (short runtime.Value, stop bool) {
+	if a.env == nil || a.env.Call == nil {
+		return runtime.Null(), false
+	}
+	a.mu.RLock()
+	befores := append([]runtime.Value(nil), a.befores...)
+	a.mu.RUnlock()
+	for _, bfn := range befores {
+		br, err := a.env.Call(bfn, []runtime.Value{req})
+		if err != nil {
+			return errRes(err.Error(), "web"), true
+		}
+		if s, ok := middlewareResponse(br); ok {
+			return s, true
+		}
+	}
+	return runtime.Null(), false
 }
 
 // middlewareResponse reports whether ret is a short-circuit HTTP response.
@@ -831,6 +844,12 @@ func (a *webApp) serveWS(w http.ResponseWriter, r *http.Request) {
 	params, handler, ok := a.findWS(r.URL.Path)
 	if !ok {
 		http.NotFound(w, r)
+		return
+	}
+	// before hooks before upgrade (auth cannot be skipped via WS)
+	req := buildRequest(r, "", params)
+	if short, stop := a.runBefores(req); stop {
+		writeWeftResponse(w, short)
 		return
 	}
 	conn, err := upgradeWebSocket(w, r)
@@ -1025,14 +1044,24 @@ func buildSetCookie(name, value string, opts runtime.Value, clear bool) string {
 	if clear {
 		value = ""
 	}
+	// reject injection in name
+	name = strings.Map(func(r rune) rune {
+		if r <= 32 || r == ';' || r == ',' || r == '=' || r == '\r' || r == '\n' {
+			return -1
+		}
+		return r
+	}, name)
+	if name == "" {
+		name = "cookie"
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s=%s", name, url.QueryEscape(value))
 	path := "/"
 	maxAge := int64(-1)
 	httpOnly, secure := true, false
-	sameSite := ""
+	sameSite := "Lax"
 	if opts.Kind == runtime.KindMap {
-		if s := mapGetStr(opts, "path", ""); s != "" {
+		if s := mapGetStr(opts, "path", ""); s != "" && !strings.ContainsAny(s, "\r\n;") {
 			path = s
 		}
 		if n := mapGetInt(opts, "max_age", -999); n != -999 {
@@ -1044,7 +1073,9 @@ func buildSetCookie(name, value string, opts runtime.Value, clear bool) string {
 		if v, ok := mapGet(opts, "secure"); ok && v.Kind == runtime.KindBool {
 			secure = v.B
 		}
-		sameSite = mapGetStr(opts, "same_site", mapGetStr(opts, "samesite", ""))
+		if s := mapGetStr(opts, "same_site", mapGetStr(opts, "samesite", "")); s != "" {
+			sameSite = s
+		}
 	}
 	if clear && maxAge < 0 {
 		maxAge = 0
@@ -1059,7 +1090,7 @@ func buildSetCookie(name, value string, opts runtime.Value, clear bool) string {
 	if secure {
 		b.WriteString("; Secure")
 	}
-	if sameSite != "" {
+	if sameSite != "" && !strings.ContainsAny(sameSite, "\r\n;") {
 		fmt.Fprintf(&b, "; SameSite=%s", sameSite)
 	}
 	return b.String()

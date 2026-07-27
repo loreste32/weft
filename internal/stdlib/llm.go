@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -283,9 +284,16 @@ func defaultLLMOpts(env *runtime.Env) runtime.Value {
 	}
 	m := runtime.NewMap()
 	mo := m.Obj.(*runtime.MapObj)
+	apiKeyVal := runtime.Str("")
+	if key != "" {
+		// Secret so accidental print/JSON redacts; unwrap only at HTTP layer.
+		apiKeyVal = runtime.Struct("Secret", map[string]runtime.Value{
+			"value": runtime.Str(key),
+		}, []string{"value"})
+	}
 	for k, v := range map[string]runtime.Value{
 		"base_url": runtime.Str(strings.TrimRight(base, "/")),
-		"api_key":  runtime.Str(key),
+		"api_key":  apiKeyVal,
 		"model":    runtime.Str(model),
 		"provider": runtime.Str(provider),
 	} {
@@ -293,6 +301,50 @@ func defaultLLMOpts(env *runtime.Env) runtime.Value {
 		mo.Vals[k] = v
 	}
 	return m
+}
+
+// llmBaseTrustedForEnvKey reports whether base may receive process-env API keys.
+// Untrusted/public attacker bases must not get OPENAI_API_KEY etc. (package supply-chain).
+func llmBaseTrustedForEnvKey(base string) bool {
+	b := strings.ToLower(strings.TrimSpace(base))
+	b = strings.TrimRight(b, "/")
+	if b == "" {
+		return true
+	}
+	// well-known cloud endpoints
+	if strings.Contains(b, "api.openai.com") || strings.Contains(b, "api.anthropic.com") {
+		return true
+	}
+	// local model servers
+	if strings.Contains(b, "127.0.0.1") || strings.Contains(b, "localhost") || strings.Contains(b, "[::1]") {
+		return true
+	}
+	// optional allowlist: WEFT_LLM_TRUST_HOSTS=host1,host2
+	if v := os.Getenv("WEFT_LLM_TRUST_HOSTS"); v != "" {
+		for _, h := range strings.Split(v, ",") {
+			h = strings.ToLower(strings.TrimSpace(h))
+			if h != "" && strings.Contains(b, h) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// guardLLMEnvKey refuses to send environment-sourced API keys to untrusted base_url.
+func guardLLMEnvKey(env *runtime.Env, base, key string) error {
+	if key == "" || llmBaseTrustedForEnvKey(base) {
+		return nil
+	}
+	for _, ek := range []string{
+		"OPENAI_API_KEY", "WEFT_API_KEY", "LLM_API_KEY",
+		"ANTHROPIC_API_KEY", "VLLM_API_KEY", "OLLAMA_API_KEY",
+	} {
+		if v, ok := getenv(env, ek); ok && v != "" && v == key {
+			return fmt.Errorf("refusing environment API key for untrusted base_url %q (set WEFT_LLM_TRUST_HOSTS or use a trusted host)", base)
+		}
+	}
+	return nil
 }
 
 // detectLLMProvider: WEFT_PROVIDER / LLM_PROVIDER or infer from host env keys.
@@ -779,6 +831,9 @@ func chatCompletions(env *runtime.Env, opts runtime.Value, messages []map[string
 			key = SecretString(v)
 		}
 	}
+	if err := guardLLMEnvKey(env, base, key); err != nil {
+		return "", nil, err
+	}
 	model := mapGetStr(opts, "model", llmconfig.DefaultOpenAIModel)
 	provider := mapGetStr(opts, "provider", "")
 
@@ -841,6 +896,9 @@ func chatCompletions(env *runtime.Env, opts runtime.Value, messages []map[string
 }
 
 func chatAnthropic(env *runtime.Env, base, key, model string, messages []map[string]any, tools []map[string]any) (string, []toolCall, error) {
+	if err := guardLLMEnvKey(env, base, key); err != nil {
+		return "", nil, err
+	}
 	sys, turns := messagesToAnthropic(messages)
 	body := map[string]any{
 		"model":      model,
@@ -1166,6 +1224,9 @@ func chatCompletionsJSON(env *runtime.Env, opts runtime.Value, messages []map[st
 			key = SecretString(v)
 		}
 	}
+	if err := guardLLMEnvKey(env, base, key); err != nil {
+		return "", nil, err
+	}
 	model := mapGetStr(opts, "model", llmconfig.DefaultOpenAIModel)
 	body := map[string]any{
 		"model":           model,
@@ -1246,6 +1307,9 @@ func chatStreamIter(env *runtime.Env, opts runtime.Value, messages []map[string]
 		if v, ok := mapGet(opts, "api_key"); ok {
 			key = SecretString(v)
 		}
+	}
+	if err := guardLLMEnvKey(env, base, key); err != nil {
+		return nil, err
 	}
 	model := mapGetStr(opts, "model", llmconfig.DefaultOpenAIModel)
 	provider := mapGetStr(opts, "provider", "")

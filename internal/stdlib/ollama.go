@@ -299,7 +299,7 @@ func ollamaTags(env *runtime.Env, host string) ([]string, error) {
 func ollamaGET(env *runtime.Env, url string) ([]byte, error) {
 	client := env.HTTPClient
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = DefaultHTTPClient()
 	}
 	req, err := http.NewRequestWithContext(env.Context(), "GET", url, nil)
 	if err != nil {

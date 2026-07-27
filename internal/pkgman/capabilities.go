@@ -8,12 +8,21 @@ import (
 // explicitly listed in weft.json "capabilities" (or capabilities includes "*").
 // Apps and path-local scripts keep full host access.
 //
-// Includes shell/credentials and data-plane connectors that can exfiltrate or
-// mutate infrastructure if a malicious module is installed.
+// Includes shell/credentials, outbound I/O, LLM keys, and data-plane connectors
+// that can exfiltrate or mutate infrastructure if a malicious module is installed.
 var RestrictedByDefault = []string{
 	"sh",      // process execution
 	"secrets", // credential material
 	"cli",     // process exit / argv takeover
+	"env",     // process environment (defeats secrets if open)
+	"fs",      // full filesystem
+	"http",    // outbound HTTP (exfil / SSRF surface)
+	"llm",     // model calls + env API keys
+	"ollama",  // local model HTTP
+	"vllm",    // local model HTTP
+	"web",     // HTTP server bind / static
+	"archive", // extract to disk
+	"graphql", // outbound GraphQL
 	"db",      // SQL databases
 	"redis",   // key-value / pubsub
 	"mongo",   // document store

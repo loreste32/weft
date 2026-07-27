@@ -322,13 +322,24 @@ func packageArchive() runtime.Value {
 		}
 		tr := tar.NewReader(rdr)
 		var names []runtime.Value
+		var total int64
+		const maxTarFiles = 100_000
+		const maxTarBytes = 200 << 20 // 200 MiB uncompressed total
 		for {
+			if len(names) >= maxTarFiles {
+				return errRes("tar too many files", "archive"), nil
+			}
 			hdr, err := tr.Next()
 			if err == io.EOF {
 				break
 			}
 			if err != nil {
 				return errRes(err.Error(), "archive"), nil
+			}
+			// reject links / specials (zip already rejects symlinks)
+			switch hdr.Typeflag {
+			case tar.TypeSymlink, tar.TypeLink, tar.TypeChar, tar.TypeBlock, tar.TypeFifo:
+				return errRes("illegal tar entry type: "+hdr.Name, "archive"), nil
 			}
 			target, err := archiveSafeJoin(dest, hdr.Name)
 			if err != nil {
@@ -339,7 +350,7 @@ func packageArchive() runtime.Value {
 				if err := os.MkdirAll(target, 0o755); err != nil {
 					return errRes(err.Error(), "archive"), nil
 				}
-			case tar.TypeReg:
+			case tar.TypeReg, tar.TypeRegA:
 				if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 					return errRes(err.Error(), "archive"), nil
 				}
@@ -347,11 +358,15 @@ func packageArchive() runtime.Value {
 				if err != nil {
 					return errRes(err.Error(), "archive"), nil
 				}
-				if _, err := io.Copy(out, tr); err != nil {
-					_ = out.Close()
+				n, err := io.Copy(out, io.LimitReader(tr, maxTarBytes+1-total))
+				_ = out.Close()
+				if err != nil {
 					return errRes(err.Error(), "archive"), nil
 				}
-				_ = out.Close()
+				total += n
+				if total > maxTarBytes {
+					return errRes("tar uncompressed size exceeds limit", "archive"), nil
+				}
 				rel, _ := filepath.Rel(dest, target)
 				names = append(names, runtime.Str(filepath.ToSlash(rel)))
 			}

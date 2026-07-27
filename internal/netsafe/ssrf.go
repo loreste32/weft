@@ -47,11 +47,27 @@ func IsBlockedIP(ip net.IP) bool {
 	if ip.IsPrivate() {
 		return true
 	}
+	// CGNAT 100.64.0.0/10 (includes some cloud metadata-like ranges)
+	if ip4 := ip.To4(); ip4 != nil {
+		if ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 {
+			return true
+		}
+	}
 	// IPv6 unique local fc00::/7
 	if ip.To4() == nil && len(ip) == net.IPv6len && (ip[0]&0xfe) == 0xfc {
 		return true
 	}
 	return false
+}
+
+// DialContext dials network/address with the same SSRF IP-pinning as SafeHTTPClient.
+// Host is resolved and only non-blocked addresses are dialed (prevents DNS rebinding).
+func DialContext(ctx context.Context, network, address string, timeout time.Duration) (net.Conn, error) {
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	d := &net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
+	return safeDialContext(d.DialContext)(ctx, network, address)
 }
 
 // CheckHost resolves host and rejects blocked addresses (unless AllowPrivate).

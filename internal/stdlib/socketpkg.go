@@ -23,9 +23,6 @@ func packageSocket(env *runtime.Env) runtime.Value {
 		}
 		network := args[0].String()
 		address := args[1].String()
-		if err := checkDialAddress(address); err != nil {
-			return errRes(err.Error(), "socket"), nil
-		}
 		timeout := 30 * time.Second
 		if len(args) >= 3 {
 			if n, e := runtime.AsInt(args[2]); e == nil && n > 0 {
@@ -34,8 +31,8 @@ func packageSocket(env *runtime.Env) runtime.Value {
 				timeout = time.Duration(f * float64(time.Second))
 			}
 		}
-		d := net.Dialer{Timeout: timeout}
-		c, err := d.DialContext(env.Context(), network, address)
+		// netsafe.DialContext resolves and dials only non-blocked IPs (no DNS rebinding).
+		c, err := netsafe.DialContext(env.Context(), network, address, timeout)
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}

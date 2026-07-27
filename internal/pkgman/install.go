@@ -424,17 +424,47 @@ func shortHash(s string) string {
 }
 
 func gitClone(repo, dest, tag, branch string) error {
+	// Reject dash-leading args so repo/tag/branch cannot become git flags.
+	if err := gitSafeArg("repo", repo); err != nil {
+		return err
+	}
+	if err := gitSafeArg("tag", tag); err != nil {
+		return err
+	}
+	if err := gitSafeArg("branch", branch); err != nil {
+		return err
+	}
+	// Optional SSRF-ish check for http(s) git URLs
+	if strings.HasPrefix(repo, "http://") || strings.HasPrefix(repo, "https://") {
+		if err := netsafe.CheckURL(repo); err != nil {
+			return fmt.Errorf("git clone rejected: %w", err)
+		}
+	}
 	args := []string{"clone", "--depth", "1"}
 	if tag != "" {
 		args = append(args, "--branch", tag)
 	} else if branch != "" {
 		args = append(args, "--branch", branch)
 	}
-	args = append(args, repo, dest)
+	// "--" ends option parsing so the repo URL is never treated as a flag
+	args = append(args, "--", repo, dest)
 	cmd := exec.Command("git", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git clone: %w\n%s", err, out)
+	}
+	return nil
+}
+
+func gitSafeArg(kind, v string) error {
+	if v == "" {
+		return nil
+	}
+	if strings.HasPrefix(v, "-") {
+		return fmt.Errorf("git %s must not start with '-'", kind)
+	}
+	if strings.ContainsAny(v, "\x00\r\n") {
+		return fmt.Errorf("git %s contains illegal characters", kind)
 	}
 	return nil
 }

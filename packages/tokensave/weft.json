@@ -32,5 +32,7 @@
   ],
   "license": "Apache-2.0",
   "keywords": ["llm", "brain", "memory", "train", "clarify", "tokens", "ollama"],
+  "capability_profile": "agent",
+  "capabilities": ["fs", "env"],
   "deps": {}
 }

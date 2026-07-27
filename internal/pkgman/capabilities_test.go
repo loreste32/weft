@@ -11,6 +11,9 @@ func TestAllows(t *testing.T) {
 	if Allows(nil, "sh") {
 		t.Fatal("sh should be denied by default")
 	}
+	if Allows(nil, "http") || Allows(nil, "fs") || Allows(nil, "llm") || Allows(nil, "env") {
+		t.Fatal("io/llm/env should be denied by default")
+	}
 	if !Allows(nil, "math") {
 		t.Fatal("math should be allowed by default")
 	}

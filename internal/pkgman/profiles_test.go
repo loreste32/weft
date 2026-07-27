@@ -15,11 +15,11 @@ func TestExpandCapabilitiesProfile(t *testing.T) {
 
 func TestExpandCapabilitiesAtToken(t *testing.T) {
 	got := ExpandCapabilities("", []string{"@net", "sh"})
-	// net expands socket,email then sh
-	if len(got) != 3 {
+	// net expands socket,email,http then sh
+	if len(got) != 4 {
 		t.Fatalf("got %v", got)
 	}
-	if !Allows(got, "socket") || !Allows(got, "email") || !Allows(got, "sh") {
+	if !Allows(got, "socket") || !Allows(got, "email") || !Allows(got, "http") || !Allows(got, "sh") {
 		t.Fatalf("expanded %v", got)
 	}
 	if Allows(got, "db") {
