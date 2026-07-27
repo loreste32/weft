@@ -1,0 +1,15 @@
+{
+  "serverId": "weft",
+  "name": "Weft Language Server",
+  "description": "Weft LSP via weft lsp (stdio)",
+  "command": ["weft", "lsp"],
+  "languageMappings": [
+    {
+      "languageId": "weft",
+      "fileNamePatterns": ["*.weft", "*.loom"]
+    }
+  ],
+  "clientSettings": {
+    "trace": "off"
+  }
+}

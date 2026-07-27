@@ -1,0 +1,6 @@
+name,value,team
+cpu,42,ops
+mem,71,ops
+disk,33,platform
+latency,12,api
+errors,2,api

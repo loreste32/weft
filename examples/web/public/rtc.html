@@ -1,0 +1,93 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Weft WebRTC</title>
+  <style>
+    body { font: 15px system-ui; max-width: 48rem; margin: 1.5rem auto; padding: 0 1rem; }
+    video { background: #111; width: 48%; aspect-ratio: 4/3; border-radius: 8px; }
+    #row { display: flex; gap: 1%; margin: 1rem 0; }
+    input, button { font: inherit; padding: 0.45rem 0.7rem; margin: 0.2rem; }
+    #log {
+      font: 12px ui-monospace, monospace; background: #f4f4f5;
+      padding: 0.75rem; height: 8rem; overflow: auto; border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Weft WebRTC</h1>
+  <p>Open this page in two tabs. Same room → peer-to-peer media (signaling via Weft).</p>
+  <p>
+    Room <input id="room" value="lobby">
+    Peer <input id="peer" placeholder="name">
+    <button id="join">Join</button>
+    <button id="call" disabled>Call first peer</button>
+  </p>
+  <div id="row">
+    <video id="local" autoplay playsinline muted></video>
+    <video id="remote" autoplay playsinline></video>
+  </div>
+  <div id="log"></div>
+  <script>
+    const logEl = document.getElementById('log');
+    const log = (t) => { logEl.textContent += t + '\n'; logEl.scrollTop = logEl.scrollHeight; };
+    let ws, pc, myId, room;
+    const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+    async function ensurePC() {
+      if (pc) return pc;
+      pc = new RTCPeerConnection({ iceServers });
+      pc.onicecandidate = (e) => {
+        if (e.candidate && ws && ws.readyState === 1 && window._remote) {
+          ws.send(JSON.stringify({ type: 'ice', to: window._remote, candidate: e.candidate }));
+        }
+      };
+      pc.ontrack = (e) => { document.getElementById('remote').srcObject = e.streams[0]; };
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      document.getElementById('local').srcObject = stream;
+      stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+      return pc;
+    }
+
+    document.getElementById('join').onclick = () => {
+      room = document.getElementById('room').value || 'lobby';
+      const peer = document.getElementById('peer').value || ('p' + Math.random().toString(36).slice(2, 7));
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(proto + '://' + location.host + '/ws/signal');
+      ws.onopen = () => ws.send(JSON.stringify({ type: 'join', room, peer }));
+      ws.onmessage = async (ev) => {
+        const m = JSON.parse(ev.data);
+        log(m.type + (m.peer ? ' ' + m.peer : '') + (m.from ? ' from ' + m.from : ''));
+        if (m.type === 'welcome') {
+          myId = m.peer;
+          document.getElementById('call').disabled = false;
+        }
+        if (m.type === 'peers' && m.peers && m.peers.length) window._remote = m.peers[0];
+        if (m.type === 'peer-joined') window._remote = m.peer;
+        if (m.type === 'offer' && m.from) {
+          window._remote = m.from;
+          await ensurePC();
+          await pc.setRemoteDescription(m.sdp);
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          ws.send(JSON.stringify({ type: 'answer', to: m.from, sdp: pc.localDescription }));
+        }
+        if (m.type === 'answer') {
+          await pc.setRemoteDescription(m.sdp);
+        }
+        if (m.type === 'ice' && m.candidate) {
+          try { await pc.addIceCandidate(m.candidate); } catch (e) { log('ice err ' + e); }
+        }
+      };
+    };
+
+    document.getElementById('call').onclick = async () => {
+      if (!window._remote) { log('no peer yet'); return; }
+      await ensurePC();
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      ws.send(JSON.stringify({ type: 'offer', to: window._remote, sdp: pc.localDescription }));
+    };
+  </script>
+</body>
+</html>

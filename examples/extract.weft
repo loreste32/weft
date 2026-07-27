@@ -1,0 +1,5 @@
+// Structured JSON without schema ceremony
+fn main() -> Result {
+    let data = llm.extract("JSON with keys city and temp_c for Paris weather sample")?
+    println(data.city, data.temp_c)
+}

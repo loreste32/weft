@@ -1,0 +1,11 @@
+{
+  "name": "ml_demo",
+  "version": "0.1.0",
+  "type": "app",
+  "description": "Offline demo of packages/ml (vectors + metrics; embed optional)",
+  "deps": {
+    "ml": {
+      "path": "../../packages/ml"
+    }
+  }
+}

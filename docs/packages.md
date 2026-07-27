@@ -1,0 +1,146 @@
+# Weft package manager
+
+Python has `pip` + venv + wheels. Weft avoids that stack:
+
+| Python liability | Weft |
+|------------------|------|
+| Global site-packages | **Project `vendor/` only** |
+| venv activation | None — just `weft run` |
+| wheels / ABI | Pure `.weft` source packages |
+| lock optional | **`weft.lock` with content hashes** |
+| slow cold start from imports | Packages are files; single binary runtime |
+
+**Writing modules for others?** See [`docs/modules.md`](modules.md).
+
+## Quick start (consumer)
+
+```bash
+weft init myapp
+weft get greeter ./path/to/greeter     # local path
+weft get util github.com/org/repo@v0.1 # git (needs git on PATH)
+weft install                           # from weft.json → vendor/
+weft run main.weft
+```
+
+## Quick start (author)
+
+```bash
+weft new module greeter
+cd greeter && weft mod check
+# share path or git tag — others: weft get greeter github.com/you/greeter@v0.1.0
+```
+
+## Manifest (`weft.json`)
+
+```json
+{
+  "name": "myapp",
+  "version": "0.1.0",
+  "type": "app",
+  "deps": {
+    "greeter": { "path": "../packages/greeter" },
+    "util": "github.com/acme/weft-util@v0.2.0",
+    "data": { "url": "https://example.com/data-pkg.zip" }
+  }
+}
+```
+
+String shorthands:
+
+- `./foo` / `../foo` → path
+- `github.com/org/repo@tag` → git clone
+- `https://…zip` → download archive
+
+**Version constraints (lite):** object form may include `"version": "^1.2.0"`, `"~0.3.1"`, `">=0.2.0"`, or an exact semver. On install, that is checked against the dependency’s own `weft.json` `version`. Branch names that are not semver-like are not treated as constraints.
+
+### Catalog discovery
+
+```bash
+weft packages list              # walk up for packages/index.json
+weft packages list embed        # filter by name/summary
+weft packages search rag        # same idea
+weft packages info tokensave    # one entry (path, version, install hints)
+weft packages get ml            # path dep + pin catalog version → install
+weft packages get tokensave@^0.5.0   # constraint checked against catalog version
+```
+
+- `WEFT_PACKAGES` — path to a packages dir or `index.json`  
+- `WEFT_CATALOG_URL` — HTTPS URL to a remote `index.json` (discovery only; install still uses path/git specs from the entry)
+
+Unknown names get “did you mean?” suggestions when close.
+
+`weft doctor` reports catalog discovery (`catalog`, `catalog_pkgs`), project deps, and vendor lock integrity when you are inside a project.
+
+## Layout of a package
+
+```
+greeter/
+  weft.json         # name, version, entry, exports
+  lib.weft          # preferred entry
+  # or entry from weft.json / mod.weft / greeter.weft / src/lib.weft
+```
+
+```weft
+// lib.weft
+pub fn greet(name) { "hi " + name }
+```
+
+## Importing
+
+```weft
+use greeter                 // preferred
+import greeter              // same
+import "greeter"            // same
+import greeter as g         // alias
+use "./local.weft" as L     // path (always works)
+```
+
+Resolution order:
+
+1. Stdlib (`http`, `web`, `llm`, …) — in the binary  
+2. `vendor/<name>/`  
+3. `WEFT_PATH`  
+4. `packages/<name>/`
+
+## Lockfile
+
+`weft install` writes `weft.lock` with `sha256:` of each package tree. Commit both `weft.json` and `weft.lock`. Commit `vendor/` for fully offline builds, or re-install in CI.
+
+**Integrity:** if `weft.lock` is present, `weft run` verifies vendor trees against lock sums and refuses to execute on mismatch (re-run `weft install`).
+
+**Atomic install:** packages materialize in a staging tree; `vendor/` is swapped only on full success. A failed install does not half-update deps.
+
+**Conflicts:** the same package name from two different sources (diamond deps) fails install — no silent first-wins.
+
+**Reserved names:** you cannot vendor a package named like stdlib (`http`, `json`, …) or prelude globals (`map`, `filter`, …).
+
+**Archives:** zip/tar installs reject path traversal, absolute paths, and symlinks.
+
+**Capabilities:** third-party modules default-deny `sh` / `secrets` / `cli` / `db` / `redis` / `mongo` / `nats` / `amqp` unless listed under `capabilities` (or `"*"`).
+
+**Network:** package URL fetches use SSRF-safe dialing (no metadata, no RFC1918 unless `WEFT_HTTP_ALLOW_PRIVATE=1`). Archives capped at 100 MiB download / 200 MiB uncompressed.
+
+## CLI
+
+```text
+weft new module <name> | weft new app <name>
+weft mod check [dir] | weft mod pack [dir]
+weft init | get | install | list
+```
+
+## Transitive deps
+
+`weft install` walks each package’s `weft.json` `deps` and vendors them into the **app** `vendor/` tree (flat). Path specs resolve against the package that declared them, so monorepos work:
+
+```text
+packages/mathx
+packages/resultx  → deps.mathx = ../mathx
+apps/demo         → deps.resultx = ../../packages/resultx
+# install in apps/demo → vendor/resultx + vendor/mathx
+```
+
+## Not in v1
+
+- Central registry index (use git/path/url)
+- Binary native extensions (expand via pure `.weft` modules)
+- Version range solvers (`^1.2`) — pin tags/paths explicitly

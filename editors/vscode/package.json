@@ -1,0 +1,137 @@
+{
+  "name": "weft",
+  "displayName": "Weft",
+  "description": "Weft language support \u2014 syntax highlighting and Language Server (weft lsp)",
+  "version": "0.3.27",
+  "publisher": "weft",
+  "license": "Apache-2.0",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1a1b26",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/loreste/weft"
+  },
+  "bugs": {
+    "url": "https://github.com/loreste/weft/issues"
+  },
+  "homepage": "https://github.com/loreste/weft#readme",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Snippets"
+  ],
+  "keywords": [
+    "weft",
+    "llm",
+    "agents",
+    "scripting",
+    "lsp"
+  ],
+  "activationEvents": [
+    "onLanguage:weft"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "weft",
+        "aliases": [
+          "Weft",
+          "weft"
+        ],
+        "extensions": [
+          ".weft",
+          ".loom"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./media/weft-file.svg",
+          "dark": "./media/weft-file.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "weft",
+        "scopeName": "source.weft",
+        "path": "./syntaxes/weft.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "weft",
+        "path": "./snippets/weft.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "weft.restartLsp",
+        "title": "Weft: Restart Language Server"
+      },
+      {
+        "command": "weft.showLspOutput",
+        "title": "Weft: Show Language Server Output"
+      }
+    ],
+    "configuration": {
+      "title": "Weft",
+      "properties": {
+        "weft.lspPath": {
+          "type": "string",
+          "default": "weft",
+          "markdownDescription": "Path to the `weft` binary (started as ``weft lsp``). Absolute path or name on `PATH`."
+        },
+        "weft.lspArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "lsp"
+          ],
+          "description": "Arguments passed to the weft binary for the language server."
+        },
+        "weft.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces communication between VS Code and weft lsp."
+        }
+      }
+    },
+    "configurationDefaults": {
+      "[weft]": {
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4,
+        "editor.detectIndentation": false,
+        "editor.quickSuggestions": {
+          "other": true,
+          "comments": false,
+          "strings": false
+        }
+      }
+    }
+  },
+  "scripts": {
+    "postinstall": "node -e \"try{require('vscode-languageclient')}catch(e){console.log('run: npm install')}\"",
+    "package": "npx --yes @vscode/vsce package --no-dependencies 2>/dev/null || npx --yes @vscode/vsce package",
+    "install-ext": "code --install-extension ./weft-*.vsix --force"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {},
+  "vsce": {
+    "dependencies": true
+  }
+}

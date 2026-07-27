@@ -1,0 +1,65 @@
+// Real multi-stage ETL pipeline
+//   weft run examples/pipeline_etl.weft
+//
+// Stages: jsonl read → where → select → enrich → sort → write jsonl/csv + chart
+
+fn is_active(row) {
+    row.ok == true
+}
+
+fn with_score(row) {
+    // pure transform (no outer capture)
+    // score from role
+    mut score := 1
+    if row.role == "admin" {
+        score = 10
+    }
+    if row.role == "ops" {
+        score = 5
+    }
+    // return new row map via table.set on singleton then take [0] — simpler: build fields
+    table.set([row], "score", score)[0]
+}
+
+fn main -> Result {
+    log.set_level("info")
+    log.info("pipeline start", time.iso())
+
+    // 1) extract
+    rows := jsonl.read("examples/data/users.jsonl")?
+    log.info("extracted", len(rows), "rows")
+
+    // 2) filter active
+    active := table.where_truthy(rows, "ok")
+    // also via map/filter style:
+    // active := filter(rows, is_active)
+
+    // 3) project columns
+    slim := table.project(active, ["name", "role", "ok"])
+
+    // 4) enrich (map with named fn)
+    enriched := map(slim, with_score)
+
+    // 5) sort by score desc
+    ranked := table.sort(enriched, "score", true)
+
+    // 6) load outputs
+    fs.mkdir("examples/data/out")?
+    jsonl.write("examples/data/out/active_users.jsonl", ranked)?
+    csv.write("examples/data/out/active_users.csv", ranked, {
+        "header": ["name", "role", "ok", "score"],
+    })?
+
+    // 7) viz summary: count by role
+    groups := table.group_by(ranked, "role")
+    mut series := {}
+    for role in keys(groups) {
+        series[role] = len(groups[role])
+    }
+    chart := viz.bar(series, {"title": "Active users by role"})
+    viz.save("examples/data/out/roles.html", viz.page("ETL report", [chart]))?
+
+    log.info("wrote examples/data/out/*", "rows=", len(ranked))
+    say(viz.table(table.project(ranked, ["name", "role", "score"])).text)
+    say("pipeline done")
+}

@@ -1,0 +1,15 @@
+{
+  "name": "resultx",
+  "version": "0.1.0",
+  "description": "Result helpers that expand app-level APIs (depends on mathx)",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": ["ok_int", "map_ok", "score"],
+  "license": "Apache-2.0",
+  "keywords": ["result", "example"],
+  "deps": {
+    "mathx": {
+      "path": "../mathx"
+    }
+  }
+}

@@ -1,0 +1,97 @@
+// Vector math — pure Weft (no C/BLAS). Fine for RAG-scale (hundreds–thousands of dims × docs).
+
+pub fn sqrt(x) {
+    if x <= 0 {
+        return 0.0
+    }
+    mut g := x
+    if g < 1.0 {
+        g = 1.0
+    }
+    mut i := 0
+    while i < 16 {
+        g = (g + x / g) / 2.0
+        i = i + 1
+    }
+    g
+}
+
+pub fn dot(a, b) {
+    mut s := 0.0
+    mut i := 0
+    mut n := len(a)
+    if len(b) < n {
+        n = len(b)
+    }
+    while i < n {
+        s = s + a[i] * b[i]
+        i = i + 1
+    }
+    s
+}
+
+pub fn norm(a) {
+    sqrt(dot(a, a))
+}
+
+pub fn cosine(a, b) {
+    na := norm(a)
+    nb := norm(b)
+    if na == 0.0 || nb == 0.0 {
+        0.0
+    } else {
+        dot(a, b) / (na * nb)
+    }
+}
+
+// topk(query_vec, items, k) — items: [{id, vec, meta?}, ...]
+// returns list of {id, score, meta?} sorted high→low cosine
+pub fn topk(query, items, k) {
+    mut scored := []
+    mut i := 0
+    while i < len(items) {
+        it := items[i]
+        sc := cosine(query, it.vec)
+        push(scored, {
+            "id": it.id,
+            "score": sc,
+            "meta": it.meta,
+            "vec": it.vec,
+        })
+        i = i + 1
+    }
+    // selection sort for small k / n (no stdlib sort_by on maps)
+    mut a := 0
+    while a < len(scored) {
+        mut best := a
+        mut b := a + 1
+        while b < len(scored) {
+            if scored[b].score > scored[best].score {
+                best = b
+            }
+            b = b + 1
+        }
+        if best != a {
+            tmp := scored[a]
+            scored[a] = scored[best]
+            scored[best] = tmp
+        }
+        a = a + 1
+    }
+    mut out := []
+    mut j := 0
+    mut lim := k
+    if lim > len(scored) {
+        lim = len(scored)
+    }
+    while j < lim {
+        hit := scored[j]
+        push(out, {
+            "id": hit.id,
+            "score": hit.score,
+            "meta": hit.meta,
+        })
+        j = j + 1
+    }
+    out
+}

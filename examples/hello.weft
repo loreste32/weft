@@ -1,0 +1,4 @@
+// Weft style — short and own
+fn main {
+    say("hello, weft")
+}

@@ -1,0 +1,8 @@
+use "./lib/math.weft" as math
+
+
+fn main {
+    say(math.add(2, 40))
+    say(math.double(21))
+}
+

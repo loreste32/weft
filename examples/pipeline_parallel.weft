@@ -1,0 +1,41 @@
+// map/filter are concurrent by default (order preserved).
+//   weft run examples/pipeline_parallel.weft
+//   WEFT_WORKERS=4 weft run examples/pipeline_parallel.weft
+
+fn square(n) {
+    n * n
+}
+
+fn tag(n) {
+    {"n": n, "sq": n * n, "id": crypto.uuid()}
+}
+
+fn main {
+    xs := range(1, 21)
+
+    // default map = concurrent fan-out
+    t0 := time.now_ms()
+    a := map(xs, square)
+    t1 := time.now_ms()
+
+    // explicit workers
+    b := map(xs, square, 4)
+    t2 := time.now_ms()
+
+    // sequential only when you need side-effect order
+    c := seq_map(xs, square)
+    t3 := time.now_ms()
+
+    say("map", a)
+    say("map_workers4", b)
+    say("seq_map", c)
+    say("ms concurrent", t1 - t0, "workers4", t2 - t1, "seq", t3 - t2)
+
+    rows := map(xs, tag)
+    batches := pipe.batch(rows, 5)
+    say("batches", len(batches), "first_batch_len", len(batches[0]))
+
+    evens := filter(xs, fn(n) { n % 2 == 0 })
+    sum := reduce(evens, 0, fn(acc, x) { acc + x })
+    say("even_sum", sum)
+}

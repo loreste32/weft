@@ -1,0 +1,21 @@
+// tokensave package tests — pure helpers (no network).
+//   weft mod check packages/tokensave --tests
+use "./lib.weft" as ts
+
+fn test_estimate {
+    test.eq(ts.estimate(""), 0)
+    // ~4 chars per token; "abcd" → 1
+    test.eq(ts.estimate("abcd"), 1)
+    test.is_true(ts.estimate("hello world") > 0)
+}
+
+fn test_budget_ok {
+    test.is_true(ts.budget_ok("hi", 100))
+    test.is_false(ts.budget_ok("abcdefghij", 1))
+}
+
+fn test_detect_kind {
+    // smoke: returns some string kind
+    k := ts.detect_kind("write a weft hello")
+    test.is_true(len(k) > 0)
+}

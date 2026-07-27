@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Weft chat</title>
+  <style>
+    body { font: 16px system-ui; max-width: 36rem; margin: 2rem auto; padding: 0 1rem; }
+    #log { border: 1px solid #ddd; height: 20rem; overflow: auto; padding: 0.75rem; border-radius: 8px; }
+    #row { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+    input { flex: 1; padding: 0.5rem; font: inherit; }
+    button { padding: 0.5rem 1rem; font: inherit; cursor: pointer; }
+    .sys { color: #666; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>Weft chat</h1>
+  <div id="log"></div>
+  <div id="row">
+    <input id="msg" placeholder="message…" autofocus>
+    <button id="send">Send</button>
+  </div>
+  <script>
+    const log = document.getElementById('log');
+    const input = document.getElementById('msg');
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(proto + '://' + location.host + '/ws/chat');
+    function line(t, cls) {
+      const d = document.createElement('div');
+      if (cls) d.className = cls;
+      d.textContent = t;
+      log.appendChild(d);
+      log.scrollTop = log.scrollHeight;
+    }
+    ws.onmessage = (e) => {
+      try {
+        const j = JSON.parse(e.data);
+        if (j.type === 'system') line(j.text, 'sys');
+        else line(e.data);
+      } catch { line(e.data); }
+    };
+    ws.onopen = () => line('connected', 'sys');
+    ws.onclose = () => line('disconnected', 'sys');
+    function send() {
+      const t = input.value.trim();
+      if (!t || ws.readyState !== 1) return;
+      ws.send(t);
+      input.value = '';
+    }
+    document.getElementById('send').onclick = send;
+    input.onkeydown = (e) => { if (e.key === 'Enter') send(); };
+  </script>
+</body>
+</html>

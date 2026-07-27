@@ -1,0 +1,62 @@
+{
+  "name": "Weft",
+  "scopeName": "source.weft",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#keywords" },
+    { "include": "#constants" },
+    { "include": "#numbers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.weft", "match": "//.*$" },
+        { "name": "comment.block.weft", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.weft",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.weft", "match": "\\\\." },
+            { "name": "variable.other.interpolated.weft", "match": "\\$[A-Za-z_][A-Za-z0-9_]*" },
+            { "name": "variable.other.interpolated.weft", "begin": "\\$\\{", "end": "\\}" }
+          ]
+        },
+        { "name": "string.quoted.raw.weft", "begin": "`", "end": "`" }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.weft",
+          "match": "\\b(fn|mut|if|else|match|for|in|while|return|break|continue|defer|use|import|as|pub|type|struct|const|enum|let)\\b"
+        },
+        {
+          "name": "keyword.operator.weft",
+          "match": "(:=|\\|>|\\?\\?|->)"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        { "name": "constant.language.weft", "match": "\\b(true|false|null)\\b" }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.hex.weft", "match": "\\b0[xX][0-9a-fA-F](_?[0-9a-fA-F])*\\b" },
+        { "name": "constant.numeric.binary.weft", "match": "\\b0[bB][01](_?[01])*\\b" },
+        { "name": "constant.numeric.octal.weft", "match": "\\b0[oO][0-7](_?[0-7])*\\b" },
+        {
+          "name": "constant.numeric.weft",
+          "match": "\\b[0-9](_?[0-9])*(\\.[0-9](_?[0-9])*)?([eE][+-]?[0-9](_?[0-9])*)?\\b"
+        }
+      ]
+    }
+  }
+}

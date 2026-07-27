@@ -1,0 +1,28 @@
+{
+  "name": "ml",
+  "version": "0.1.0",
+  "description": "Balanced ML for Weft — embeddings, vectors, RAG index, metrics (not NumPy/PyTorch)",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": [
+    "cosine",
+    "dot",
+    "norm",
+    "topk",
+    "embed",
+    "embed_with",
+    "embed_many",
+    "index",
+    "index_add",
+    "index_search",
+    "index_save",
+    "index_load",
+    "accuracy",
+    "mse",
+    "split",
+    "provider"
+  ],
+  "license": "Apache-2.0",
+  "keywords": ["ml", "embeddings", "rag", "metrics", "vectors"],
+  "deps": {}
+}

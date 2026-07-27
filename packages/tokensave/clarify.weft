@@ -1,0 +1,161 @@
+// clarify — turn fuzzy user asks into clear model tasks (no LLM required).
+// External tokensave intelligence: accuracy without dumping noise.
+
+fn lower(s) {
+    str.lower("" + s)
+}
+
+fn has(hay, needle) {
+    str.contains(lower(hay), lower(needle))
+}
+
+// Guess output kind from a rough ask
+pub fn detect_kind(ask) {
+    a := lower(ask)
+    if has(a, "weft") || has(a, ".weft") || has(a, "fn main") {
+        return "weft"
+    }
+    if has(a, "json") || has(a, "schema") || has(a, "as object") {
+        return "json"
+    }
+    if has(a, "code") || has(a, "function") || has(a, "script") || has(a, "program") || has(a, "implement") {
+        // weft-ish if language not named
+        if has(a, "python") || has(a, "js") || has(a, "go ") || has(a, "rust") {
+            return "code"
+        }
+        if has(a, "print") || has(a, "hello") || has(a, "say") {
+            return "weft"
+        }
+        return "code"
+    }
+    if has(a, "classify") || has(a, "label") || has(a, "yes or no") || has(a, "true/false") {
+        return "label"
+    }
+    if has(a, "tool") || has(a, "agent") {
+        return "agent"
+    }
+    "short"
+}
+
+// Expand vague verbs into an explicit goal sentence
+fn expand_goal(ask) {
+    a := "" + ask
+    t := str.trim(a)
+    if t == "" {
+        return "Answer the user's request clearly."
+    }
+    // already looks like a full question/sentence
+    if str.has_prefix(t, "Goal:") {
+        return t
+    }
+    low := lower(t)
+
+    // ultra-short / telegraphic
+    if has(low, "fix") && (has(low, "bug") || has(low, "error") || has(low, "this")) {
+        return "Diagnose the issue and provide a minimal correct fix for: " + t
+    }
+    if has(low, "explain") || has(low, "what is") || has(low, "what's") || has(low, "why") {
+        return "Explain clearly and briefly: " + t
+    }
+    if has(low, "how do") || has(low, "how to") || has(low, "how can") {
+        return "Give concrete steps to: " + t
+    }
+    if has(low, "write") || has(low, "make") || has(low, "create") || has(low, "build") || has(low, "generate") {
+        return "Produce the requested artifact for: " + t
+    }
+    if has(low, "summar") {
+        return "Summarize the essential points of: " + t
+    }
+    if has(low, "list") || has(low, "bullet") {
+        return "List the key items for: " + t
+    }
+    if has(low, "compare") || has(low, "vs") || has(low, "difference") {
+        return "Compare options and state the tradeoff for: " + t
+    }
+    if has(low, "print") || has(low, "hello") {
+        return "Show how to print/output text as requested: " + t
+    }
+    // short fragment without question mark and few words → treat as topic
+    ws := str.fields(t)
+    if len(ws) <= 4 && !str.contains(t, "?") {
+        return "Answer this request completely and specifically: " + t
+    }
+    "Complete this request accurately: " + t
+}
+
+fn default_must(kind, ask) {
+    k := "" + kind
+    if k == "weft" {
+        return "valid Weft (fn, :=, say); include fn main when runnable"
+    }
+    if k == "json" {
+        return "valid JSON only; include all fields needed to answer"
+    }
+    if k == "code" {
+        return "runnable code for the stated language; no placeholders left unexplained"
+    }
+    if k == "label" {
+        return "one label only; match the asked categories if given"
+    }
+    if k == "agent" {
+        return "use tools only when necessary; report final answer"
+    }
+    if has(ask, "step") {
+        return "numbered steps; keep each step one action"
+    }
+    "address the user's intent fully; prefer specific over vague"
+}
+
+fn default_avoid(kind) {
+    k := "" + kind
+    base := "guessing facts not in context, long chain-of-thought, filler, repeating the question"
+    if k == "weft" {
+        return base + ", Python/JS syntax, markdown fences"
+    }
+    if k == "json" {
+        return base + ", markdown fences, commentary"
+    }
+    base
+}
+
+// clarify(ask, opts?) -> {raw, goal, kind, must, avoid, format, clear}
+// Pure Weft heuristics — thrifty, works offline. opts may set kind/must/avoid/format.
+pub fn clarify(ask, opts) {
+    mut kind := detect_kind(ask)
+    mut must := ""
+    mut avoid := ""
+    mut format := ""
+    if opts != null {
+        ks := keys(opts)
+        if contains(ks, "kind") && opts.kind != "" { kind = opts.kind }
+        if contains(ks, "must") { must = "" + opts.must }
+        if contains(ks, "avoid") { avoid = "" + opts.avoid }
+        if contains(ks, "format") { format = "" + opts.format }
+    }
+    if must == "" { must = default_must(kind, ask) }
+    if avoid == "" { avoid = default_avoid(kind) }
+    if format == "" {
+        if kind == "weft" {
+            format = "One complete Weft program only."
+        } else if kind == "json" {
+            format = "One JSON object only."
+        } else if kind == "label" {
+            format = "Single label token only."
+        } else if kind == "code" {
+            format = "Code only, no commentary."
+        } else {
+            format = "Final answer first; at most 3 sentences unless steps are required."
+        }
+    }
+    goal := expand_goal(ask)
+    clear := "Goal: " + goal + "\nMust: " + must + "\nAvoid: " + avoid + "\nOutput: " + format
+    {
+        "raw": "" + ask,
+        "goal": goal,
+        "kind": kind,
+        "must": must,
+        "avoid": avoid,
+        "format": format,
+        "clear": clear,
+    }
+}

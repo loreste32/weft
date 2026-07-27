@@ -1,0 +1,38 @@
+// Task framing — Goal / Must / Avoid / Output (accuracy without long CoT).
+
+// frame(task, kind, hints?) -> str
+pub fn frame(task, kind, hints) {
+    mut k := "" + kind
+    if k == "" { k = "short" }
+    mut must := ""
+    mut avoid := "long reasoning, preambles, repeating the question"
+    mut fmt := "Final answer first. No long reasoning."
+    if k == "weft" {
+        fmt = "One complete Weft program only (fn/:=/say/?). No prose or fences."
+    }
+    if k == "json" {
+        fmt = "One JSON object only. No markdown."
+    }
+    if k == "short" {
+        fmt = "At most 3 sentences. Final answer first. No chain-of-thought."
+    }
+    if k == "label" {
+        fmt = "Single label token only."
+    }
+    if k == "code" {
+        fmt = "Code only. No commentary."
+    }
+    if hints != null {
+        hks := keys(hints)
+        if contains(hks, "must") { must = "" + hints.must }
+        if contains(hks, "avoid") { avoid = "" + hints.avoid }
+        if contains(hks, "format") { fmt = "" + hints.format }
+    }
+    mut out := "Goal: " + task
+    if must != "" {
+        out = out + "\nMust: " + must
+    }
+    out = out + "\nAvoid: " + avoid
+    out = out + "\nOutput: " + fmt
+    out
+}

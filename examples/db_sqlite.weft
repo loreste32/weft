@@ -1,0 +1,25 @@
+// SQL with SQLite (pure Go — no server required)
+//   weft run examples/db_sqlite.weft
+
+fn main -> Result {
+    path := "examples/data/demo.db"
+    c := db.open("sqlite:" + path)?
+
+    c.exec("CREATE TABLE IF NOT EXISTS items(id INTEGER PRIMARY KEY, name TEXT NOT NULL, qty INTEGER DEFAULT 0)")?
+
+    c.exec("DELETE FROM items")?
+
+    c.exec("INSERT INTO items(name, qty) VALUES (?, ?)", ["widgets", 10])?
+    c.exec("INSERT INTO items(name, qty) VALUES (?, ?)", ["gadgets", 3])?
+
+    rows := c.query("SELECT id, name, qty FROM items ORDER BY name")?
+    for row in rows {
+        say(row.id, row.name, row.qty)
+    }
+
+    one := c.query_one("SELECT qty FROM items WHERE name = ?", ["widgets"])?
+    say("widgets qty =", one.qty)
+
+    c.close()?
+    say("ok —", path)
+}

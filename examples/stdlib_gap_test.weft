@@ -1,0 +1,61 @@
+// Stdlib gap coverage — weft test examples/stdlib_gap_test.weft
+
+fn test_iter {
+    test.eq(iter.chain([1], [2, 3]), [1, 2, 3])
+    test.eq(iter.take([1, 2, 3, 4], 2), [1, 2])
+    test.eq(iter.drop([1, 2, 3, 4], 2), [3, 4])
+    test.eq(iter.chunk([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]])
+    test.eq(len(iter.product([1, 2], ["a"])), 2)
+    test.eq(len(iter.combinations([1, 2, 3], 2)), 3)
+}
+
+fn test_collections {
+    c := collections.counter(["a", "b", "a", "a"])
+    test.eq(c["a"], 3)
+    top := collections.most_common(["x", "y", "x"], 1)
+    test.eq(top[0][0], "x")
+    g := collections.group_by([{"k": "a", "v": 1}, {"k": "a", "v": 2}, {"k": "b", "v": 3}], "k")
+    test.eq(len(g["a"]), 2)
+}
+
+fn test_platform {
+    test.is_true(len(platform.os()) > 0)
+    test.is_true(platform.cpus() >= 1)
+    u := platform.uname()
+    test.is_true(contains(keys(u), "system"))
+}
+
+fn test_ip {
+    a := ip.parse("127.0.0.1")?
+    test.is_true(a.is_loopback)
+    test.is_true(ip.is_private("10.0.0.1"))
+    test.is_true(ip.in_network("192.168.1.5", "192.168.0.0/16"))
+}
+
+fn test_str_more {
+    test.eq(str.find("hello", "ll"), 2)
+    test.eq(str.count("aaa", "a"), 3)
+    test.eq(str.reverse("ab"), "ba")
+    test.is_true(str.is_digit("42"))
+    parts := str.partition("a=b=c", "=")
+    test.eq(parts[0], "a")
+    test.eq(parts[2], "b=c")
+}
+
+fn test_math_more {
+    test.eq(math.gcd(12, 8), 4)
+    test.eq(math.lcm(3, 4), 12)
+    test.approx(math.degrees(math.pi), 180, 0.001)
+}
+
+fn test_re_groups {
+    g := re.groups(`(\w+)@(\w+)`, "a@b")?
+    test.eq(g[1], "a")
+    test.eq(g[2], "b")
+}
+
+fn test_deepcopy {
+    a := [1, {"x": 2}]
+    b := deepcopy(a)
+    test.eq(b[0], 1)
+}

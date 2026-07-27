@@ -1,0 +1,24 @@
+// Realtime browser chat over WebSocket
+fn main {
+    app := web.app()
+
+    app.get("/", fn(req) {
+        web.redirect("/chat")
+    })
+
+    app.get("/chat", fn(req) {
+        html := fs.read("examples/web/public/chat.html")?
+        web.html(html)
+    })
+
+    app.ws("/ws/chat", fn(conn) {
+        conn.send("{\"type\":\"system\",\"text\":\"joined weft chat\"}")?
+        while true {
+            msg := conn.recv()?
+            conn.send(msg)?
+        }
+    })
+
+    println("chat → http://127.0.0.1:8080/chat")
+    app.listen(":8080")
+}

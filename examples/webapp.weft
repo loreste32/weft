@@ -1,0 +1,65 @@
+// Flask-style web app: routes, path params, JSON API, static HTML, WebSocket
+fn main {
+    app := web.app()
+
+    // Prefer static files for HTML UIs
+    app.static("/static", "examples/web/public")
+
+    app.get("/", fn(req) {
+        // serve index from disk
+        html := fs.read("examples/web/public/index.html")?
+        web.html(html)
+    })
+
+    app.get("/api/hello", fn(req) {
+        web.json({"ok": true, "lang": "weft", "msg": "hello from weft"})
+    })
+
+    app.get("/users/:id", fn(req) {
+        id := req.params["id"]
+        web.json({"user": id, "path": req.path})
+    })
+
+    app.post("/api/echo", fn(req) {
+        web.json({"echo": req.body, "method": req.method})
+    })
+
+    app.get("/health", fn(req) {
+        web.json({"status": "up"})
+    })
+
+    app.get("/chat", fn(req) {
+        html := fs.read("examples/web/public/chat.html")?
+        web.html(html)
+    })
+
+    app.get("/rtc", fn(req) {
+        html := fs.read("examples/web/public/rtc.html")?
+        web.html(html)
+    })
+
+    // WebSocket echo
+    app.ws("/ws/echo", fn(conn) {
+        conn.send("welcome to weft ws")?
+        while true {
+            msg := conn.recv()?
+            conn.send("echo: $msg")?
+        }
+    })
+
+    // Chat echo (browser UI at /chat)
+    app.ws("/ws/chat", fn(conn) {
+        conn.send("{\"type\":\"system\",\"text\":\"joined weft chat\"}")?
+        while true {
+            msg := conn.recv()?
+            conn.send(msg)?
+        }
+    })
+
+    // WebRTC signaling
+    hub := webrtc.hub()
+    hub.attach(app, "/ws/signal")?
+
+    println("weft web → http://127.0.0.1:8080")
+    app.listen(":8080")
+}

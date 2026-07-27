@@ -1,0 +1,11 @@
+use "./lib/math.weft" as math
+
+
+fn test_add { test.eq(math.add(2, 40), 42) }
+
+
+fn test_double { test.eq(math.double(21), 42) }
+
+
+fn test_truth { test.is_true(1 + 1 == 2) }
+

@@ -1,0 +1,14 @@
+{
+  "name": "modules_demo",
+  "version": "0.1.0",
+  "description": "App that expands behavior via third-party Weft modules",
+  "type": "app",
+  "deps": {
+    "resultx": {
+      "path": "../packages/resultx"
+    },
+    "mathx": {
+      "path": "../packages/mathx"
+    }
+  }
+}

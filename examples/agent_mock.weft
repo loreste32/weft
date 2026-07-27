@@ -1,0 +1,11 @@
+// Same shape as agent_tools; used under LLM mock in tests
+fn add(a, b) {
+    a + b
+}
+
+fn main() -> Result {
+    let reply = llm.ask("What is 2+3?", [
+        llm.tool("add", add),
+    ])?
+    println(reply)
+}

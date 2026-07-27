@@ -1,0 +1,17 @@
+// Local vLLM (OpenAI-compatible server)
+//   export VLLM_BASE_URL=http://127.0.0.1:8000/v1
+//   export VLLM_MODEL=your-served-model
+//   weft run examples/vllm_chat.weft
+
+fn main -> Result {
+    log.info("vllm base", vllm.base())
+    vllm.health()?
+    models := vllm.list()?
+    say("models:", models)
+
+    reply := vllm.chat({
+        "prompt": "Give three bullet uses for a local LLM server.",
+        "system": "Be concise.",
+    })?
+    say("reply:", reply)
+}

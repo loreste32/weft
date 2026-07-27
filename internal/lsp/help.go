@@ -1,0 +1,306 @@
+package lsp
+
+// Member help catalog for hover, completion docs, and signature help.
+// Keep entries short and honest — prefer weft stdlib over inventing APIs.
+
+type memberHelp struct {
+	Sig    string // e.g. llm.ask(prompt, tools?, opts?) -> Result[str]
+	Detail string // one-line prose
+}
+
+// memberCatalog is keyed as "pkg.member" or bare prelude names.
+var memberCatalog = map[string]memberHelp{
+	// prelude
+	"map":        {Sig: "map(list, fn, workers?)", Detail: "concurrent map; order preserved"},
+	"seq_map":    {Sig: "seq_map(list, fn)", Detail: "sequential map"},
+	"filter":     {Sig: "filter(list, pred)", Detail: "concurrent filter"},
+	"seq_filter": {Sig: "seq_filter(list, pred)", Detail: "sequential filter"},
+	"gather":     {Sig: "gather([fn…]) -> Result", Detail: "concurrent fan-out"},
+	"parallel":   {Sig: "parallel([fn…]) -> Result", Detail: "same as gather"},
+	"race":       {Sig: "race([fn…]) -> Result", Detail: "first completed wins"},
+	"timeout":    {Sig: "timeout(seconds, fn) -> Result", Detail: "deadline wrapper"},
+	"spawn":      {Sig: "spawn(fn, args…)", Detail: "background task; .await()?"},
+	"ensure":     {Sig: "ensure(cond, msg?, kind?) -> Result", Detail: "precondition; use with ?"},
+	"bail":       {Sig: "bail(msg, kind?) -> Result", Detail: "early Err Result"},
+	"say":        {Sig: "say(values…)", Detail: "print line"},
+	"println":    {Sig: "println(values…)", Detail: "print line (fmt rewrites to say)"},
+	"channel":    {Sig: "channel(cap?)", Detail: "buffered channel"},
+	"send":       {Sig: "send(ch, v) -> Result", Detail: "send on channel"},
+	"recv":       {Sig: "recv(ch) -> Result", Detail: "receive (blocks)"},
+	"try_recv":   {Sig: "try_recv(ch) -> Result", Detail: "non-blocking receive {ok, value}"},
+	"close":      {Sig: "close(ch) -> Result", Detail: "close channel"},
+	"group":      {Sig: "group() -> task group", Detail: ".go(fn) / .wait()?"},
+	"len":        {Sig: "len(x) -> int", Detail: "length of list/str/map"},
+	"push":       {Sig: "push(list, v)", Detail: "append to list"},
+	"range":      {Sig: "range(n | start, end)", Detail: "numeric sequence"},
+	"Ok":         {Sig: "Ok(value) -> Result", Detail: "success Result"},
+	"Err":        {Sig: "Err(msg, kind?) -> Result", Detail: "failure Result"},
+
+	// llm
+	"llm.chat": {
+		Sig:    "llm.chat(prompt | messages | opts) -> Result[str]",
+		Detail: "one-shot or multi-turn; opts: system, model, …",
+	},
+	"llm.ask": {
+		Sig:    "llm.ask(prompt, tools?, opts?) -> Result[str]",
+		Detail: "tool-using agent; opts: system, max_steps, model",
+	},
+	"llm.agent": {
+		Sig:    "llm.agent(tools | {tools, …}) -> agent",
+		Detail: "reusable agent; call .run(prompt)",
+	},
+	"llm.tool": {
+		Sig:    "llm.tool(name, fn, desc?)",
+		Detail: "bind a Weft fn as a model tool",
+	},
+	"llm.stream": {
+		Sig:    "llm.stream(prompt | opts) -> Result[Iter]",
+		Detail: "SSE events {kind, text?}: text|done|error",
+	},
+	"llm.stream_text": {
+		Sig:    "llm.stream_text(prompt | opts) -> Result[str]",
+		Detail: "collect stream text events into one string",
+	},
+	"llm.extract": {
+		Sig:    "llm.extract(prompt | opts) -> Result[map]",
+		Detail: "JSON object from the model",
+	},
+	"llm.client": {
+		Sig:    "llm.client(opts?) -> {chat, agent}",
+		Detail: "bound client with fixed opts",
+	},
+
+	// http
+	"http.get":       {Sig: "http.get(url, opts?) -> Result", Detail: "HTTP GET → {status, body, headers, ok}"},
+	"http.get_json":  {Sig: "http.get_json(url, opts?) -> Result", Detail: "GET + parse JSON body"},
+	"http.post":      {Sig: "http.post(url, body?, opts?) -> Result", Detail: "HTTP POST (JSON by default)"},
+	"http.put":       {Sig: "http.put(url, body?, opts?) -> Result", Detail: "HTTP PUT"},
+	"http.patch":     {Sig: "http.patch(url, body?, opts?) -> Result", Detail: "HTTP PATCH"},
+	"http.delete":    {Sig: "http.delete(url, opts?) -> Result", Detail: "HTTP DELETE"},
+	"http.fetch":     {Sig: "http.fetch(opts) -> Result", Detail: "generic request map"},
+	"http.post_form": {Sig: "http.post_form(url, form, opts?) -> Result", Detail: "multipart/form POST"},
+	"http.serve":     {Sig: "http.serve(addr, handler)", Detail: "tiny HTTP server (blocking)"},
+	"http.json":      {Sig: "http.json(body | status, body)", Detail: "JSON response for serve handlers"},
+	"http.text":      {Sig: "http.text(status, body)", Detail: "text response for serve handlers"},
+
+	// web
+	"web.app":      {Sig: "web.app() -> app", Detail: "multi-route app; .get/.post/.listen"},
+	"web.json":     {Sig: "web.json(v)", Detail: "JSON response helper"},
+	"web.html":     {Sig: "web.html(s)", Detail: "HTML response helper"},
+	"web.text":     {Sig: "web.text(s)", Detail: "plain text response"},
+	"web.redirect": {Sig: "web.redirect(url, status?)", Detail: "redirect response"},
+	"web.sse":      {Sig: "web.sse(list | iter)", Detail: "Server-Sent Events stream"},
+	"web.status":   {Sig: "web.status(code, body?)", Detail: "status response"},
+
+	// fs
+	"fs.read":      {Sig: "fs.read(path) -> Result[str]", Detail: "read whole file"},
+	"fs.write":     {Sig: "fs.write(path, data) -> Result", Detail: "write file"},
+	"fs.append":    {Sig: "fs.append(path, data) -> Result", Detail: "append to file"},
+	"fs.exists":    {Sig: "fs.exists(path) -> bool", Detail: "path exists"},
+	"fs.lines":     {Sig: "fs.lines(path) -> Result[[str]]", Detail: "read lines"},
+	"fs.glob":      {Sig: "fs.glob(pattern) -> [str]", Detail: "glob paths"},
+	"fs.rglob":     {Sig: "fs.rglob(pattern) -> [str]", Detail: "recursive glob"},
+	"fs.join":      {Sig: "fs.join(parts…)", Detail: "join path segments"},
+	"fs.base":      {Sig: "fs.base(path)", Detail: "base name"},
+	"fs.dir":       {Sig: "fs.dir(path)", Detail: "directory of path"},
+	"fs.ext":       {Sig: "fs.ext(path)", Detail: "extension"},
+	"fs.cwd":       {Sig: "fs.cwd()", Detail: "current working directory"},
+	"fs.abs":       {Sig: "fs.abs(path)", Detail: "absolute path"},
+	"fs.list":      {Sig: "fs.list(dir) -> Result", Detail: "list directory"},
+	"fs.mkdir":     {Sig: "fs.mkdir(path) -> Result", Detail: "create directory"},
+	"fs.remove":    {Sig: "fs.remove(path) -> Result", Detail: "remove file"},
+	"fs.temp_file": {Sig: "fs.temp_file(prefix?, suffix?) -> Result[str]", Detail: "temp file path"},
+	"fs.temp_dir":  {Sig: "fs.temp_dir(prefix?) -> Result[str]", Detail: "temp directory"},
+	"fs.walk":      {Sig: "fs.walk(root) -> Result", Detail: "walk tree"},
+	"fs.stat":      {Sig: "fs.stat(path) -> Result", Detail: "file info"},
+	"fs.size":      {Sig: "fs.size(path) -> Result[int]", Detail: "file size bytes"},
+
+	// json / jsonl / config
+	"json.parse":     {Sig: "json.parse(s) -> Result", Detail: "parse JSON text"},
+	"json.stringify": {Sig: "json.stringify(v, indent?)", Detail: "serialize to JSON"},
+	"json.pretty":    {Sig: "json.pretty(v)", Detail: "pretty-print JSON"},
+	"json.get":       {Sig: "json.get(doc, path, default?) -> Result", Detail: "dotted path; default if missing"},
+	"json.set":       {Sig: "json.set(doc, path, v)", Detail: "set dotted path"},
+	"json.has":       {Sig: "json.has(doc, path) -> bool", Detail: "path exists"},
+	"json.merge":     {Sig: "json.merge(a, b)", Detail: "shallow/deep merge helpers"},
+	"json.clone":     {Sig: "json.clone(v)", Detail: "deep copy"},
+	"jsonl.read":     {Sig: "jsonl.read(path) -> Result", Detail: "read JSON Lines"},
+	"jsonl.write":    {Sig: "jsonl.write(path, rows) -> Result", Detail: "write JSON Lines"},
+	"jsonl.append":   {Sig: "jsonl.append(path, row) -> Result", Detail: "append one line"},
+	"jsonl.parse":    {Sig: "jsonl.parse(s) -> Result", Detail: "parse JSONL text"},
+	"yaml.parse":     {Sig: "yaml.parse(s) -> Result", Detail: "parse YAML"},
+	"yaml.load":      {Sig: "yaml.load(path) -> Result", Detail: "load YAML file"},
+	"yaml.stringify": {Sig: "yaml.stringify(v)", Detail: "YAML text"},
+	"yaml.save":      {Sig: "yaml.save(path, v) -> Result", Detail: "write YAML file"},
+	"toml.parse":     {Sig: "toml.parse(s) -> Result", Detail: "parse TOML"},
+	"toml.load":      {Sig: "toml.load(path) -> Result", Detail: "load TOML file"},
+	"toml.stringify": {Sig: "toml.stringify(v)", Detail: "TOML text"},
+	"toml.save":      {Sig: "toml.save(path, v) -> Result", Detail: "write TOML file"},
+	"ini.parse":      {Sig: "ini.parse(s) -> Result", Detail: "parse INI"},
+	"ini.load":       {Sig: "ini.load(path) -> Result", Detail: "load INI file"},
+	"ini.save":       {Sig: "ini.save(path, v) -> Result", Detail: "write INI file"},
+	"ini.get":        {Sig: "ini.get(doc, section, key)", Detail: "section key lookup"},
+	"xml.parse":      {Sig: "xml.parse(s) -> Result", Detail: "parse XML"},
+	"xml.stringify":  {Sig: "xml.stringify(v)", Detail: "XML text"},
+
+	// db / data
+	"db.open":            {Sig: "db.open(dsn) -> Result[conn]", Detail: "sqlite:… / postgres / mysql"},
+	"db.drivers":         {Sig: "db.drivers()", Detail: "available drivers"},
+	"csv.parse":          {Sig: "csv.parse(s, opts?) -> Result", Detail: "parse CSV text"},
+	"csv.read":           {Sig: "csv.read(path, opts?) -> Result", Detail: "read CSV file"},
+	"csv.write":          {Sig: "csv.write(path, rows, opts?) -> Result", Detail: "write CSV"},
+	"csv.stringify":      {Sig: "csv.stringify(rows, opts?)", Detail: "CSV text"},
+	"table.where_eq":     {Sig: "table.where_eq(rows, col, val)", Detail: "filter rows"},
+	"table.where_ne":     {Sig: "table.where_ne(rows, col, val)", Detail: "filter != value"},
+	"table.where_truthy": {Sig: "table.where_truthy(rows, col)", Detail: "truthy column filter"},
+	"table.project":      {Sig: "table.project(rows, cols)", Detail: "keep columns"},
+	"table.pick":         {Sig: "table.pick(rows, cols)", Detail: "pick columns"},
+	"table.pluck":        {Sig: "table.pluck(rows, col)", Detail: "column values"},
+	"table.sort":         {Sig: "table.sort(rows, col, desc?)", Detail: "sort rows"},
+	"table.unique":       {Sig: "table.unique(rows, col?)", Detail: "unique rows/values"},
+	"table.group_by":     {Sig: "table.group_by(rows, col)", Detail: "group rows"},
+	"table.merge":        {Sig: "table.merge(a, b, on)", Detail: "join-like merge"},
+	"table.count":        {Sig: "table.count(rows)", Detail: "row count"},
+
+	// cli / env / log / secrets / sh / io
+	"cli.parse":       {Sig: "cli.parse(spec) -> Result", Detail: "flags/args; .help .usage .args"},
+	"cli.exit":        {Sig: "cli.exit(code)", Detail: "exit process"},
+	"cli.argv":        {Sig: "cli.argv() -> [str]", Detail: "positionals after script name"},
+	"cli.args":        {Sig: "cli.args() -> [str]", Detail: "full argv"},
+	"cli.die":         {Sig: "cli.die(msg)", Detail: "print error and exit"},
+	"cli.flag":        {Sig: "cli.flag(name, default)", Detail: "quick flag lookup"},
+	"env.get":         {Sig: "env.get(name, default?) -> any", Detail: "env var or default/null"},
+	"env.require":     {Sig: "env.require(name) -> Result[str]", Detail: "required env var"},
+	"env.set":         {Sig: "env.set(name, value)", Detail: "set env var"},
+	"env.keys":        {Sig: "env.keys() -> [str]", Detail: "env names"},
+	"env.home":        {Sig: "env.home()", Detail: "home directory"},
+	"env.hostname":    {Sig: "env.hostname()", Detail: "host name"},
+	"env.pid":         {Sig: "env.pid()", Detail: "process id"},
+	"log.info":        {Sig: "log.info(msg, fields?)", Detail: "info log"},
+	"log.warn":        {Sig: "log.warn(msg, fields?)", Detail: "warn log"},
+	"log.error":       {Sig: "log.error(msg, fields?)", Detail: "error log"},
+	"log.debug":       {Sig: "log.debug(msg, fields?)", Detail: "debug log"},
+	"log.set_level":   {Sig: "log.set_level(level)", Detail: "debug|info|warn|error"},
+	"secrets.get":     {Sig: "secrets.get(name)", Detail: "secret value if set"},
+	"secrets.require": {Sig: "secrets.require(name) -> Result", Detail: "required secret"},
+	"secrets.from":    {Sig: "secrets.from(map)", Detail: "secret bag helper"},
+	"sh.run":          {Sig: "sh.run(cmd, args?) -> Result", Detail: "run process"},
+	"sh.capture":      {Sig: "sh.capture(cmd, args?) -> Result[str]", Detail: "stdout as string"},
+	"sh.shell":        {Sig: "sh.shell(line) -> Result", Detail: "run via shell"},
+	"sh.which":        {Sig: "sh.which(bin)", Detail: "resolve binary path"},
+	"sh.ok":           {Sig: "sh.ok(cmd, args?) -> bool", Detail: "exit 0?"},
+	"io.stdin":        {Sig: "io.stdin() -> Result[str]", Detail: "read stdin"},
+	"io.lines":        {Sig: "io.lines() -> Result", Detail: "stdin lines"},
+	"io.eprintln":     {Sig: "io.eprintln(values…)", Detail: "print to stderr"},
+
+	// time / str / re / math
+	"time.now":        {Sig: "time.now() -> int", Detail: "unix seconds"},
+	"time.now_ms":     {Sig: "time.now_ms() -> int", Detail: "unix milliseconds"},
+	"time.iso":        {Sig: "time.iso(t?)", Detail: "ISO-8601 string"},
+	"time.parse":      {Sig: "time.parse(s, layout?) -> Result", Detail: "parse time"},
+	"time.format":     {Sig: "time.format(t, layout)", Detail: "format time"},
+	"time.parts":      {Sig: "time.parts(t) -> map", Detail: "year/month/day/…"},
+	"time.from_parts": {Sig: "time.from_parts(y, m, d, …)", Detail: "build unix time"},
+	"time.sleep":      {Sig: "time.sleep(seconds)", Detail: "sleep"},
+	"time.sleep_ms":   {Sig: "time.sleep_ms(ms)", Detail: "sleep milliseconds"},
+	"str.trim":        {Sig: "str.trim(s)", Detail: "trim whitespace"},
+	"str.split":       {Sig: "str.split(s, sep)", Detail: "split string"},
+	"str.join":        {Sig: "str.join(parts, sep)", Detail: "join list of strings"},
+	"str.lower":       {Sig: "str.lower(s)", Detail: "lowercase"},
+	"str.upper":       {Sig: "str.upper(s)", Detail: "uppercase"},
+	"str.contains":    {Sig: "str.contains(s, sub) -> bool", Detail: "substring check"},
+	"str.replace":     {Sig: "str.replace(s, old, new)", Detail: "replace all"},
+	"str.has_prefix":  {Sig: "str.has_prefix(s, pfx)", Detail: "prefix check"},
+	"str.has_suffix":  {Sig: "str.has_suffix(s, sfx)", Detail: "suffix check"},
+	"str.starts_with": {Sig: "str.starts_with(s, pfx)", Detail: "alias of has_prefix"},
+	"str.ends_with":   {Sig: "str.ends_with(s, sfx)", Detail: "alias of has_suffix"},
+	"str.slice":       {Sig: "str.slice(s, start, end?)", Detail: "substring"},
+	"str.lines":       {Sig: "str.lines(s)", Detail: "split lines"},
+	"re.find":         {Sig: "re.find(pattern, s)", Detail: "first match"},
+	"re.find_all":     {Sig: "re.find_all(pattern, s)", Detail: "all matches"},
+	"re.is_match":     {Sig: "re.is_match(pattern, s) -> bool", Detail: "match?"},
+	"re.replace":      {Sig: "re.replace(pattern, s, repl)", Detail: "regex replace"},
+	"re.split":        {Sig: "re.split(pattern, s)", Detail: "regex split"},
+	"math.abs":        {Sig: "math.abs(n)", Detail: "absolute value"},
+	"math.min":        {Sig: "math.min(a, b, …)", Detail: "minimum"},
+	"math.max":        {Sig: "math.max(a, b, …)", Detail: "maximum"},
+	"math.clamp":      {Sig: "math.clamp(n, lo, hi)", Detail: "clamp range"},
+	"math.pow":        {Sig: "math.pow(base, exp)", Detail: "power"},
+	"math.sqrt":       {Sig: "math.sqrt(n)", Detail: "square root"},
+	"math.floor":      {Sig: "math.floor(n)", Detail: "floor"},
+	"math.ceil":       {Sig: "math.ceil(n)", Detail: "ceiling"},
+	"math.sum":        {Sig: "math.sum(list)", Detail: "sum numbers"},
+	"math.mean":       {Sig: "math.mean(list)", Detail: "average"},
+	"math.median":     {Sig: "math.median(list)", Detail: "median"},
+	"math.pi":         {Sig: "math.pi", Detail: "π constant"},
+	"math.e":          {Sig: "math.e", Detail: "e constant"},
+
+	// test
+	"test.eq":       {Sig: "test.eq(a, b)", Detail: "assert equal"},
+	"test.ne":       {Sig: "test.ne(a, b)", Detail: "assert not equal"},
+	"test.is_true":  {Sig: "test.is_true(v)", Detail: "assert truthy"},
+	"test.is_false": {Sig: "test.is_false(v)", Detail: "assert falsey"},
+	"test.ok":       {Sig: "test.ok(result)", Detail: "assert Result ok"},
+	"test.err":      {Sig: "test.err(result)", Detail: "assert Result err"},
+	"test.contains": {Sig: "test.contains(hay, needle)", Detail: "string/list contains"},
+	"test.approx":   {Sig: "test.approx(a, b, eps?)", Detail: "float near-equal"},
+	"test.is_null":  {Sig: "test.is_null(v)", Detail: "assert null"},
+	"test.fail":     {Sig: "test.fail(msg)", Detail: "hard fail"},
+	"test.skip":     {Sig: "test.skip(msg)", Detail: "skip test"},
+
+	// local LLM
+	"ollama.chat":     {Sig: "ollama.chat(prompt | opts) -> Result", Detail: "local Ollama chat"},
+	"ollama.list":     {Sig: "ollama.list() -> Result", Detail: "list models"},
+	"ollama.generate": {Sig: "ollama.generate(prompt | opts) -> Result", Detail: "generate"},
+	"ollama.ps":       {Sig: "ollama.ps() -> Result", Detail: "running models"},
+	"ollama.pull":     {Sig: "ollama.pull(model) -> Result", Detail: "pull model"},
+	"ollama.host":     {Sig: "ollama.host()", Detail: "Ollama base URL"},
+	"vllm.chat":       {Sig: "vllm.chat(opts) -> Result", Detail: "vLLM chat/completions"},
+	"vllm.list":       {Sig: "vllm.list() -> Result", Detail: "list models"},
+	"vllm.health":     {Sig: "vllm.health() -> Result", Detail: "health check"},
+	"vllm.connect":    {Sig: "vllm.connect(url?)", Detail: "set base URL"},
+
+	// misc glue
+	"url.parse":           {Sig: "url.parse(s) -> Result", Detail: "parse URL"},
+	"url.build":           {Sig: "url.build(parts)", Detail: "build URL"},
+	"url.join":            {Sig: "url.join(base, ref)", Detail: "resolve URL"},
+	"uuid.v4":             {Sig: "uuid.v4()", Detail: "random UUID"},
+	"base64.encode":       {Sig: "base64.encode(s)", Detail: "base64 encode"},
+	"base64.decode":       {Sig: "base64.decode(s) -> Result", Detail: "base64 decode"},
+	"crypto.sha256":       {Sig: "crypto.sha256(s)", Detail: "SHA-256 hex"},
+	"crypto.uuid":         {Sig: "crypto.uuid()", Detail: "UUID helper"},
+	"archive.zip":         {Sig: "archive.zip(src, dest) -> Result", Detail: "zip path"},
+	"archive.unzip":       {Sig: "archive.unzip(src, dest) -> Result", Detail: "unzip"},
+	"platform.os":         {Sig: "platform.os()", Detail: "GOOS"},
+	"platform.arch":       {Sig: "platform.arch()", Detail: "GOARCH"},
+	"platform.cpus":       {Sig: "platform.cpus()", Detail: "CPU count"},
+	"iter.chain":          {Sig: "iter.chain(lists…)", Detail: "chain sequences"},
+	"iter.take":           {Sig: "iter.take(list, n)", Detail: "first n"},
+	"iter.drop":           {Sig: "iter.drop(list, n)", Detail: "drop first n"},
+	"iter.chunk":          {Sig: "iter.chunk(list, n)", Detail: "chunk list"},
+	"collections.counter": {Sig: "collections.counter(list)", Detail: "value counts"},
+	"heap.nsmallest":      {Sig: "heap.nsmallest(n, list)", Detail: "n smallest"},
+	"heap.nlargest":       {Sig: "heap.nlargest(n, list)", Detail: "n largest"},
+	"bisect.insort":       {Sig: "bisect.insort(list, x)", Detail: "insert sorted"},
+	"pipe.reduce":         {Sig: "pipe.reduce(list, fn, init?)", Detail: "reduce"},
+	"viz.bar":             {Sig: "viz.bar(data, opts?)", Detail: "bar chart SVG"},
+	"viz.line":            {Sig: "viz.line(data, opts?)", Detail: "line chart SVG"},
+	"viz.save":            {Sig: "viz.save(path, svg) -> Result", Detail: "write chart"},
+	"graphql.query":       {Sig: "graphql.query(url, query, vars?) -> Result", Detail: "GraphQL query"},
+}
+
+func lookupMember(pkg, mem string) (memberHelp, bool) {
+	if mem == "" {
+		h, ok := memberCatalog[pkg]
+		return h, ok
+	}
+	h, ok := memberCatalog[pkg+"."+mem]
+	return h, ok
+}
+
+func lookupCall(name string) (memberHelp, bool) {
+	if h, ok := memberCatalog[name]; ok {
+		return h, true
+	}
+	return memberHelp{}, false
+}

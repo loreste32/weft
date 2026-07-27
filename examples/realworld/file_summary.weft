@@ -1,0 +1,7 @@
+// Real-world: read a file and ask the model to summarize (works offline with eval mock)
+fn main -> Result {
+    path := "README.md"
+    text := fs.read(path)?
+    reply := llm.ask("Summarize this project in one sentence. File starts:\n$text", [])?
+    say(reply)
+}

@@ -1,0 +1,21 @@
+fn producer(ch) {
+    send(ch, 1)
+    send(ch, 2)
+    close(ch)
+}
+
+
+fn main -> Result[any] {
+    ch := channel(2)
+    spawn(producer, ch)
+    a := recv(ch)?
+    b := recv(ch)?
+    say(a, b)
+    ch2 := channel(1)
+    spawn(fn(c) {
+        send(c, 42)
+        close(c)
+    }, ch2)
+    say(recv(ch2)?)
+}
+

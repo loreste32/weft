@@ -1,0 +1,33 @@
+// ml — installable Weft module (not core stdlib).
+//
+//   weft get ml ./packages/ml   # or path/git
+//   weft install
+//   use ml
+//
+// Scope (balanced): embeddings + vectors + RAG index + metrics.
+// Not in scope: NumPy, PyTorch, training loops — use weft train / Ollama / vLLM.
+
+use "./vec.weft" as vec
+use "./embed.weft" as emb
+use "./index.weft" as idx
+use "./metrics.weft" as met
+
+pub fn cosine(a, b) { vec.cosine(a, b) }
+pub fn dot(a, b) { vec.dot(a, b) }
+pub fn norm(a) { vec.norm(a) }
+pub fn topk(query, items, k) { vec.topk(query, items, k) }
+
+pub fn provider() { emb.provider() }
+pub fn embed(text) -> Result { emb.embed1(text) }
+pub fn embed_with(text, opts) -> Result { emb.embed(text, opts) }
+pub fn embed_many(texts) -> Result { emb.embed_many(texts) }
+
+pub fn index() { idx.index() }
+pub fn index_add(ix, id, vector, meta) { idx.index_add(ix, id, vector, meta) }
+pub fn index_search(ix, query, k) { idx.index_search(ix, query, k) }
+pub fn index_save(ix, path) -> Result { idx.index_save(ix, path) }
+pub fn index_load(path) -> Result { idx.index_load(path) }
+
+pub fn accuracy(preds, labels) { met.accuracy(preds, labels) }
+pub fn mse(preds, labels) { met.mse(preds, labels) }
+pub fn split(rows, train_ratio) { met.split(rows, train_ratio) }

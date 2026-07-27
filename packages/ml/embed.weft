@@ -1,0 +1,191 @@
+// Embeddings over HTTP (OpenAI-compat + Ollama). Pure Weft — not core stdlib.
+
+fn env_get(k, def) {
+    v := env.get(k)
+    if v == null { def } else { v }
+}
+
+fn trim_slash(s) {
+    n := len(s)
+    if n > 0 && s[n - 1] == "/" {
+        mut out := ""
+        mut i := 0
+        while i < n - 1 {
+            out = out + s[i]
+            i = i + 1
+        }
+        out
+    } else {
+        s
+    }
+}
+
+// join base + path without doubling slashes or /v1.
+fn join_url(base, path) {
+    b := trim_slash(base)
+    if path == "" { return b }
+    if path[0] == "/" { return b + path }
+    b + "/" + path
+}
+
+// ensure OpenAI-compat embeddings URL from a host or …/v1 base.
+fn embeddings_url(base) {
+    b := trim_slash(base)
+    // already ends with /embeddings
+    if contains(b, "/embeddings") { return b }
+    // has /v1 somewhere near the end
+    if contains(b, "/v1") { return b + "/embeddings" }
+    // bare host (Ollama/vLLM sometimes) → /v1/embeddings
+    b + "/v1/embeddings"
+}
+
+pub fn provider() {
+    p := env_get("WEFT_PROVIDER", env_get("LLM_PROVIDER", ""))
+    if p != "" { return p }
+    if env_get("OLLAMA_HOST", "") != "" || env_get("OLLAMA_BASE_URL", "") != "" { return "ollama" }
+    if env_get("VLLM_BASE_URL", "") != "" || env_get("VLLM_HOST", "") != "" { return "vllm" }
+    "openai"
+}
+
+fn embed_model() {
+    env_get("WEFT_EMBED_MODEL", env_get("OLLAMA_EMBED_MODEL", env_get("OPENAI_EMBED_MODEL", "nomic-embed-text")))
+}
+
+fn embed_key() {
+    k := env_get("OPENAI_API_KEY", env_get("WEFT_API_KEY", env_get("OLLAMA_API_KEY", "")))
+    if k == "" { "ollama" } else { k }
+}
+
+fn ollama_host() {
+    trim_slash(env_get("OLLAMA_HOST", env_get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")))
+}
+
+fn openai_base() {
+    trim_slash(env_get("OPENAI_BASE_URL", env_get("WEFT_API_BASE", env_get("LLM_BASE_URL", env_get("VLLM_BASE_URL", "https://api.openai.com/v1")))))
+}
+
+// Pull embedding vector from common OpenAI-compat shapes.
+fn pick_embedding(data) -> Result {
+    if data.embedding != null { return Ok(data.embedding) }
+    if data.data != null && len(data.data) > 0 {
+        row := data.data[0]
+        if row.embedding != null { return Ok(row.embedding) }
+        if row.vector != null { return Ok(row.vector) }
+    }
+    if data.embeddings != null && len(data.embeddings) > 0 {
+        return Ok(data.embeddings[0])
+    }
+    if data.vector != null { return Ok(data.vector) }
+    Err("ml.embed: empty embedding in response")
+}
+
+// embed(text, opts?) -> Result[[float]]
+// opts: {model, base_url, api_key, headers?}
+pub fn embed(text, opts) -> Result {
+    mut model := embed_model()
+    mut key := embed_key()
+    mut base := openai_base()
+    mut extra := null
+    if opts != null {
+        if opts.model != null && opts.model != "" { model = opts.model }
+        if opts.api_key != null && opts.api_key != "" { key = opts.api_key }
+        if opts.base_url != null && opts.base_url != "" { base = opts.base_url }
+        if opts.headers != null { extra = opts.headers }
+    }
+    if text == "" { return Err("ml.embed needs text") }
+
+    p := provider()
+    if p == "ollama" && (opts == null || opts.base_url == null || opts.base_url == "") {
+        return embed_ollama(text, model)
+    }
+    embed_openai_compat(text, model, base, key, extra)
+}
+
+pub fn embed1(text) -> Result { embed(text, null) }
+
+fn embed_ollama(text, model) -> Result {
+    host := ollama_host()
+    // 1) native
+    resp := http.post("${host}/api/embeddings", json.stringify({"model": model, "prompt": text}))?
+    if resp.status < 300 {
+        data := json.parse(resp.body)?
+        if data.embedding != null { return Ok(data.embedding) }
+    }
+    // 2) OpenAI-compat on same host
+    embed_openai_compat(text, model, host + "/v1", "ollama", null)
+}
+
+fn embed_openai_compat(text, model, base, key, extra_headers) -> Result {
+    url := embeddings_url(base)
+    body := json.stringify({"model": model, "input": text})
+    mut headers := {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer $key",
+    }
+    // Azure OpenAI style (optional)
+    if key != "" && key != "ollama" && key != "EMPTY" {
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer $key",
+            "api-key": key,
+        }
+    }
+    if extra_headers != null {
+        // shallow merge extra into headers
+        for k in keys(extra_headers) {
+            headers[k] = extra_headers[k]
+        }
+    }
+    resp := http.post(url, body, {"headers": headers, "retries": 2, "timeout": 60})?
+    if resp.status >= 300 {
+        return Err("ml.embed HTTP ${resp.status}: ${resp.body}")
+    }
+    data := json.parse(resp.body)?
+    pick_embedding(data)
+}
+
+// Batch: prefer one OpenAI-compat call; fall back per-item.
+pub fn embed_many(texts) -> Result {
+    if texts == null || len(texts) == 0 { return Ok([]) }
+    p := provider()
+    if p == "ollama" {
+        return embed_many_loop(texts)
+    }
+    // single request with input: [str…]
+    model := embed_model()
+    key := embed_key()
+    base := openai_base()
+    url := embeddings_url(base)
+    body := json.stringify({"model": model, "input": texts})
+    headers := {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer $key",
+        "api-key": key,
+    }
+    resp := http.post(url, body, {"headers": headers, "retries": 2, "timeout": 120})?
+    if resp.status >= 300 {
+        // fallback per-item
+        return embed_many_loop(texts)
+    }
+    data := json.parse(resp.body)?
+    if data.data != null && len(data.data) > 0 {
+        mut out := []
+        for row in data.data {
+            if row.embedding != null {
+                push(out, row.embedding)
+            } else if row.vector != null {
+                push(out, row.vector)
+            }
+        }
+        if len(out) == len(texts) { return Ok(out) }
+    }
+    embed_many_loop(texts)
+}
+
+fn embed_many_loop(texts) -> Result {
+    mut out := []
+    for t in texts {
+        push(out, embed(t, null)?)
+    }
+    Ok(out)
+}

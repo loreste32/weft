@@ -1,0 +1,193 @@
+// Pack high-signal prompts: less tokens, clearer task, better accuracy.
+
+use "./est.weft" as est
+use "./frame.weft" as frame
+
+pub fn clip_words(text, max_words) {
+    if text == null { return "" }
+    s := "" + text
+    if max_words == null || max_words <= 0 { return s }
+    ws := str.fields(s)
+    if len(ws) <= max_words { return s }
+    mut parts := []
+    mut i := 0
+    while i < max_words {
+        push(parts, ws[i])
+        i = i + 1
+    }
+    str.join(parts, " ") + "…"
+}
+
+pub fn trim(text, max_tokens) {
+    if text == null { return "" }
+    s := "" + text
+    if max_tokens == null || max_tokens <= 0 { return s }
+    // word-clip ≈ tokens
+    clip_words(s, max_tokens)
+}
+
+pub fn history(msgs, keep_last, max_tokens) {
+    if msgs == null || len(msgs) == 0 { return [] }
+    mut keep := keep_last
+    if keep == null || keep <= 0 { keep = 6 }
+    mut sys := null
+    mut rest := []
+    for m in msgs {
+        if m.role == "system" {
+            if sys == null { sys = m }
+        } else {
+            push(rest, m)
+        }
+    }
+    mut start := len(rest) - keep
+    if start < 0 { start = 0 }
+    mut out := []
+    if sys != null { push(out, sys) }
+    mut i := start
+    while i < len(rest) {
+        push(out, rest[i])
+        i = i + 1
+    }
+    if max_tokens != null && max_tokens > 0 {
+        while est.estimate_msgs(out) > max_tokens && len(out) > 2 {
+            mut nxt := []
+            mut j := 0
+            while j < len(out) {
+                if j != 1 { push(nxt, out[j]) }
+                j = j + 1
+            }
+            out = nxt
+        }
+    }
+    out
+}
+
+pub fn contract(kind) {
+    k := "" + kind
+    if k == "weft" {
+        return "One complete Weft program only (fn/:=/say/?). No prose, fences, or step-by-step."
+    }
+    if k == "json" {
+        return "One JSON object only. No markdown or explanation."
+    }
+    if k == "short" {
+        return "At most 3 sentences. Final answer first. No chain-of-thought."
+    }
+    if k == "label" {
+        return "Single label token only."
+    }
+    if k == "code" {
+        return "Code only for the requested language. No commentary."
+    }
+    "Final answer first. No long reasoning."
+}
+
+pub fn system_for(task_kind) {
+    k := "" + task_kind
+    // short system — accuracy + thrift, all providers
+    base := "Be precise. Use only provided context. Prefer correct short answers over long ones."
+    if k == "weft" {
+        return base + " Language: Weft (not Python/JS). " + contract("weft")
+    }
+    if k == "json" {
+        return base + " " + contract("json")
+    }
+    if k == "agent" {
+        return base + " Call tools only when needed. " + contract("short")
+    }
+    if k == "code" {
+        return base + " " + contract("code")
+    }
+    base + " " + contract("short")
+}
+
+// pack(task, docs, opts?) -> {system,user,messages,tokens,raw_tokens,saved}
+// opts: kind, max_docs, max_doc_tokens, max_total, history, keep_last, hints, examples, frame
+pub fn pack(task, docs, opts) {
+    mut kind := "short"
+    mut max_docs := 3
+    mut max_doc_tokens := 120
+    mut max_total := 1200
+    mut hist := null
+    mut keep_last := 4
+    mut hints := null
+    mut examples := null
+    mut do_frame := true
+    if opts != null {
+        ks := keys(opts)
+        if contains(ks, "kind") && opts.kind != "" { kind = opts.kind }
+        if contains(ks, "max_docs") { max_docs = opts.max_docs }
+        if contains(ks, "max_doc_tokens") { max_doc_tokens = opts.max_doc_tokens }
+        if contains(ks, "max_total") { max_total = opts.max_total }
+        if contains(ks, "history") { hist = opts.history }
+        if contains(ks, "keep_last") { keep_last = opts.keep_last }
+        if contains(ks, "hints") { hints = opts.hints }
+        if contains(ks, "examples") { examples = opts.examples }
+        if contains(ks, "frame") { do_frame = opts.frame }
+    }
+
+    sys := system_for(kind)
+    mut goal := "" + task
+    if do_frame {
+        goal = frame.frame(task, kind, hints)
+    }
+
+    mut body := goal
+    if examples != null && len(examples) > 0 {
+        body = body + "\n\nExamples:"
+        mut ei := 0
+        while ei < len(examples) && ei < 2 {
+            body = body + "\n- " + trim(examples[ei], 80)
+            ei = ei + 1
+        }
+    }
+    if docs != null && len(docs) > 0 {
+        mut i := 0
+        mut n := len(docs)
+        if n > max_docs { n = max_docs }
+        body = body + "\n\nContext:"
+        while i < n {
+            body = body + "\n- " + trim(docs[i], max_doc_tokens)
+            i = i + 1
+        }
+    }
+
+    mut msgs := [{"role": "system", "content": sys}]
+    if hist != null {
+        h := history(hist, keep_last, max_total / 3)
+        for m in h {
+            if m.role != "system" { push(msgs, m) }
+        }
+    }
+    push(msgs, {"role": "user", "content": body})
+
+    while est.estimate_msgs(msgs) > max_total && len(body) > 60 {
+        body = trim(body, est.estimate(body) - 30)
+        msgs[len(msgs) - 1] = {"role": "user", "content": body}
+    }
+
+    tok := est.estimate_msgs(msgs)
+    // raw = fat system + full knowledge dump (opts.knowledge_all if provided)
+    mut raw_pile := docs
+    if opts != null {
+        oks := keys(opts)
+        if contains(oks, "knowledge_all") { raw_pile = opts.knowledge_all }
+    }
+    mut raw := 80 + est.estimate(task) // ~fat system card placeholder
+    if raw_pile != null {
+        for d in raw_pile {
+            raw = raw + est.estimate(d) + 2
+        }
+    }
+    mut saved := raw - tok
+    if saved < 0 { saved = 0 }
+
+    {
+        "system": sys,
+        "user": body,
+        "messages": msgs,
+        "tokens": tok,
+        "raw_tokens": raw,
+        "saved": saved,
+    }
+}

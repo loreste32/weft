@@ -1,0 +1,22 @@
+// Local Ollama chat — no cloud key required
+//   ollama pull llama3.2
+//   weft run examples/ollama_chat.weft
+//   OLLAMA_MODEL=qwen2.5:7b weft run examples/ollama_chat.weft
+
+fn main -> Result {
+    log.info("ollama host", ollama.host())
+    models := ollama.list()?
+    say("models:", models)
+    if len(models) == 0 {
+        cli.die("no models — run: ollama pull llama3.2")
+    }
+
+    reply := ollama.chat({
+        "prompt": "In one sentence, what is a weft in weaving?",
+        "system": "You answer briefly.",
+    })?
+    say("reply:", reply)
+
+    // Also works via unified llm.* when WEFT_PROVIDER=ollama
+    // reply2 := llm.chat("hi")?
+}

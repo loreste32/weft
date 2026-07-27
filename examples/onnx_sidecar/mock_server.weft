@@ -1,0 +1,28 @@
+// Mock classify sidecar — pure Weft HTTP.
+// weft run examples/onnx_sidecar/mock_server.weft
+
+fn score(text) {
+    if contains(text, "great") || contains(text, "love") {
+        {"label": "positive", "score": 0.92, "model": "mock"}
+    } else if contains(text, "bad") || contains(text, "hate") {
+        {"label": "negative", "score": 0.88, "model": "mock"}
+    } else {
+        {"label": "neutral", "score": 0.5, "model": "mock"}
+    }
+}
+
+fn handler(req) {
+    if req.path == "/health" { return http.json({"ok": true}) }
+    if req.method == "POST" && req.path == "/v1/classify" {
+        body := json.parse(req.body)
+        mut text := ""
+        if body.ok { text = body.value.text }
+        return http.json(score(text))
+    }
+    http.json(404, {"error": "not found"})
+}
+
+fn main {
+    say("mock sidecar :8091")
+    http.serve("127.0.0.1:8091", handler)
+}

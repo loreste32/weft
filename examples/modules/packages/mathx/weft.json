@@ -1,0 +1,11 @@
+{
+  "name": "mathx",
+  "version": "0.1.0",
+  "description": "Small math helpers — multi-file Weft module",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": ["double", "add", "clamp"],
+  "license": "Apache-2.0",
+  "keywords": ["math", "example"],
+  "deps": {}
+}

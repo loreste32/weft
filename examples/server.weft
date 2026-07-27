@@ -1,0 +1,10 @@
+// Tiny HTTP server — handler returns http.text / http.json
+fn main() {
+    println("http://127.0.0.1:8080")
+    http.serve(":8080", fn(req) {
+        if req.path == "/health" {
+            return http.json({"ok": true})
+        }
+        return http.text(200, "hello from weft")
+    })
+}

@@ -1,0 +1,9 @@
+// parallel([fn, ...]) — multi-core friendly I/O fan-out (no shared mut)
+fn main() -> Result {
+    let results = parallel([
+        fn() { 1 + 1 },
+        fn() { 2 * 3 },
+        fn() { 10 - 1 },
+    ])?
+    println(results)
+}

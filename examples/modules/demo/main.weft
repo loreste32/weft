@@ -1,0 +1,24 @@
+// Expand the language with modules — no stdlib changes required.
+//
+//   cd examples/modules/demo
+//   weft install
+//   weft run main.weft
+//
+// resultx pulls mathx transitively; both land in vendor/.
+
+use mathx
+use resultx
+
+fn main -> Result {
+    say("double 21 =", mathx.double(21))
+    say("clamp 99 =", mathx.clamp(99, 0, 10))
+
+    s := resultx.score(40)
+    say("score 40 =", s)
+
+    r := resultx.ok_int(7)
+    doubled := resultx.map_ok(r, fn(x) { mathx.double(x) })?
+    say("map_ok double =", doubled)
+
+    say("modules ok")
+}

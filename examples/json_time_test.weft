@@ -1,0 +1,31 @@
+// json path + time parts — weft test examples/json_time_test.weft
+
+fn test_json_path {
+    doc := {"user": {"name": "ada", "tags": ["a", "b"]}, "n": 1}
+    test.eq(json.get(doc, "user.name")?, "ada")
+    test.eq(json.get(doc, "user.tags.0")?, "a")
+    test.is_true(json.has(doc, "n"))
+    test.is_true(!json.has(doc, "missing"))
+
+    doc2 := json.set(doc, "user.name", "grace")?
+    test.eq(json.get(doc2, "user.name")?, "grace")
+    // original unchanged
+    test.eq(json.get(doc, "user.name")?, "ada")
+
+    m := json.merge({"a": 1}, {"b": 2, "a": 9})
+    test.eq(m["a"], 9)
+    test.eq(m["b"], 2)
+}
+
+fn test_time_parts {
+    u := time.from_parts(2020, 1, 15, 12, 0, 0)
+    p := time.parts(u)
+    test.eq(p.year, 2020)
+    test.eq(p.month, 1)
+    test.eq(p.day, 15)
+    test.eq(p.hour, 12)
+    sod := time.start_of_day(u)
+    sp := time.parts(sod)
+    test.eq(sp.hour, 0)
+    test.eq(sp.day, 15)
+}

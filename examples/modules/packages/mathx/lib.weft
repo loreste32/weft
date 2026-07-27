@@ -1,0 +1,14 @@
+// mathx — public API. Internal helpers live in helpers.weft.
+use "./helpers.weft" as h
+
+pub fn double(x) {
+    h.times(x, 2)
+}
+
+pub fn add(a, b) {
+    a + b
+}
+
+pub fn clamp(x, lo, hi) {
+    h.clamp_impl(x, lo, hi)
+}

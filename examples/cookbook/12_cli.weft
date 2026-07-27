@@ -1,0 +1,52 @@
+// Cookbook — tiny CLI
+//   weft run examples/cookbook/12_cli.weft
+//   weft run examples/cookbook/12_cli.weft -- greet Ada
+//   weft run examples/cookbook/12_cli.weft -- --help
+
+fn main -> Result {
+    p := cli.parse({
+        "about": "cookbook-cli — sample flags and subcommand",
+        "flags": {
+            "verbose": {
+                "short": "v",
+                "bool": true,
+                "help": "verbose logging",
+            },
+            "env": {
+                "short": "e",
+                "default": "dev",
+                "help": "environment name",
+            },
+        },
+    })?
+
+    if p.help {
+        say(p.usage)
+        cli.exit(0)
+    }
+
+    args := p.args
+    // Default demo when run with no subcommand (weft eval / smoke)
+    if len(args) == 0 {
+        say("hello, world (${p.env})")
+        return Ok(unit)
+    }
+
+    cmd := args[0]
+    if p.verbose {
+        io.eprintln("env=${p.env} cmd=$cmd")
+    }
+
+    if cmd == "greet" {
+        mut name := "world"
+        if len(args) > 1 {
+            name = args[1]
+        }
+        say("hello, $name (${p.env})")
+        return Ok(unit)
+    }
+
+    io.eprintln("unknown command: $cmd — try: greet")
+    say(p.usage)
+    cli.exit(2)
+}

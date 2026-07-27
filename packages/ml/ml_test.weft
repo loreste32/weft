@@ -1,0 +1,22 @@
+// ml package tests — pure vector/metrics (no network).
+//   weft mod check packages/ml --tests
+use "./lib.weft" as ml
+
+fn test_dot {
+    test.eq(ml.dot([1, 2, 3], [1, 2, 3]), 14)
+}
+
+fn test_norm {
+    // ||[3,4]|| = 5
+    n := ml.norm([3.0, 4.0])
+    test.approx(n, 5.0, 1e-6)
+}
+
+fn test_cosine_self {
+    v := [1.0, 0.0, 0.0]
+    test.approx(ml.cosine(v, v), 1.0, 1e-6)
+}
+
+fn test_accuracy {
+    test.approx(ml.accuracy([1, 1, 0], [1, 0, 0]), 2.0 / 3.0, 1e-9)
+}

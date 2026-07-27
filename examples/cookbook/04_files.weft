@@ -1,0 +1,9 @@
+fn main -> Result[any] {
+    p := fs.temp_file("weft-cookbook-", ".txt")?
+    fs.write(p, "scratch from cookbook\n")?
+    text := fs.read(p)?
+    say(str.trim(text))
+    say("bytes=${len(text)} path=${fs.base(p)}")
+    fs.remove(p)?
+}
+

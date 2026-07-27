@@ -1,0 +1,7 @@
+// Uses a package from vendor/ (after weft install)
+import greeter
+
+fn main() {
+    println(greeter.greet("weft"))
+    println(greeter.shout("world"))
+}

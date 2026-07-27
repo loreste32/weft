@@ -1,0 +1,12 @@
+// Showcase Weft syntax identity (no packages required)
+fn double(x) { x * 2 }
+
+fn main {
+    mut n := 0
+    for x in [1, 2, 3] {
+        n = n + x
+    }
+    name := "weft"
+    say("sum=$n hi $name double=${double(21)}")
+    21 |> double |> say
+}

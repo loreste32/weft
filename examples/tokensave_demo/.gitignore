@@ -1,0 +1,5 @@
+.memory.json
+domain-gold.jsonl
+from-memory.jsonl
+vendor/
+weft.lock

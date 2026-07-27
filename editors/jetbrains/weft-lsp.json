@@ -1,0 +1,14 @@
+{
+  "name": "weft",
+  "description": "Weft Language Server (weft lsp)",
+  "command": "weft",
+  "args": ["lsp"],
+  "languages": [
+    {
+      "id": "weft",
+      "extensions": [".weft", ".loom"],
+      "aliases": ["Weft"]
+    }
+  ],
+  "initializationOptions": {}
+}

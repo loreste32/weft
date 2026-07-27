@@ -1,0 +1,24 @@
+fn add(a, b) { a + b }
+
+
+fn note(msg) { "note:$msg" }
+
+
+fn main -> Result[any] {
+    hi := llm.chat([
+        {"role": "system", "content": "Reply in one short line."},
+        {"role": "user", "content": "say weft"},
+    ])?
+    say(hi)
+    reply := llm.ask("What is 2+3? Use tools.", [
+        llm.tool("add", add, "add two numbers a and b"),
+        llm.tool("note", note, "record a short note"),
+    ], {
+        "system": "You are a careful calculator. Prefer tools.",
+        "max_steps": 8,
+    })?
+    say(reply)
+    chunk := llm.stream_text("one word: hi")?
+    say(chunk)
+}
+

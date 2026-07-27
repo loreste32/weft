@@ -1,0 +1,7 @@
+fn main -> Result[any] {
+    raw := `{"city":"Paris","temp":21,"ok":true}`
+    data := json.parse(raw)?
+    say(data.city, data.temp)
+    say(json.pretty(data))
+}
+

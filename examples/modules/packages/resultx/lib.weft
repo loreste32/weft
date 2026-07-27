@@ -1,0 +1,22 @@
+// resultx — higher-level helpers built on mathx.
+// Demonstrates transitive deps: apps that only get resultx still get mathx.
+use mathx
+
+pub fn ok_int(n) {
+    Ok(n)
+}
+
+// Apply mapper to Ok value; pass Err through (mapper returns a plain value).
+// Last `if` is an expression — both branches yield the Result.
+pub fn map_ok(r, mapper) {
+    if r.ok {
+        Ok(mapper(r.value))
+    } else {
+        r
+    }
+}
+
+// Domain helper: clamp a score then double it via mathx.
+pub fn score(n) {
+    mathx.double(mathx.clamp(n, 0, 50))
+}

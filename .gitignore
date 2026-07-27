@@ -1,0 +1,28 @@
+/weft
+/loom
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+.DS_Store
+/tmp/
+# package manager cache
+.weft/
+.loom/
+# generated fine-tune bundles / adapters
+/weft-sft/
+/loom-sft/
+/train-out/
+/weft-finetune-out/
+**/weft-finetune-out/
+examples/viz_out/
+examples/data/*.db
+examples/data/out/
+# editor / local noise
+editors/vscode/node_modules/
+editors/vscode/*.vsix
+.memory.json
+domain-gold.jsonl
+from-memory.jsonl
+ci_mod/

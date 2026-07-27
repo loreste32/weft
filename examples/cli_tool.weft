@@ -1,0 +1,86 @@
+fn main -> Result[any] {
+    p := cli.parse({
+        "about": "weft-demo — sample devops CLI",
+        "flags": {
+            "verbose": {
+                "short": "v",
+                "bool": true,
+                "help": "verbose logging",
+            },
+            "env": {
+                "short": "e",
+                "default": "dev",
+                "help": "environment name",
+            },
+            "out": {
+                "short": "o",
+                "default": "",
+                "help": "optional output file",
+            },
+        },
+    })?
+    if p.help {
+        say(p.usage)
+        cli.exit(0)
+    }
+    args := p.args
+    if len(args) == 0 {
+        io.eprintln("missing command — try: greet | lines | glob | env | shell")
+        say(p.usage)
+        cli.exit(2)
+    }
+    cmd := args[0]
+    if p.verbose { io.eprintln("env=" + p.env + " cmd=" + cmd) }
+    if cmd == "greet" {
+        mut name := "world"
+        if len(args) > 1 {
+            name = args[1]
+        }
+        msg := "hello, " + name + " (" + p.env + ")"
+        say(msg)
+        if p.out != "" { fs.write(p.out, msg + "\n")? }
+        return Ok(unit)
+    }
+    if cmd == "lines" {
+        mut path := "examples/hello.weft"
+        if len(args) > 1 {
+            path = args[1]
+        }
+        ls := fs.lines(path)?
+        say(path + ": " + len(ls) + " lines")
+        return Ok(unit)
+    }
+    if cmd == "glob" {
+        mut pat := "examples/*.weft"
+        if len(args) > 1 {
+            pat = args[1]
+        }
+        files := fs.glob(pat)?
+        for f in files { println(f) }
+        return Ok(unit)
+    }
+    if cmd == "env" {
+        home := env.get("HOME")
+        say("HOME=" + home)
+        say("cwd=" + fs.cwd()?)
+        git := sh.which("git")
+        say("git=" + git)
+        return Ok(unit)
+    }
+    if cmd == "shell" {
+        if len(args) < 2 { cli.die("usage: shell <command line>") }
+        mut line := args[1]
+        mut i := 2
+        while i < len(args) {
+            line = line + " " + args[i]
+            i = i + 1
+        }
+        out := sh.shell(line)?
+        if out.stdout != "" { print(out.stdout) }
+        if out.stderr != "" { io.eprint(out.stderr) }
+        if !out.ok { cli.exit(out.code) }
+        return Ok(unit)
+    }
+    cli.die("unknown command: " + cmd)
+}
+

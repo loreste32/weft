@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "packages": [
+    {
+      "name": "ml",
+      "source": "path:/Users/loreste/coucou/packages/ml",
+      "version": "0.1.0",
+      "sum": "sha256:3eb42f060ff5bc4c03fcbde6425b245e190b495b8b718248806feee94dcd6d9d",
+      "dir": "vendor/ml"
+    }
+  ]
+}

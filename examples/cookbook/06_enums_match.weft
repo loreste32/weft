@@ -1,0 +1,36 @@
+enum Status { Ok, Err, Pending }
+
+
+enum Kind { Text, Done }
+
+
+fn label(s) {
+    match s {
+        Status.Ok { "good" }
+        Status.Err { "bad" }
+        Status.Pending { "wait" }
+        _ { "?" }
+    }
+}
+
+
+fn handle(kind, text) {
+    match kind {
+        Kind.Text { text }
+        Kind.Done { "[done]" }
+        _ { "" }
+    }
+}
+
+
+fn main {
+    say(Status.Ok)
+    say(label(Status.Pending))
+    say(handle(Kind.Text, "hello"))
+    say(handle(Kind.Done, ""))
+    say(match "Ok" {
+        Status.Ok { "yes" }
+        _ { "no" }
+    })
+}
+

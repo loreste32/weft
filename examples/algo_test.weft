@@ -1,0 +1,28 @@
+// Algorithms — bisect / heap / list aggregates
+//   weft test examples/algo_test.weft
+
+fn test_bisect {
+    xs := [1, 3, 5, 7]
+    test.eq(bisect.left(xs, 5), 2)
+    test.eq(bisect.right(xs, 5), 3)
+    test.eq(bisect.insort(xs, 4), [1, 3, 4, 5, 7])
+}
+
+fn test_heap {
+    h := heap.heapify([3, 1, 4, 1, 5])
+    test.eq(h[0], 1)
+    h2 := heap.push(h, 0)
+    test.eq(h2[0], 0)
+    r := heap.pop(h2)?
+    test.eq(r.value, 0)
+    test.eq(heap.nsmallest(2, [9, 1, 5, 3]), [1, 3])
+    test.eq(heap.nlargest(2, [9, 1, 5, 3]), [9, 5])
+}
+
+fn test_list_aggs {
+    test.eq(min_of([3, 1, 2]), 1)
+    test.eq(max_of([3, 1, 2]), 3)
+    test.eq(sum_of([1, 2, 3]), 6)
+    test.eq(first([9, 8]), 9)
+    test.eq(last([9, 8]), 8)
+}

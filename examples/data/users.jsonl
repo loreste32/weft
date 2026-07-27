@@ -1,0 +1,5 @@
+{"name":"Ada","ok":true,"role":"admin"}
+{"name":"Bob","ok":false,"role":"user"}
+{"name":"Cy","ok":true,"role":"user"}
+# comment ignored
+{"name":"Di","ok":true,"role":"ops"}

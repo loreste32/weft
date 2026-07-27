@@ -1,0 +1,13 @@
+fn main {
+    base := 10
+    add := fn(x) { base + x }
+    say(add(1))
+    mut n := 1
+    g := fn() { n }
+    n = 99
+    say(g())
+    prefix := "item"
+    out := map([1, 2, 3], fn(x) { "$prefix-$x" })
+    say(out)
+}
+

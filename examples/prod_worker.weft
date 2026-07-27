@@ -1,0 +1,85 @@
+// Production-shaped worker: SQLite job store + optional Redis BRPOP
+//   weft run examples/prod_worker.weft -- seed
+//   weft run examples/prod_worker.weft -- once
+//   weft run examples/prod_worker.weft -- loop
+//
+// Closures capture outer locals by value (safe under concurrency).
+
+fn main -> Result {
+    p := cli.parse({
+        "about": "prod_worker — process jobs from SQLite (Redis BRPOP if REDIS_URL set)",
+        "flags": {
+            "dsn": {"default": "sqlite:examples/data/jobs.db", "help": "job database"},
+            "queue": {"default": "weft:jobs", "help": "redis list key"},
+            "verbose": {"short": "v", "bool": true},
+        },
+    })?
+    if p.help || len(p.args) == 0 {
+        say(p.usage)
+        say("commands: seed | once | loop")
+        cli.exit(0)
+    }
+    cmd := p.args[0]
+    log.set_level("info")
+    if p.verbose { log.set_level("debug") }
+
+    c := db.open(p.dsn)?
+    c.exec("CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY, kind TEXT, payload TEXT, status TEXT, created TEXT)")?
+
+    if cmd == "seed" {
+        uid := crypto.uuid()
+        payload := json.stringify({"to": "ops@example.com", "uid": uid})
+        created := time.iso()
+        c.exec("INSERT INTO jobs(kind, payload, status, created) VALUES (?,?,?,?)", [
+            "email", payload, "pending", created,
+        ])?
+        log.info("seeded job", uid)
+        c.close()?
+        return Ok(unit)
+    }
+
+    if cmd == "once" || cmd == "loop" {
+        mut rounds := 1
+        if cmd == "loop" { rounds = 1000000 }
+        mut i := 0
+        while i < rounds {
+            i = i + 1
+            job := c.query_one("SELECT id, kind, payload FROM jobs WHERE status = ? ORDER BY id LIMIT 1", ["pending"])?
+            if job == null {
+                if cmd == "once" {
+                    log.info("no pending jobs")
+                    break
+                }
+                ru := env.get("REDIS_URL")
+                if ru != null {
+                    r := redis.connect(ru)?
+                    msg := r.brpop(2, p.queue)?
+                    r.close()?
+                    if msg != null {
+                        log.info("redis job", msg[1])
+                        process_payload(msg[1])
+                        continue
+                    }
+                }
+                time.sleep(1)
+                continue
+            }
+            log.info("job", job.id, job.kind)
+            process_payload(job.payload)
+            c.exec("UPDATE jobs SET status = ? WHERE id = ?", ["done", job.id])?
+            if cmd == "once" { break }
+        }
+        c.close()?
+        return Ok(unit)
+    }
+
+    cli.die("unknown command")
+}
+
+fn process_payload(payload) {
+    log.debug("process", payload)
+    data := json.parse(payload)
+    if data.ok {
+        log.info("parsed job payload")
+    }
+}

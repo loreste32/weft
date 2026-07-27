@@ -1,0 +1,113 @@
+{
+  "fn main": {
+    "prefix": "main",
+    "body": [
+      "fn main {",
+      "    $0",
+      "}"
+    ],
+    "description": "Entry function"
+  },
+  "fn main Result": {
+    "prefix": "mainr",
+    "body": [
+      "fn main -> Result {",
+      "    $0",
+      "    Ok(1)",
+      "}"
+    ],
+    "description": "Entry with Result / ?"
+  },
+  "fn": {
+    "prefix": "fn",
+    "body": [
+      "fn ${1:name}(${2:args}) {",
+      "    $0",
+      "}"
+    ],
+    "description": "Function"
+  },
+  "pub fn": {
+    "prefix": "pubfn",
+    "body": [
+      "pub fn ${1:name}(${2:args}) {",
+      "    $0",
+      "}"
+    ],
+    "description": "Public function (modules)"
+  },
+  "use": {
+    "prefix": "use",
+    "body": "use ${1:pkg}",
+    "description": "Import package"
+  },
+  "use path": {
+    "prefix": "usepath",
+    "body": "use \"${1:./lib.weft}\" as ${2:lib}",
+    "description": "Path import with alias"
+  },
+  "bind": {
+    "prefix": ":=",
+    "body": "${1:name} := ${2:value}",
+    "description": "Immutable bind"
+  },
+  "mut": {
+    "prefix": "mut",
+    "body": [
+      "mut ${1:n} := ${2:0}",
+      "$0"
+    ],
+    "description": "Mutable bind"
+  },
+  "if": {
+    "prefix": "if",
+    "body": [
+      "if ${1:cond} {",
+      "    $0",
+      "}"
+    ],
+    "description": "if block"
+  },
+  "for-in": {
+    "prefix": "for",
+    "body": [
+      "for ${1:x} in ${2:xs} {",
+      "    $0",
+      "}"
+    ],
+    "description": "for-in loop"
+  },
+  "llm.ask": {
+    "prefix": "ask",
+    "body": [
+      "reply := llm.ask(${1:\"prompt\"}, [",
+      "    llm.tool(\"${2:name}\", ${2:name}),",
+      "])?",
+      "say(reply)"
+    ],
+    "description": "Agent with tool"
+  },
+  "tokensave brain": {
+    "prefix": "brain",
+    "body": [
+      "use tokensave",
+      "",
+      "p := tokensave.brain(${1:ask}, ${2:knowledge}, {",
+      "    \"kind\": \"${3:short}\",",
+      "    \"k\": ${4:3},",
+      "    \"memory_path\": \"${5:.memory.json}\",",
+      "})",
+      "say(p.user)"
+    ],
+    "description": "tokensave.brain pack (external module)"
+  },
+  "http get": {
+    "prefix": "httpget",
+    "body": [
+      "r := http.get(${1:url}, {\"timeout\": 5, \"retries\": 2})?",
+      "if !r.ok { return Err(\"HTTP ${r.status}\") }",
+      "$0"
+    ],
+    "description": "HTTP GET with bounds"
+  }
+}

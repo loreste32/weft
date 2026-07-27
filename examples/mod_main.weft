@@ -1,0 +1,7 @@
+// Path import — short and clear
+import "./lib/math.weft" as m
+
+fn main() {
+    println(m.add(2, 3))
+    println(m.double(21))
+}

@@ -1,0 +1,8 @@
+// Real-world: parse JSON config and print
+fn main -> Result {
+    raw := "{\"users\":[{\"name\":\"Ada\",\"ok\":true},{\"name\":\"Bob\",\"ok\":false}]}"
+    data := json.parse(raw)?
+    say("users:", data.users)
+    out := json.stringify(data)
+    say(out)
+}

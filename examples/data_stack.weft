@@ -1,0 +1,96 @@
+// Connection patterns for Redis, NATS, RabbitMQ, Mongo, GraphQL
+//   weft run examples/data_stack.weft -- all-urls
+//   weft run examples/data_stack.weft -- sqlite
+//   REDIS_URL=redis://127.0.0.1:6379/0 weft run examples/data_stack.weft -- redis
+
+fn main -> Result {
+    p := cli.parse({
+        "about": "data_stack — exercise external data services",
+        "flags": {
+            "verbose": {"short": "v", "bool": true},
+        },
+    })?
+    if p.help || len(p.args) == 0 {
+        say(p.usage)
+        say("commands: sqlite | redis | nats | amqp | mongo | graphql | all-urls")
+        cli.exit(0)
+    }
+    cmd := p.args[0]
+
+    if cmd == "all-urls" {
+        say("sqlite:   sqlite:./app.db")
+        say("postgres: postgres://user:pass@localhost:5432/app")
+        say("mysql:    mysql://user:pass@localhost:3306/app")
+        say("redis:    redis://localhost:6379/0")
+        say("nats:     nats://localhost:4222")
+        say("amqp:     amqp://guest:guest@localhost:5672/")
+        say("mongo:    mongodb://localhost:27017")
+        say("graphql:  https://api.example.com/graphql")
+        return Ok(unit)
+    }
+
+    if cmd == "sqlite" {
+        c := db.open("sqlite:examples/data/stack.db")?
+        c.exec("CREATE TABLE IF NOT EXISTS t(x TEXT)")?
+        c.exec("DELETE FROM t")?
+        c.exec("INSERT INTO t(x) VALUES (?)", ["hello"])?
+        row := c.query_one("SELECT x FROM t")?
+        say("sqlite:", row.x)
+        c.close()?
+        return Ok(unit)
+    }
+
+    if cmd == "redis" {
+        url := env.get("REDIS_URL") ?? "redis://127.0.0.1:6379/0"
+        r := redis.connect(url)?
+        r.set("weft:demo", "ok", 60)?
+        v := r.get("weft:demo")?
+        say("redis:", v)
+        r.incr("weft:counter")?
+        r.close()?
+        return Ok(unit)
+    }
+
+    if cmd == "nats" {
+        url := env.get("NATS_URL") ?? "nats://127.0.0.1:4222"
+        nc := nats.connect(url)?
+        nc.publish("weft.demo", "ping from weft")?
+        nc.flush(2)?
+        say("nats: published weft.demo")
+        nc.close()?
+        return Ok(unit)
+    }
+
+    if cmd == "amqp" {
+        url := env.get("AMQP_URL") ?? "amqp://guest:guest@127.0.0.1:5672/"
+        ch := amqp.connect(url)?
+        ch.queue_declare("weft.demo", {"durable": false})?
+        ch.publish("", "weft.demo", "hello rabbit")?
+        say("amqp: published to weft.demo")
+        ch.close()?
+        return Ok(unit)
+    }
+
+    if cmd == "mongo" {
+        url := env.get("MONGO_URL") ?? "mongodb://127.0.0.1:27017"
+        m := mongo.connect(url)?
+        col := m.collection("weft", "demo")
+        col.insert({"msg": "hello", "ts": time.iso()})?
+        docs := col.find({}, {"limit": 3})?
+        say("mongo docs:", len(docs))
+        m.close()?
+        return Ok(unit)
+    }
+
+    if cmd == "graphql" {
+        url := env.get("GRAPHQL_URL")
+        if url == null {
+            cli.die("set GRAPHQL_URL")
+        }
+        res := graphql.query(url, "query { __typename }")?
+        say(json.stringify(res))
+        return Ok(unit)
+    }
+
+    cli.die("unknown command: " + cmd)
+}

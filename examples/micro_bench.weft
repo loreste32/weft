@@ -1,0 +1,18 @@
+// Microbenchmarks — weft bench examples/micro_bench.weft -n 5000
+// Convention: *_bench.weft · fn bench_*
+
+fn bench_add {
+    mut s := 0
+    for i in range(0, 100) {
+        s = s + i
+    }
+    s
+}
+
+fn bench_sort {
+    sort([5, 1, 4, 2, 3, 9, 0, 8, 7, 6])
+}
+
+fn bench_map_json {
+    json.stringify({"a": 1, "b": [1, 2, 3]})
+}

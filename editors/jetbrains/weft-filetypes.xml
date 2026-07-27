@@ -1,0 +1,5 @@
+<!--
+  Optional: IntelliJ FileTypeFactory-style patterns (reference only).
+  Prefer Settings → Editor → File Types → Weft → *.weft; *.loom
+-->
+<filetype name="Weft" language="weft" extensions="weft;loom" />

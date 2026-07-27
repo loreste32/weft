@@ -1,0 +1,28 @@
+// Proxy llm.stream tokens to HTTP clients as Server-Sent Events.
+//   weft run examples/sse_chat.weft
+//   curl -N http://127.0.0.1:8091/chat -d "say hi in three words"
+
+fn main {
+    app := web.app()
+
+    app.get("/", fn(req) {
+        web.html("<p>POST /chat with a prompt body · SSE stream out</p>")
+    })
+
+    app.post("/chat", fn(req) {
+        prompt := req.body
+        if prompt == "" {
+            prompt = "one word: hi"
+        }
+        events := llm.stream(prompt)?
+        web.sse(events)
+    })
+
+    // fixed stream (no model) for smoke
+    app.get("/demo", fn(req) {
+        web.sse(["alpha", "beta", "gamma"])
+    })
+
+    say("sse chat on :8091  ·  curl -N localhost:8091/demo")
+    app.listen(":8091")
+}

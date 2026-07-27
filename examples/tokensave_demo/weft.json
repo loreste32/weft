@@ -1,0 +1,7 @@
+{
+  "name": "tokensave_demo",
+  "type": "app",
+  "deps": {
+    "tokensave": { "path": "../../packages/tokensave" }
+  }
+}

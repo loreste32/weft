@@ -1,0 +1,10 @@
+{
+  "name": "greeter",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Example third-party Weft module",
+  "entry": "lib.weft",
+  "exports": ["greet", "shout"],
+  "license": "Apache-2.0",
+  "keywords": ["example", "demo"]
+}
