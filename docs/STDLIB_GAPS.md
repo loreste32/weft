@@ -73,15 +73,21 @@ weft run examples/cli_tool.weft -- --help
 
 ### Whole `internal/stdlib` (ongoing)
 
-Raised from ~47% → **~66%** statements with pure-package fullcover, FS/HTTP/CLI matrix, and LLM helper unit tests.
+| Milestone | Statements |
+|-----------|------------|
+| Before fullcover push | ~47% |
+| Pure packages + FS/CLI/HTTP | ~66% |
+| + **LLMDo mocks** (chat/ask/agent/stream) + web handlers | **~68%** |
 
-Still intentionally thin (need live services or long agent loops):
+Still thin without live brokers/daemons:
 
 | Package | Why low |
 |---------|---------|
-| `mongo`, `redis`, `nats`, `amqp` | Real dials; arity paths only offline |
-| `llm` agent `run` / streaming | Full multi-step HTTP agent loops |
-| `websocket`, `webrtc`, `web` serve | Long-lived servers |
-| `ollama` / `vllm` live | Need daemons |
+| `mongo`, `redis`, `nats`, `amqp` | Real dials |
+| `websocket`, `webrtc` | Long-lived connections |
+| `ollama` / `vllm` live API | Need daemons |
+| `web` listen path | process-bound server |
+
+Covered offline with mocks: **llm** chat/ask/agent/stream via `LLMDo`, **http** methods via `httptest`, **web** routes via `app.handle`.
 
 Rule: every new behavior lands with tests. See CONTRIBUTING.md.
