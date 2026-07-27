@@ -22,7 +22,36 @@ examples/data/out/
 # editor / local noise
 editors/vscode/node_modules/
 editors/vscode/*.vsix
+# tokensave / local train memory (never publish)
 .memory.json
+**/.memory.json
 domain-gold.jsonl
+**/domain-gold.jsonl
 from-memory.jsonl
+**/from-memory.jsonl
+# coding-agent tooling & private session state (never publish)
+.claude/
+.cursor/
+.codex/
+.grok/
+.agent/
+.continue/
+.windsurf/
+.aider*
+.mcp.json
+.mcp/
+AGENTS.md
+CLAUDE.md
+.cursorrules
+.cursorignore
+**/.claude/
+**/.cursor/
+**/.codex/
+**/.grok/
+# secrets / local env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
 ci_mod/
