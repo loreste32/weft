@@ -64,4 +64,9 @@ Apps that `use` modules needing models or disk must declare grants on the **modu
 - Expanded package restricted set (`fs`/`http`/`env`/`llm`/…)
 - `app.before` runs for routes, static, and WebSocket
 - Response header CRLF strip; cookie `SameSite=Lax` default
-- Tar extract caps + reject specials; Secret field seal
+- Tar/zip/gunzip extract caps + reject specials
+- Secret seal: VM field get/set **and** `json.get` / `asMap` (use `secrets.unwrap`)
+- Env API keys: **hostname-only** trust (no path/substring spoof); `WEFT_LLM_TRUST_HOSTS` exact/suffix
+- SMTP `from`/`to`/`subject` strip CR/LF/NUL (header injection)
+- HTMX OOB ids restricted to `[A-Za-z0-9_-]`
+- CGNAT `100.64/10` blocked with private nets

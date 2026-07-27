@@ -266,6 +266,9 @@ func fieldOrKey(v runtime.Value, name string) (runtime.Value, bool) {
 		return x, ok
 	case runtime.KindStruct:
 		so := v.Obj.(*runtime.StructObj)
+		if so.TypeName == "Secret" {
+			return runtime.Null(), false
+		}
 		x, ok := so.Fields[name]
 		return x, ok
 	default:

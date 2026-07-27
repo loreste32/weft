@@ -70,6 +70,11 @@ func asMap(v runtime.Value) (map[string]any, error) {
 		return out, nil
 	case runtime.KindStruct:
 		so := v.Obj.(*runtime.StructObj)
+		// Never expand Secret fields — valueToGo redacts nested Secrets but
+		// asMap was walking Fields and leaking the raw "value" string.
+		if so.TypeName == "Secret" {
+			return nil, fmt.Errorf("Secret fields are sealed; use secrets.unwrap")
+		}
 		out := make(map[string]any, len(so.Fields))
 		for k, val := range so.Fields {
 			out[k] = valueToGo(val)

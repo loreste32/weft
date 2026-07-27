@@ -117,6 +117,9 @@ func packageArchive() runtime.Value {
 		}
 		defer r.Close()
 		var names []runtime.Value
+		var total int64
+		const maxZipFiles = 100_000
+		const maxZipBytes = 200 << 20 // 200 MiB uncompressed total
 		for _, zf := range r.File {
 			if zf.Mode()&os.ModeSymlink != 0 {
 				return errRes("illegal symlink in zip: "+zf.Name, "archive"), nil
@@ -128,6 +131,9 @@ func packageArchive() runtime.Value {
 			if zf.FileInfo().IsDir() {
 				_ = os.MkdirAll(target, 0o755)
 				continue
+			}
+			if len(names) >= maxZipFiles {
+				return errRes("zip too many files", "archive"), nil
 			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return errRes(err.Error(), "archive"), nil
@@ -141,11 +147,15 @@ func packageArchive() runtime.Value {
 				rc.Close()
 				return errRes(err.Error(), "archive"), nil
 			}
-			_, err = io.Copy(out, io.LimitReader(rc, 200<<20))
+			n, err := io.Copy(out, io.LimitReader(rc, maxZipBytes+1-total))
 			out.Close()
 			rc.Close()
 			if err != nil {
 				return errRes(err.Error(), "archive"), nil
+			}
+			total += n
+			if total > maxZipBytes {
+				return errRes("zip uncompressed size exceeds limit", "archive"), nil
 			}
 			rel, _ := filepath.Rel(dest, target)
 			names = append(names, runtime.Str(filepath.ToSlash(rel)))
@@ -238,9 +248,16 @@ func packageArchive() runtime.Value {
 		if err != nil {
 			return errRes(err.Error(), "archive"), nil
 		}
-		if _, err := io.Copy(out, gr); err != nil {
+		const maxGunzipBytes = 200 << 20 // 200 MiB uncompressed
+		n, err := io.Copy(out, io.LimitReader(gr, maxGunzipBytes+1))
+		if err != nil {
 			_ = out.Close()
 			return errRes(err.Error(), "archive"), nil
+		}
+		if n > maxGunzipBytes {
+			_ = out.Close()
+			_ = os.Remove(dest)
+			return errRes("gunzip uncompressed size exceeds limit", "archive"), nil
 		}
 		if err := out.Close(); err != nil {
 			return errRes(err.Error(), "archive"), nil

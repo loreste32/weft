@@ -196,6 +196,10 @@ func jsonPathGet(root runtime.Value, path runtime.Value) (runtime.Value, error) 
 			cur = items[idx]
 		case runtime.KindStruct:
 			so := cur.Obj.(*runtime.StructObj)
+			// Secrets: seal field paths the same as VM getField — use secrets.unwrap.
+			if so.TypeName == "Secret" {
+				return runtime.Null(), fmt.Errorf("Secret fields are sealed; use secrets.unwrap")
+			}
 			v, ok := so.Fields[p]
 			if !ok {
 				return runtime.Null(), fmt.Errorf("missing field %q", p)

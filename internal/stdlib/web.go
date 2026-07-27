@@ -1099,6 +1099,13 @@ func buildSetCookie(name, value string, opts runtime.Value, clear bool) string {
 func htmxOOBWrap(id, html string) string {
 	id = strings.TrimSpace(id)
 	id = strings.TrimPrefix(id, "#")
+	// allow only safe id chars (block attribute breakout if id is request-derived)
+	id = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			return r
+		}
+		return -1
+	}, id)
 	if id == "" {
 		id = "oob"
 	}

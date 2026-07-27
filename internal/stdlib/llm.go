@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -305,30 +306,72 @@ func defaultLLMOpts(env *runtime.Env) runtime.Value {
 
 // llmBaseTrustedForEnvKey reports whether base may receive process-env API keys.
 // Untrusted/public attacker bases must not get OPENAI_API_KEY etc. (package supply-chain).
+// Trust is hostname-only (exact or strict subdomain suffix) — never path/substring.
 func llmBaseTrustedForEnvKey(base string) bool {
-	b := strings.ToLower(strings.TrimSpace(base))
-	b = strings.TrimRight(b, "/")
-	if b == "" {
-		return true
+	host, ok := llmBaseHostname(base)
+	if !ok {
+		// empty base → default provider hosts; reject unparseable URLs
+		return strings.TrimSpace(base) == ""
 	}
-	// well-known cloud endpoints
-	if strings.Contains(b, "api.openai.com") || strings.Contains(b, "api.anthropic.com") {
-		return true
+	for _, h := range []string{
+		"api.openai.com",
+		"api.anthropic.com",
+		"127.0.0.1",
+		"localhost",
+		"::1",
+	} {
+		if hostMatchesTrusted(host, h) {
+			return true
+		}
 	}
-	// local model servers
-	if strings.Contains(b, "127.0.0.1") || strings.Contains(b, "localhost") || strings.Contains(b, "[::1]") {
-		return true
-	}
-	// optional allowlist: WEFT_LLM_TRUST_HOSTS=host1,host2
+	// optional allowlist: WEFT_LLM_TRUST_HOSTS=host1,host2 (hostname tokens only)
 	if v := os.Getenv("WEFT_LLM_TRUST_HOSTS"); v != "" {
 		for _, h := range strings.Split(v, ",") {
 			h = strings.ToLower(strings.TrimSpace(h))
-			if h != "" && strings.Contains(b, h) {
+			if h != "" && hostMatchesTrusted(host, h) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// llmBaseHostname returns the lowercased hostname of base_url, or false if unsafe/unparseable.
+func llmBaseHostname(base string) (string, bool) {
+	b := strings.TrimSpace(base)
+	if b == "" {
+		return "", false
+	}
+	if !strings.Contains(b, "://") {
+		b = "https://" + b
+	}
+	u, err := url.Parse(b)
+	if err != nil || u.Host == "" {
+		return "", false
+	}
+	// Reject userinfo (credential smuggling / odd parsers).
+	if u.User != nil {
+		return "", false
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" {
+		return "", false
+	}
+	return host, true
+}
+
+// hostMatchesTrusted: exact host match, or host is a subdomain of allowed
+// (foo.api.openai.com matches api.openai.com; api.openai.com.evil.com does not).
+func hostMatchesTrusted(host, allowed string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	allowed = strings.ToLower(strings.TrimSpace(allowed))
+	if host == "" || allowed == "" {
+		return false
+	}
+	if host == allowed {
+		return true
+	}
+	return strings.HasSuffix(host, "."+allowed)
 }
 
 // guardLLMEnvKey refuses to send environment-sourced API keys to untrusted base_url.

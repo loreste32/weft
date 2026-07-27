@@ -252,6 +252,9 @@ func setField(x runtime.Value, name string, val runtime.Value) error {
 	switch x.Kind {
 	case runtime.KindStruct:
 		so := x.Obj.(*runtime.StructObj)
+		if so.TypeName == "Secret" {
+			return fmt.Errorf("Secret fields are sealed; use secrets.unwrap")
+		}
 		if _, ok := so.Fields[name]; !ok {
 			so.Order = append(so.Order, name)
 		}

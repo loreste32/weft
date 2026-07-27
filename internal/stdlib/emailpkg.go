@@ -126,6 +126,15 @@ func packageEmail(env *runtime.Env) runtime.Value {
 		if from == "" || len(to) == 0 {
 			return errRes("email.send: from and to required", "email"), nil
 		}
+		// Strip CR/LF/NUL so LLM/user text cannot inject SMTP headers (Bcc, etc.).
+		from = smtpHeaderSafe(from)
+		subject = smtpHeaderSafe(subject)
+		for i := range to {
+			to[i] = smtpHeaderSafe(to[i])
+		}
+		if from == "" || len(to) == 0 {
+			return errRes("email.send: from and to required (after header sanitize)", "email"), nil
+		}
 		if err := netsafe.CheckHost(host); err != nil {
 			return errRes("email.send blocked: "+err.Error(), "email"), nil
 		}
@@ -155,4 +164,14 @@ func envOr(env *runtime.Env, key, def string) string {
 		return v
 	}
 	return def
+}
+
+// smtpHeaderSafe strips CR/LF/NUL so values cannot inject SMTP headers.
+func smtpHeaderSafe(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' || r == 0 {
+			return -1
+		}
+		return r
+	}, s)
 }
