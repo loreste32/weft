@@ -95,7 +95,8 @@ weft run examples/cli_tool.weft -- --help
 | + LLMDo + web/httptest | ~68% |
 | + redis/miniredis, ws/webrtc, ollama/vllm | ~75% |
 | + archive/csv/email/json/table/db/socket | ~79% |
-| + web ServeHTTP/static/ws + llm helpers + viz | **~81%** |
+| + web ServeHTTP/static/ws + llm helpers + viz | ~81% |
+| + Anthropic httptest + viz/collections pure | **~83%** |
 
 Still thin without live brokers/daemons:
 
@@ -104,8 +105,7 @@ Still thin without live brokers/daemons:
 | `amqp` wrap (queue ops) | Needs RabbitMQ |
 | `mongo` collection ops | Needs MongoDB |
 | `nats` full sub loop | Needs NATS (optional live test if present) |
-| `llm` chatAnthropic HTTP | Needs mock or live Anthropic path |
 
-Covered offline: **llm** via `LLMDo` + pure helpers, **http**/`web.ServeHTTP`/static/ws, **redis** via miniredis, **websocket** frames, **webrtc** hub fakes, **ollama/vllm** httptest, **sqlite** db/tx, **archive/csv/email/json/table/viz**.
+Covered offline: **llm** OpenAI + **Anthropic** httptest, `LLMDo`, pure converters; **http**/`web.ServeHTTP`/static/ws; **redis** miniredis; **websocket**/webrtc fakes; **ollama/vllm** httptest; **sqlite** db/tx; **archive/csv/email/json/table/viz**.
 
 Rule: every new behavior lands with tests. See CONTRIBUTING.md.
