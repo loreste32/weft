@@ -44,7 +44,8 @@ weft test examples/cookbook -q
 16. [Time, strings, regex](#16-time-strings-regex)  
 17. [Data: CSV and SQLite](#17-data-csv-and-sqlite)  
 18. [Logging and production-ish scripts](#18-logging-and-production-ish-scripts)  
-19. [Troubleshooting](#19-troubleshooting)  
+19. [Packet captures (pcap)](#19-packet-captures-pcap)  
+20. [Troubleshooting](#20-troubleshooting)  
 
 ---
 
@@ -899,7 +900,84 @@ See [PRODUCTION.md](PRODUCTION.md).
 
 ---
 
-## 19. Troubleshooting
+## 19. Packet captures (pcap)
+
+### Build a SYN packet and write a pcap file
+
+```weft
+use pcap
+
+fn main -> Result {
+    pkt := pcap.ethernet({
+        "dst": "ff:ff:ff:ff:ff:ff",
+        "src": "00:11:22:33:44:55",
+        "payload": pcap.ipv4({
+            "src": "192.168.1.100",
+            "dst": "93.184.216.34",
+            "payload": pcap.tcp({
+                "src_port": 49152,
+                "dst_port": 443,
+                "flags": "SYN",
+            }),
+        }),
+    })
+    pcap.write("handshake.pcap", [pkt])?
+    say("wrote handshake.pcap — open in Wireshark")
+}
+```
+
+### DNS-style UDP packet
+
+```weft
+use pcap
+
+fn main -> Result {
+    pkt := pcap.ethernet({
+        "dst": "aa:bb:cc:dd:ee:ff",
+        "src": "00:11:22:33:44:55",
+        "payload": pcap.ipv4({
+            "src": "10.0.0.1",
+            "dst": "8.8.8.8",
+            "proto": 17,
+            "payload": pcap.udp({
+                "src_port": 12345,
+                "dst_port": 53,
+                "payload": "fake DNS query",
+            }),
+        }),
+    })
+    pcap.write("dns.pcap", [pkt])?
+}
+```
+
+### Read and inspect a pcap
+
+```weft
+use pcap
+
+fn main -> Result {
+    pkts := pcap.read("capture.pcap")?
+    say(len(pkts), "packets")
+    for p in pkts {
+        say("ts:", p.ts, "len:", p.len)
+    }
+}
+```
+
+### Raw bytes from hex
+
+```weft
+use pcap
+
+fn main -> Result {
+    raw := pcap.hex("ffffffffffff 001122334455 0800 4500002800000000 4006 0000 c0a80101 0a000001")
+    pcap.write("raw.pcap", [raw])?
+}
+```
+
+---
+
+## 20. Troubleshooting
 
 | Symptom | What to try |
 |---------|-------------|

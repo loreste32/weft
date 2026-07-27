@@ -76,6 +76,7 @@ weft run examples/cookbook/14_mold.weft
 | HTTP servers, HTMX, cookies, `before` | [web.md](web.md) |
 | CLI tools | [cli.md](cli.md) |
 | Data / SQL / CSV | [data.md](data.md) |
+| Packet captures (pcap) | [STDLIB.md](STDLIB.md#pcap) |
 | Charts | [viz.md](viz.md) |
 | Sysops / runbooks | [SYSOPS.md](SYSOPS.md) |
 | Production checklist | [PRODUCTION.md](PRODUCTION.md) |

@@ -26,6 +26,7 @@ What we keep vs won’t: **[STDLIB_GAPS.md](STDLIB_GAPS.md)**.
 | Time | `time` |
 | Env / process | `env`, `platform`, `sh`, `shlex`, `signal`, `cli`, `log`, `secrets` |
 | Numbers | `math`, `decimal`, `random`, `uuid`, `ip`, `binstruct` |
+| Network / packets | `pcap` |
 | Data tables | `csv`, `table`, `db`, `redis`, `mongo` |
 | Messaging | `nats`, `amqp`, `email`, `socket` |
 | LLM | `llm`, `ollama`, `vllm` |
@@ -153,6 +154,39 @@ fn test_math {
 ```
 
 See [TESTING.md](TESTING.md).
+
+### pcap
+
+Build and read PCAP packet captures — useful for ops, security, and network debugging scripts.
+
+```weft
+use pcap
+
+// build a SYN packet
+pkt := pcap.ethernet({
+    "dst": "ff:ff:ff:ff:ff:ff",
+    "src": "00:11:22:33:44:55",
+    "payload": pcap.ipv4({
+        "src": "10.0.0.1",
+        "dst": "10.0.0.2",
+        "payload": pcap.tcp({
+            "src_port": 12345,
+            "dst_port": 80,
+            "flags": "SYN",
+        }),
+    }),
+})
+pcap.write("capture.pcap", [pkt])?
+
+// read back
+pkts := pcap.read("capture.pcap")?
+say(len(pkts), "packets")
+```
+
+Builders: `ethernet`, `ipv4`, `tcp`, `udp`, `raw`, `hex`, `packet`.  
+I/O: `write`, `read`.
+
+TCP flags: `"SYN"`, `"ACK"`, `"SYN|ACK"`, `"FIN"`, `"RST"`, `"PSH"`, `"URG"` (pipe-separated).
 
 ### db / csv / table
 

@@ -46,6 +46,24 @@ c.close()?
 
 DSN schemes: `sqlite:`, `postgres://`, `postgresql://`, `mysql://`, or bare path → SQLite.
 
+### JSON / JSONB columns
+
+Columns containing JSON objects or arrays are auto-parsed into native Weft maps and lists. No `json.parse` needed — access fields directly:
+
+```weft
+c := db.open("sqlite:./app.db")?
+c.exec("CREATE TABLE docs(id INTEGER PRIMARY KEY, data TEXT)")?
+c.exec("INSERT INTO docs(data) VALUES (?)", [json.stringify({"name": "Ada", "scores": [1, 2, 3]})])?
+
+row := c.query_one("SELECT data FROM docs")?
+say(row.data.name)       // "Ada" — auto-parsed from JSON text
+say(row.data.scores[0])  // 1
+
+// Works with PostgreSQL JSONB columns too ([]byte path)
+```
+
+Plain text that is not valid JSON is returned as a string unchanged.
+
 ```bash
 weft run examples/db_sqlite.weft
 ```
