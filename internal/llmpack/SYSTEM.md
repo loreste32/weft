@@ -46,7 +46,7 @@ Annotate only when it clarifies contracts. Weft infers the rest (`weft check`).
 | `json` | `json.parse(s)?` · `stringify` · `pretty` · **`json.get(obj, path, default?)?`** · `set`/`has`/`merge` |
 | `fs` | `fs.read/write` · `stat`/`size`/`rename`/`chmod` · `temp_*` · `write_atomic` · `glob` |
 | `http` | `http.get(url)?` → `{status,body,headers,ok}` · **`http.get_json(url)?`** · `http.post` · `http.serve` |
-| `web` | `web.app()` · `app.get/post(path, fn)` · `app.ws` · `app.static` · `app.listen` · `web.json`/`html`/`redirect` |
+| `web` | `web.app()` · `app.get/post` · `app.before` · `app.ws` · `app.static` · `app.listen` · `web.json`/`html`/`redirect` · **HTMX:** `web.is_htmx` `web.htmx` `web.htmx_oob` · **forms:** `req.form` `web.form_get` `web.form_list` `web.file` · **cookies:** `web.cookie` `web.cookie_get` |
 | `webrtc` | `webrtc.hub()` · `hub.attach(app, path)?` · signaling rooms for browser P2P |
 | `viz` | `viz.bar/line/area/pie/scatter/hist` · `viz.page` · `viz.save` · `viz.spark` · `viz.table` (SVG charts) |
 | `cli` | `cli.parse({flags…})?` · `cli.exit` · `cli.die` · `cli.argv` · flags for devops tools |

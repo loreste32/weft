@@ -179,7 +179,8 @@ func packageWeb(env *runtime.Env) runtime.Value {
 		if h, ok := mapGet(args[0], "headers"); ok {
 			ctype = headerGetCI(h, "Content-Type")
 		}
-		return parseFormMap(body, ctype, nil), nil
+		form, _, _ := parseFormParts(body, ctype, nil)
+		return form, nil
 	}, 1)
 	// web.form_get(req, key, default?) -> str
 	set(p, "form_get", func(args []runtime.Value) (runtime.Value, error) {
@@ -197,9 +198,95 @@ func packageWeb(env *runtime.Env) runtime.Value {
 			if h, ok := mapGet(args[0], "headers"); ok {
 				ctype = headerGetCI(h, "Content-Type")
 			}
-			form = parseFormMap(body, ctype, nil)
+			form, _, _ = parseFormParts(body, ctype, nil)
 		}
 		return runtime.Str(mapGetStr(form, args[1].String(), def)), nil
+	}, 3)
+	// web.form_list(req, key) -> [str]  all values for multi-select / checkboxes
+	set(p, "form_list", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 2 {
+			return runtime.List(), nil
+		}
+		all, ok := mapGet(args[0], "form_all")
+		if !ok || all.Kind != runtime.KindMap {
+			body := mapGetStr(args[0], "body", "")
+			ctype := ""
+			if h, ok := mapGet(args[0], "headers"); ok {
+				ctype = headerGetCI(h, "Content-Type")
+			}
+			_, all, _ = parseFormParts(body, ctype, nil)
+		}
+		if v, ok := mapGet(all, args[1].String()); ok {
+			return v, nil
+		}
+		return runtime.List(), nil
+	}, 2)
+	// web.file(req, field) -> map|null  {filename, content_type, size, body}
+	set(p, "file", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 2 {
+			return runtime.Null(), nil
+		}
+		files, ok := mapGet(args[0], "files")
+		if !ok || files.Kind != runtime.KindMap {
+			return runtime.Null(), nil
+		}
+		if v, ok := mapGet(files, args[1].String()); ok {
+			return v, nil
+		}
+		return runtime.Null(), nil
+	}, 2)
+
+	// web.htmx_oob(id, html) -> HTML fragment with hx-swap-oob="true"
+	set(p, "htmx_oob", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 {
+			return errRes("web.htmx_oob(id, html) or web.htmx_oob(html)", "web"), nil
+		}
+		if len(args) == 1 {
+			// raw HTML already containing oob, or wrap whole blob
+			s := args[0].String()
+			if strings.Contains(s, "hx-swap-oob") {
+				return runtime.Str(s), nil
+			}
+			return runtime.Str(htmxOOBWrap("oob", s)), nil
+		}
+		return runtime.Str(htmxOOBWrap(args[0].String(), args[1].String())), nil
+	}, 2)
+
+	// web.cookie(name, value, opts?) -> Set-Cookie string (for response cookies list)
+	set(p, "cookie", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 2 {
+			return errRes("web.cookie(name, value, opts?)", "web"), nil
+		}
+		opts := runtime.Null()
+		if len(args) >= 3 {
+			opts = args[2]
+		}
+		return runtime.Str(buildSetCookie(args[0].String(), args[1].String(), opts, false)), nil
+	}, 3)
+	// web.clear_cookie(name, opts?) -> Set-Cookie that expires
+	set(p, "clear_cookie", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 {
+			return errRes("web.clear_cookie(name, opts?)", "web"), nil
+		}
+		opts := runtime.Null()
+		if len(args) >= 2 {
+			opts = args[1]
+		}
+		return runtime.Str(buildSetCookie(args[0].String(), "", opts, true)), nil
+	}, 2)
+	// web.cookie_get(req, name, default?) -> str
+	set(p, "cookie_get", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 2 {
+			return runtime.Str(""), nil
+		}
+		def := ""
+		if len(args) >= 3 {
+			def = args[2].String()
+		}
+		if c, ok := mapGet(args[0], "cookies"); ok && c.Kind == runtime.KindMap {
+			return runtime.Str(mapGetStr(c, args[1].String(), def)), nil
+		}
+		return runtime.Str(def), nil
 	}, 3)
 
 	return p
@@ -247,6 +334,7 @@ type webApp struct {
 	routes      []webRoute
 	statics     []webStatic
 	wsRoutes    []wsRoute
+	befores     []runtime.Value // app.before(fn) middleware
 	templateDir string
 	templates   *template.Template
 	notFound    runtime.Value
@@ -374,6 +462,20 @@ func newWebApp(env *runtime.Env) runtime.Value {
 		}
 		app.mu.Lock()
 		app.wsRoutes = append(app.wsRoutes, wsRoute{pattern: pat, parts: parsePattern(pat), handler: h})
+		app.mu.Unlock()
+		return m, nil
+	})
+	// app.before(fn) — run before every route handler; return a response map to short-circuit
+	put("before", 1, func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 {
+			return errRes("app.before(fn)", "web"), nil
+		}
+		h := args[0]
+		if h.Kind != runtime.KindFunc && h.Kind != runtime.KindBuiltin {
+			return errRes("app.before: need function", "web"), nil
+		}
+		app.mu.Lock()
+		app.befores = append(app.befores, h)
 		app.mu.Unlock()
 		return m, nil
 	})
@@ -529,12 +631,71 @@ func (a *webApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "runtime Call not configured", 500)
 		return
 	}
+	// before hooks (auth, logging, …)
+	a.mu.RLock()
+	befores := append([]runtime.Value(nil), a.befores...)
+	a.mu.RUnlock()
+	for _, bfn := range befores {
+		br, err := a.env.Call(bfn, []runtime.Value{req})
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		if short, ok := middlewareResponse(br); ok {
+			writeWeftResponse(w, short)
+			return
+		}
+	}
 	ret, err := a.env.Call(handler, []runtime.Value{req})
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 	writeWeftResponse(w, ret)
+}
+
+// middlewareResponse reports whether ret is a short-circuit HTTP response.
+// null / unit / false / empty → continue; map with status|body|type|headers|cookies → stop.
+func middlewareResponse(ret runtime.Value) (runtime.Value, bool) {
+	if ret.Kind == runtime.KindResult {
+		ro := ret.Obj.(*runtime.ResultObj)
+		if !ro.Ok {
+			return ret, true
+		}
+		ret = ro.Val
+	}
+	switch ret.Kind {
+	case runtime.KindNull, runtime.KindUnit:
+		return runtime.Null(), false
+	case runtime.KindBool:
+		if !ret.B {
+			return runtime.Null(), false
+		}
+		// true alone is not a response
+		return runtime.Null(), false
+	case runtime.KindMap:
+		if _, ok := mapGet(ret, "status"); ok {
+			return ret, true
+		}
+		if _, ok := mapGet(ret, "body"); ok {
+			return ret, true
+		}
+		if _, ok := mapGet(ret, "type"); ok {
+			return ret, true
+		}
+		if _, ok := mapGet(ret, "headers"); ok {
+			return ret, true
+		}
+		if _, ok := mapGet(ret, "cookies"); ok {
+			return ret, true
+		}
+		return runtime.Null(), false
+	case runtime.KindStr:
+		// bare string treated as HTML/text body response
+		return respMap(200, ret.S, "text/html; charset=utf-8"), true
+	default:
+		return runtime.Null(), false
+	}
 }
 
 func (a *webApp) findRoute(method, urlPath string) (map[string]string, runtime.Value, bool) {
@@ -581,7 +742,20 @@ func (a *webApp) dispatch(method, pathStr, body string, headers map[string]strin
 			}
 		}
 	}
-	put("form", parseFormMap(body, ctype, u.Query()))
+	form, formAll, files := parseFormParts(body, ctype, u.Query())
+	put("form", form)
+	put("form_all", formAll)
+	put("files", files)
+	cookieHdr := ""
+	if headers != nil {
+		for k, v := range headers {
+			if strings.EqualFold(k, "Cookie") {
+				cookieHdr = v
+				break
+			}
+		}
+	}
+	put("cookies", cookieMapFromHeader(cookieHdr))
 	put("htmx", htmxFromHeaders(func(name string) string {
 		if headers == nil {
 			return ""
@@ -595,6 +769,19 @@ func (a *webApp) dispatch(method, pathStr, body string, headers map[string]strin
 	}))
 	if a.env.Call == nil {
 		return errRes("runtime Call not configured", "web")
+	}
+	// before hooks
+	a.mu.RLock()
+	befores := append([]runtime.Value(nil), a.befores...)
+	a.mu.RUnlock()
+	for _, bfn := range befores {
+		br, err := a.env.Call(bfn, []runtime.Value{req})
+		if err != nil {
+			return errRes(err.Error(), "web")
+		}
+		if short, ok := middlewareResponse(br); ok {
+			return short
+		}
 	}
 	ret, err := a.env.Call(handler, []runtime.Value{req})
 	if err != nil {
@@ -694,76 +881,220 @@ func buildRequest(r *http.Request, body string, params map[string]string) runtim
 		}
 	}
 	put("headers", hdrs)
-	// form fields: query + urlencoded / multipart body
-	put("form", parseFormMap(body, r.Header.Get("Content-Type"), r.URL.Query()))
+	// form + multi-value + files
+	form, formAll, files := parseFormParts(body, r.Header.Get("Content-Type"), r.URL.Query())
+	put("form", form)
+	put("form_all", formAll)
+	put("files", files)
+	// cookies
+	put("cookies", cookieMapFromHeader(r.Header.Get("Cookie")))
 	// HTMX request surface (always present; request=false when not HTMX)
 	hx := htmxFromHeaders(func(name string) string { return r.Header.Get(name) })
 	put("htmx", hx)
 	return m
 }
 
-// parseFormMap builds a string map from query + body (urlencoded or multipart).
-// Multi-value fields keep the first value (typical for simple HTML/HTMX forms).
+// parseFormMap keeps the first value per key (compat).
 func parseFormMap(body, contentType string, query url.Values) runtime.Value {
-	out := runtime.NewMap()
-	mo := out.Obj.(*runtime.MapObj)
-	put := func(k, v string) {
-		if _, ok := mo.Vals[k]; ok {
-			return // first wins
+	form, _, _ := parseFormParts(body, contentType, query)
+	return form
+}
+
+// parseFormParts returns form (first value), form_all (list per key), files map.
+func parseFormParts(body, contentType string, query url.Values) (form, formAll, files runtime.Value) {
+	form = runtime.NewMap()
+	formAll = runtime.NewMap()
+	files = runtime.NewMap()
+	fmo := form.Obj.(*runtime.MapObj)
+	amo := formAll.Obj.(*runtime.MapObj)
+	xmo := files.Obj.(*runtime.MapObj)
+
+	addVal := func(k, v string) {
+		// form_all: accumulate every value
+		if cur, ok := amo.Vals[k]; ok && cur.Kind == runtime.KindList {
+			lo := cur.Obj.(*runtime.ListObj)
+			lo.Items = append(lo.Items, runtime.Str(v))
+		} else {
+			if _, ok := amo.Vals[k]; !ok {
+				amo.Keys = append(amo.Keys, k)
+			}
+			amo.Vals[k] = runtime.List(runtime.Str(v))
 		}
-		mo.Keys = append(mo.Keys, k)
-		mo.Vals[k] = runtime.Str(v)
+		// form: last wins (POST body overrides query)
+		if _, ok := fmo.Vals[k]; !ok {
+			fmo.Keys = append(fmo.Keys, k)
+		}
+		fmo.Vals[k] = runtime.Str(v)
 	}
+	addFile := func(field, filename, ctype string, data []byte) {
+		if _, ok := xmo.Vals[field]; !ok {
+			xmo.Keys = append(xmo.Keys, field)
+		}
+		fm := runtime.NewMap()
+		fmo2 := fm.Obj.(*runtime.MapObj)
+		fmo2.Keys = []string{"filename", "content_type", "size", "body"}
+		fmo2.Vals["filename"] = runtime.Str(filename)
+		fmo2.Vals["content_type"] = runtime.Str(ctype)
+		fmo2.Vals["size"] = runtime.Int(int64(len(data)))
+		fmo2.Vals["body"] = runtime.Str(string(data))
+		xmo.Vals[field] = fm
+		// also expose filename in form for convenience
+		if filename != "" {
+			addVal(field, filename)
+		}
+	}
+
 	for k, vs := range query {
-		if len(vs) > 0 {
-			put(k, vs[0])
+		for _, v := range vs {
+			addVal(k, v)
 		}
 	}
-	ctype := contentType
-	if med, params, err := mime.ParseMediaType(ctype); err == nil {
-		ctype = med
-		if med == "multipart/form-data" {
-			boundary := params["boundary"]
-			if boundary != "" && body != "" {
-				mr := multipart.NewReader(strings.NewReader(body), boundary)
-				for {
-					p, err := mr.NextPart()
-					if err == io.EOF {
-						break
-					}
-					if err != nil {
-						break
-					}
-					name := p.FormName()
-					if name == "" {
-						_ = p.Close()
-						continue
-					}
-					// skip file contents as raw bytes → string (small forms / text fields)
-					b, err := io.ReadAll(io.LimitReader(p, 1<<20))
+	if med, params, err := mime.ParseMediaType(contentType); err == nil && med == "multipart/form-data" {
+		boundary := params["boundary"]
+		if boundary != "" && body != "" {
+			mr := multipart.NewReader(strings.NewReader(body), boundary)
+			for {
+				p, err := mr.NextPart()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					break
+				}
+				name := p.FormName()
+				if name == "" {
 					_ = p.Close()
-					if err != nil {
-						continue
-					}
-					put(name, string(b))
+					continue
+				}
+				b, err := io.ReadAll(io.LimitReader(p, 8<<20))
+				fn := p.FileName()
+				ct := p.Header.Get("Content-Type")
+				_ = p.Close()
+				if err != nil {
+					continue
+				}
+				if fn != "" {
+					addFile(name, fn, ct, b)
+				} else {
+					addVal(name, string(b))
 				}
 			}
-			return out
 		}
+		return form, formAll, files
 	}
-	// urlencoded (explicit or bare POST body)
 	if strings.Contains(strings.ToLower(contentType), "application/x-www-form-urlencoded") ||
 		(body != "" && (contentType == "" || !strings.Contains(contentType, "/"))) {
 		vals, err := url.ParseQuery(body)
 		if err == nil {
 			for k, vs := range vals {
-				if len(vs) > 0 {
-					put(k, vs[0])
+				for _, v := range vs {
+					addVal(k, v)
 				}
 			}
 		}
 	}
-	return out
+	return form, formAll, files
+}
+
+func cookieMapFromHeader(raw string) runtime.Value {
+	m := runtime.NewMap()
+	mo := m.Obj.(*runtime.MapObj)
+	if raw == "" {
+		return m
+	}
+	for _, part := range strings.Split(raw, ";") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(part, "=")
+		if !ok {
+			continue
+		}
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if _, exists := mo.Vals[k]; !exists {
+			mo.Keys = append(mo.Keys, k)
+		}
+		mo.Vals[k] = runtime.Str(v)
+	}
+	return m
+}
+
+func buildSetCookie(name, value string, opts runtime.Value, clear bool) string {
+	if clear {
+		value = ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s=%s", name, url.QueryEscape(value))
+	path := "/"
+	maxAge := int64(-1)
+	httpOnly, secure := true, false
+	sameSite := ""
+	if opts.Kind == runtime.KindMap {
+		if s := mapGetStr(opts, "path", ""); s != "" {
+			path = s
+		}
+		if n := mapGetInt(opts, "max_age", -999); n != -999 {
+			maxAge = n
+		}
+		if v, ok := mapGet(opts, "http_only"); ok && v.Kind == runtime.KindBool {
+			httpOnly = v.B
+		}
+		if v, ok := mapGet(opts, "secure"); ok && v.Kind == runtime.KindBool {
+			secure = v.B
+		}
+		sameSite = mapGetStr(opts, "same_site", mapGetStr(opts, "samesite", ""))
+	}
+	if clear && maxAge < 0 {
+		maxAge = 0
+	}
+	fmt.Fprintf(&b, "; Path=%s", path)
+	if maxAge >= 0 {
+		fmt.Fprintf(&b, "; Max-Age=%d", maxAge)
+	}
+	if httpOnly {
+		b.WriteString("; HttpOnly")
+	}
+	if secure {
+		b.WriteString("; Secure")
+	}
+	if sameSite != "" {
+		fmt.Fprintf(&b, "; SameSite=%s", sameSite)
+	}
+	return b.String()
+}
+
+func htmxOOBWrap(id, html string) string {
+	id = strings.TrimSpace(id)
+	id = strings.TrimPrefix(id, "#")
+	if id == "" {
+		id = "oob"
+	}
+	html = strings.TrimSpace(html)
+	// if caller already marked oob, leave alone
+	if strings.Contains(html, "hx-swap-oob") {
+		return html
+	}
+	// inject into opening tag if present
+	if strings.HasPrefix(html, "<") {
+		// find first space or >
+		end := strings.IndexAny(html, " >")
+		if end > 1 {
+			tag := html[1:end]
+			// ensure id attribute
+			rest := html[end:]
+			head := html
+			if len(head) > 200 {
+				head = head[:200]
+			}
+			if !strings.Contains(strings.ToLower(head), "id=") {
+				return fmt.Sprintf(`<%s id="%s" hx-swap-oob="true"%s`, tag, id, rest)
+			}
+			return fmt.Sprintf(`<%s hx-swap-oob="true"%s`, tag, rest)
+		}
+	}
+	return fmt.Sprintf(`<div id="%s" hx-swap-oob="true">%s</div>`, id, html)
 }
 
 func headerGetCI(headers runtime.Value, name string) string {
@@ -925,12 +1256,72 @@ func htmxResponse(args []runtime.Value) (runtime.Value, error) {
 			setH(k, emo.Vals[k].String())
 		}
 	}
+	// oob: str | [str|map{id,html}] appended after main body
+	if oob, ok := mapGet(opts, "oob"); ok {
+		body = appendOOB(body, oob)
+		// update body on response map
+		mo := m.Obj.(*runtime.MapObj)
+		mo.Vals["body"] = runtime.Str(body)
+	}
+	// cookies: list of Set-Cookie strings or single string
+	if ck, ok := mapGet(opts, "cookies"); ok {
+		mo := m.Obj.(*runtime.MapObj)
+		if _, exists := mo.Vals["cookies"]; !exists {
+			mo.Keys = append(mo.Keys, "cookies")
+		}
+		mo.Vals["cookies"] = ck
+	}
+	if cookie, ok := mapGet(opts, "cookie"); ok {
+		// single cookie string
+		mo := m.Obj.(*runtime.MapObj)
+		var list []runtime.Value
+		if cur, ok := mo.Vals["cookies"]; ok && cur.Kind == runtime.KindList {
+			list = append([]runtime.Value{}, cur.Obj.(*runtime.ListObj).Items...)
+		}
+		list = append(list, runtime.Str(cookie.String()))
+		if _, exists := mo.Vals["cookies"]; !exists {
+			mo.Keys = append(mo.Keys, "cookies")
+		}
+		mo.Vals["cookies"] = runtime.List(list...)
+	}
 	if len(hmo.Keys) > 0 {
 		mo := m.Obj.(*runtime.MapObj)
 		mo.Keys = append(mo.Keys, "headers")
 		mo.Vals["headers"] = hdrs
 	}
 	return m, nil
+}
+
+func appendOOB(body string, oob runtime.Value) string {
+	var parts []string
+	if body != "" {
+		parts = append(parts, body)
+	}
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			parts = append(parts, s)
+		}
+	}
+	switch oob.Kind {
+	case runtime.KindStr:
+		add(oob.S)
+	case runtime.KindList:
+		for _, it := range oob.Obj.(*runtime.ListObj).Items {
+			if it.Kind == runtime.KindMap {
+				id := mapGetStr(it, "id", mapGetStr(it, "target", "oob"))
+				html := mapGetStr(it, "html", mapGetStr(it, "body", ""))
+				add(htmxOOBWrap(id, html))
+			} else {
+				add(it.String())
+			}
+		}
+	case runtime.KindMap:
+		id := mapGetStr(oob, "id", mapGetStr(oob, "target", "oob"))
+		html := mapGetStr(oob, "html", mapGetStr(oob, "body", ""))
+		add(htmxOOBWrap(id, html))
+	}
+	return strings.Join(parts, "\n")
 }
 
 func stringMapValue(m map[string]string) runtime.Value {

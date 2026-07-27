@@ -302,7 +302,28 @@ func writeWeftResponse(w http.ResponseWriter, ret runtime.Value) {
 		if v, ok := mapGet(ret, "headers"); ok && v.Kind == runtime.KindMap {
 			mo := v.Obj.(*runtime.MapObj)
 			for _, k := range mo.Keys {
-				w.Header().Set(k, mo.Vals[k].String())
+				val := mo.Vals[k].String()
+				// Set-Cookie must use Add (multiple cookies)
+				if strings.EqualFold(k, "Set-Cookie") {
+					w.Header().Add("Set-Cookie", val)
+				} else {
+					w.Header().Set(k, val)
+				}
+			}
+		}
+		// cookies: list of Set-Cookie values or single string
+		if v, ok := mapGet(ret, "cookies"); ok {
+			switch v.Kind {
+			case runtime.KindList:
+				for _, it := range v.Obj.(*runtime.ListObj).Items {
+					if s := it.String(); s != "" {
+						w.Header().Add("Set-Cookie", s)
+					}
+				}
+			case runtime.KindStr:
+				if v.S != "" {
+					w.Header().Add("Set-Cookie", v.S)
+				}
 			}
 		}
 		if v, ok := mapGet(ret, "stream"); ok {

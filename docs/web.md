@@ -48,6 +48,7 @@ weft run examples/webapp.weft
 | `app.render(name, data)` | HTML response |
 | `app.ws(path, handler)` | WebSocket |
 | `app.listen(addr)` / `app.run(addr)` | block & serve |
+| `app.before(fn)` | middleware; return response to short-circuit |
 | `app.handle(method, path, body?)` | in-process (tests) |
 
 Path params: `/users/:id` or `/users/{id}` → `req.params["id"]`.
@@ -61,10 +62,13 @@ Path params: `/users/:id` or `/users/{id}` → `req.params["id"]`.
 | `query_map` | parsed query string |
 | `headers` | request headers |
 | `host` `remote` | connection meta |
-| `form` | form fields (query + urlencoded/multipart body) |
+| `form` | form fields (first value per key) |
+| `form_all` | form fields as lists (checkboxes / multi-select) |
+| `files` | multipart uploads: `{field: {filename, content_type, size, body}}` |
+| `cookies` | request cookies map |
 | `htmx` | HTMX request map (see below) |
 
-Form helpers: `web.form(req)` (same as `req.form`), `web.form_get(req, key, default?)`.
+Helpers: `web.form` / `web.form_get` / `web.form_list` / `web.file` / `web.cookie_get`.
 
 ### Responses
 
@@ -120,25 +124,60 @@ if web.is_htmx(req) {
 | `web.htmx_trigger(event\|map, html?)` | `HX-Trigger` |
 | `web.htmx_location(url\|opts)` | `HX-Location` soft nav |
 | `web.htmx_cdn(version?)` | `<script src=unpkg htmx>` tag |
+| `web.htmx_oob(id, html)` | fragment with `hx-swap-oob="true"` |
 
 **`web.htmx` opts** (all optional):
 
-| Opt | Header |
-|-----|--------|
+| Opt | Header / effect |
+|-----|-----------------|
 | `trigger` / `trigger_after_settle` / `trigger_after_swap` | `HX-Trigger*` (str or map → JSON) |
 | `redirect` | `HX-Redirect` |
 | `refresh` | `HX-Refresh` |
 | `location` | `HX-Location` (str or map → JSON) |
 | `push_url` / `replace_url` | `HX-Push-Url` / `HX-Replace-Url` |
 | `retarget` / `reswap` / `reselect` | matching HX-* |
+| `oob` | str / list / `{id,html}` — OOB fragments appended to body |
+| `cookie` / `cookies` | Set-Cookie (string or list) |
 | `status` | HTTP status (default 200) |
 | `headers` | extra response headers map |
+
+### Cookies
+
+```weft
+web.cookie_get(req, "sid", "")
+// response:
+web.htmx(html, {"cookie": web.cookie("sid", "abc", {"max_age": 3600, "http_only": true})})
+web.clear_cookie("sid")
+```
+
+Opts for `web.cookie`: `path`, `max_age`, `http_only`, `secure`, `same_site`.
+
+### Middleware
+
+```weft
+app.before(fn(req) {
+    if web.cookie_get(req, "sid") == "" {
+        return web.redirect("/login")   // short-circuit
+    }
+    null   // continue
+})
+```
+
+Return a response map (`status` / `body` / `headers` / `cookies`) to stop; `null` / `false` continues.
+
+### Files
+
+```weft
+f := web.file(req, "upload")
+// f.filename, f.content_type, f.size, f.body
+```
 
 ```weft
 app.post("/save", fn(req) {
     web.htmx("<p class=\"ok\">saved</p>", {
         "trigger": {"saved": {"id": 1}},
         "push_url": "/items/1",
+        "oob": [web.htmx_oob("#flash", "ok")],
     })
 })
 ```

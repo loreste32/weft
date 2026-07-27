@@ -1,38 +1,85 @@
-// HTMX counter + form — partial HTML swaps.
+// HTMX todo list: partials, OOB flash, cookies, form multi-values.
 //   weft run examples/htmx.weft
 //   open http://127.0.0.1:8090
 
 fn page(body) {
     cdn := web.htmx_cdn()
-    web.html("<!doctype html><html><head><meta charset=\"utf-8\"/><title>Weft + HTMX</title>$cdn<style>body{font:16px/1.4 system-ui,sans-serif;max-width:32rem;margin:2rem auto;padding:0 1rem}#count{font-size:2rem;font-weight:600}button,input{font:inherit;margin:.25rem 0}.ok{color:#0a7}</style></head><body>$body</body></html>")
+    web.html("<!doctype html><html><head><meta charset=\"utf-8\"/><title>Weft HTMX</title>$cdn<style>body{font:16px/1.4 system-ui,sans-serif;max-width:36rem;margin:2rem auto;padding:0 1rem}#flash{min-height:1.4em;color:#0a7}button,input{font:inherit;margin:.25rem 0}ul{padding-left:1.2rem}.muted{color:#666}</style></head><body>$body</body></html>")
+}
+
+fn render_list(items) {
+    mut html := "<ul id=\"list\">"
+    mut i := 0
+    for it in items {
+        html = html + "<li>" + it + " <button hx-delete=\"/item/" + str(i) + "\" hx-target=\"#list\" hx-swap=\"outerHTML\">x</button></li>"
+        i = i + 1
+    }
+    if i == 0 {
+        html = html + "<li class=\"muted\">empty</li>"
+    }
+    html + "</ul>"
 }
 
 fn main {
-    state := {"n": 0}
+    state := {"items": []}
     app := web.app()
 
-    app.get("/", fn(req) {
-        c := state["n"]
-        page("<h1>Weft HTMX</h1><p>Count: <span id=\"count\">$c</span></p><button hx-post=\"/inc\" hx-target=\"#count\" hx-swap=\"innerHTML\">+1</button> <button hx-post=\"/reset\" hx-target=\"#count\" hx-swap=\"innerHTML\">reset</button><hr/><form hx-post=\"/greet\" hx-target=\"#out\" hx-swap=\"innerHTML\"><input name=\"name\" placeholder=\"your name\" required/> <button type=\"submit\">greet</button></form><div id=\"out\"></div>")
-    })
-
-    app.post("/inc", fn(req) {
-        if !web.is_htmx(req) {
-            return web.redirect("/")
+    // demo middleware: stamp a visit cookie if missing
+    app.before(fn(req) {
+        if web.cookie_get(req, "visit") == "" {
+            // continue; set cookie on responses via handlers
+            null
+        } else {
+            null
         }
-        state["n"] = state["n"] + 1
-        c := state["n"]
-        web.htmx("$c", {"trigger": "counted"})
     })
 
-    app.post("/reset", fn(req) {
-        state["n"] = 0
-        web.htmx("0", {"trigger": {"reset": true}})
+    app.get("/", fn(req) {
+        list := render_list(state["items"])
+        who := web.cookie_get(req, "name", "friend")
+        page("<h1>Weft HTMX todos</h1><p class=\"muted\">hi, $who</p><div id=\"flash\"></div>$list<form hx-post=\"/add\" hx-target=\"#list\" hx-swap=\"outerHTML\"><input name=\"item\" placeholder=\"new item\" required/> <button type=\"submit\">add</button></form><form hx-post=\"/prefs\" hx-target=\"#flash\" hx-swap=\"innerHTML\"><label><input type=\"checkbox\" name=\"tag\" value=\"work\"/> work</label> <label><input type=\"checkbox\" name=\"tag\" value=\"home\"/> home</label> <input name=\"name\" placeholder=\"your name\"/> <button type=\"submit\">save prefs</button></form>")
     })
 
-    app.post("/greet", fn(req) {
+    app.post("/add", fn(req) {
+        item := web.form_get(req, "item", "")
+        if item != "" {
+            state["items"] = state["items"] + [item]
+        }
+        list := render_list(state["items"])
+        flash := web.htmx_oob("#flash", "added")
+        web.htmx(list, {
+            "oob": [flash],
+            "trigger": "item-added",
+            "cookie": web.cookie("visit", "1", {"max_age": 86400}),
+        })
+    })
+
+    app.delete("/item/:i", fn(req) {
+        i := int(req.params["i"])
+        mut next := []
+        mut j := 0
+        for it in state["items"] {
+            if j != i {
+                next = next + [it]
+            }
+            j = j + 1
+        }
+        state["items"] = next
+        list := render_list(state["items"])
+        web.htmx(list, {"oob": [web.htmx_oob("#flash", "removed")]})
+    })
+
+    app.post("/prefs", fn(req) {
         name := web.form_get(req, "name", "friend")
-        web.htmx("<p class=\"ok\">hello, $name</p>", {"trigger": "greeted"})
+        tags := web.form_list(req, "tag")
+        mut msg := "saved for $name"
+        if len(tags) > 0 {
+            msg = msg + " tags=" + str(tags)
+        }
+        // main target is #flash; also set name cookie
+        web.htmx("<span>$msg</span>", {
+            "cookie": web.cookie("name", name, {"max_age": 604800}),
+        })
     })
 
     say("weft htmx → http://127.0.0.1:8090")

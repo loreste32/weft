@@ -100,6 +100,12 @@ var memberCatalog = map[string]memberHelp{
 	"web.htmx_cdn":      {Sig: "web.htmx_cdn(version?)", Detail: "script tag for htmx CDN"},
 	"web.form":          {Sig: "web.form(req) -> map", Detail: "parsed form fields (query + body)"},
 	"web.form_get":      {Sig: "web.form_get(req, key, default?)", Detail: "one form field as string"},
+	"web.form_list":     {Sig: "web.form_list(req, key) -> [str]", Detail: "all values for multi-select fields"},
+	"web.file":          {Sig: "web.file(req, field) -> map|null", Detail: "multipart file {filename,body,size,…}"},
+	"web.htmx_oob":      {Sig: "web.htmx_oob(id, html)", Detail: "hx-swap-oob fragment"},
+	"web.cookie":        {Sig: "web.cookie(name, value, opts?)", Detail: "Set-Cookie string for responses"},
+	"web.clear_cookie":  {Sig: "web.clear_cookie(name, opts?)", Detail: "expire a cookie"},
+	"web.cookie_get":    {Sig: "web.cookie_get(req, name, default?)", Detail: "read request cookie"},
 
 	// fs
 	"fs.read":      {Sig: "fs.read(path) -> Result[str]", Detail: "read whole file"},
