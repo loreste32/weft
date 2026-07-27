@@ -1,9 +1,7 @@
 package stdlib
 
 import (
-	"bufio"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/loreste/weft/internal/runtime"
@@ -130,22 +128,6 @@ func packageCLI(env *runtime.Env) runtime.Value {
 			fmt.Fprintln(env.Stdout, args[0].String())
 		}
 		return runtime.Null(), &runtime.ExitSignal{Code: 0}
-	}, 1)
-
-	// cli.getpass(prompt?) -> Result[str]
-	// Reads one line from stdin (use a TTY for interactive prompts; pipes OK for CI).
-	set(p, "getpass", func(args []runtime.Value) (runtime.Value, error) {
-		prompt := "Password: "
-		if len(args) >= 1 && args[0].String() != "" {
-			prompt = args[0].String()
-		}
-		fmt.Fprint(env.Stderr, prompt)
-		r := bufio.NewReader(os.Stdin)
-		line, err := r.ReadString('\n')
-		if err != nil && len(line) == 0 {
-			return errRes(err.Error(), "cli"), nil
-		}
-		return runtime.Ok(runtime.Str(strings.TrimRight(line, "\r\n"))), nil
 	}, 1)
 
 	return p

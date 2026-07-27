@@ -11,7 +11,7 @@ weft stdlib http      # members of one package
 
 This page is a map of what is there and when to reach for it. It is **broad and shallow** on purpose: good for glue and ops scripts.
 
-Coverage tiers and non-goals: **[STDLIB_GAPS.md](STDLIB_GAPS.md)**.
+What we keep vs won’t: **[STDLIB_GAPS.md](STDLIB_GAPS.md)**.
 
 ---
 
@@ -19,21 +19,20 @@ Coverage tiers and non-goals: **[STDLIB_GAPS.md](STDLIB_GAPS.md)**.
 
 | Job | Packages |
 |-----|----------|
-| Files & paths | `fs`, `io`, `archive`, `copy` |
+| Files & paths | `fs`, `io`, `archive` |
 | HTTP client / tiny server | `http`, `web`, `url`, `ws`, `webrtc` |
 | JSON / config | `json`, `jsonl`, `yaml`, `toml`, `ini`, `xml` |
-| Text | `str`, `re`, `html`, `base64`, `mime`, `difflib` |
+| Text | `str`, `re`, `html`, `base64`, `mime` |
 | Time | `time` |
 | Env / process | `env`, `platform`, `sh`, `shlex`, `signal`, `cli`, `log`, `secrets` |
-| Numbers | `math`, `decimal`, `random`, `uuid`, `ip`, `binstruct` |
+| Numbers | `math`, `decimal`, `random`, `uuid`, `ip` |
 | Data tables | `csv`, `table`, `db`, `redis`, `mongo` |
 | Messaging | `nats`, `amqp`, `email`, `socket` |
 | LLM | `llm`, `ollama`, `vllm` |
-| Collections helpers | `iter`, `collections`, `heap`, `bisect`, `pipe`, `functools` |
+| Collections helpers | `iter`, `collections`, `heap`, `bisect`, `pipe` |
 | Crypto | `crypto` |
 | Charts | `viz` |
 | GraphQL | `graphql` |
-| Errors | `traceback` |
 | Tests | `test` (no import required in tests) |
 | Pickle-like | `pickle` (limited) |
 

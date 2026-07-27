@@ -102,38 +102,6 @@ func packageCrypto() runtime.Value {
 		return runtime.Str(hex.EncodeToString(mac.Sum(nil))), nil
 	}, 2)
 
-	set(p, "hmac_sha512", func(args []runtime.Value) (runtime.Value, error) {
-		if len(args) < 2 {
-			return errRes("crypto.hmac_sha512(key, msg)", "crypto"), nil
-		}
-		mac := hmac.New(sha512.New, []byte(args[0].String()))
-		_, _ = mac.Write([]byte(args[1].String()))
-		return runtime.Str(hex.EncodeToString(mac.Sum(nil))), nil
-	}, 2)
-
-	// crypto.hash(algo, s) -> hex  algo: md5|sha1|sha256|sha512
-	set(p, "hash", func(args []runtime.Value) (runtime.Value, error) {
-		if len(args) < 2 {
-			return errRes("crypto.hash(algo, s)", "crypto"), nil
-		}
-		algo := strings.ToLower(args[0].String())
-		s := args[1].String()
-		switch algo {
-		case "md5":
-			return runtime.Str(hexHash(md5.New(), s)), nil
-		case "sha1":
-			return runtime.Str(hexHash(sha1.New(), s)), nil
-		case "sha256":
-			sum := sha256.Sum256([]byte(s))
-			return runtime.Str(hex.EncodeToString(sum[:])), nil
-		case "sha512":
-			sum := sha512.Sum512([]byte(s))
-			return runtime.Str(hex.EncodeToString(sum[:])), nil
-		default:
-			return errRes("crypto.hash: algo md5|sha1|sha256|sha512", "crypto"), nil
-		}
-	}, 2)
-
 	// crypto.equal(a, b) -> bool  constant-time for equal-length strings (tokens)
 	set(p, "equal", func(args []runtime.Value) (runtime.Value, error) {
 		if len(args) < 2 {

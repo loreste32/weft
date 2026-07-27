@@ -95,7 +95,7 @@ func packageSH(env *runtime.Env) runtime.Value {
 		return runtime.Str(p), nil
 	}, 1)
 
-	// sh.lines(cmd, args?, opts?) -> Result[[str]]  stdout split lines (fails if non-zero)
+	// sh.lines(cmd, args?, opts?) -> Result[[str]]  stdout lines (fails if non-zero)
 	set(p, "lines", func(args []runtime.Value) (runtime.Value, error) {
 		cmd, argv, opts, err := parseShArgs(args)
 		if err != nil {
@@ -124,16 +124,6 @@ func packageSH(env *runtime.Env) runtime.Value {
 			items[i] = runtime.Str(s)
 		}
 		return runtime.Ok(runtime.List(items...)), nil
-	}, 3)
-
-	// sh.combined(cmd, args?, opts?) -> Result[{code,ok,output}]  stdout+stderr merged
-	set(p, "combined", func(args []runtime.Value) (runtime.Value, error) {
-		cmd, argv, opts, err := parseShArgs(args)
-		if err != nil {
-			return errRes(err.Error(), "sh"), nil
-		}
-		opts.mergeOut = true
-		return runCmd(env, cmd, argv, opts, false)
 	}, 3)
 
 	return p

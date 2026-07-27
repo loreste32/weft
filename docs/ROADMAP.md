@@ -29,7 +29,7 @@ We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.3.
 - Stdlib for I/O, HTTP, web, text/math, config (yaml/toml/ini), some “lite” cousins of common Python modules  
 - Day-to-day tools: `weft check`, `test`, `fmt`, `bench`, `stdlib`, LSP (incl. format)  
 - Sysops surface: `sh`/`fs`/`cli`/`env`/`platform`/`secrets` + host-check example ([SYSOPS.md](SYSOPS.md))  
-- Stdlib Tier A/B lite: `shlex`, `signal`, `binstruct`, `difflib`, `copy`, `functools`, `traceback`, fs bytes/path, secrets tokens, log JSON ([STDLIB_GAPS.md](STDLIB_GAPS.md))  
+- Ops stdlib additions kept lean: `shlex`, `signal`, `sh.lines`, secrets tokens, `log.set_json` ([STDLIB_GAPS.md](STDLIB_GAPS.md))  
 - Docs: tutorial, language reference, cookbook + `examples/cookbook/` (CI smoke)  
 - Gold corpus includes closures, enums, and match (train eval 100%)  
 - Agent/LLM ergonomics: multi-turn `llm.chat`, `ask`+opts, `stream_text` (in gold corpus)  

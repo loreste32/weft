@@ -43,16 +43,6 @@ func packageHTML() runtime.Value {
 		return runtime.Str(s), nil
 	}, 1)
 
-	// html.text(s) -> str  alias of strip_tags for agent readability
-	set(p, "text", func(args []runtime.Value) (runtime.Value, error) {
-		if len(args) < 1 {
-			return runtime.Str(""), nil
-		}
-		s := tagRe.ReplaceAllString(args[0].String(), "")
-		s = html.UnescapeString(s)
-		return runtime.Str(strings.Join(strings.Fields(s), " ")), nil
-	}, 1)
-
 	// html.links(s) -> list[str]  href= values (crude)
 	hrefRe := regexp.MustCompile(`(?i)href\s*=\s*["']([^"']+)["']`)
 	set(p, "links", func(args []runtime.Value) (runtime.Value, error) {

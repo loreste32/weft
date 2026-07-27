@@ -8,7 +8,7 @@ import (
 	"github.com/loreste/weft/internal/runtime"
 )
 
-// packageShlex — shell-safe split/quote (Python shlex lite).
+// packageShlex — shell-safe split/quote/join.
 func packageShlex() runtime.Value {
 	p := pkg()
 

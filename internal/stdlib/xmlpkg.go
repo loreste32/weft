@@ -70,29 +70,6 @@ func packageXML() runtime.Value {
 		return runtime.List(out...), nil
 	}, 2)
 
-	// xml.text(node) -> str
-	set(p, "text", func(args []runtime.Value) (runtime.Value, error) {
-		if len(args) < 1 {
-			return runtime.Str(""), nil
-		}
-		return runtime.Str(mapGetStr(args[0], "text", "")), nil
-	}, 1)
-
-	// xml.attr(node, key) -> str|null
-	set(p, "attr", func(args []runtime.Value) (runtime.Value, error) {
-		if len(args) < 2 {
-			return runtime.Null(), nil
-		}
-		attrs, ok := mapGet(args[0], "attrs")
-		if !ok || attrs.Kind != runtime.KindMap {
-			return runtime.Null(), nil
-		}
-		if v, ok := mapGet(attrs, args[1].String()); ok {
-			return v, nil
-		}
-		return runtime.Null(), nil
-	}, 2)
-
 	return p
 }
 

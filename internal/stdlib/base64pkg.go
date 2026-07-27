@@ -73,39 +73,5 @@ func packageBase64() runtime.Value {
 		return runtime.Ok(runtime.Str(string(b))), nil
 	}, 1)
 
-	// binascii-style aliases
-	set(p, "b2a_hex", func(args []runtime.Value) (runtime.Value, error) {
-		if len(args) < 1 {
-			return runtime.Str(""), nil
-		}
-		return runtime.Str(hex.EncodeToString([]byte(args[0].String()))), nil
-	}, 1)
-	set(p, "a2b_hex", func(args []runtime.Value) (runtime.Value, error) {
-		if len(args) < 1 {
-			return errRes("base64.a2b_hex(s)", "base64"), nil
-		}
-		b, err := hex.DecodeString(args[0].String())
-		if err != nil {
-			return errRes(err.Error(), "base64"), nil
-		}
-		return runtime.Ok(runtime.Str(string(b))), nil
-	}, 1)
-	set(p, "b2a_base64", func(args []runtime.Value) (runtime.Value, error) {
-		if len(args) < 1 {
-			return runtime.Str(""), nil
-		}
-		return runtime.Str(base64.StdEncoding.EncodeToString([]byte(args[0].String()))), nil
-	}, 1)
-	set(p, "a2b_base64", func(args []runtime.Value) (runtime.Value, error) {
-		if len(args) < 1 {
-			return errRes("base64.a2b_base64(s)", "base64"), nil
-		}
-		b, err := base64.StdEncoding.DecodeString(args[0].String())
-		if err != nil {
-			return errRes(err.Error(), "base64"), nil
-		}
-		return runtime.Ok(runtime.Str(string(b))), nil
-	}, 1)
-
 	return p
 }

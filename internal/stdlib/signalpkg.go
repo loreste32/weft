@@ -9,9 +9,7 @@ import (
 	"github.com/loreste/weft/internal/runtime"
 )
 
-// packageSignal — cooperative shutdown flags (Python signal lite).
-// Does not install custom handlers that call Weft code (unsafe under VM);
-// exposes notified flags for runbooks/workers to poll.
+// packageSignal — pollable SIGINT/SIGTERM flags for workers (no VM callbacks).
 func packageSignal(env *runtime.Env) runtime.Value {
 	p := pkg()
 
@@ -65,11 +63,6 @@ func packageSignal(env *runtime.Env) runtime.Value {
 		got = map[string]bool{}
 		mu.Unlock()
 		return runtime.Unit(), nil
-	}, 0)
-
-	// signal.pid() -> int
-	set(p, "pid", func(args []runtime.Value) (runtime.Value, error) {
-		return runtime.Int(int64(os.Getpid())), nil
 	}, 0)
 
 	return p
