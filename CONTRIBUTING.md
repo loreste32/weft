@@ -15,9 +15,10 @@ Install: `make install` → `~/.local/bin/weft`.
 ## Before you open a PR
 
 1. `bash scripts/ci.sh` passes  
-2. Version string only bumps when intentional (see [docs/VERSIONING.md](docs/VERSIONING.md))  
-3. Gold/train corpus stays honest: `weft train eval --quiet` should stay at 100% unless you meant to change it  
-4. Prefer stdlib or `packages/*` over core language surface unless most scripts need it  
+2. **Every new/changed behavior has tests** (unit tests next to the package, and/or `*_test.weft` when it’s language-facing). No “ship first, test later.”  
+3. Version string only bumps when intentional (see [docs/VERSIONING.md](docs/VERSIONING.md))  
+4. Gold/train corpus stays honest: `weft train eval --quiet` should stay at 100% unless you meant to change it  
+5. Prefer stdlib or `packages/*` over core language surface unless most scripts need it  
 
 ## Docs map
 
