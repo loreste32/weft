@@ -12,7 +12,7 @@ Weft is a small, braced scripting language that runs on a pure-Go stack VM:
 .weft source → lexer → parser → compiler → bytecode → VM
 ```
 
-It is aimed at **LLM agent scripts**, **HTTP glue**, and **ops tooling**. The runtime is one binary; there is no Python interpreter on the hot path.
+It is aimed at **LLM agent scripts**, **HTTP glue**, and **ops tooling**. The runtime is one binary on the hot path.
 
 Design choices you will feel immediately:
 
@@ -474,7 +474,7 @@ Tests: [TESTING.md](TESTING.md). Tooling notes: [TOOLING.md](TOOLING.md).
 | `try` / `catch` as primary errors | `Result` + `?` is the style |
 | `async` / `await` keywords | Concurrent-by-default; no function coloring |
 | Classes / inheritance | Structs + functions |
-| NumPy / pandas / SciPy | Out of core; stay small |
+| Heavy scientific arrays / dataframes | Out of core; stay small |
 | In-process GPU training | Orchestrate outside; optional train kit |
 | Full algebraic enums | String-tagged enums only (for now) |
 | Public package registry | Path/git + monorepo catalog first |

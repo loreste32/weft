@@ -5,7 +5,7 @@ use tokensave
 
 fn main -> Result {
     knowledge := [
-        "Weft binds with := and prints with say. Not Python print.",
+        "Weft binds with := and prints with say. ",
         "Use Result and ? for fallible I/O in Weft.",
         "Office wifi password is not relevant to coding.",
         "Lunch menu: pasta and salad.",

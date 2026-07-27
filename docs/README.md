@@ -98,4 +98,4 @@ source .weft  →  lex  →  parse  →  compile  →  stack VM
 
 ## What Weft is not
 
-Not a CPython replacement. Not NumPy/SciPy. Not in-process PyTorch training. Not Jupyter-first. See [ROADMAP.md](ROADMAP.md) for the honest list.
+Not a general-purpose OS scripting replacement for every stack. Not a heavy scientific array runtime. Not in-process deep-learning training. Not notebook-first. See [ROADMAP.md](ROADMAP.md) for the honest list.

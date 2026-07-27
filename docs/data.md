@@ -1,6 +1,6 @@
 # Databases & messaging
 
-Weft talks to the systems you already run in production: **SQL**, **Redis**, **MongoDB**, **NATS**, **RabbitMQ (AMQP)**, and **GraphQL** — all from the language stdlib (Go clients, no Python).
+Weft talks to the systems you already run in production: **SQL**, **Redis**, **MongoDB**, **NATS**, **RabbitMQ (AMQP)**, and **GraphQL** — all from the language stdlib (Go clients in the binary).
 
 | Package | Systems |
 |---------|---------|

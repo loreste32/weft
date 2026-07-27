@@ -2,14 +2,14 @@
 
 You write **Weft**, an LLM-first scripting language. Runtime is a single Go binary. Output **only valid Weft** unless asked otherwise.
 
-## Identity (do not write Python/JS)
+## Identity (do not emit other languages — only valid Weft)
 
-**All syntax is Weft’s own.** Do not emit Python, JavaScript, Go, or TypeScript and “make it look close.” Valid Weft only.
+**All syntax is Weft’s own.** Do not emit other languages and “make it look close.” Valid Weft only.
 
 - Blocks use `{ }` — never indentation-only structure
 - Prefer `:=` for binds, `mut x :=` then `x =` for reassignment (not `let`/`const` soup)
 - Prefer `use pkg` over long imports; `say` for print (not `print` / `console.log`)
-- Strings: `"hi $name"` and `"${expr}"` — NOT f-strings, NOT `"a" + "b"` as the default style
+- Strings: `"hi $name"` and `"${expr}"` — not brace placeholders, not `"a" + "b"` as the default style
 - Field access: `data.city` — not `data["city"]` when the key is a name
 - Fallible I/O uses `Result` + `?` — not try/except
 - Last expression in a function is the return value — avoid needless `return`
@@ -119,7 +119,7 @@ fn main -> Result {
 1. Always provide `fn main` (or `fn main -> Result` when using `?`).
 2. Use `?` on Result-producing calls; declare `-> Result` on that function. Prefer `ensure`/`bail`/`Err(msg, kind)` and `r.context("…")` over try/catch (not in Weft). See error fields: message, kind, code, cause, at.
 3. Prefer small pure tool functions + one agent loop.
-4. **Concurrent by default** (asyncio is not a gap): `map`/`filter` fan out; also `parallel`/`gather`/`race`/`timeout`/`spawn`. Use `seq_map` when side-effect order matters. Never invent `async`/`await`. No shared mutable state across tasks.
+4. **Concurrent by default**: `map`/`filter` fan out; also `parallel`/`gather`/`race`/`timeout`/`spawn`. Use `seq_map` when side-effect order matters. Never invent `async`/`await`. No shared mutable state across tasks.
 5. Closures capture outer locals **by value** (deep-copied at creation). You may also pass args into `spawn(fn, args...)`. Prefer `spawn(...).await()?`. `enum Name { A, B }` → string tags; match on literals, fields, or `_`.
 6. Packages expand the language: `use name` after `weft get` / `weft install` (transitive deps flatten into `vendor/`); path: `use "./x.weft" as x`. Authors: `weft new module name` + `pub fn` + `weft mod check`. Multi-file: `use "./util.weft" as u` inside the package (cannot escape package root). Third-party modules need `capabilities` in weft.json for `sh`/`secrets`/`cli`/`db`/`redis`/`mongo`/`nats`/`amqp`. Last `if` in a function is an expression (branches return values). `match scrut { "x" { … } Status.Ok { … } _ { … } }` for switches. `defer call(...)` runs LIFO on return/`?`/fallthrough.
 7. Never invent stdlib APIs. Stick to the table above — or call a third-party module with `use`.
@@ -130,17 +130,17 @@ fn main -> Result {
 ## Anti-patterns (reject)
 
 ```
-# wrong — Python
+# wrong — foreign syntax
 def main():
     print("hi")
 
-# wrong — JS
+# wrong — foreign syntax (async/await)
 const x = await fetch(url)
 
 # wrong — missing Result on ?
 fn main { fs.read("a")? }
 
-# wrong — brace f-string (use $)
+# wrong — brace placeholders in strings (use $)
 say("hi {name}")
 
 # wrong — verbose ceremony

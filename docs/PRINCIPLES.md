@@ -8,18 +8,20 @@ Agents, tools, streaming, and basic structured decode belong in the language and
 
 ## 2. Own syntax
 
-Code should look like Weft, not “Python with braces” or “JS without semicolons.” Examples, modules, tests, and model prompts use that surface.
+Code should look like **Weft**. Examples, modules, tests, and model prompts use that surface — not a dialect of another language with different braces or keywords.
+
 - Short keywords: `fn`, `use`, `say`, `mut`
 - Bind with `:=` (rebind only `mut`)
-- Braces required; no indent-sensitive silent bugs  
-- Strings: `"hi $name"` / `"${expr}"` (JSON-safe; not Python f-strings)
+- Braces required; no indent-sensitive silent bugs
+- Strings: `"hi $name"` / `"${expr}"` (JSON-safe interpolation)
 - Fields: `row.name` over `row["name"]` when the key is a name
-- `?` for fallible work; last expression returns  
+- `?` for fallible work; last expression returns
 - Full rules: [`docs/SYNTAX.md`](SYNTAX.md)
 
 ## 2b. Prefer short
 
 If something needs three lines of ceremony for one idea, the API (or the example) is wrong.
+
 | Prefer | Avoid |
 |--------|--------|
 | `fn weather(city)` | `fn weather(city: str) -> str` when types aren't needed |
@@ -39,28 +41,28 @@ Keep demos short enough to scan. Cut spare comments and unused options.
 
 ## 3. Honest performance
 
-Talk about cold start and a single binary. Don’t claim “faster than Python on compute” without measurements. LLM latency is mostly the network anyway.
-## 4. Small language, rich builtins — no Python runtime
+Talk about cold start and a single binary. Don’t claim compute speedups without measurements. LLM latency is mostly the network anyway.
 
-Keep the syntax small. Put most power in Go-registered stdlib (`http`, `llm`, `json`, `secrets`). One binary; no pip for core.
+## 4. Small language, rich builtins
 
-**Weft does not depend on Python** for scripts, packages, agents, or the default fine-tune path (OpenAI-compatible HTTP in pure Go).  
-Optional `--backend trl` may use Python only because *local open-weight training* still lives in the HF/PyTorch world — that path is opt-in, not Weft.
+Keep the syntax small. Put most power in Go-registered stdlib (`http`, `llm`, `json`, `secrets`). One binary; no external package manager for core.
+
+Scripts, packages, agents, and the default fine-tune path (OpenAI-compatible HTTP) run in pure Go. Optional `--backend trl` shells out to an external open-weight training toolchain — that path is opt-in, not required for Weft itself.
 
 ## 5. Predictable failures
 
-I/O and model calls return `Result[T]`. `?` propagates. No async coloring. No GIL story for agent fan-out (tasks + deep-copy, channels preferred).
+I/O and model calls return `Result[T]`. `?` propagates. No `async`/`await` coloring. Task fan-out uses deep-copied args (or channels) instead of a shared mutable heap.
 
 ## 5b. Concurrent programming is the default
 
 Weft is for agents and I/O fan-out. **Concurrent is normal**, not a special mode:
 
 - Use `parallel` / `gather` / `par_map` / `spawn` / `race` / `timeout` / channels — every day.
-- Ordinary `fn` runs concurrently when scheduled; **no `async def` / `await`**.
-- No GIL; args into tasks are **deep-copied** (no shared mutable heap across tasks).
+- Ordinary `fn` runs concurrently when scheduled; **no `async` / `await`**.
+- Args into tasks are **deep-copied** (no shared mutable heap across tasks).
 - Multi-tool agent steps **fan out concurrently** by default.
 
-**`asyncio` is not a missing library.** Porting asyncio into Weft would fight this principle. See [`docs/CONCURRENCY.md`](CONCURRENCY.md).
+An event-loop API with colored functions is intentionally out of scope. See [`docs/CONCURRENCY.md`](CONCURRENCY.md).
 
 ## 6. Ship slices
 
@@ -76,22 +78,22 @@ Weft is for agents and I/O fan-out. **Concurrent is normal**, not a special mode
 - Compiler/runtime in **Go**
 - **Bytecode stack VM** for v1 (REPL, embed, single binary)
 - Hand-rolled lexer + recursive-descent parser
-- Borrow ideas from Risor/Tengo; do not fork them as the product surface
+- Borrow ideas from other embeddable Go VMs; do not fork them as the product surface
 
 ## Syntax at a glance
 
 ```weft
-fn main() {
-    let mut n = 0
+fn main {
+    mut n := 0
     for x in [1, 2, 3] {
         n = n + x
     }
-    println(f"sum={n}")
+    say("sum=$n")
 }
 ```
 
-- Blocks: `{ }` required  
-- Strings: `"..."`, `` `raw` ``, `f"hi {name}"`  
-- Types optional: `fn f(x: int) -> Result[str]`  
-- Errors: `return Ok(v)` / `return Err(e)` / `expr?`  
-- Mutability: `let` (no rebind) vs `let mut` (rebind); in-place mutation always OK on collections within a task  
+- Blocks: `{ }` required
+- Strings: `"hi $name"` / `"${expr}"`
+- Types optional: `fn f(x: int) -> Result[str]`
+- Errors: `return Ok(v)` / `return Err(e)` / `expr?`
+- Mutability: `x :=` (no rebind) vs `mut x :=` then `x =`; in-place mutation on collections is OK within a task

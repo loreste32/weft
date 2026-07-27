@@ -2,20 +2,10 @@
 
 Fan-out is normal here: agents and I/O often run several things at once. You don’t opt into a special async mode, and there are no `async`/`await` keywords.
 
-Compared with Python’s asyncio, the same jobs use ordinary `fn` plus helpers like `parallel`, `race`, `timeout`, and `spawn`. The VM sits on Go’s runtime. That isn’t “we beat asyncio” marketing — it’s why we don’t treat asyncio as a missing package.
+Ordinary `fn` plus helpers like `parallel`, `race`, `timeout`, and `spawn` schedule work on the Go runtime under the VM.
 
 **Closures:** function literals **do** capture outer locals **by value** (deep-copied at creation). That is safe under fan-out. You can still pass args into `spawn(fn, arg1, arg2)`; args are deep-copied too so tasks don’t share a mutable heap.
 
-## Rough map from asyncio
-
-| Python | Weft |
-|--------|------|
-| `async def` / `await` | ordinary `fn` |
-| event loop | Go under the VM |
-| `asyncio.gather` | `parallel` / `gather` |
-| first completed | `race` |
-| `wait_for` | `timeout(seconds, fn)` |
-| `create_task` | `spawn(fn, args...)` |
 ## Core API (prelude)
 
 ```weft
@@ -67,13 +57,13 @@ When the model returns **multiple tool calls** in one step, Weft runs them **con
 
 ## Rules of thumb
 
-1. Prefer `parallel` / `par_map` for independent I/O.  
-2. Prefer `spawn` + channels for pipelines and producers.  
-3. Prefer `timeout` over ad-hoc sleep loops.  
-4. Never mutate shared maps/lists across tasks — pass copies or use channels.  
-5. Do **not** expect Python-style `async`/`await` keywords. They will not be added — that would reintroduce coloring after we eliminated it.
+1. Prefer `parallel` / `par_map` for independent I/O.
+2. Prefer `spawn` + channels for pipelines and producers.
+3. Prefer `timeout` over ad-hoc sleep loops.
+4. Never mutate shared maps/lists across tasks — pass copies or use channels.
+5. Do **not** expect `async`/`await` keywords. They will not be added — that would reintroduce coloring after we eliminated it.
 
 ## See also
 
-- [`docs/PRINCIPLES.md`](PRINCIPLES.md)  
-- Examples: `examples/parallel.weft`, `examples/channels.weft`  
+- [`docs/PRINCIPLES.md`](PRINCIPLES.md)
+- Examples: `examples/parallel.weft`, `examples/channels.weft`

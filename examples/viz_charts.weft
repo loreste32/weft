@@ -1,4 +1,4 @@
-// Data visualization — SVG charts, sparklines, HTML dashboard (no Python)
+// Data visualization — SVG charts, sparklines, HTML dashboard
 fn main -> Result {
     sales := {"Mon": 12, "Tue": 19, "Wed": 8, "Thu": 15, "Fri": 22}
     trend := [3, 5, 4, 8, 7, 12, 10, 14]

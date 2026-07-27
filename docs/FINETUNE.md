@@ -2,7 +2,7 @@
 
 ## The point
 
-Teach a model to emit **Weft**, not Python. Training data can be **your private domain corpus** — it does not need to leave your machines.
+Teach a model to emit **Weft**, not another language. Training data can be **your private domain corpus** — it does not need to leave your machines.
 
 | Path | Data leaves machine? | Models |
 |------|----------------------|--------|

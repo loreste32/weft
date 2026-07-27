@@ -1,6 +1,6 @@
 # Ollama & vLLM (local models)
 
-Weft talks to **Ollama** and **vLLM** over their OpenAI-compatible HTTP APIs — same `llm.chat` / `weft gen` / `train chat` paths, no Python client SDKs.
+Weft talks to **Ollama** and **vLLM** over their OpenAI-compatible HTTP APIs — same `llm.chat` / `weft gen` / `train chat` paths, no third-party client SDKs.
 
 Cloud Anthropic + multi-provider overview: [`docs/LLM_PROVIDERS.md`](LLM_PROVIDERS.md).
 

@@ -5,7 +5,7 @@
 //   use ml
 //
 // Scope (balanced): embeddings + vectors + RAG index + metrics.
-// Not in scope: NumPy, PyTorch, training loops — use weft train / Ollama / vLLM.
+// Not in scope: heavy tensors, training loops — use weft train / Ollama / vLLM.
 
 use "./vec.weft" as vec
 use "./embed.weft" as emb

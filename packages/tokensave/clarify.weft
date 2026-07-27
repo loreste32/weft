@@ -110,7 +110,7 @@ fn default_avoid(kind) {
     k := "" + kind
     base := "guessing facts not in context, long chain-of-thought, filler, repeating the question"
     if k == "weft" {
-        return base + ", Python/JS syntax, markdown fences"
+        return base + ", foreign syntax, markdown fences"
     }
     if k == "json" {
         return base + ", markdown fences, commentary"

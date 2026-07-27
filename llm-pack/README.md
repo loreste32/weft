@@ -30,10 +30,11 @@ Only if you want open-weight adapters on *your* machine:
 
 ```bash
 weft train finetune --backend trl --install-deps
-# or: pip install -r weft-sft/requirements-train.txt yourself first
+# or install the optional external training toolchain deps yourself first
+# (see weft-sft/requirements-train.txt)
 ```
 
-This shells out to a small training script because open-weight LLM training today is dominated by PyTorch. Running Weft scripts never uses that stack.
+This shells out to a small training script on the optional **Hugging Face TRL** stack for local open-weight adapters. Running Weft scripts never uses that stack.
 
 ## No fine-tune at all
 

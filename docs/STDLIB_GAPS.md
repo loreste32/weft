@@ -38,18 +38,18 @@ Honest map of the ops/agent surface. Live list: `weft stdlib`.
 
 ## Tier C — permanent non-goals
 
-**Not a backlog.** These stay out of the language/stdlib by design (Weft is ops/agent lite, not a Python clone):
+**Not a backlog.** These stay out of the language/stdlib by design (Weft is ops/agent lite):
 
 | Non-goal | Why |
 |----------|-----|
 | GUI toolkits | Different product surface |
-| `asyncio`-style event-loop API | Tasks + channels cover concurrency without a loop rewrite |
+| Event-loop API with `async`/`await` coloring | Tasks + channels cover concurrency without a rewrite |
 | Multiprocessing / shared memory | Host process model, not in-process forks |
-| ctypes / mmap | Host escape; security + portability |
-| venv / pip packaging model | Packages/vendor + capabilities already ship |
-| Heavy scientific arrays (NumPy-class) | Explicit non-goal; keep `ml` light |
+| Raw foreign-function / memory-map host escape | Security + portability |
+| OS-wide package managers / environment isolation for install | Packages/vendor + capabilities already ship |
+| Heavy scientific arrays | Explicit non-goal; keep `ml` light |
 | Full mail *servers* | Client `email` parse/build/send is fine; MTA is not |
-| pdb-as-stdlib | Debugger tooling is separate from stdlib |
+| Interactive debugger as stdlib | Debugger tooling is separate from stdlib |
 
 If something looks like C, reject it or park it outside this map.
 

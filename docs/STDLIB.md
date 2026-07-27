@@ -167,7 +167,7 @@ Charts to SVG/HTML: [viz.md](viz.md).
 
 ## Gaps by design
 
-- No NumPy/pandas  
+- No heavy scientific arrays or dataframes  
 - No full browser DOM  
 - No every cloud vendor SDK  
 - Messaging drivers (`redis`, `nats`, `amqp`, `mongo`) are thin connectors, not full clients  

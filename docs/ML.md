@@ -1,12 +1,12 @@
 # ML in Weft — module, not core
 
-**Balance:** close the *scripting* ML gap (embeddings, RAG, metrics, private train glue) without turning Weft into NumPy/PyTorch.
+**Balance:** close the *scripting* ML gap (embeddings, RAG, metrics, private train glue) without turning Weft into a full numeric / deep-learning stack.
 
-| Layer | Where | Python analog (rough) |
-|-------|--------|------------------------|
-| **Core binary** | `llm` · `ollama` · `vllm` · `weft train` | openai SDK + light CLI |
-| **`packages/ml`** | installable Weft module | small `numpy`/`sklearn` slice for RAG |
-| **External** | GPU train (TRL), heavy science | torch, pandas, notebooks |
+| Layer | Where | Role |
+|-------|--------|------|
+| **Core binary** | `llm` · `ollama` · `vllm` · `weft train` | chat, local providers, fine-tune orchestration |
+| **`packages/ml`** | installable Weft module | light vectors / embeddings / metrics for RAG |
+| **External** | GPU train (TRL), heavy science | optional training toolchains, notebooks, remote services |
 
 ## Why a separate module?
 
@@ -57,16 +57,16 @@ See [`docs/FINETUNE.md`](FINETUNE.md) · [`docs/LLM_LOCAL.md`](LLM_LOCAL.md).
 
 - Dense linear algebra / GPU tensors  
 - DataFrame engine  
-- Full AutoML / classic sklearn zoo  
-- Native `.so` plugins for torch  
+- Full AutoML / classic ML library zoo  
+- Native `.so` plugins for deep-learning runtimes  
 
-Those stay **Python services** or remote APIs. Weft orchestrates.
+Those stay **external services** or remote APIs. Weft orchestrates.
 
 ## ONNX / native models → sidecar (not core)
 
 Weft never loads `.onnx` in-process. Pattern:
 
-1. Run **ONNX Runtime / torch-serve / Triton** (or any HTTP model server) as a sibling process.  
+1. Run **ONNX Runtime / a model-serving stack / Triton** (or any HTTP model server) as a sibling process.  
 2. Call it with `http.post` + retries / circuit breaker.  
 3. Keep GPU drivers and weights outside the `weft` binary.
 
@@ -87,6 +87,6 @@ Details: [`examples/onnx_sidecar/README.md`](../examples/onnx_sidecar/README.md)
 | **Now** | ONNX *sidecar* example + HTTP contract (separate process) |
 | **Now** | Embed hardened: OpenAI-compat shapes, `/v1` URL normalize, batch `embed_many`, Azure `api-key` |
 | **Next** | optional HNSW-ish index in pure Weft or Go *only if* justified |
-| **Never (core)** | Competing with PyTorch · CGo ONNX inside `weft` |
+| **Never (core)** | In-process deep learning training · CGo ONNX inside `weft` |
 
 Broader product roadmap (ecosystem, IDE, registry): [`docs/ROADMAP.md`](ROADMAP.md).

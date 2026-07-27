@@ -111,7 +111,7 @@ pretty_name: Weft SFT
 
 # Weft supervised fine-tuning dataset
 
-Teach models to write **Weft** (LLM-first scripting), not Python.
+Teach models to write **Weft** (LLM-first scripting), .
 
 ## Stats
 

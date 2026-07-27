@@ -68,7 +68,7 @@ fn main {
 ```
 
 **Prefer:** `:=`, `mut`, `say`, last-expression return, `"hi $name"`.  
-**Avoid:** empty ceremony, `try/catch` style, inventing Python names.  
+**Avoid:** empty ceremony, `try/catch` style, inventing foreign names.  
 **Note:** `say` works as a statement and as a pipeline sink (`|> say`).
 
 ---

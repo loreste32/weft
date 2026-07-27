@@ -1,6 +1,6 @@
 # CLI apps for devops & data processing
 
-Weft is a strong fit for **small ops tools** and **pipe-friendly data jobs**: one binary runtime, no venv, flags + shell + files + JSON in the stdlib.
+Weft is a strong fit for **small ops tools** and **pipe-friendly data jobs**: one binary runtime, no environment activation, flags + shell + files + JSON in the stdlib.
 
 ## Packages
 
@@ -254,12 +254,12 @@ weft new app myctl
 weft run myctl/main.weft -- --help
 ```
 
-## vs bash / Python
+## vs bash
 
-| | bash | Python | Weft |
-|--|------|--------|------|
-| JSON | jq glue | scripts + venv | `json` built-in |
-| Flags | getopts | argparse | `cli.parse` |
-| Ship | shell + deps | venv/poetry | single `weft` binary + `.weft` |
-| Types | no | yes | optional + `weft check` |
-| Concurrency | `&` | asyncio | `spawn` / `parallel` |
+| | bash | Weft |
+|--|------|------|
+| JSON | jq glue | `json` built-in |
+| Flags | getopts | `cli.parse` |
+| Ship | shell + deps | single `weft` binary + `.weft` |
+| Types | no | optional + `weft check` |
+| Concurrency | `&` | `spawn` / `parallel` |

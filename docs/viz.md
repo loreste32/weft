@@ -1,6 +1,6 @@
 # Data visualization (Weft)
 
-Build charts and dashboards **without Python, matplotlib, or a JS build step**.  
+Build charts and dashboards **without a charting framework or a JS build step**.  
 The `viz` package renders **SVG** in pure Go and can wrap charts in HTML for the browser or `web.app`.
 
 ## Quick start
@@ -121,9 +121,9 @@ fn main -> Result {
 
 | | |
 |--|--|
-| Engine | Pure Go SVG — **no** Python, **no** npm |
+| Engine | Pure Go SVG — **no** npm |
 | Output | `.svg`, `.html`, embed in `web.html(...)` |
 | Style | Clean defaults (indigo palette); override with `color` / `colors` |
 | Not v1 | Interactive zoom, 3D, WebGL, Excel export |
 
-For heavy BI you can still emit data as JSON and point a front-end at it; `viz` covers the “script → chart file / dashboard” path that Python scripts usually hand to matplotlib.
+For heavy BI you can still emit data as JSON and point a front-end at it; `viz` covers the “script → chart file / dashboard” path without a separate charting toolchain.

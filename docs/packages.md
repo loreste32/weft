@@ -1,14 +1,14 @@
 # Weft package manager
 
-Python has `pip` + venv + wheels. Weft avoids that stack:
+Weft installs pure source packages into the project — no global site-packages, no environment-activation ceremony.
 
-| Python liability | Weft |
-|------------------|------|
-| Global site-packages | **Project `vendor/` only** |
-| venv activation | None — just `weft run` |
-| wheels / ABI | Pure `.weft` source packages |
-| lock optional | **`weft.lock` with content hashes** |
-| slow cold start from imports | Packages are files; single binary runtime |
+| Idea | Weft |
+|------|------|
+| Install scope | **Project `vendor/` only** |
+| Activation | None — just `weft run` |
+| Package form | Pure `.weft` source packages |
+| Lockfile | **`weft.lock` with content hashes** |
+| Runtime | Single binary; packages are files |
 
 **Writing modules for others?** See [`docs/modules.md`](modules.md).
 

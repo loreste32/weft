@@ -1,10 +1,10 @@
 # Expanding Weft with modules
 
-**Modules are how third parties grow the language surface** — new APIs, domain helpers, shared pipelines, optional domains like **ML** — without forking the Go binary or shipping Python.
+**Modules are how third parties grow the language surface** — new APIs, domain helpers, shared pipelines, optional domains like **ML** — without forking the Go binary.
 
 Example optional domain: [`packages/ml`](../packages/ml) (embeddings / RAG / metrics). Core stays lean; install with `weft get ml ./packages/ml`.
 
-Anyone can publish libraries that other Weft apps install with `weft get` — **no venv, no pip, no central registry required**. Modules are folders of `.weft` source + `weft.json`.
+Anyone can publish libraries that other Weft apps install with `weft get` — **no environment activation, no central registry required**. Modules are folders of `.weft` source + `weft.json`.
 
 | You want… | Do this |
 |-----------|---------|
@@ -12,7 +12,7 @@ Anyone can publish libraries that other Weft apps install with `weft get` — **
 | Multi-file library | `use "./util.weft" as util` inside the package |
 | Module that uses another | declare `deps` in `weft.json` (transitive install) |
 | Native I/O / OS APIs | already in stdlib; new ones need a Weft core PR |
-| Python / npm packages | **no** — pure Weft or HTTP to external services |
+| Foreign language packages | **no** — pure Weft or HTTP to external services |
 
 ## Author a module (5 minutes)
 
@@ -204,7 +204,7 @@ Live example: [`examples/modules/`](../examples/modules/) (`mathx` multi-file �
 |-------|--------|
 | Shipping secrets in modules | `secrets` / env at the app |
 | Mutating shared global state | Pure functions + passed args |
-| Depending on Python packages | Pure Weft or HTTP APIs |
+| Depending on foreign language packages | Pure Weft or HTTP APIs |
 | Omitting `pub` on a large API | Explicit `pub` surface |
 
 ## What modules can and cannot expand

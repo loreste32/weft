@@ -17,9 +17,9 @@
 
 ## Overview
 
-Weft is a new scripting language designed for **LLM-centric programming**: agents, tool calling, structured outputs, streaming, and multi-step pipelines—while remaining general enough for CLI tools and simple HTTP services. It targets developers who today reach for Python + LangChain/instructor/pydantic, but want **faster cold start**, **multi-core concurrency without a GIL**, **single-binary distribution**, and **native schema/tool ergonomics**.
+Weft is a new scripting language designed for **LLM-centric programming**: agents, tool calling, structured outputs, streaming, and multi-step pipelines—while remaining general enough for CLI tools and simple HTTP services. It targets developers who want **faster cold start**, **multi-core concurrency**, **single-binary distribution**, and **native schema/tool ergonomics** without a heavy agent-framework stack.
 
-The language surface is deliberately familiar (Python-ish keywords and low boilerplate) with **brace-delimited blocks** for tooling safety, **gradual typing with structural types** for JSON/schemas, and **Go-style lightweight concurrency** (no async coloring). The compiler and runtime are implemented primarily in **Go** as a **bytecode VM** for v1, shipping as a single `loom` binary.
+The language surface is deliberately approachable (short keywords, low boilerplate) with **brace-delimited blocks** for tooling safety, **gradual typing with structural types** for JSON/schemas, and **Go-style lightweight concurrency** (no async coloring). The compiler and runtime are implemented primarily in **Go** as a **bytecode VM** for v1, shipping as a single `loom` binary.
 
 This revision closes implementability gaps: a **concurrency memory model** (no shared mutable heap across tasks in v1), a **minimal TypeInfo** design for tool/schema reflection, **stream events as tagged structs** (sum types/`match` deferred), a **Language Spec appendix** (EBNF, precedence, methods, `Result`/`?`, `Error`, `main`), honest **MVP-0 / MVP-1 timelines**, and a reworked **PR plan** with acceptance tests.
 
@@ -29,29 +29,29 @@ This revision closes implementability gaps: a **concurrency memory model** (no s
 
 ### Current state
 
-LLM application code is overwhelmingly written in Python. The ecosystem (OpenAI SDK, Anthropic SDK, LangChain, LlamaIndex, Pydantic, instructor, LiteLLM) is mature, but the host language carries liabilities that hurt agent workloads. Weft’s response is **not** “eliminate every Python pain on day one”; it is to eliminate some, improve others, and defer the rest honestly:
+LLM application code is often built with heavy agent frameworks. The ecosystem (OpenAI SDK, Anthropic SDK, agent SDKs, RAG frameworks, schema libraries, multi-provider routers) is mature, but the host language carries liabilities that hurt agent workloads. Weft’s response is **not** “eliminate every host-language pain on day one”; it is to eliminate some, improve others, and defer the rest honestly:
 
 | Pain point | Why it hurts LLM/agent work | Weft v1 status |
 |------------|-----------------------------|----------------|
 | **Slow cold start** | Serverless, CLI agents, short-lived tool runners pay 50–300ms+ before logic runs | **Eliminated (target)**: single binary, no site-packages import tax |
-| **GIL** | Parallel tool calls / multi-agent work fight for one core | **Improved in Phase 3**: goroutine tasks with **no shared mutable heap** (see §1.5); MVP Agent runs tools **sequentially** |
+| **Shared interpreter lock** | Parallel tool calls / multi-agent work fight for one core | **Improved in Phase 3**: goroutine tasks with **no shared mutable heap** (see §1.5); MVP Agent runs tools **sequentially** |
 | **async/await coloring** | Tool + HTTP + stream pipelines become colored functions | **Eliminated (design intent)**: `spawn`/`TaskGroup` without function colors |
-| **Packaging hell** | torch wheels, pydantic v1/v2, native deps, venv drift | **Improved, not eliminated**: stdlib is **in the binary** (no pip for core); third-party Weft modules still need a resolution story (path/`LOOM_PATH` in v1; lockfile in v1.1). Not “no packaging forever.” |
-| **Dynamic typing tax** | Structured outputs bolted on; slow runtime discovery | **Improved with annotations**: runtime stays dynamic; schema/tool wins require **annotations + TypeInfo** (§2.2a). Unannotated code is as unstructured as Python. |
-| **Hard embedding** | CPython embed is heavy; global interpreter state | **Eliminated (relative)**: `pkg/loom` Context API, no CPython |
+| **Packaging hell** | native wheels, schema-lib drift, native deps, environment drift | **Improved, not eliminated**: stdlib is **in the binary** (no external package manager for core); third-party Weft modules still need a resolution story (path/`LOOM_PATH` in v1; lockfile in v1.1). Not “no packaging forever.” |
+| **Dynamic typing tax** | Structured outputs bolted on; slow runtime discovery | **Improved with annotations**: runtime stays dynamic; schema/tool wins require **annotations + TypeInfo** (§2.2a). Unannotated code is as unstructured as untyped scripts. |
+| **Hard embedding** | embedding a full second runtime is heavy; global interpreter state | **Eliminated (relative)**: `pkg/loom` Context API |
 | **Indentation-only structure** | LLM codegen and some tools introduce silent bugs | **Eliminated**: required braces |
 
-### Why a new language (not “Python but faster”)
+### Why a new language (not “same language but faster”)
 
 - **Mojo / Julia / etc.** optimize numerics, not agent I/O and schema binding.
 - **TypeScript** is strong for structured types and HTTP, but Node cold start, single-threaded event loop defaults, and npm complexity remain.
 - **Go itself** is excellent for servers but verbose and awkward for interactive agent scripting and REPL-driven prompt iteration.
-- **A purpose-built scripting layer on a Go VM** can offer Python-like authoring speed with Go-like ops characteristics, and **LLM primitives in stdlib** instead of library afterthoughts.
+- **A purpose-built scripting layer on a Go VM** can offer scripting authoring speed with Go-like ops characteristics, and **LLM primitives in stdlib** instead of library afterthoughts.
 - **Forking Risor/Tengo/Starlark** was considered and rejected for the product surface (see Alternatives A6)—ideas may still be borrowed.
 
 ### Design posture
 
-Ship a **small, honest language**: excellent at scripts, agents, JSON, HTTP client/server, and concurrency—not a research PL or a CPython replacement. Prefer boring, proven implementation choices (recursive-descent parser, stack VM, Go `net/http`) over novel IR research. **Ruthlessly subset MVP language features** so agent-with-tools ships without ADTs, full typechecker, or remote imports.
+Ship a **small, honest language**: excellent at scripts, agents, JSON, HTTP client/server, and concurrency—not a research PL or a general-purpose OS scripting replacement. Prefer boring, proven implementation choices (recursive-descent parser, stack VM, Go `net/http`) over novel IR research. **Ruthlessly subset MVP language features** so agent-with-tools ships without ADTs, full typechecker, or remote imports.
 
 ---
 
@@ -62,10 +62,10 @@ Ship a **small, honest language**: excellent at scripts, agents, JSON, HTTP clie
 | # | Goal | When |
 |---|------|------|
 | 1 | **Startup**: `loom run hello.loom` wall time to print < **15ms** on a warm laptop (no network) | MVP-0 |
-| 2 | **Ease**: Python developer can read Weft in minutes | MVP-0 |
+| 2 | **Ease**: a developer can read Weft in minutes | MVP-0 |
 | 3 | **REPL** for prompt/tool iteration | Phase 2 (not MVP-1 gate) |
 | 4 | **LLM-native**: messages, tools, sequential Agent loop, streaming (tagged events), structured decode | MVP-1 (stream + structured may trail Agent by 1–2 PRs) |
-| 5 | **Concurrency**: `spawn` / `TaskGroup` / channels; no GIL; **no shared mutable heap across tasks** | Phase 3; not required for MVP-1 Agent |
+| 5 | **Concurrency**: `spawn` / `TaskGroup` / channels; **no shared mutable heap across tasks** | Phase 3; not required for MVP-1 Agent |
 | 6 | **Parallel tool fan-out** via TaskGroup | Phase 3 (MVP-1 tools are **sequential**) |
 | 7 | **Distribution**: single binary; `loom run`; shebang; stdlib in binary | MVP-0 |
 | 8 | **Web (minimal)**: HTTP client (MVP-1) + small server (Phase 2) | as noted |
@@ -73,14 +73,14 @@ Ship a **small, honest language**: excellent at scripts, agents, JSON, HTTP clie
 
 ### Non-Goals (explicitly out of v1 and near-term)
 
-- Full Python syntax or CPython bytecode compatibility
-- Scientific/numeric stack (NumPy, dataframes, GPU kernels)
+- Full foreign-language syntax or bytecode compatibility
+- Scientific/numeric stack (arrays, dataframes, GPU kernels)
 - Browser/WASM story as a deliverable
 - JIT or LLVM native codegen in v1
 - Full OOP inheritance hierarchies / metaclasses
 - Algebraic data types + exhaustiveness checking in MVP (Phase 2+)
-- Guaranteed compute speedups vs CPython before `bench/` lands (see §3.5)
-- Multi-provider “LangChain-complete” agent framework (adapters + primitives only)
+- Guaranteed compute speedups vs baseline scripting runtimes before `bench/` lands (see §3.5)
+- Multi-provider “framework-complete” agent framework (adapters + primitives only)
 - Distributed cluster runtime
 - Capability sandbox as an MVP gate (post-MVP-1 flags)
 
@@ -91,7 +91,7 @@ Ship a **small, honest language**: excellent at scripts, agents, JSON, HTTP clie
 | # | Decision | Choice | Rationale |
 |---|----------|--------|-----------|
 | 1 | **Language name** | **Weft** (`loom`, `.loom`) — provisional | Short; pipeline metaphor. Final name blocks PR 01 merge (OQ1). |
-| 2 | **Syntax style** | Python-like keywords + **required braces**; no semicolons | Familiar + tooling-safe; no indentation-only mode in v1. |
+| 2 | **Syntax style** | short keywords + **required braces**; no semicolons | Familiar + tooling-safe; no indentation-only mode in v1. |
 | 3 | **Type system** | **Gradual + structural**; local inference; annotations optional | JSON/LLM fit; runtime dynamic unless `loom check`. |
 | 4 | **Null / errors** | `T?`; **`Result[T, Error]` + `?`**; single `Error` type | Predictable I/O/model failures; maps to Go `error`. |
 | 5 | **Concurrency + memory model** | Goroutine tasks; **no shared mutable heap across tasks in v1**; channels + **copied** TaskGroup results | Avoids data races without a concurrent GC story; still multi-core for independent I/O. See §1.5. |
@@ -100,7 +100,7 @@ Ship a **small, honest language**: excellent at scripts, agents, JSON, HTTP clie
 | 7b | **Modules v1.1** | URL imports + `loom.lock` + content-addressed cache | Reproducible third-party deps when needed. |
 | 8 | **LLM surface** | `llm` stdlib; OpenAI-compat first; tools need **TypeInfo** | Small language; 80% path optimized. |
 | 9 | **Web v1** | Thin `net/http` bindings | Client MVP-1; server Phase 2. |
-| 10 | **Performance claims** | **Advertise startup + parallel I/O first**; compute **do not claim 2–10× until `bench/`** | Naïve Go VMs often land near CPython on pure compute; avoid marketing risk. |
+| 10 | **Performance claims** | **Advertise startup + parallel I/O first**; compute **do not claim 2–10× until `bench/`** | Naïve Go VMs often land near common scripting runtimes on pure compute; avoid marketing risk. |
 | 11 | **Sum types / match** | **Deferred to Phase 2**; v1 uses **tagged structs** for streams/content | Keeps MVP parser small; hero examples stay implementable. |
 | 12 | **Stdlib implementation v1** | **All stdlib is Go-registered builtins** | No `.loom` stdlib files until Phase 2 loader is solid. |
 | 13 | **Methods** | Dot-call is **method sugar** via type-id registry (`recv.m(args)` → `Type_m(recv, args)`) | Matches examples (`resp.text()`) without full OOP. |
@@ -125,7 +125,7 @@ Ship a **small, honest language**: excellent at scripts, agents, JSON, HTTP clie
 - **Keywords reserved for Phase 2+ (lexer may reject or reserve):** `match`, `enum`, `spawn`, `select`, `try`, `catch`, `interface`
 - **Removed from v1 surface:** `await` (use `handle.join()` / `group.wait_all()` only); `export` (use **`pub` only**); `interface` as syntax (see §2.4 for Go-side adapter interface only)
 - Blocks: `{ ... }` **required**
-- Strings: `"..."` escapes; `` `raw` ``; f-strings: `f"hello {name}"` (expression inside `{}` is full expr in parser)
+- Strings: `"..."` escapes; `` `raw` ``; legacy f-style (if present): `f"hello {name}"` (expression inside `{}` is full expr in parser)
 - Collections: `[1, 2]`, `{"k": v}` — **no set literal in v1** (use `Map` as set-of-keys if needed; `setOf` deferred)
 - Unit type: written **`unit`** in type position; value is **`()`** only as empty return sugar — prefer **`void` returns**: `fn main()` means no useful return. For `Result`, use **`Result[unit]`** where unit is a distinct empty struct predefined as `type unit = struct {}` and value `unit{}`. See Appendix A.
 
@@ -449,7 +449,7 @@ flowchart TB
     ChildTask -->|join: copy/move result| ParentTask
 ```
 
-**Why this still beats GIL Python for agents (Phase 3):** 50 independent HTTP tool calls each own their state and block in Go’s netpoller on different OS threads as needed—no GIL, no shared Weft map writes.
+**Why this still beats shared-lock scripting hosts for agents (Phase 3):** 50 independent HTTP tool calls each own their state and block in Go’s netpoller on different OS threads as needed—no shared Weft map writes.
 
 #### 1.6 Module system
 
@@ -969,10 +969,10 @@ loom test path/          # Phase 2
 
 | Workload | Claim policy |
 |----------|----------------|
-| Cold start `print("hi")` | **Target 5–20× faster than CPython**; primary advertised win |
-| Parallel HTTP fan-out (Phase 3) | **Primary multi-core win** vs GIL Python |
+| Cold start `print("hi")` | **Target 5–20× faster than common scripting runtimes**; primary advertised win |
+| Parallel HTTP fan-out (Phase 3) | **Primary multi-core win**  |
 | LLM token generation | **≈ same** (network/model bound) |
-| Tight arithmetic loop | **Do not advertise a factor until `bench/` lands.** Internal target: match or beat CPython on selected micros **after** compact `Value` representation; naïve Go stack VM may land **0.5–2×** initially. Prior art (Tengo/Risor/goja vs Python) is non-authoritative and mixed—measure ourselves in **PR 07b** early. |
+| Tight arithmetic loop | **Do not advertise a factor until `bench/` lands.** Internal target: match or beat common scripting runtimes on selected micros **after** compact `Value` representation; naïve Go stack VM may land **0.5–2×** initially. Prior art (Tengo/Risor/goja) is non-authoritative and mixed—measure ourselves in **PR 07b** early. |
 
 #### 3.6 Repo layout (Go monorepo)
 
@@ -1028,7 +1028,7 @@ Concrete signatures: **Appendix B**.
 
 ### 6. What NOT to build
 
-- Python import compatibility / pip
+- Foreign import compatibility / external package managers
 - Full browser WASM in v1
 - Scientific stack
 - Built-in vector DB
@@ -1064,7 +1064,7 @@ Plus **module type registry**: `map[string]*TypeInfo` (source of type-name expre
 
 ## Alternatives Considered
 
-### A1. Indentation-significant syntax (Python clone)
+### A1. Indentation-significant syntax (indent-only clone)
 
 - **Pros:** Max familiarity  
 - **Cons:** Indentation bugs; product brief rejects  
@@ -1094,7 +1094,7 @@ Plus **module type registry**: `map[string]*TypeInfo` (source of type-name expre
 
 ### A5. Exceptions-only errors
 
-- **Pros:** Python familiarity  
+- **Pros:** familiar scripting style  
 - **Cons:** Worse multi-agent failure modes; poorer Go fit  
 - **Verdict:** Reject as primary; optional try/catch Phase 2  
 
@@ -1102,7 +1102,7 @@ Plus **module type registry**: `map[string]*TypeInfo` (source of type-name expre
 
 - **Pros:** Battle-tested bytecode/interpreter; single binary; goroutines already in host; **could reach “call OpenAI from script” in days–2 weeks** by writing only an `llm` module  
 - **Cons:**  
-  - Syntax is not Weft (Risor≈Go, Tengo≈Go/script, Starlark≈Python-restricted)—**product thesis of Weft surface dies or forks diverge hard**  
+  - Syntax is not Weft (Risor≈Go, Tengo≈Go/script, Starlark≈restricted script)—**product thesis of Weft surface dies or forks diverge hard**  
   - Adding `Result`/`?`, TypeInfo, brace style, and LLM-first types means either living with foreign DX or maintaining a hard fork  
   - Upstream constraints on Value model may block “no shared mutable heap” policy  
   - Starlark is intentionally non-Turing-complete-ish / no recursion / no concurrency—poor agent fit without forking  
@@ -1111,7 +1111,7 @@ Plus **module type registry**: `map[string]*TypeInfo` (source of type-name expre
 
 ### A7. Hybrid braces + optional significant indentation
 
-- **Pros:** Python refugees  
+- **Pros:** scripting refugees  
 - **Cons:** Two syntaxes to test; LLM codegen ambiguity  
 - **MVP cost:** +1–2 weeks  
 - **Verdict:** Reject for v1  
@@ -1123,7 +1123,7 @@ Plus **module type registry**: `map[string]*TypeInfo` (source of type-name expre
 | Threat | Severity | Mitigation |
 |--------|----------|------------|
 | API key leakage | High | `Secret` redaction; scrub dumps |
-| Agent tool RCE | High | Trust local scripts like Python in v1; `--allow-net`/`--allow-fs` post-MVP (PR 24) |
+| Agent tool RCE | High | Trust local scripts in v1; `--allow-net`/`--allow-fs` post-MVP (PR 24) |
 | SSRF via model-chosen URLs | High | Document next to `http` + tools; redirect limits; optional allowlist later |
 | Prompt injection → tools | High | `max_steps`, tool allowlists, defaults below |
 | Supply chain | Medium | No remote imports in v1 |
@@ -1139,7 +1139,7 @@ Plus **module type registry**: `map[string]*TypeInfo` (source of type-name expre
 | Agent `max_steps` | **20** |
 | Agent `max_tool_calls` | **40** |
 | Agent `step_timeout` | **60s** |
-| `fs` write scope | **entire process FS** (like Python); document risk |
+| `fs` write scope | **entire process FS** (process-wide); document risk |
 | LLM trace content | **off** unless `LOOM_LLM_TRACE_CONTENT=1` |
 
 ---
@@ -1270,7 +1270,7 @@ gantt
 |------|----------|------------|
 | Scope creep | High | Non-goals + MVP-0/1 split |
 | Optimistic timeline | High | 4–8 week MVP-1; early hello demo |
-| VM compute slower than CPython | Medium | Don’t advertise; compact Value; early benches |
+| VM compute slower than common scripting runtimes | Medium | Don’t advertise; compact Value; early benches |
 | Shared-state races if model violated | High | Deep-copy spawn; `-race`; no share in v1 |
 | Adoption | High | Grammar PR, examples, migrate guide |
 | Unsafe agent defaults | Medium | Finite max_steps/timeouts/body limits |
@@ -1284,7 +1284,7 @@ gantt
 - Structured concurrency notes (Nathaniel J. Smith, “Notes on structured concurrency”)  
 - JSON Schema  
 - OpenAI Chat Completions + tool calling; Anthropic Messages API  
-- Instructor / Pydantic structured output patterns  
+- Structured-output library patterns  
 - Risor, Tengo, goja, Starlark-Go, Wren, Umka (prior art for VMs-in-Go / embeds)  
 - Product brief: LLM-first scripting, Go implementation, greenfield `/Users/loreste/weft`
 
@@ -1556,13 +1556,13 @@ Each PR leaves `main` buildable. **Acceptance** is mandatory for merge.
 - **Title:** `feat(lex): hand-rolled lexer with positions`
 - **Files:** `internal/token`, `internal/lex`, `testdata/lex/*`
 - **Deps:** PR 01
-- **Acceptance:** golden tests for keywords, strings, f-string segments, numbers, ops, braces
+- **Acceptance:** golden tests for keywords, strings, interpolation segments, numbers, ops, braces
 
 ### PR 03 — AST + parser (MVP EBNF)
 - **Title:** `feat(parse): parse MVP syntax into AST`
 - **Files:** `internal/ast`, `internal/parse`, `internal/diag`
 - **Deps:** PR 02
-- **Description:** Per Appendix A; **`import ident | string`**; type alias `type A = T` and struct forms; `const`; f-string interpolation; no match/enum
+- **Description:** Per Appendix A; **`import ident | string`**; type alias `type A = T` and struct forms; `const`; string interpolation; no match/enum
 - **Acceptance:** parse `import http`, `import "./x.loom"`, `type UserId = str`, agent-shaped structs, `const X = 1`
 
 ### PR 03b — Editor grammar stub
@@ -1599,7 +1599,7 @@ Each PR leaves `main` buildable. **Acceptance** is mandatory for merge.
 - **Acceptance:** script sums list via `for`; empty iter completes
 
 ### PR 07b — Early benchmarks
-- **Title:** `chore(bench): startup + arithmetic microbench vs CPython`
+- **Title:** `chore(bench): startup + arithmetic microbench vs baseline scripting runtimes`
 - **Files:** `bench/*`, methodology doc
 - **Deps:** PR 07
 - **Acceptance:** numbers recorded in `bench/RESULTS.md` (no marketing claims required)

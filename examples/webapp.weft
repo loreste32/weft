@@ -1,4 +1,4 @@
-// Flask-style web app: routes, path params, JSON API, static HTML, WebSocket
+// Minimal web app: routes, path params, JSON API, static HTML, WebSocket
 fn main {
     app := web.app()
 

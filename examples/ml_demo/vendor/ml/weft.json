@@ -1,7 +1,7 @@
 {
   "name": "ml",
   "version": "0.1.0",
-  "description": "Balanced ML for Weft — embeddings, vectors, RAG index, metrics (not NumPy/PyTorch)",
+  "description": "Balanced ML for Weft — embeddings, vectors, RAG index, metrics",
   "type": "module",
   "entry": "lib.weft",
   "exports": [

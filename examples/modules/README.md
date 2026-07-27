@@ -1,6 +1,6 @@
 # Expanding Weft with modules
 
-Third parties grow Weft’s surface with **pure `.weft` packages** — not plugins, not Python wheels.
+Third parties grow Weft’s surface with **pure `.weft` packages** — not native plugins or foreign package formats.
 
 ```text
 examples/modules/

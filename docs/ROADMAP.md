@@ -1,10 +1,10 @@
 # Where we are, and where we hope to go
 
-Weft is for agent scripts, HTTP glue, and ops tooling. It is not trying to replace CPython or the scientific Python stack.
+Weft is for agent scripts, HTTP glue, and ops tooling. It stays small on purpose.
 
 ## Where we are now (0.3.30)
 
-We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.3.35** — see [VERSIONING.md](VERSIONING.md)). You can build the binary, write real scripts, and run them without a Python runtime on the critical path.
+We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.3.35** — see [VERSIONING.md](VERSIONING.md)). You can build the binary, write real scripts, and run them on a single Go runtime.
 
 **Solid enough to use today**
 
@@ -26,7 +26,7 @@ We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.3.
 
 - Lite version constraints: `^`, `~`, `>=`, exact (checked against package `weft.json` version)  
 - LLM: OpenAI-compatible, Anthropic tools, Ollama, vLLM; private fine-tune is optional and GPU-side  
-- Stdlib for I/O, HTTP, web, text/math, config (yaml/toml/ini), some “lite” cousins of common Python modules  
+- Stdlib for I/O, HTTP, web, text/math, config (yaml/toml/ini), and common glue packages  
 - Day-to-day tools: `weft check`, `test`, `fmt`, `bench`, `stdlib`, LSP (incl. format)  
 - Sysops surface: `sh`/`fs`/`cli`/`env`/`platform`/`secrets` + host-check example ([SYSOPS.md](SYSOPS.md))  
 - Stdlib Tier A/B complete (ops/agent lite): `shlex`, `signal`, `binstruct`, `difflib`, `copy`, `functools`, `traceback`, CLI subcommands, HTTP `insecure`, path/bytes, secrets tokens, stats, IP network ([STDLIB_GAPS.md](STDLIB_GAPS.md)) · demo `examples/tier_ab.weft`  
@@ -40,7 +40,7 @@ We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.3.
 - Type checking is gradual, not a full sound system  
 - `weft fmt` covers the common style (enums, match arms, closures); still not every edge case  
 - LSP is usable daily (completion, hover, signatures, definition, symbols, diagnostics, format); not IDE-grade refactoring  
-- Stdlib is broad-and-shallow: good for glue, not a CPython replacement  
+- Stdlib is broad-and-shallow: good for glue, not a full OS platform  
 - No public package registry / signed packages yet  
 - Streaming works for common SSE paths; it is not a full product surface  
 - Scientific compute and heavy training stay outside (on purpose)  
@@ -70,9 +70,9 @@ We are not racing to 1.0. The near goal is a boring, dependable **0.3.x** throug
 
 **Probably never in core**
 
-- NumPy / SciPy / pandas  
-- In-process PyTorch training  
-- Jupyter as the main loop  
+- Heavy scientific array / dataframe stacks  
+- In-process deep-learning training  
+- Notebook as the main loop  
 - Full enterprise cloud SDKs  
 - `async`/`await` keywords (would undo concurrent-by-default)  
 
@@ -97,6 +97,6 @@ Rule of thumb: **HTTP + agents + local LLM → core. Embeddings/RAG → module. 
 - [TOOLING.md](TOOLING.md) · [TESTING.md](TESTING.md) · [ERRORS.md](ERRORS.md)  
 - [ML.md](ML.md) · [modules.md](modules.md) · [FINETUNE.md](FINETUNE.md)  
 
-### Stdlib vs Python (reference)
+### Stdlib surface (reference)
 
-We added lite cousins where scripts need them (`math`, `fs`, `yaml`, `iter`, `collections`, `bisect`, `heap`, …). Run `weft stdlib` for the live list. Full CPython parity is not a goal.
+We added lite packages where scripts need them (`math`, `fs`, `yaml`, `iter`, `collections`, `bisect`, `heap`, …). Run `weft stdlib` for the live list. Full parity with any other language’s stdlib is not a goal.

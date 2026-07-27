@@ -29,7 +29,7 @@ func paraphrase(s string) []string {
 	variants := []string{
 		s,
 		"Write Weft code: " + s,
-		"Implement in Weft (not Python): " + s,
+		"Implement in Weft: " + s,
 		"Generate a complete Weft script that does this: " + s,
 		"Weft only — " + lowercaseFirst(s),
 	}

@@ -87,7 +87,7 @@ pub fn system_for(task_kind) {
     // short system — accuracy + thrift, all providers
     base := "Be precise. Use only provided context. Prefer correct short answers over long ones."
     if k == "weft" {
-        return base + " Language: Weft (not Python/JS). " + contract("weft")
+        return base + " Language: Weft. " + contract("weft")
     }
     if k == "json" {
         return base + " " + contract("json")

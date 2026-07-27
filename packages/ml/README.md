@@ -4,10 +4,10 @@
 
 | In scope | Out of scope (stay external) |
 |----------|------------------------------|
-| Embeddings via OpenAI-compat / Ollama | NumPy / tensor frameworks |
+| Embeddings via OpenAI-compat / Ollama | Heavy tensor / array frameworks |
 | Cosine search, JSON vector index | Full training loops / GPU kernels |
-| Accuracy / MSE / train-test split | pandas / scikit-learn |
-| Glue to `llm` + `weft train` | Replacing PyTorch |
+| Accuracy / MSE / train-test split | Full dataframe / ML toolkits |
+| Glue to `llm` + `weft train` | In-process deep-learning training |
 
 ## Install
 

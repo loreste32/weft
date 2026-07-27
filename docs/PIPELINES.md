@@ -1,6 +1,6 @@
 # Real pipelines in Weft
 
-ETL-style **extract → transform → load** without Python/pandas.  
+ETL-style **extract → transform → load** without a heavy data-frame stack.  
 Compose with **`map` / `filter` (concurrent by default)** / `reduce`, **table.*** ops, **jsonl**.
 
 ## Mental model

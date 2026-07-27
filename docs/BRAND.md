@@ -29,4 +29,4 @@ Use Wifty on docs, stickers, READMEs, and social previews.
 
 - Short sentences. Prefer show over tell.  
 - Friendly, not corporate. Technical without jargon walls.  
-- Never claim to be “Python but faster” as the whole story — Weft is its own language for LLM work.
+- Never claim speed alone as the whole story — Weft is its own language for LLM work.

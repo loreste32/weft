@@ -1,6 +1,6 @@
 # Web apps & realtime (Weft)
 
-Build HTTP APIs, HTML apps, WebSocket services, and **WebRTC** signaling — without Django, Flask, or Python.
+Build HTTP APIs, HTML apps, WebSocket services, and **WebRTC** signaling — one binary, no framework stack.
 
 | Package | Role |
 |---------|------|
@@ -9,7 +9,7 @@ Build HTTP APIs, HTML apps, WebSocket services, and **WebRTC** signaling — wit
 | `ws` | WebSocket (via `app.ws`) |
 | `webrtc` | Signaling hub for browser P2P realtime |
 
-## Quick app (Flask-shaped)
+## Quick app
 
 ```weft
 fn main {
@@ -184,15 +184,15 @@ Full demo: `examples/webrtc_call.weft` (two browser tabs → camera/mic P2P).
 | SFU / recording | Out of band (mediasoup, livekit, etc.); Weft still does signaling + APIs |
 | Auth | Check tokens on HTTP; pass `?token=` on WS and validate in handler before `hub` |
 
-## vs Django / Flask
+## At a glance
 
-| | Flask/Django | Weft |
-|--|--------------|------|
-| Language | Python | Weft (Go runtime, one binary) |
-| Routes | decorators / urls.py | `app.get` / `app.post` |
-| Templates | Jinja | `html/template` via `app.templates` |
-| Realtime | extensions | `app.ws` + `webrtc.hub` built-in |
-| Deploy | gunicorn + venv | `weft run app.weft` |
+| | Weft |
+|--|------|
+| Language | Weft (Go runtime, one binary) |
+| Routes | `app.get` / `app.post` |
+| Templates | `html/template` via `app.templates` |
+| Realtime | `app.ws` + `webrtc.hub` built-in |
+| Deploy | `weft run app.weft` |
 
 ## Examples
 
