@@ -252,6 +252,7 @@ func cliParse(env *runtime.Env, spec runtime.Value) (runtime.Value, error) {
 		put("help", runtime.Bool(true))
 		put("usage", runtime.Str(usage))
 		put("about", runtime.Str(about))
+		put("command", runtime.Str(""))
 		put("args", runtime.List())
 		put("flags", runtime.NewMap())
 		// also flat empty flags with defaults
@@ -382,6 +383,16 @@ func cliParse(env *runtime.Env, spec runtime.Value) (runtime.Value, error) {
 		i++
 	}
 
+	// Optional subcommands: first positional that matches commands map becomes p.command.
+	command := ""
+	if cmds, ok := mapGet(spec, "commands"); ok && cmds.Kind == runtime.KindMap && len(rest) > 0 {
+		cmo := cmds.Obj.(*runtime.MapObj)
+		if _, ok := cmo.Vals[rest[0]]; ok {
+			command = rest[0]
+			rest = rest[1:]
+		}
+	}
+
 	m := runtime.NewMap()
 	mo := m.Obj.(*runtime.MapObj)
 	put := func(k string, v runtime.Value) {
@@ -391,6 +402,7 @@ func cliParse(env *runtime.Env, spec runtime.Value) (runtime.Value, error) {
 	put("help", runtime.Bool(false))
 	put("usage", runtime.Str(defaultUsage(env, spec)))
 	put("about", runtime.Str(about))
+	put("command", runtime.Str(command))
 	pos := make([]runtime.Value, len(rest))
 	for i, s := range rest {
 		pos[i] = runtime.Str(s)
@@ -501,7 +513,17 @@ func defaultUsage(env *runtime.Env, spec runtime.Value) string {
 	if about != "" {
 		fmt.Fprintf(&b, "%s\n\n", about)
 	}
-	fmt.Fprintf(&b, "Usage: %s [flags] [args]\n", prog)
+	hasCmds := false
+	if cmds, ok := mapGet(spec, "commands"); ok && cmds.Kind == runtime.KindMap {
+		if cmo, ok := cmds.Obj.(*runtime.MapObj); ok && len(cmo.Keys) > 0 {
+			hasCmds = true
+		}
+	}
+	if hasCmds {
+		fmt.Fprintf(&b, "Usage: %s [flags] <command> [args]\n", prog)
+	} else {
+		fmt.Fprintf(&b, "Usage: %s [flags] [args]\n", prog)
+	}
 	if fm, ok := mapGet(spec, "flags"); ok {
 		if mo, ok := fm.Obj.(*runtime.MapObj); ok && len(mo.Keys) > 0 {
 			b.WriteString("\nFlags:\n")
@@ -526,6 +548,21 @@ func defaultUsage(env *runtime.Env, spec runtime.Value) string {
 				} else {
 					fmt.Fprintf(&b, "%-24s %s\n", flag, help)
 				}
+			}
+		}
+	}
+	if cmds, ok := mapGet(spec, "commands"); ok && cmds.Kind == runtime.KindMap {
+		if cmo, ok := cmds.Obj.(*runtime.MapObj); ok && len(cmo.Keys) > 0 {
+			b.WriteString("\nCommands:\n")
+			for _, name := range cmo.Keys {
+				help := ""
+				raw := cmo.Vals[name]
+				if raw.Kind == runtime.KindMap || raw.Kind == runtime.KindStruct {
+					help = mapGetStr(raw, "help", "")
+				} else if raw.Kind == runtime.KindStr {
+					help = raw.S
+				}
+				fmt.Fprintf(&b, "  %-22s %s\n", name, help)
 			}
 		}
 	}

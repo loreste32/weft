@@ -1,6 +1,6 @@
 # Weft language reference
 
-End-to-end description of the language as of **0.3.29**. For paste-ready recipes see [COOKBOOK.md](COOKBOOK.md). For a one-page cheatsheet see [SYNTAX.md](SYNTAX.md).
+End-to-end description of the language as of **0.3.30**. For paste-ready recipes see [COOKBOOK.md](COOKBOOK.md). For a one-page cheatsheet see [SYNTAX.md](SYNTAX.md).
 
 ---
 

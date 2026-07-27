@@ -70,6 +70,46 @@ fn main -> Result {
 	}
 }
 
+func TestCLISubcommands(t *testing.T) {
+	src := `
+fn main -> Result {
+    p := cli.parse({
+        "about": "ctl",
+        "flags": {"env": {"short": "e", "default": "dev"}},
+        "commands": {
+            "deploy": {"help": "ship it"},
+            "status": {"help": "show status"},
+        },
+    })?
+    if p.help {
+        println(p.usage)
+        return Ok(unit)
+    }
+    println(p.command)
+    println(p.env)
+    if len(p.args) > 0 { println(p.args[0]) }
+}
+`
+	out, err := runCLI(t, src, "-e", "prod", "deploy", "svc-a")
+	if err != nil {
+		t.Fatal(err, out)
+	}
+	if !strings.Contains(out, "deploy") || !strings.Contains(out, "prod") || !strings.Contains(out, "svc-a") {
+		t.Fatal(out)
+	}
+	out2, err := runCLI(t, src, "--help")
+	if err != nil {
+		if ee, ok := err.(weft.ExitError); ok && ee.Code == 0 {
+			// ok
+		} else if err != nil && !strings.Contains(out2, "Commands") {
+			// help may exit 0 via exit signal
+		}
+	}
+	if !strings.Contains(out2, "Commands") || !strings.Contains(out2, "deploy") {
+		t.Fatal(out2)
+	}
+}
+
 func TestLenPushRange(t *testing.T) {
 	src := `
 fn main {

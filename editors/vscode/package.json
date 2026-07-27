@@ -2,7 +2,7 @@
   "name": "weft",
   "displayName": "Weft",
   "description": "Weft language support \u2014 syntax highlighting and Language Server (weft lsp)",
-  "version": "0.3.29",
+  "version": "0.3.30",
   "publisher": "weft",
   "license": "Apache-2.0",
   "icon": "media/icon.png",

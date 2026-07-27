@@ -259,12 +259,15 @@ func TestAB_HTTPTimeoutDurationString(t *testing.T) {
 fn main {
     r := http.get("http://127.0.0.1:1/", {"timeout": "50ms", "retries": 0})
     say(r.ok == false)
+    // insecure flag must parse (still fails dial on :1)
+    r2 := http.get("http://127.0.0.1:1/", {"timeout": "50ms", "retries": 0, "insecure": true})
+    say(r2.ok == false)
 }
 `)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "true") {
+	if strings.Count(out.String(), "true") < 2 {
 		t.Fatalf("%q", out.String())
 	}
 }

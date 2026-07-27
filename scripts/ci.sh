@@ -186,6 +186,7 @@ echo "== cli / devops =="
 go test ./internal/stdlib/ -count=1 -run 'CLI|Len|SH|FS|CSV|Push|Time' >/dev/null
 /tmp/weft-ci check examples/cli_tool.weft | grep -q ok
 /tmp/weft-ci check examples/sysops_host.weft | grep -q ok
+/tmp/weft-ci check examples/tier_ab.weft | grep -q ok
 /tmp/weft-ci check examples/data_pipeline.weft | grep -q ok
 /tmp/weft-ci check examples/csv_report.weft | grep -q ok
 out=$(/tmp/weft-ci run examples/cli_tool.weft -- greet Weft -e prod)
@@ -196,6 +197,9 @@ out=$(/tmp/weft-ci run examples/sysops_host.weft -- check -r git,sh)
 echo "$out" | grep -q tools_ok
 out=$(/tmp/weft-ci run examples/sysops_host.weft -- shell 'uname -s')
 echo "$out" | grep -Eq 'Darwin|Linux'
+out=$(/tmp/weft-ci run examples/tier_ab.weft -- demo)
+echo "$out" | grep -q shlex
+echo "$out" | grep -q binstruct
 out=$(/tmp/weft-ci run examples/data_pipeline.weft -- -i examples/data/users.jsonl -f ok --field name)
 echo "$out" | grep -q Ada
 echo "$out" | grep -q Cy

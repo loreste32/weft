@@ -1,0 +1,44 @@
+// Tier A/B smoke demo (offline). Run: weft run examples/tier_ab.weft -- demo
+fn main -> Result {
+    p := cli.parse({
+        "about": "tier_ab — small demo of ops stdlib surface",
+        "flags": {"verbose": {"short": "v", "bool": true}},
+        "commands": {
+            "demo": {"help": "print sample results"},
+            "help": {"help": "show usage"},
+        },
+    })?
+    if p.help || p.command == "" || p.command == "help" {
+        say(p.usage)
+        cli.exit(0)
+    }
+    if p.command != "demo" {
+        cli.die("unknown command: " + p.command)
+    }
+    if p.verbose {
+        log.set_json(true)
+        log.info("tier_ab", {"cmd": p.command})
+    }
+
+    parts := shlex.split("echo 'hello world'")?
+    say("shlex:", len(parts), parts[1])
+
+    lines := sh.lines("printf", ["a\\nb\\n"])?
+    say("sh.lines:", len(lines))
+
+    packed := binstruct.pack(">I", 0x01020304)?
+    vals := binstruct.unpack(">I", packed)?
+    say("binstruct:", vals[0])
+
+    d := difflib.unified_diff("x\n", "y\n", "a", "b")
+    say("difflib:", str.contains(d, "--- a"))
+
+    say("token:", len(secrets.token_hex(8)))
+    say("quantile:", math.quantile([1, 2, 3, 4], 0.5))
+    n := ip.network("10.0.0.0/8")?
+    say("ip.network bits:", n.bits)
+
+    root := xml.parse("<r><item>ok</item></r>")?
+    say("xml:", xml.text(xml.find(root, "item")))
+    say("stem:", fs.stem("foo.weft"))
+}

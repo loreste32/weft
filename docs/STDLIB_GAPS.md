@@ -1,4 +1,4 @@
-# Stdlib Tier A / B (0.3.29)
+# Stdlib Tier A / B (0.3.30)
 
 Honest map of the completed ops/agent surface. Live list: `weft stdlib`.
 
@@ -11,6 +11,7 @@ Honest map of the completed ops/agent surface. Live list: `weft stdlib`.
 | Signals | `signal.listen` / `received` / `reset` |
 | Paths / bytes | `fs.stem` / `with_suffix` / `parents` / `read_bytes` / `write_bytes` |
 | Prompt | `cli.prompt` (line from stdin) |
+| Subcommands | `cli.parse` `commands` map → `p.command` + usage |
 | Secrets | `secrets.token_hex` / `token_urlsafe` / `compare` (+ require/get/from/unwrap) |
 | Logging | `log.set_json` + field maps on log calls |
 | Copy | `copy.copy` / `copy.deepcopy` |
@@ -22,7 +23,7 @@ Honest map of the completed ops/agent surface. Live list: `weft stdlib`.
 | HTML | `html.links` (+ escape/strip_tags) |
 | INI | `ini.sections` / `has_section` (+ parse/get/…) |
 | Test | `test.assert` (+ existing eq/ok/…) |
-| HTTP | timeout as duration string; existing retries/headers/form |
+| HTTP | timeout (sec / `"5s"`), retries, headers, form, **`insecure`** TLS skip |
 | DB | existing `query` / `exec` / `begin` / `tx` (already deep enough for glue) |
 | CSV | existing header/comma dialects |
 

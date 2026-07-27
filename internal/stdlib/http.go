@@ -3,6 +3,7 @@ package stdlib
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -446,6 +447,7 @@ func doRequest(env *runtime.Env, method, urlStr, body string, headers map[string
 	useCircuit := false
 	circuitThreshold := 5
 	circuitCooldown := 30 * time.Second
+	insecure := false
 	if opts.Kind == runtime.KindMap || opts.Kind == runtime.KindStruct {
 		if n := mapGetInt(opts, "timeout", 0); n > 0 {
 			timeout = time.Duration(n) * time.Second
@@ -457,6 +459,9 @@ func doRequest(env *runtime.Env, method, urlStr, body string, headers map[string
 		}
 		if n := mapGetInt(opts, "timeout_ms", 0); n > 0 {
 			timeout = time.Duration(n) * time.Millisecond
+		}
+		if v, ok := mapGet(opts, "insecure"); ok && v.IsTruthy() {
+			insecure = true
 		}
 		if n := mapGetInt(opts, "retries", 0); n > 0 {
 			retries = int(n)
@@ -504,6 +509,22 @@ func doRequest(env *runtime.Env, method, urlStr, body string, headers map[string
 				headers = map[string]string{}
 			}
 			headers["Content-Type"] = ctype
+		}
+	}
+	// TLS skip-verify for local/dev only (opts.insecure=true)
+	if insecure {
+		tr := http.DefaultTransport.(*http.Transport).Clone()
+		if tr.TLSClientConfig == nil {
+			tr.TLSClientConfig = &tls.Config{}
+		} else {
+			tr.TLSClientConfig = tr.TLSClientConfig.Clone()
+		}
+		tr.TLSClientConfig.InsecureSkipVerify = true //nolint:gosec // explicit opt-in for local TLS
+		client = &http.Client{
+			Timeout:   client.Timeout,
+			Transport: tr,
+			CheckRedirect: client.CheckRedirect,
+			Jar:           client.Jar,
 		}
 	}
 	base := env.Context()
