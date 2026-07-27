@@ -16,7 +16,7 @@ import (
 	"github.com/loreste/weft/internal/runtime"
 )
 
-// packageWeb is Flask/Django-style web apps for Weft (stdlib, pure Go).
+// packageWeb is multi-route HTTP apps for Weft (stdlib, pure Go), including HTMX helpers.
 func packageWeb(env *runtime.Env) runtime.Value {
 	p := pkg()
 	// web.app() -> App
@@ -96,6 +96,73 @@ func packageWeb(env *runtime.Env) runtime.Value {
 		mo.Vals["sse"] = runtime.Bool(true)
 		return m, nil
 	}, 1)
+
+	// --- HTMX ---------------------------------------------------------------
+	// web.is_htmx(req) -> bool  (HX-Request: true)
+	set(p, "is_htmx", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 {
+			return runtime.Bool(false), nil
+		}
+		return runtime.Bool(reqIsHTMX(args[0])), nil
+	}, 1)
+	// web.htmx(html|opts, opts?) -> HTML fragment response with HX-* headers.
+	// opts: trigger, trigger_after_settle, trigger_after_swap, redirect, refresh,
+	//       location, push_url, replace_url, retarget, reswap, reselect, status
+	set(p, "htmx", func(args []runtime.Value) (runtime.Value, error) {
+		return htmxResponse(args)
+	}, 2)
+	// web.htmx_redirect(url) -> empty body + HX-Redirect (client-side navigation)
+	set(p, "htmx_redirect", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 {
+			return errRes("web.htmx_redirect(url)", "web"), nil
+		}
+		return htmxResponse([]runtime.Value{
+			runtime.Str(""),
+			mapStrPairs("redirect", args[0].String()),
+		})
+	}, 1)
+	// web.htmx_refresh() -> HX-Refresh: true
+	set(p, "htmx_refresh", func(args []runtime.Value) (runtime.Value, error) {
+		return htmxResponse([]runtime.Value{
+			runtime.Str(""),
+			mapStrPairs("refresh", "true"),
+		})
+	}, 0)
+	// web.htmx_trigger(event|map) -> HX-Trigger header (body empty unless second arg HTML)
+	set(p, "htmx_trigger", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 {
+			return errRes("web.htmx_trigger(event|map, html?)", "web"), nil
+		}
+		body := ""
+		if len(args) >= 2 {
+			body = args[1].String()
+		}
+		opts := runtime.NewMap()
+		omo := opts.Obj.(*runtime.MapObj)
+		omo.Keys = []string{"trigger"}
+		omo.Vals["trigger"] = args[0]
+		return htmxResponse([]runtime.Value{runtime.Str(body), opts})
+	}, 2)
+	// web.htmx_location(url|opts) -> HX-Location (client-side soft nav)
+	set(p, "htmx_location", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 {
+			return errRes("web.htmx_location(url|opts)", "web"), nil
+		}
+		opts := runtime.NewMap()
+		omo := opts.Obj.(*runtime.MapObj)
+		omo.Keys = []string{"location"}
+		omo.Vals["location"] = args[0]
+		return htmxResponse([]runtime.Value{runtime.Str(""), opts})
+	}, 1)
+	// web.htmx_cdn() -> script tag for unpkg htmx (convenience)
+	set(p, "htmx_cdn", func(args []runtime.Value) (runtime.Value, error) {
+		ver := "2.0.4"
+		if len(args) >= 1 && args[0].String() != "" {
+			ver = args[0].String()
+		}
+		return runtime.Str(`<script src="https://unpkg.com/htmx.org@` + ver + `"></script>`), nil
+	}, 1)
+
 	return p
 }
 
@@ -567,7 +634,164 @@ func buildRequest(r *http.Request, body string, params map[string]string) runtim
 		}
 	}
 	put("headers", hdrs)
+	// HTMX request surface (always present; request=false when not HTMX)
+	hx := htmxFromHeaders(func(name string) string { return r.Header.Get(name) })
+	put("htmx", hx)
 	return m
+}
+
+// htmxFromHeaders builds the req.htmx map from a header getter.
+func htmxFromHeaders(get func(string) string) runtime.Value {
+	m := runtime.NewMap()
+	mo := m.Obj.(*runtime.MapObj)
+	put := func(k string, v runtime.Value) {
+		mo.Keys = append(mo.Keys, k)
+		mo.Vals[k] = v
+	}
+	req := strings.EqualFold(get("HX-Request"), "true")
+	put("request", runtime.Bool(req))
+	put("boosted", runtime.Bool(strings.EqualFold(get("HX-Boosted"), "true")))
+	put("history_restore", runtime.Bool(strings.EqualFold(get("HX-History-Restore-Request"), "true")))
+	put("target", runtime.Str(get("HX-Target")))
+	put("trigger", runtime.Str(get("HX-Trigger")))
+	put("trigger_name", runtime.Str(get("HX-Trigger-Name")))
+	put("current_url", runtime.Str(get("HX-Current-URL")))
+	put("prompt", runtime.Str(get("HX-Prompt")))
+	return m
+}
+
+func reqIsHTMX(req runtime.Value) bool {
+	if hx, ok := mapGet(req, "htmx"); ok {
+		if b, ok := mapGet(hx, "request"); ok && b.Kind == runtime.KindBool {
+			return b.B
+		}
+	}
+	// fallback: raw headers
+	if h, ok := mapGet(req, "headers"); ok {
+		// case-insensitive scan
+		if h.Kind == runtime.KindMap {
+			mo := h.Obj.(*runtime.MapObj)
+			for k, v := range mo.Vals {
+				if strings.EqualFold(k, "HX-Request") && strings.EqualFold(v.String(), "true") {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func mapStrPairs(kvs ...string) runtime.Value {
+	m := runtime.NewMap()
+	mo := m.Obj.(*runtime.MapObj)
+	for i := 0; i+1 < len(kvs); i += 2 {
+		mo.Keys = append(mo.Keys, kvs[i])
+		mo.Vals[kvs[i]] = runtime.Str(kvs[i+1])
+	}
+	return m
+}
+
+// htmxResponse builds an HTML response with optional HTMX response headers.
+func htmxResponse(args []runtime.Value) (runtime.Value, error) {
+	body := ""
+	var opts runtime.Value
+	status := int64(200)
+	if len(args) >= 1 {
+		if args[0].Kind == runtime.KindMap {
+			opts = args[0]
+			body = mapGetStr(opts, "body", mapGetStr(opts, "html", ""))
+		} else {
+			body = args[0].String()
+		}
+	}
+	if len(args) >= 2 && args[1].Kind == runtime.KindMap {
+		if opts.Kind == runtime.KindMap {
+			opts = mergeOpts(opts, args[1])
+		} else {
+			opts = args[1]
+		}
+	}
+	if opts.Kind == runtime.KindMap {
+		if n := mapGetInt(opts, "status", 0); n > 0 {
+			status = n
+		}
+		if s := mapGetStr(opts, "body", ""); s != "" && body == "" {
+			body = s
+		}
+		if s := mapGetStr(opts, "html", ""); s != "" && body == "" {
+			body = s
+		}
+	}
+	m := respMap(status, body, "text/html; charset=utf-8")
+	if opts.Kind != runtime.KindMap {
+		return m, nil
+	}
+	hdrs := runtime.NewMap()
+	hmo := hdrs.Obj.(*runtime.MapObj)
+	setH := func(name, val string) {
+		if val == "" {
+			return
+		}
+		if _, ok := hmo.Vals[name]; !ok {
+			hmo.Keys = append(hmo.Keys, name)
+		}
+		hmo.Vals[name] = runtime.Str(val)
+	}
+	// string opts → headers
+	setH("HX-Redirect", mapGetStr(opts, "redirect", ""))
+	setH("HX-Push-Url", mapGetStr(opts, "push_url", mapGetStr(opts, "pushUrl", "")))
+	setH("HX-Replace-Url", mapGetStr(opts, "replace_url", mapGetStr(opts, "replaceUrl", "")))
+	setH("HX-Retarget", mapGetStr(opts, "retarget", ""))
+	setH("HX-Reswap", mapGetStr(opts, "reswap", ""))
+	setH("HX-Reselect", mapGetStr(opts, "reselect", ""))
+	// refresh: bool or string
+	if v, ok := mapGet(opts, "refresh"); ok {
+		if v.Kind == runtime.KindBool && v.B {
+			setH("HX-Refresh", "true")
+		} else if s := v.String(); s != "" && s != "false" && s != "0" {
+			setH("HX-Refresh", "true")
+		}
+	}
+	// trigger variants (str or map → JSON)
+	setTrigger := func(optKey, hdr string) {
+		v, ok := mapGet(opts, optKey)
+		if !ok {
+			return
+		}
+		if v.Kind == runtime.KindMap || v.Kind == runtime.KindList {
+			if s, err := jsonMarshal(v); err == nil {
+				setH(hdr, s)
+			}
+			return
+		}
+		setH(hdr, v.String())
+	}
+	setTrigger("trigger", "HX-Trigger")
+	setTrigger("trigger_after_settle", "HX-Trigger-After-Settle")
+	setTrigger("trigger_after_swap", "HX-Trigger-After-Swap")
+	// location: str or map (HX-Location JSON)
+	if v, ok := mapGet(opts, "location"); ok {
+		if v.Kind == runtime.KindMap {
+			if s, err := jsonMarshal(v); err == nil {
+				setH("HX-Location", s)
+			}
+		} else {
+			setH("HX-Location", v.String())
+		}
+	}
+	// merge extra headers map if provided
+	if extra, ok := mapGet(opts, "headers"); ok && extra.Kind == runtime.KindMap {
+		emo := extra.Obj.(*runtime.MapObj)
+		for _, k := range emo.Keys {
+			setH(k, emo.Vals[k].String())
+		}
+	}
+	if len(hmo.Keys) > 0 {
+		mo := m.Obj.(*runtime.MapObj)
+		mo.Keys = append(mo.Keys, "headers")
+		mo.Vals["headers"] = hdrs
+	}
+	return m, nil
 }
 
 func stringMapValue(m map[string]string) runtime.Value {

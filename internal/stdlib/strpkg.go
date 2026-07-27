@@ -103,7 +103,7 @@ func packageStr() runtime.Value {
 	}
 	set(p, "has_prefix", hasPrefix, 2)
 	set(p, "has_suffix", hasSuffix, 2)
-	// Aliases familiar from Python/JS (agents often guess these names).
+	// Common aliases (agents often guess these names).
 	set(p, "starts_with", hasPrefix, 2)
 	set(p, "ends_with", hasSuffix, 2)
 

@@ -84,13 +84,20 @@ var memberCatalog = map[string]memberHelp{
 	"http.text":      {Sig: "http.text(status, body)", Detail: "text response for serve handlers"},
 
 	// web
-	"web.app":      {Sig: "web.app() -> app", Detail: "multi-route app; .get/.post/.listen"},
-	"web.json":     {Sig: "web.json(v)", Detail: "JSON response helper"},
-	"web.html":     {Sig: "web.html(s)", Detail: "HTML response helper"},
-	"web.text":     {Sig: "web.text(s)", Detail: "plain text response"},
-	"web.redirect": {Sig: "web.redirect(url, status?)", Detail: "redirect response"},
-	"web.sse":      {Sig: "web.sse(list | iter)", Detail: "Server-Sent Events stream"},
-	"web.status":   {Sig: "web.status(code, body?)", Detail: "status response"},
+	"web.app":           {Sig: "web.app() -> app", Detail: "multi-route app; .get/.post/.listen"},
+	"web.json":          {Sig: "web.json(v)", Detail: "JSON response helper"},
+	"web.html":          {Sig: "web.html(s)", Detail: "HTML response helper"},
+	"web.text":          {Sig: "web.text(s)", Detail: "plain text response"},
+	"web.redirect":      {Sig: "web.redirect(url, status?)", Detail: "redirect response"},
+	"web.sse":           {Sig: "web.sse(list | iter)", Detail: "Server-Sent Events stream"},
+	"web.status":        {Sig: "web.status(code, body?)", Detail: "status response"},
+	"web.is_htmx":       {Sig: "web.is_htmx(req) -> bool", Detail: "true when HX-Request header set"},
+	"web.htmx":          {Sig: "web.htmx(html, opts?)", Detail: "HTML partial + HX-* response headers"},
+	"web.htmx_redirect": {Sig: "web.htmx_redirect(url)", Detail: "HX-Redirect client navigation"},
+	"web.htmx_refresh":  {Sig: "web.htmx_refresh()", Detail: "HX-Refresh: true"},
+	"web.htmx_trigger":  {Sig: "web.htmx_trigger(event|map, html?)", Detail: "HX-Trigger header"},
+	"web.htmx_location": {Sig: "web.htmx_location(url|opts)", Detail: "HX-Location soft nav"},
+	"web.htmx_cdn":      {Sig: "web.htmx_cdn(version?)", Detail: "script tag for htmx CDN"},
 
 	// fs
 	"fs.read":      {Sig: "fs.read(path) -> Result[str]", Detail: "read whole file"},

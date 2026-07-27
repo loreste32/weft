@@ -1,0 +1,52 @@
+// HTMX counter + form — partial HTML swaps.
+//   weft run examples/htmx.weft
+//   open http://127.0.0.1:8090
+
+fn page(body) {
+    cdn := web.htmx_cdn()
+    web.html("<!doctype html><html><head><meta charset=\"utf-8\"/><title>Weft + HTMX</title>$cdn<style>body{font:16px/1.4 system-ui,sans-serif;max-width:32rem;margin:2rem auto;padding:0 1rem}#count{font-size:2rem;font-weight:600}button,input{font:inherit;margin:.25rem 0}.ok{color:#0a7}</style></head><body>$body</body></html>")
+}
+
+fn form_name(body) {
+    name := "friend"
+    for part in str.split(body, "&") {
+        if str.starts_with(part, "name=") {
+            name = str.replace(part, "name=", "")
+            name = str.replace(name, "+", " ")
+        }
+    }
+    name
+}
+
+fn main {
+    // mutable map shared by handlers (in-place updates)
+    state := {"n": 0}
+    app := web.app()
+
+    app.get("/", fn(req) {
+        c := state["n"]
+        page("<h1>Weft HTMX</h1><p>Count: <span id=\"count\">$c</span></p><button hx-post=\"/inc\" hx-target=\"#count\" hx-swap=\"innerHTML\">+1</button> <button hx-post=\"/reset\" hx-target=\"#count\" hx-swap=\"innerHTML\">reset</button><hr/><form hx-post=\"/greet\" hx-target=\"#out\" hx-swap=\"innerHTML\"><input name=\"name\" placeholder=\"your name\" required/> <button type=\"submit\">greet</button></form><div id=\"out\"></div>")
+    })
+
+    app.post("/inc", fn(req) {
+        if !web.is_htmx(req) {
+            return web.redirect("/")
+        }
+        state["n"] = state["n"] + 1
+        c := state["n"]
+        web.htmx("$c", {"trigger": "counted"})
+    })
+
+    app.post("/reset", fn(req) {
+        state["n"] = 0
+        web.htmx("0", {"trigger": {"reset": true}})
+    })
+
+    app.post("/greet", fn(req) {
+        name := form_name(req.body)
+        web.htmx("<p class=\"ok\">hello, $name</p>", {"trigger": "greeted"})
+    })
+
+    say("weft htmx → http://127.0.0.1:8090")
+    app.listen(":8090")
+}

@@ -61,6 +61,7 @@ Path params: `/users/:id` or `/users/{id}` → `req.params["id"]`.
 | `query_map` | parsed query string |
 | `headers` | request headers |
 | `host` `remote` | connection meta |
+| `htmx` | HTMX request map (see below) |
 
 ### Responses
 
@@ -72,6 +73,7 @@ web.html("<p>hi</p>")
 web.redirect("/login")
 web.status(404, "nope")
 web.sse(["hello", "world"])   // Server-Sent Events (flushed per chunk)
+web.htmx("<div>partial</div>", {"trigger": "done"})  // HTMX fragment
 ```
 
 Custom:
@@ -79,6 +81,66 @@ Custom:
 ```weft
 {"status": 200, "body": "…", "type": "text/plain", "headers": {"X-Trace": "1"}}
 ```
+
+## HTMX
+
+Weft treats HTMX as first-class: every request exposes `req.htmx`, and `web.htmx*` helpers set the response headers HTMX understands.
+
+### Request (`req.htmx`)
+
+| Field | Source header |
+|-------|----------------|
+| `request` (bool) | `HX-Request` |
+| `boosted` (bool) | `HX-Boosted` |
+| `history_restore` (bool) | `HX-History-Restore-Request` |
+| `target` | `HX-Target` |
+| `trigger` | `HX-Trigger` |
+| `trigger_name` | `HX-Trigger-Name` |
+| `current_url` | `HX-Current-URL` |
+| `prompt` | `HX-Prompt` |
+
+```weft
+if web.is_htmx(req) {
+    web.htmx("<li>item</li>")
+} else {
+    web.redirect("/")
+}
+```
+
+### Response helpers
+
+| Call | Effect |
+|------|--------|
+| `web.htmx(html, opts?)` | HTML fragment + optional HX-* headers |
+| `web.htmx_redirect(url)` | `HX-Redirect` (client navigates) |
+| `web.htmx_refresh()` | `HX-Refresh: true` |
+| `web.htmx_trigger(event\|map, html?)` | `HX-Trigger` |
+| `web.htmx_location(url\|opts)` | `HX-Location` soft nav |
+| `web.htmx_cdn(version?)` | `<script src=unpkg htmx>` tag |
+
+**`web.htmx` opts** (all optional):
+
+| Opt | Header |
+|-----|--------|
+| `trigger` / `trigger_after_settle` / `trigger_after_swap` | `HX-Trigger*` (str or map → JSON) |
+| `redirect` | `HX-Redirect` |
+| `refresh` | `HX-Refresh` |
+| `location` | `HX-Location` (str or map → JSON) |
+| `push_url` / `replace_url` | `HX-Push-Url` / `HX-Replace-Url` |
+| `retarget` / `reswap` / `reselect` | matching HX-* |
+| `status` | HTTP status (default 200) |
+| `headers` | extra response headers map |
+
+```weft
+app.post("/save", fn(req) {
+    web.htmx("<p class=\"ok\">saved</p>", {
+        "trigger": {"saved": {"id": 1}},
+        "push_url": "/items/1",
+    })
+})
+```
+
+Demo: `weft run examples/htmx.weft` → http://127.0.0.1:8090
 
 ### SSE / token stream to callers
 
@@ -198,6 +260,7 @@ Full demo: `examples/webrtc_call.weft` (two browser tabs → camera/mic P2P).
 
 ```bash
 weft run examples/webapp.weft        # routes + API + ws echo
+weft run examples/htmx.weft          # HTMX partials (counter + form)
 weft run examples/chat.weft          # browser chat UI
 weft run examples/webrtc_call.weft   # WebRTC room
 weft run examples/server.weft        # minimal http.serve
