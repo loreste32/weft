@@ -2,7 +2,7 @@
 
 Paste-ready recipes for common jobs. All examples target **0.3.x** Weft. For the full language rules see [LANGUAGE.md](LANGUAGE.md); for package APIs see [STDLIB.md](STDLIB.md). New to Weft? Start with the [tutorial](TUTORIAL.md).
 
-**Runnable offline samples** live in [`examples/cookbook/`](../examples/cookbook/) (`01_hello.weft` … `13_agent.weft`). Ops/A–B surface demo: [`examples/tier_ab.weft`](../examples/tier_ab.weft). This page keeps the wider set, including network/LLM/server sketches.
+**Runnable offline samples** live in [`examples/cookbook/`](../examples/cookbook/) (`01_hello.weft` … `14_mold.weft`). Ops/A–B surface demo: [`examples/tier_ab.weft`](../examples/tier_ab.weft). This page keeps the wider set, including network/LLM/server sketches.
 
 Run a snippet by saving it as `x.weft` and:
 
@@ -674,6 +674,38 @@ weft gen "sum 1..5 and print it" -o sum.weft --run
 
 Providers: [LLM_PROVIDERS.md](LLM_PROVIDERS.md) · local: [LLM_LOCAL.md](LLM_LOCAL.md).  
 Examples: `examples/realworld/tool_agent.weft`, `examples/ollama_chat.weft`.
+
+### Structured models (`mold` module)
+
+Optional package (not stdlib): pour LLM/API JSON into clean maps, emit JSON Schema / tool params.
+
+```bash
+weft get mold ./packages/mold   # monorepo
+weft install
+```
+
+```weft
+use mold
+
+fn main -> Result {
+    Args := mold.model({
+        "city": mold.str({"desc": "city name"})?,
+        "units": "str?",
+    })?
+
+    // validate tool args the model returned
+    a := mold.parse(Args, "{\"city\":\"Paris\"}")?
+    say(a["city"])
+
+    // fenced model output
+    out := mold.extract(Args, "```json\n{\"city\":\"Oslo\"}\n```")?
+
+    // describe for providers
+    say(json.stringify(mold.tool_params(Args)))
+}
+```
+
+Runnable: `examples/cookbook/14_mold.weft` · package docs: [`packages/mold`](../packages/mold/).
 
 ---
 

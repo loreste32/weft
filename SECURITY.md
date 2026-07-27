@@ -69,4 +69,6 @@ Apps that `use` modules needing models or disk must declare grants on the **modu
 - Env API keys: **hostname-only** trust (no path/substring spoof); `WEFT_LLM_TRUST_HOSTS` exact/suffix
 - SMTP `from`/`to`/`subject` strip CR/LF/NUL (header injection)
 - HTMX OOB ids restricted to `[A-Za-z0-9_-]`
+- Multipart form: max 1024 parts (part storms)
+- `mold` module: max nest depth 32, max list length 10_000
 - CGNAT `100.64/10` blocked with private nets

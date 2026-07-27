@@ -1,0 +1,37 @@
+// mold — pour LLM/API JSON into structured maps (offline)
+//   weft get mold ./packages/mold && weft install
+//   weft run examples/cookbook/14_mold.weft
+
+use mold
+
+fn main -> Result {
+    // 1) define a mold (shorthands + field builders)
+    Person := mold.model({
+        "name": "str!",
+        "age": mold.integer({"min": 0, "max": 150})?,
+        "tags": ["str"],
+        "active": mold.boolean({"default": true})?,
+    })?
+
+    // 2) parse / coerce / defaults
+    p := mold.parse(Person, "{\"name\":\"Ada\",\"age\":36,\"tags\":[\"math\"]}")?
+    n := p["name"]
+    a := p["age"]
+    say("person $n age=$a")
+
+    // 3) reject bad input
+    bad := mold.parse(Person, "{\"age\":-1}")
+    if !bad.ok {
+        say("rejected:", json.stringify(mold.errors(bad)))
+    }
+
+    // 4) LLM fenced output → extract
+    fenced := "```json\n{\"name\":\"Bob\",\"age\":20,\"tags\":[]}\n```"
+    b := mold.extract(Person, fenced)?
+    say("extracted:", b["name"])
+
+    // 5) wire shapes for providers (JSON Schema / tool params)
+    tp := mold.tool_params(Person)
+    say("tool param type:", tp["type"])
+    say("name field:", tp["properties"]["name"]["type"])
+}

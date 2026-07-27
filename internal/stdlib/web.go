@@ -972,6 +972,8 @@ func parseFormParts(body, contentType string, query url.Values) (form, formAll, 
 		boundary := params["boundary"]
 		if boundary != "" && body != "" {
 			mr := multipart.NewReader(strings.NewReader(body), boundary)
+			const maxMultipartParts = 1024
+			parts := 0
 			for {
 				p, err := mr.NextPart()
 				if err == io.EOF {
@@ -979,6 +981,11 @@ func parseFormParts(body, contentType string, query url.Values) (form, formAll, 
 				}
 				if err != nil {
 					break
+				}
+				parts++
+				if parts > maxMultipartParts {
+					_ = p.Close()
+					break // stop parsing; refuse to burn CPU on part storms
 				}
 				name := p.FormName()
 				if name == "" {

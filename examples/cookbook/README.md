@@ -46,9 +46,17 @@ done
 | `11_path_import.weft` | `use "./lib/…"` |
 | `12_cli.weft` | Flags / subcommand |
 | `13_agent.weft` | `llm.chat` messages, `ask`+opts, `stream_text` (mock offline) |
+| `14_mold.weft` | structured models: parse / extract / tool_params (`mold` module) |
 | `lib/math.weft` | Small library for import + tests |
 | `math_test.weft` | `weft test` sample |
 
 ## Not here (on purpose)
 
 Live HTTP and long-running `http.serve` live under `examples/` root (`server.weft`, `webapp.weft`, …). `13_agent.weft` runs offline under the eval mock; for a live model set `WEFT_PROVIDER` / API keys.
+
+`14_mold.weft` needs the optional module:
+
+```bash
+weft get mold ./packages/mold && weft install
+./weft run examples/cookbook/14_mold.weft
+```

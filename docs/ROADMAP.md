@@ -15,7 +15,7 @@ We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.3.
 - **Match** on literals, consts, and field patterns (`Status.Ok`) plus `_`  
 - Errors via `Result` + `?` (no try/catch)  
 - Concurrency without `async`/`await` (map/filter fan-out, spawn, channels)  
-- Packages: path/git, vendor, lock; monorepo catalog (`ml`, `tokensave`); optional `WEFT_CATALOG_URL`  
+- Packages: path/git, vendor, lock; monorepo catalog (`ml`, `tokensave`, `mold`); optional `WEFT_CATALOG_URL`  
 - Catalog CLI: `packages list|search|info|get[@constraint]` with suggestions  
 - `weft doctor` surfaces catalog + project deps/vendor health (CI smoke)  
 - `say` works as statement and expression (`|> say`)  

@@ -66,3 +66,39 @@ fn test_nested {
     test.eq(r["user"]["id"], "u1")
     test.eq(r["user"]["n"], 2)
 }
+
+fn test_max_list {
+    m := mold.model({"tags": ["str"]})?
+    // build slightly over max_list (10000)
+    mut parts := ""
+    mut i := 0
+    while i < 10001 {
+        if i > 0 {
+            parts = parts + ","
+        }
+        parts = parts + "\"x\""
+        i = i + 1
+    }
+    r := mold.parse(m, "{\"tags\":[" + parts + "]}")
+    test.eq(r.ok, false)
+}
+
+fn test_max_depth {
+    // schema depth > 32 forces max_depth on validate
+    mut fields := {"v": "int"}
+    mut i := 0
+    while i < 40 {
+        fields = {"c": mold.object(fields, null)?}
+        i = i + 1
+    }
+    m := mold.model(fields)?
+    // matching nested data
+    mut data := "{\"v\":1}"
+    mut j := 0
+    while j < 40 {
+        data = "{\"c\":" + data + "}"
+        j = j + 1
+    }
+    r := mold.parse(m, data)
+    test.eq(r.ok, false)
+}

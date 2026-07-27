@@ -44,10 +44,14 @@ pub fn ok(result) {
     result.ok
 }
 
+// Caps hostile / nested LLM payloads (stack + CPU).
+const max_depth = 32
+const max_list = 10000
+
 pub fn validate_mut(model, data) -> Result {
     // errs is a map path -> msg (maps support mutation; list append is limited)
     box := {"errs": {}, "n": 0}
-    out := check_object(model_fields(model), data, "", box)
+    out := check_object(model_fields(model), data, "", box, 0)
     if box["n"] > 0 {
         mut elist := []
         // materialize as list of {path,msg} via json
@@ -95,7 +99,11 @@ fn model_fields(model) {
     model
 }
 
-fn check_object(fields, data, path, box) {
+fn check_object(fields, data, path, box, depth) {
+    if depth > max_depth {
+        add_err(box, path, "max_depth")
+        return {}
+    }
     if kind.of(data) != "map" {
         add_err(box, path, "expected object")
         return {}
@@ -115,12 +123,16 @@ fn check_object(fields, data, path, box) {
             }
             continue
         }
-        out[name] = check_value(f, data[name], p, box)
+        out[name] = check_value(f, data[name], p, box, depth + 1)
     }
     out
 }
 
-fn check_value(f, v, path, box) {
+fn check_value(f, v, path, box, depth) {
+    if depth > max_depth {
+        add_err(box, path, "max_depth")
+        return null
+    }
     mut typ := f["type"]
     if typ == null {
         typ = "any"
@@ -196,6 +208,10 @@ fn check_value(f, v, path, box) {
             add_err(box, path, "expected list")
             return v2
         }
+        if len(v2) > max_list {
+            add_err(box, path, "max_list")
+            return []
+        }
         item := f["items"]
         // rebuild list via json array string
         mut parts := ""
@@ -203,7 +219,7 @@ fn check_value(f, v, path, box) {
         for el in v2 {
             mut val := el
             if item != null {
-                val = check_value(item, el, path + "[$i]", box)
+                val = check_value(item, el, path + "[$i]", box, depth + 1)
             }
             if i > 0 {
                 parts = parts + ","
@@ -221,7 +237,7 @@ fn check_value(f, v, path, box) {
             }
             return v2
         }
-        return check_object(fields, v2, path, box)
+        return check_object(fields, v2, path, box, depth)
     }
     v2
 }
