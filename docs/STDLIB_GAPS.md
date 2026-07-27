@@ -58,6 +58,20 @@ weft run examples/cli_tool.weft -- --help
 | `ops_surface_test.go` | smoke integration |
 | `tier_ab_test.go` | A/B end-to-end |
 | `tier_ab_comprehensive_test.go` | opts, shallow copy, INI/CSV/URL/IP/math matrix |
+| `tier_ab_fullcover_test.go` | direct package unit coverage (all format codes, signal delivery, error paths) |
+| `tier_ab_fullcover2_test.go` | secrets/html/ip/crypto/url/ini/xml/log/test edges |
 | `cli_test.go` | flags + subcommands |
+
+## Coverage (A/B core packages)
+
+Target: **full statement coverage** of dedicated A/B packages. As of 0.3.30:
+
+| Package | Typical func coverage |
+|---------|----------------------|
+| `shlex`, `signal`, `functools`, `traceback` | **100%** |
+| `binstruct`, `difflib`, `copy` | **~93–100%** |
+| Related (secrets, html, ip, log, …) | high; exercised by FullCover + Comp tests |
+
+Whole `internal/stdlib` remains ~47% overall (many pre-existing packages outside A/B). A/B surface is what “fully covered” means here.
 
 Rule: every new behavior lands with tests. See CONTRIBUTING.md.
