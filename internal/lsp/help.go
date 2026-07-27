@@ -98,6 +98,8 @@ var memberCatalog = map[string]memberHelp{
 	"web.htmx_trigger":  {Sig: "web.htmx_trigger(event|map, html?)", Detail: "HX-Trigger header"},
 	"web.htmx_location": {Sig: "web.htmx_location(url|opts)", Detail: "HX-Location soft nav"},
 	"web.htmx_cdn":      {Sig: "web.htmx_cdn(version?)", Detail: "script tag for htmx CDN"},
+	"web.form":          {Sig: "web.form(req) -> map", Detail: "parsed form fields (query + body)"},
+	"web.form_get":      {Sig: "web.form_get(req, key, default?)", Detail: "one form field as string"},
 
 	// fs
 	"fs.read":      {Sig: "fs.read(path) -> Result[str]", Detail: "read whole file"},

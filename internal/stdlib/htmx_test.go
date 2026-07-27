@@ -1,6 +1,7 @@
 package stdlib
 
 import (
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -171,6 +172,55 @@ func TestHTMX_PackageHelpers(t *testing.T) {
 	mustErr(t, callPkg(t, p, "htmx_redirect"))
 	mustErr(t, callPkg(t, p, "htmx_trigger"))
 	mustErr(t, callPkg(t, p, "htmx_location"))
+}
+
+func TestWeb_FormParse(t *testing.T) {
+	// urlencoded
+	req := httptest.NewRequest(http.MethodPost, "/g?src=q", strings.NewReader("name=Ada+Lovelace&city=London"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	v := buildRequest(req, "name=Ada+Lovelace&city=London", nil)
+	form := mustMapGet(t, v, "form")
+	if mapGetStr(form, "name", "") != "Ada Lovelace" {
+		t.Fatal(form)
+	}
+	if mapGetStr(form, "city", "") != "London" {
+		t.Fatal()
+	}
+	if mapGetStr(form, "src", "") != "q" {
+		t.Fatal("query should merge into form")
+	}
+
+	// web.form / form_get
+	env := envWithCall()
+	p := packageWeb(env)
+	f := callPkg(t, p, "form", v)
+	if mapGetStr(f, "name", "") != "Ada Lovelace" {
+		t.Fatal(f)
+	}
+	if callPkg(t, p, "form_get", v, runtime.Str("name")).S != "Ada Lovelace" {
+		t.Fatal()
+	}
+	if callPkg(t, p, "form_get", v, runtime.Str("missing"), runtime.Str("x")).S != "x" {
+		t.Fatal()
+	}
+	if callPkg(t, p, "form").Kind != runtime.KindMap {
+		t.Fatal()
+	}
+
+	// multipart
+	var body strings.Builder
+	w := multipart.NewWriter(&body)
+	_ = w.WriteField("title", "hello")
+	_ = w.WriteField("n", "3")
+	_ = w.Close()
+	raw := body.String()
+	mreq := httptest.NewRequest(http.MethodPost, "/up", strings.NewReader(raw))
+	mreq.Header.Set("Content-Type", w.FormDataContentType())
+	mv := buildRequest(mreq, raw, nil)
+	mf := mustMapGet(t, mv, "form")
+	if mapGetStr(mf, "title", "") != "hello" || mapGetStr(mf, "n", "") != "3" {
+		t.Fatal(mf)
+	}
 }
 
 func TestHTMX_ServeHTTPEndToEnd(t *testing.T) {

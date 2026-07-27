@@ -61,7 +61,10 @@ Path params: `/users/:id` or `/users/{id}` → `req.params["id"]`.
 | `query_map` | parsed query string |
 | `headers` | request headers |
 | `host` `remote` | connection meta |
+| `form` | form fields (query + urlencoded/multipart body) |
 | `htmx` | HTMX request map (see below) |
+
+Form helpers: `web.form(req)` (same as `req.form`), `web.form_get(req, key, default?)`.
 
 ### Responses
 

@@ -7,19 +7,7 @@ fn page(body) {
     web.html("<!doctype html><html><head><meta charset=\"utf-8\"/><title>Weft + HTMX</title>$cdn<style>body{font:16px/1.4 system-ui,sans-serif;max-width:32rem;margin:2rem auto;padding:0 1rem}#count{font-size:2rem;font-weight:600}button,input{font:inherit;margin:.25rem 0}.ok{color:#0a7}</style></head><body>$body</body></html>")
 }
 
-fn form_name(body) {
-    name := "friend"
-    for part in str.split(body, "&") {
-        if str.starts_with(part, "name=") {
-            name = str.replace(part, "name=", "")
-            name = str.replace(name, "+", " ")
-        }
-    }
-    name
-}
-
 fn main {
-    // mutable map shared by handlers (in-place updates)
     state := {"n": 0}
     app := web.app()
 
@@ -43,7 +31,7 @@ fn main {
     })
 
     app.post("/greet", fn(req) {
-        name := form_name(req.body)
+        name := web.form_get(req, "name", "friend")
         web.htmx("<p class=\"ok\">hello, $name</p>", {"trigger": "greeted"})
     })
 

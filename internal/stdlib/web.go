@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -162,6 +164,43 @@ func packageWeb(env *runtime.Env) runtime.Value {
 		}
 		return runtime.Str(`<script src="https://unpkg.com/htmx.org@` + ver + `"></script>`), nil
 	}, 1)
+
+	// web.form(req) -> map  (same as req.form; empty map if missing)
+	set(p, "form", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 {
+			return runtime.NewMap(), nil
+		}
+		if f, ok := mapGet(args[0], "form"); ok && f.Kind == runtime.KindMap {
+			return f, nil
+		}
+		// rebuild from body + headers if present
+		body := mapGetStr(args[0], "body", "")
+		ctype := ""
+		if h, ok := mapGet(args[0], "headers"); ok {
+			ctype = headerGetCI(h, "Content-Type")
+		}
+		return parseFormMap(body, ctype, nil), nil
+	}, 1)
+	// web.form_get(req, key, default?) -> str
+	set(p, "form_get", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 2 {
+			return runtime.Str(""), nil
+		}
+		def := ""
+		if len(args) >= 3 {
+			def = args[2].String()
+		}
+		form, _ := mapGet(args[0], "form")
+		if form.Kind != runtime.KindMap {
+			body := mapGetStr(args[0], "body", "")
+			ctype := ""
+			if h, ok := mapGet(args[0], "headers"); ok {
+				ctype = headerGetCI(h, "Content-Type")
+			}
+			form = parseFormMap(body, ctype, nil)
+		}
+		return runtime.Str(mapGetStr(form, args[1].String(), def)), nil
+	}, 3)
 
 	return p
 }
@@ -533,6 +572,27 @@ func (a *webApp) dispatch(method, pathStr, body string, headers map[string]strin
 	put("params", stringMapValue(params))
 	put("headers", stringMapValue(headers))
 	put("query_map", queryMapValue(u.Query()))
+	ctype := ""
+	if headers != nil {
+		for k, v := range headers {
+			if strings.EqualFold(k, "Content-Type") {
+				ctype = v
+				break
+			}
+		}
+	}
+	put("form", parseFormMap(body, ctype, u.Query()))
+	put("htmx", htmxFromHeaders(func(name string) string {
+		if headers == nil {
+			return ""
+		}
+		for k, v := range headers {
+			if strings.EqualFold(k, name) {
+				return v
+			}
+		}
+		return ""
+	}))
 	if a.env.Call == nil {
 		return errRes("runtime Call not configured", "web")
 	}
@@ -634,10 +694,89 @@ func buildRequest(r *http.Request, body string, params map[string]string) runtim
 		}
 	}
 	put("headers", hdrs)
+	// form fields: query + urlencoded / multipart body
+	put("form", parseFormMap(body, r.Header.Get("Content-Type"), r.URL.Query()))
 	// HTMX request surface (always present; request=false when not HTMX)
 	hx := htmxFromHeaders(func(name string) string { return r.Header.Get(name) })
 	put("htmx", hx)
 	return m
+}
+
+// parseFormMap builds a string map from query + body (urlencoded or multipart).
+// Multi-value fields keep the first value (typical for simple HTML/HTMX forms).
+func parseFormMap(body, contentType string, query url.Values) runtime.Value {
+	out := runtime.NewMap()
+	mo := out.Obj.(*runtime.MapObj)
+	put := func(k, v string) {
+		if _, ok := mo.Vals[k]; ok {
+			return // first wins
+		}
+		mo.Keys = append(mo.Keys, k)
+		mo.Vals[k] = runtime.Str(v)
+	}
+	for k, vs := range query {
+		if len(vs) > 0 {
+			put(k, vs[0])
+		}
+	}
+	ctype := contentType
+	if med, params, err := mime.ParseMediaType(ctype); err == nil {
+		ctype = med
+		if med == "multipart/form-data" {
+			boundary := params["boundary"]
+			if boundary != "" && body != "" {
+				mr := multipart.NewReader(strings.NewReader(body), boundary)
+				for {
+					p, err := mr.NextPart()
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						break
+					}
+					name := p.FormName()
+					if name == "" {
+						_ = p.Close()
+						continue
+					}
+					// skip file contents as raw bytes → string (small forms / text fields)
+					b, err := io.ReadAll(io.LimitReader(p, 1<<20))
+					_ = p.Close()
+					if err != nil {
+						continue
+					}
+					put(name, string(b))
+				}
+			}
+			return out
+		}
+	}
+	// urlencoded (explicit or bare POST body)
+	if strings.Contains(strings.ToLower(contentType), "application/x-www-form-urlencoded") ||
+		(body != "" && (contentType == "" || !strings.Contains(contentType, "/"))) {
+		vals, err := url.ParseQuery(body)
+		if err == nil {
+			for k, vs := range vals {
+				if len(vs) > 0 {
+					put(k, vs[0])
+				}
+			}
+		}
+	}
+	return out
+}
+
+func headerGetCI(headers runtime.Value, name string) string {
+	if headers.Kind != runtime.KindMap {
+		return ""
+	}
+	mo := headers.Obj.(*runtime.MapObj)
+	for k, v := range mo.Vals {
+		if strings.EqualFold(k, name) {
+			return v.String()
+		}
+	}
+	return ""
 }
 
 // htmxFromHeaders builds the req.htmx map from a header getter.
