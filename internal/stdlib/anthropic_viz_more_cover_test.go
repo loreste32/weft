@@ -40,7 +40,7 @@ func TestAnthropic_ChatHTTPMock(t *testing.T) {
 	env := envWithCall()
 	env.HTTPClient = srv.Client()
 	env.Environ = map[string]string{
-		"LLM_PROVIDER":      "anthropic",
+		"LLM_PROVIDER":       "anthropic",
 		"ANTHROPIC_API_KEY":  "sk-test",
 		"ANTHROPIC_BASE_URL": srv.URL,
 		"ANTHROPIC_MODEL":    "claude-test",

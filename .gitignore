@@ -55,3 +55,9 @@ CLAUDE.md
 *.pem
 *.key
 ci_mod/
+
+# local monorepo weft get / install at repo root (not Go modules vendor)
+/vendor/
+/weft.lock
+# optional root app manifest from local experiments
+/weft.json

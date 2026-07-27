@@ -1,8 +1,9 @@
 // mold — pour LLM/API JSON into structured maps (offline)
-//   weft get mold ./packages/mold && weft install
+// Path-import monorepo package so cookbook eval needs no weft install.
+// Installable form: weft packages get mold && use mold
 //   weft run examples/cookbook/14_mold.weft
 
-use mold
+use "../../packages/mold/lib.weft" as mold
 
 fn main -> Result {
     // 1) define a mold (shorthands + field builders)

@@ -392,5 +392,3 @@ func TestMongo_BSONHelpers(t *testing.T) {
 		t.Fatal(stringifyID(42))
 	}
 }
-
-

@@ -15,15 +15,15 @@ import (
 func TestFullCover_BinstructAllCodes(t *testing.T) {
 	// x pad, B, h, H, i, I, q, f, d, s — big endian
 	b, err := bsPack(">xBhHiIqfd4s", []runtime.Value{
-		runtime.Int(1),          // B
-		runtime.Int(-2),         // h
-		runtime.Int(3),          // H
-		runtime.Int(-4),         // i
-		runtime.Int(5),          // I
-		runtime.Int(-6),         // q
-		runtime.Float(1.25),     // f
-		runtime.Float(2.5),      // d
-		runtime.Str("abcd"),     // 4s
+		runtime.Int(1),      // B
+		runtime.Int(-2),     // h
+		runtime.Int(3),      // H
+		runtime.Int(-4),     // i
+		runtime.Int(5),      // I
+		runtime.Int(-6),     // q
+		runtime.Float(1.25), // f
+		runtime.Float(2.5),  // d
+		runtime.Str("abcd"), // 4s
 	})
 	if err != nil {
 		t.Fatal(err)

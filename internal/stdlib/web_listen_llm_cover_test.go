@@ -577,4 +577,3 @@ func TestWeb_ListenBackgroundSmoke(t *testing.T) {
 		t.Fatalf("%d %s", resp.StatusCode, b)
 	}
 }
-

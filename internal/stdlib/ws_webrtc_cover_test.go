@@ -53,7 +53,7 @@ type hijackPair struct {
 	server net.Conn
 	client net.Conn
 	http.ResponseWriter
-	hdr http.Header
+	hdr  http.Header
 	code int
 }
 
@@ -361,19 +361,19 @@ func TestWebRTC_HubSignalFlow(t *testing.T) {
 
 	// scripted peer A
 	var (
-		muA    sync.Mutex
-		sentA  []string
-		recvA  = make(chan string, 16)
-		doneA  = make(chan struct{})
+		muA   sync.Mutex
+		sentA []string
+		recvA = make(chan string, 16)
+		doneA = make(chan struct{})
 	)
 	connA := fakeWSConn(t, &muA, &sentA, recvA, doneA)
 
 	// scripted peer B
 	var (
-		muB    sync.Mutex
-		sentB  []string
-		recvB  = make(chan string, 16)
-		doneB  = make(chan struct{})
+		muB   sync.Mutex
+		sentB []string
+		recvB = make(chan string, 16)
+		doneB = make(chan struct{})
 	)
 	connB := fakeWSConn(t, &muB, &sentB, recvB, doneB)
 
