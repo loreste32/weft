@@ -18,6 +18,7 @@ It is early (0.3.x). Useful for small tools; not a finished ecosystem.
 | Version | 0.3.30 (git `main`, through 0.3.35) |
 | Docs | [docs/README.md](docs/README.md) |
 | Ops notes | [docs/SYSOPS.md](docs/SYSOPS.md) |
+| Security | [SECURITY.md](SECURITY.md) |
 
 ## Status
 
@@ -26,8 +27,9 @@ Works for short scripts. Rough around the edges.
 - lex, parse, compile, stack VM  
 - `Result` / `?`, closures, string enums, `match`  
 - concurrent map/filter, spawn, channels  
-- path/git packages + vendor + lock  
+- path/git packages + vendor + lock; monorepo catalog (`ml`, `mold`, `tokensave`)  
 - LLM hooks (OpenAI-compat, Anthropic, Ollama, vLLM)  
+- HTMX-friendly `web` helpers (partials, OOB, cookies, `before`)  
 - basic tooling: `check`, `test`, `fmt`, `bench`, thin LSP  
 
 Still rough: gradual types, incomplete fmt/LSP edges, shallow stdlib in places, no public package registry.
@@ -93,10 +95,31 @@ The [examples/](examples/) directory has runnable scripts covering HTTP, CLI too
 
 ```bash
 weft run examples/webapp.weft           # small HTTP server
+weft run examples/htmx.weft             # HTMX partials
 weft run examples/cli_tool.weft -- --help
 weft run examples/sysops_host.weft -- info
 weft run examples/pipeline_etl.weft
 weft run examples/db_sqlite.weft
+
+# optional modules (install once)
+weft get mold ./packages/mold && weft install
+weft run examples/cookbook/14_mold.weft
+weft run examples/mold_ai.weft
+```
+
+## Optional packages
+
+Not in the binary — install what you need ([docs/packages.md](docs/packages.md)):
+
+| Package | Role |
+|---------|------|
+| [`mold`](packages/mold/) | Structured models, validate LLM JSON, JSON Schema / tool params — [docs/MOLD.md](docs/MOLD.md) |
+| [`ml`](packages/ml/) | Embeddings, vectors, RAG index — [docs/ML.md](docs/ML.md) |
+| [`tokensave`](packages/tokensave/) | Context thrift, memory, teach → train |
+
+```bash
+weft packages list
+weft packages get mold
 ```
 
 ## Documentation
@@ -109,6 +132,9 @@ weft run examples/db_sqlite.weft
 | [docs/COOKBOOK.md](docs/COOKBOOK.md) | Recipes |
 | [docs/SYSOPS.md](docs/SYSOPS.md) | Ops / runbooks |
 | [docs/STDLIB.md](docs/STDLIB.md) | Stdlib map |
+| [docs/MOLD.md](docs/MOLD.md) | Structured models module |
+| [docs/web.md](docs/web.md) | HTTP servers + HTMX |
+| [SECURITY.md](SECURITY.md) | Threat model / capabilities |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Now / next / never |
 
 ## Why this exists

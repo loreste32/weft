@@ -61,8 +61,19 @@ weft packages list embed        # filter by name/summary
 weft packages search rag        # same idea
 weft packages info tokensave    # one entry (path, version, install hints)
 weft packages get ml            # path dep + pin catalog version → install
+weft packages get mold          # structured models for agents
 weft packages get tokensave@^0.5.0   # constraint checked against catalog version
 ```
+
+#### Monorepo catalog (`packages/index.json`)
+
+| Name | Role | Docs |
+|------|------|------|
+| `ml` | embeddings, vectors, RAG index, metrics | [ML.md](ML.md) · [`packages/ml`](../packages/ml/) |
+| `mold` | structured models, validate, JSON Schema / tool params | [MOLD.md](MOLD.md) · [`packages/mold`](../packages/mold/) |
+| `tokensave` | context thrift, memory, teach → train | [`packages/tokensave`](../packages/tokensave/) |
+
+These are **modules**, not stdlib: nothing under `packages/` is compiled into the `weft` binary.
 
 - `WEFT_PACKAGES` — path to a packages dir or `index.json`  
 - `WEFT_CATALOG_URL` — HTTPS URL to a remote `index.json` (discovery only; install still uses path/git specs from the entry)
@@ -70,6 +81,8 @@ weft packages get tokensave@^0.5.0   # constraint checked against catalog versio
 Unknown names get “did you mean?” suggestions when close.
 
 `weft doctor` reports catalog discovery (`catalog`, `catalog_pkgs`), project deps, and vendor lock integrity when you are inside a project.
+
+**Trust:** package installs are trusted like local code. Review `capabilities` / `capability_profile` before installing third-party modules ([SECURITY.md](../SECURITY.md), [modules.md](modules.md)).
 
 ## Layout of a package
 

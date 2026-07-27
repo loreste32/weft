@@ -8,13 +8,20 @@ Practical defaults for agents, small APIs, queue workers, and CLIs on one binary
 |---------|-----|
 | HTTP hangs | Default client ~30s; per-call `timeout` / `timeout_ms` |
 | Cancel work | Pass a context into `RunSource` / `RunFile`; HTTP and LLM respect it |
-| Secrets in JSON | `Secret` prints as `***`; call `secrets.unwrap` only at the edge |
+| Secrets in JSON | `Secret` prints as `***`; only `secrets.unwrap` at the edge (not `json.get` / `.value`) |
+| Env LLM keys | Not sent to untrusted `base_url` hosts; set `WEFT_LLM_TRUST_HOSTS` for private gateways |
+| SSRF | Private/metadata IPs blocked by default; `insecure: true` skips TLS verify only |
+| Packages | Review `capabilities` before install; prefer pure modules (`mold`) when possible |
 | Multi-write SQL | `conn.begin` / `conn.tx(fn)` |
 | Queues | Redis brpop/blpop/subscribe; NATS/AMQP consume helpers |
-| Web server | Read/write/idle timeouts on `web.listen` |
+| Web server | Read/write/idle timeouts on `web.listen`; `app.before` for auth (routes + static + WS) |
+| Cookies (prod) | Set `secure: true` behind HTTPS; defaults are HttpOnly + SameSite=Lax |
+| Structured LLM JSON | Optional [`mold`](MOLD.md) module — validate / tool_params |
 | Logs | `log.info` / `warn` / `error` / `debug`, optional map of fields |
 | Hashing | `crypto.*` (sha256, hmac, …) |
-| Simple validation | `re.*` |
+| Simple validation | `re.*` or `mold` for object shapes |
+
+Full threat model: [SECURITY.md](../SECURITY.md).
 
 ## Patterns
 
@@ -85,8 +92,10 @@ err := weftCtx.RunFile(ctx, "worker.weft")
 1. Build: `go build -o weft ./cmd/weft`
 2. Ship the binary, your scripts, and `vendor/` if you use packages  
 3. Configure with env (`DATABASE_URL`, `REDIS_URL`, API keys, …)  
-4. Terminate TLS in front of `web.listen` if you expose HTTP  
+4. Terminate TLS in front of `web.listen` if you expose HTTP; set cookie `secure: true`  
 5. Run workers under systemd/k8s as you would any long process  
+6. Do not set `WEFT_HTTP_ALLOW_PRIVATE=1` on multi-tenant hosts  
+7. Do not register `sh` / broad `fs` tools on untrusted LLM prompts  
 
 ## Still elsewhere
 

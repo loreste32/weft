@@ -15,8 +15,9 @@ This folder is the human-facing docs set. Start with the language guide and the 
 | **[STDLIB.md](STDLIB.md)** | Stdlib map (`weft stdlib` for the live list) |
 | **[STDLIB_GAPS.md](STDLIB_GAPS.md)** | Coverage tiers A/B and permanent non-goals (C) |
 | **[ROADMAP.md](ROADMAP.md)** | Where we are (0.3.x) and what we will / won’t do |
+| **[../SECURITY.md](../SECURITY.md)** | Threat model, capabilities, operator checklist |
 
-Runnable recipe files: **[examples/cookbook/](../examples/cookbook/)** (offline-friendly).
+Runnable recipe files: **[examples/cookbook/](../examples/cookbook/)** (`01`…`14_mold`, offline-friendly).
 
 ## Topic guides
 
@@ -29,7 +30,7 @@ Runnable recipe files: **[examples/cookbook/](../examples/cookbook/)** (offline-
 | Packages (consumer) | [packages.md](packages.md) |
 | Modules (author) | [modules.md](modules.md) |
 | Pipelines / map-filter | [PIPELINES.md](PIPELINES.md) |
-| Web / HTTP servers | [web.md](web.md) |
+| Web / HTTP servers / HTMX | [web.md](web.md) |
 | CLI tools | [cli.md](cli.md) |
 | **Sysops / runbooks** | **[SYSOPS.md](SYSOPS.md)** |
 | Data / SQL / CSV | [data.md](data.md) |
@@ -38,7 +39,9 @@ Runnable recipe files: **[examples/cookbook/](../examples/cookbook/)** (offline-
 | Local Ollama / vLLM | [LLM_LOCAL.md](LLM_LOCAL.md) |
 | Fine-tune (private by default) | [FINETUNE.md](FINETUNE.md) |
 | ML module (optional) | [ML.md](ML.md) |
+| **mold** (structured models, optional) | **[MOLD.md](MOLD.md)** |
 | Production notes | [PRODUCTION.md](PRODUCTION.md) |
+| Security audits / notes | [security/](security/) |
 | Versioning (0.3.x) | [VERSIONING.md](VERSIONING.md) |
 | Product principles | [PRINCIPLES.md](PRINCIPLES.md) |
 | Brand / mascot | [BRAND.md](BRAND.md) |
@@ -73,16 +76,18 @@ fn main {
 
 | Path | Theme |
 |------|--------|
-| **`examples/cookbook/`** | Tutorial + cookbook recipes (offline) |
+| **`examples/cookbook/`** | Tutorial + cookbook recipes (offline; includes `14_mold`) |
 | `examples/hello.weft` | Minimal |
 | `examples/weft_style.weft` | Language feel |
 | `examples/errors_demo.weft` | `Result` / `?` |
 | `examples/json_http.weft` | JSON + env |
 | `examples/channels.weft` · `parallel.weft` | Concurrency |
 | `examples/cli_tool.weft` | Flags / subcommands |
-| `examples/server.weft` · `webapp.weft` | HTTP servers |
+| `examples/server.weft` · `webapp.weft` · `htmx.weft` | HTTP / HTMX |
+| `examples/mold_ai.weft` | mold module end-to-end |
 | `examples/realworld/` | Agents, pipelines |
 | `examples/pkg_demo/` · `modules/` | Packages |
+| `packages/{ml,mold,tokensave}` | Optional modules (catalog) |
 
 ## Mental model
 
@@ -94,6 +99,7 @@ source .weft  →  lex  →  parse  →  compile  →  stack VM
 - **Errors:** `Result` + `?` — no try/catch as the primary style  
 - **Concurrency:** ordinary `fn` + `map` / `parallel` / `spawn` — no `async`/`await`  
 - **Packages:** `vendor/` + lockfile, not a global site-packages  
+- **Optional modules:** `ml` · `mold` · `tokensave` under `packages/` (not in the binary)  
 - **Closures:** capture outer locals **by value** (deep-copied at creation)  
 
 ## What Weft is not

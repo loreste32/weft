@@ -6,11 +6,13 @@ Example optional domains (all modules, never built-ins):
 
 | Package | Role |
 |---------|------|
-| [`packages/ml`](../packages/ml) | embeddings / RAG / metrics — `weft get ml ./packages/ml` |
-| [`packages/mold`](../packages/mold) | structured models for agents — `weft get mold ./packages/mold` |
-| [`packages/tokensave`](../packages/tokensave) | memory / teach → train |
+| Package | Role | Docs |
+|---------|------|------|
+| [`packages/ml`](../packages/ml) | embeddings / RAG / metrics | [ML.md](ML.md) · `weft get ml ./packages/ml` |
+| [`packages/mold`](../packages/mold) | structured models for agents | [MOLD.md](MOLD.md) · `weft get mold ./packages/mold` |
+| [`packages/tokensave`](../packages/tokensave) | memory / teach → train | `weft get tokensave ./packages/tokensave` |
 
-Core stays lean; install only what an app needs.
+Core stays lean; install only what an app needs. **None of these are built-ins.**
 
 Anyone can publish libraries that other Weft apps install with `weft get` — **no environment activation, no central registry required**. Modules are folders of `.weft` source + `weft.json`.
 

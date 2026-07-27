@@ -31,7 +31,7 @@ weft test examples/cookbook -q
 10. [Concurrency](#10-concurrency)  
 11. [CLI tools](#11-cli-tools)  
 12. [Environment and secrets](#12-environment-and-secrets)  
-13. [LLM and agents](#13-llm-and-agents)  
+13. [LLM and agents](#13-llm-and-agents) (incl. [structured models / mold](#structured-models-mold-module))  
 14. [Packages and multi-file](#14-packages-and-multi-file)  
 15. [Testing](#15-testing)  
 16. [Time, strings, regex](#16-time-strings-regex)  

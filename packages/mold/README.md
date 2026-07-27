@@ -81,6 +81,19 @@ fn main -> Result {
 
 No host capabilities required (pure logic + `json`).
 
+## Limits
+
+| Cap | Value |
+|-----|--------|
+| Nest depth | 32 |
+| List length | 10 000 |
+
+## Docs
+
+- Topic guide: [`docs/MOLD.md`](../../docs/MOLD.md)
+- Cookbook: [`examples/cookbook/14_mold.weft`](../../examples/cookbook/14_mold.weft)
+- Catalog: `weft packages get mold`
+
 ## Tests
 
 ```bash

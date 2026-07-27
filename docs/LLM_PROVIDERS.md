@@ -60,6 +60,31 @@ fn main -> Result {
 
 **Context thrift (all providers):** use the external module [`packages/tokensave`](../packages/tokensave) — `tokensave.brain` / `pick` so models get only relevant context (local or paid).
 
+**Structured models / tool params:** optional module [`mold`](MOLD.md) — define molds, `mold.parse` / `mold.extract` model JSON, emit `mold.tool_params` / `mold.json_schema` for providers. Not in the binary:
+
+```bash
+weft get mold ./packages/mold && weft install
+```
+
+```weft
+use mold
+
+Args := mold.model({
+    "city": mold.str({"desc": "city name"})?,
+})?
+
+fn main -> Result {
+    a := mold.parse(Args, "{\"city\":\"Paris\"}")?
+    say(json.stringify(mold.tool_params(Args)))
+}
+```
+
+Cookbook: `examples/cookbook/14_mold.weft`.
+
+### Env keys and custom `base_url`
+
+Process env API keys (`OPENAI_API_KEY`, …) are only sent to **trusted hostnames** (OpenAI/Anthropic, localhost/loopback, plus `WEFT_LLM_TRUST_HOSTS`). Path/substring spoofs are rejected. Prefer `secrets` + explicit keys for non-standard hosts. See [SECURITY.md](../SECURITY.md).
+
 ## OpenAI-compat (any host)
 
 ```bash

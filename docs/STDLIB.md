@@ -172,7 +172,22 @@ Charts to SVG/HTML: [viz.md](viz.md).
 - No every cloud vendor SDK  
 - Messaging drivers (`redis`, `nats`, `amqp`, `mongo`) are thin connectors, not full clients  
 
-If something is huge or domain-specific, prefer a **module** under `packages/` rather than growing the binary forever ([modules.md](modules.md), [ML.md](ML.md)).
+If something is huge or domain-specific, prefer a **module** under `packages/` rather than growing the binary forever ([modules.md](modules.md)).
+
+### Optional modules (not stdlib)
+
+Install with `weft get` / `weft packages get` — pure `.weft`, not in the binary:
+
+| Module | Job | Doc |
+|--------|-----|-----|
+| `mold` | Structured models, LLM JSON validate, JSON Schema / tool params | [MOLD.md](MOLD.md) |
+| `ml` | Embeddings, vectors, RAG index, metrics | [ML.md](ML.md) |
+| `tokensave` | Context thrift, memory, teach → train | [`packages/tokensave`](../packages/tokensave/) |
+
+```bash
+weft packages list
+weft packages get mold && weft install
+```
 
 ---
 

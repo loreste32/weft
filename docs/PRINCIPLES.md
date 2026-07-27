@@ -36,6 +36,7 @@ If something needs three lines of ceremony for one idea, the API (or the example
 | opts you need | dumping every option “for documentation” |
 | `weft` (REPL) | ceremony-heavy notebooks for one-off prompts |
 | `llm.stream` / `llm.extract` | framework-sized structured-output stacks |
+| `mold` module when you need models | growing core stdlib for every schema library |
 
 Keep demos short enough to scan. Cut spare comments and unused options.
 

@@ -4,12 +4,16 @@
 
 | Package | Role |
 |---------|------|
-| [`ml`](ml/) | embeddings, vectors, RAG index, metrics |
-| [`tokensave`](tokensave/) | model brain — clarify asks, memory, train export (local **and** paid) |
-| [`mold`](mold/) | pour LLM/API JSON into shape — validate, JSON Schema, tool params |
+| Package | Role | Docs |
+|---------|------|------|
+| [`ml`](ml/) | embeddings, vectors, RAG index, metrics | [docs/ML.md](../docs/ML.md) |
+| [`tokensave`](tokensave/) | model brain — clarify asks, memory, train export | package README |
+| [`mold`](mold/) | pour LLM/API JSON into shape — validate, JSON Schema, tool params | [docs/MOLD.md](../docs/MOLD.md) |
 
 ```bash
 weft get ml ./packages/ml   # monorepo path
+weft get mold ./packages/mold
+weft packages get tokensave
 weft install
 ```
 

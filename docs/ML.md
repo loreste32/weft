@@ -6,6 +6,8 @@
 |-------|--------|------|
 | **Core binary** | `llm` · `ollama` · `vllm` · `weft train` | chat, local providers, fine-tune orchestration |
 | **`packages/ml`** | installable Weft module | light vectors / embeddings / metrics for RAG |
+
+Related optional modules: **[`mold`](MOLD.md)** (structured JSON / tool params) · **[`tokensave`](../packages/tokensave/)** (context thrift).
 | **External** | GPU train (TRL), heavy science | optional training toolchains, notebooks, remote services |
 
 ## Why a separate module?

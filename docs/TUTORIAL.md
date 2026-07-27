@@ -244,6 +244,22 @@ fn main {
 
 Packages with `vendor/`: [packages.md](packages.md). Try later: `weft new module greeter`.
 
+### Optional catalog modules (later)
+
+Not in the binary — install when you need them:
+
+```bash
+weft packages list
+weft get mold ./packages/mold && weft install
+./weft run examples/cookbook/14_mold.weft   # structured models for agents
+```
+
+| Module | Doc |
+|--------|-----|
+| `mold` | [MOLD.md](MOLD.md) — validate LLM JSON, tool params |
+| `ml` | [ML.md](ML.md) — embeddings / RAG |
+| `tokensave` | context thrift / memory |
+
 ---
 
 ## Minute 55–60 — Check, test, CLI

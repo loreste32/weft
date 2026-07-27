@@ -152,6 +152,10 @@ web.clear_cookie("sid")
 
 Opts for `web.cookie`: `path`, `max_age`, `http_only`, `secure`, `same_site`.
 
+Defaults: **HttpOnly=true**, **SameSite=Lax**, **Secure=false** (local HTTP). In production behind HTTPS, pass `"secure": true`. Cookie names reject `;` / CR/LF; OOB target ids are restricted to `[A-Za-z0-9_-]`.
+
+Forms: `req.form` / `req.form_all` / `req.files` (multipart: body ≤ 32 MiB, part ≤ 8 MiB, max **1024** parts).
+
 ### Middleware
 
 ```weft
@@ -164,6 +168,8 @@ app.before(fn(req) {
 ```
 
 Return a response map (`status` / `body` / `headers` / `cookies`) to stop; `null` / `false` continues.
+
+`app.before` runs for **routes, static files, and WebSocket upgrades** — auth cannot be skipped via `/static` or WS alone.
 
 ### Files
 
