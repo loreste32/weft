@@ -30,6 +30,7 @@ Runnable recipe files: **[examples/cookbook/](../examples/cookbook/)** (offline-
 | Pipelines / map-filter | [PIPELINES.md](PIPELINES.md) |
 | Web / HTTP servers | [web.md](web.md) |
 | CLI tools | [cli.md](cli.md) |
+| **Sysops / runbooks** | **[SYSOPS.md](SYSOPS.md)** |
 | Data / SQL / CSV | [data.md](data.md) |
 | Charts | [viz.md](viz.md) |
 | LLM providers | [LLM_PROVIDERS.md](LLM_PROVIDERS.md) |

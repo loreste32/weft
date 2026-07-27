@@ -1,0 +1,129 @@
+// Sysops host check — facts, toolchain presence, shell glue.
+// Offline-friendly (no network). Exit 0 when ok; non-zero if a required tool is missing.
+//
+//   weft run examples/sysops_host.weft -- info
+//   weft run examples/sysops_host.weft -- tools
+//   weft run examples/sysops_host.weft -- check
+//   weft run examples/sysops_host.weft -- shell 'uname -a'
+
+fn need_tool(name) {
+    p := sh.which(name)
+    if p == null {
+        return Err("missing required tool: " + name, "sysops")
+    }
+    Ok(p)
+}
+
+fn main -> Result {
+    p := cli.parse({
+        "about": "sysops_host — host facts and toolchain checks for ops scripts",
+        "flags": {
+            "verbose": {"short": "v", "bool": true, "help": "debug logging"},
+            "require": {
+                "short": "r",
+                "default": "git,sh",
+                "help": "comma-separated tools that must be on PATH (check mode)",
+            },
+        },
+    })?
+    if p.help || len(p.args) == 0 {
+        say(p.usage)
+        say("commands: info | tools | check | shell <line>")
+        cli.exit(0)
+    }
+
+    log.set_level("info")
+    if p.verbose {
+        log.set_level("debug")
+    }
+
+    cmd := p.args[0]
+
+    if cmd == "info" {
+        u := platform.uname()
+        say(json.pretty({
+            "os": platform.os(),
+            "arch": platform.arch(),
+            "hostname": env.hostname(),
+            "user": env.user(),
+            "home": env.home(),
+            "pid": env.pid(),
+            "cwd": fs.cwd(),
+            "cpus": platform.cpus(),
+            "uname": u,
+            "weft": "sysops_host",
+        }))
+        return Ok(unit)
+    }
+
+    if cmd == "tools" {
+        for name in ["git", "sh", "curl", "docker", "kubectl", "jq", "ssh"] {
+            path := sh.which(name)
+            if path == null {
+                say(name + "\t(missing)")
+            } else {
+                say(name + "\t" + path)
+            }
+        }
+        return Ok(unit)
+    }
+
+    if cmd == "check" {
+        mut ok_n := 0
+        mut bad := []
+        parts := str.split(p.require, ",")
+        for raw in parts {
+            name := str.trim(raw)
+            if name == "" {
+                continue
+            }
+            path := sh.which(name)
+            if path == null {
+                log.error("tool missing", name)
+                push(bad, name)
+            } else {
+                log.info("tool ok", name, path)
+                ok_n = ok_n + 1
+            }
+        }
+        // Always prove shell + fs work on this host.
+        uname := sh.capture("uname", ["-s"])?
+        cwd := fs.cwd()
+        say(json.pretty({
+            "tools_ok": ok_n,
+            "missing": bad,
+            "uname": str.trim(uname),
+            "cwd": cwd,
+            "cwd_exists": fs.exists(cwd),
+        }))
+        if len(bad) > 0 {
+            return Err("missing tools: " + str.join(bad, ","), "sysops")
+        }
+        return Ok(unit)
+    }
+
+    if cmd == "shell" {
+        if len(p.args) < 2 {
+            cli.die("usage: shell <command line>")
+        }
+        mut line := p.args[1]
+        mut i := 2
+        while i < len(p.args) {
+            line = line + " " + p.args[i]
+            i = i + 1
+        }
+        r := sh.shell(line)?
+        if r.stdout != "" {
+            print(r.stdout)
+        }
+        if r.stderr != "" {
+            io.eprint(r.stderr)
+        }
+        if !r.ok {
+            cli.exit(r.code)
+        }
+        return Ok(unit)
+    }
+
+    cli.die("unknown command: " + cmd + " (try info|tools|check|shell)")
+}

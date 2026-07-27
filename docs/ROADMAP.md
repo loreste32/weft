@@ -28,6 +28,7 @@ We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.3.
 - LLM: OpenAI-compatible, Anthropic tools, Ollama, vLLM; private fine-tune is optional and GPU-side  
 - Stdlib for I/O, HTTP, web, text/math, config (yaml/toml/ini), some “lite” cousins of common Python modules  
 - Day-to-day tools: `weft check`, `test`, `fmt`, `bench`, `stdlib`, LSP (incl. format)  
+- Sysops surface: `sh`/`fs`/`cli`/`env`/`platform`/`secrets` + host-check example ([SYSOPS.md](SYSOPS.md))  
 - Docs: tutorial, language reference, cookbook + `examples/cookbook/` (CI smoke)  
 - Gold corpus includes closures, enums, and match (train eval 100%)  
 - Agent/LLM ergonomics: multi-turn `llm.chat`, `ask`+opts, `stream_text` (in gold corpus)  

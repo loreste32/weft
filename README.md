@@ -35,6 +35,7 @@ Still rough: types are gradual, LSP/fmt are practical but not gofmt/IDE-grade, s
 | Stdlib | I/O, http, llm, db, text/math helpers — `weft stdlib` |
 | Concurrency | fan-out map/filter, spawn, channels — [CONCURRENCY](docs/CONCURRENCY.md) |
 | Packages | path/git + vendor + lock; catalog; lite semver ranges |
+| Sysops | `sh` / `fs` / `cli` / `env` / `platform` / `secrets` — [SYSOPS](docs/SYSOPS.md), `examples/sysops_host.weft` |
 
 ## Where we hope to go
 
