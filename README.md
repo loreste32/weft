@@ -7,46 +7,50 @@ Weave agents into code.
 
 ![Wifty — Weft mascot](assets/brand/wifty.jpg)
 
-**Weft** is a small scripting language for **LLM agents**, **HTTP glue**, and **ops automation**. One Go binary. Own syntax (`:=`, braces, `Result`/`?`). Packages install into `vendor/` like a lockfile workflow.
+Weft is a small scripting language for agent scripts, HTTP glue, and light ops work. It ships as one Go binary, uses its own syntax (`:=`, braces, `Result`/`?`), and installs packages into `vendor/`.
+
+It is early (0.3.x). Useful for small tools; not a finished ecosystem.
 
 | | |
 |--|--|
 | CLI | `weft` |
 | Files | `.weft` |
-| Version | 0.3.27 (git `main`, patch line through 0.3.35) |
-| Mascot | Wifty |
-| Brand | [docs/BRAND.md](docs/BRAND.md) |
-| Sysops | [docs/SYSOPS.md](docs/SYSOPS.md) |
+| Version | 0.3.27 (git `main`, through 0.3.35) |
+| Docs | [docs/README.md](docs/README.md) |
+| Ops notes | [docs/SYSOPS.md](docs/SYSOPS.md) |
 
 ## Where we are (0.3.27)
 
-Weft is **usable** for agent scripts, HTTP glue, workers, and small ops tools. It is **early** as a language ecosystem — not a finished platform.
+Works well enough for short agent scripts, HTTP glue, workers, and small CLIs:
 
-You get a single binary, a real language loop (lex → parse → compile → stack VM), `Result`/`?` errors, concurrent map/filter without `async`/`await`, **closures that capture outer locals by value**, string enums + richer `match`, vendored packages, LLM providers (OpenAI-compat, Anthropic, Ollama, vLLM), and day-to-day commands (`check`, `test`, `fmt`, `bench`). Optional private fine-tune stays on your GPU; cloud upload is opt-in.
+- lex → parse → compile → stack VM  
+- `Result` / `?`, closures (capture by value), string enums, `match`  
+- concurrent map/filter, spawn, channels (no `async`/`await`)  
+- path/git packages + vendor + lock; small monorepo catalog  
+- LLM hooks (OpenAI-compat, Anthropic, Ollama, vLLM)  
+- day-to-day tools: `check`, `test`, `fmt`, `bench`, thin LSP  
 
-Still rough: types are gradual, LSP/fmt are practical but not IDE-grade, stdlib is broad-and-shallow, and there is no public package registry yet (path/git + monorepo catalog; optional `WEFT_CATALOG_URL` and lite `^`/`~`/`>=` constraints).
+Still rough: gradual types, incomplete fmt/LSP edges, shallow stdlib in places, no public package registry.
 
 | Area | Notes |
 |------|--------|
-| Language | lex → parse → compile → stack VM; closures; `enum` / `match` |
+| Language | stack VM; closures; `enum` / `match` |
 | Syntax | `:=`, `mut`, `use`, `say`, `$interp`, `?` — [SYNTAX](docs/SYNTAX.md) |
 | Check / test | `weft check`, `weft test` — [TESTING](docs/TESTING.md) |
 | Errors | `Result` + `?` — [ERRORS](docs/ERRORS.md) |
-| Tooling | fmt, bench, stdlib list, thin LSP — [TOOLING](docs/TOOLING.md) |
-| Stdlib | I/O, http, llm, db, text/math helpers — `weft stdlib` |
-| Concurrency | fan-out map/filter, spawn, channels — [CONCURRENCY](docs/CONCURRENCY.md) |
-| Packages | path/git + vendor + lock; catalog; lite semver ranges |
-| Sysops | `sh` / `fs` / `cli` / `env` / `platform` / `secrets` — [SYSOPS](docs/SYSOPS.md), `examples/sysops_host.weft` |
+| Tooling | fmt, bench, stdlib list, LSP — [TOOLING](docs/TOOLING.md) |
+| Stdlib | I/O, http, llm, db, helpers — `weft stdlib` |
+| Concurrency | map/filter fan-out, spawn, channels — [CONCURRENCY](docs/CONCURRENCY.md) |
+| Packages | path/git + vendor + lock |
+| Ops | `sh` / `fs` / `cli` / `env` — [SYSOPS](docs/SYSOPS.md) |
 
 ## Where we hope to go
 
-Through **0.3.35** we want the boring parts to feel ordinary: clearer errors, sturdier check/test/fmt, stdlib only where scripts hurt, better modules, a less painful editor story, and honest docs.
+Through **0.3.35**: clearer errors, more reliable check/test/fmt, stdlib only where scripts hurt, slightly better editing, honest docs. No rush to 1.0.
 
-We are **not** aiming at scientific array stacks, in-process GPU training frameworks, or `async`/`await` keywords. A public registry or fancier packaging only if path/git becomes a real tax.
+Out of scope for core: heavy scientific compute, in-process training stacks, `async`/`await`. A public registry only if path/git becomes painful.
 
-**Documentation:** **[docs/README.md](docs/README.md)** (index) · **[docs/TUTORIAL.md](docs/TUTORIAL.md)** (first hour) · **[docs/LANGUAGE.md](docs/LANGUAGE.md)** (language reference) · **[docs/COOKBOOK.md](docs/COOKBOOK.md)** (recipes) · **[docs/STDLIB.md](docs/STDLIB.md)** (stdlib map) · **[docs/SYSOPS.md](docs/SYSOPS.md)** (ops) · **[examples/cookbook/](examples/cookbook/)** (runnable recipes).
-
-Longer write-up: **[docs/ROADMAP.md](docs/ROADMAP.md)** (now / next / never). Version policy: [docs/VERSIONING.md](docs/VERSIONING.md). Ops notes: [docs/PRODUCTION.md](docs/PRODUCTION.md).
+More detail: [docs/ROADMAP.md](docs/ROADMAP.md) · [docs/VERSIONING.md](docs/VERSIONING.md) · [docs/PRODUCTION.md](docs/PRODUCTION.md)
 
 ## Quick start
 
@@ -131,9 +135,9 @@ reply := vllm.chat({"model": "…", "prompt": "hi"})?
 
 Docs: [`docs/LLM_LOCAL.md`](docs/LLM_LOCAL.md) · ML module: [`docs/ML.md`](docs/ML.md) · roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md)
 
-### Fine-tune (private by default)
+### Fine-tune (optional, private by default)
 
-Training data can stay on machines you control — open frontier LoRA, air-gap packs, or a VPC fine-tune API.
+If you train, data can stay on machines you control (local LoRA, air-gap pack, or explicit cloud upload).
 
 ```bash
 # Merge confidential domain rows + train locally (nothing uploaded)
@@ -329,26 +333,18 @@ fn main() -> Result {
 | [docs/SYNTAX.md](docs/SYNTAX.md) | Short cheatsheet |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Now / next / never |
 
-## Why Weft
+## Why this exists
 
-| Need | Weft |
-|------|------|
-| Fast start for scripts | Single static-friendly Go binary |
-| Safe concurrent glue | Tasks + deep-copy; channels preferred |
-| No async function coloring | `spawn` / groups / map fan-out by default |
-| Predictable packaging | Stdlib in the binary + `vendor/` + lock |
-| Clear structure | Required braces; small surface |
-| Agents as first-class | Tools, `llm.ask` / `llm.agent`, structured decode |
+We needed a small language for agent tools and ops glue: one binary, explicit errors, simple packages. Weft is that experiment. It may fit your scripts; it may not. Try the examples and decide.
 
-## Design principles
+Rough tradeoffs we chose:
 
-1. **LLM-native, not LLM-adjacent** — messages, tools, structured output, streaming are language concerns.
-2. **Honest performance** — advertise startup and parallel I/O; measure compute before claiming wins.
-3. **Small language, rich builtins** — keep syntax tight; put power in Go-registered stdlib.
-4. **Predictable failures** — `Result[T]` + `?`, not exception soup.
-5. **Ship slices** — MVP-0 is `hello`; MVP-1 is sequential agent-with-tools.
+- small syntax over a large language  
+- `Result` / `?` over exceptions  
+- concurrent helpers without `async`/`await`  
+- stdlib in the binary + `vendor/` packages  
 
-Full architecture: [`docs/weft-design.md`](docs/weft-design.md) · Brand: [`docs/BRAND.md`](docs/BRAND.md) · Principles: [`docs/PRINCIPLES.md`](docs/PRINCIPLES.md) · Docs hub: [`docs/README.md`](docs/README.md).
+Principles and design notes: [docs/PRINCIPLES.md](docs/PRINCIPLES.md) · [docs/weft-design.md](docs/weft-design.md) · [docs/BRAND.md](docs/BRAND.md).
 
 ## Develop
 
