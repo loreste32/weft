@@ -1,0 +1,179 @@
+// Durable brain memory — gets smarter with use (local + paid).
+// Store episodes as JSONL: ask, goal, kind, docs used, ok score.
+
+use "./pick.weft" as pickmod
+use "./est.weft" as est
+
+fn empty_store() {
+    {"episodes": [], "version": 1}
+}
+
+// load(path) -> Result[store]
+pub fn load(path) -> Result {
+    if !fs.exists(path) {
+        return Ok(empty_store())
+    }
+    raw := fs.read(path)?
+    if raw == "" {
+        return Ok(empty_store())
+    }
+    // JSON object store preferred; fall back to empty
+    data := json.parse(raw)?
+    Ok(data)
+}
+
+// save(path, store) -> Result
+pub fn save(path, store) -> Result {
+    fs.write(path, json.stringify(store))?
+    Ok(1)
+}
+
+// remember(path, episode) -> Result
+// episode: {ask, goal, kind, docs, ok?, score?, note?}
+pub fn remember(path, episode) -> Result {
+    st := load(path)?
+    mut eps := []
+    if contains(keys(st), "episodes") {
+        eps = st.episodes
+    }
+    ep := episode
+    id := "e" + time.now() + "-" + len(eps)
+    mut okv := true
+    mut score := 1
+    mut note := ""
+    mut eid := id
+    mut docs := []
+    eks := keys(ep)
+    if contains(eks, "ok") { okv = ep.ok }
+    if contains(eks, "score") { score = ep.score }
+    if contains(eks, "note") { note = "" + ep.note }
+    if contains(eks, "id") { eid = "" + ep.id }
+    if contains(eks, "docs") { docs = ep.docs }
+    row := {
+        "id": eid,
+        "ask": "" + ep.ask,
+        "goal": "" + ep.goal,
+        "kind": "" + ep.kind,
+        "docs": docs,
+        "ok": okv,
+        "score": score,
+        "ts": time.now(),
+        "note": note,
+    }
+    push(eps, row)
+    mut maxn := 500
+    if len(eps) > maxn {
+        mut start := len(eps) - maxn
+        mut kept := []
+        mut i := start
+        while i < len(eps) {
+            push(kept, eps[i])
+            i = i + 1
+        }
+        eps = kept
+    }
+    save(path, {"episodes": eps, "version": 1})?
+    Ok(row)
+}
+
+// recall(path, ask, k) -> [docs] from past successful episodes (relevant only)
+// Higher-score / noted answers are repeated so the brain gets smarter with use.
+pub fn recall(path, ask, k) -> Result {
+    store := load(path)?
+    mut kk := k
+    if kk == null || kk <= 0 { kk = 3 }
+    mut pool := []
+    if !contains(keys(store), "episodes") {
+        return Ok([])
+    }
+    for ep in store.episodes {
+        mut okv := true
+        if contains(keys(ep), "ok") { okv = ep.ok }
+        if !okv { continue }
+        mut weight := 1
+        if contains(keys(ep), "score") && ep.score > 1 { weight = ep.score }
+        // pull docs (repeat high-score ones for pick bias)
+        if contains(keys(ep), "docs") && ep.docs != null {
+            for d in ep.docs {
+                mut w := 0
+                while w < weight && w < 3 {
+                    push(pool, "" + d)
+                    w = w + 1
+                }
+            }
+        }
+        if contains(keys(ep), "goal") {
+            push(pool, "Past goal: " + ep.goal)
+        }
+        // successful model answers become teaching context for local models
+        if contains(keys(ep), "note") && ep.note != "" {
+            push(pool, "Known good answer: " + ep.note)
+        }
+    }
+    picked := pickmod.pick(ask, pool, kk)
+    Ok(picked)
+}
+
+// feedback(path, ask, ok, note?) — mark latest matching episode or append
+pub fn feedback(path, ask, ok, note) -> Result {
+    store := load(path)?
+    mut eps := []
+    if contains(keys(store), "episodes") { eps = store.episodes }
+    mut found := false
+    mut i := len(eps) - 1
+    while i >= 0 {
+        ep := eps[i]
+        if ep.ask == ask || str.contains("" + ep.ask, "" + ask) || str.contains("" + ask, "" + ep.ask) {
+            mut score := 0
+            if ok { score = 1 }
+            mut n := ""
+            if note != null { n = "" + note }
+            eps[i] = {
+                "id": ep.id,
+                "ask": ep.ask,
+                "goal": ep.goal,
+                "kind": ep.kind,
+                "docs": ep.docs,
+                "ok": ok,
+                "score": score,
+                "ts": time.now(),
+                "note": n,
+            }
+            found = true
+            break
+        }
+        i = i - 1
+    }
+    if !found {
+        remember(path, {
+            "ask": ask,
+            "goal": ask,
+            "kind": "short",
+            "docs": [],
+            "ok": ok,
+            "note": note,
+        })?
+        return Ok(1)
+    }
+    save(path, {"episodes": eps, "version": 1})?
+    Ok(1)
+}
+
+// stats(path) -> {n, ok, fail}
+pub fn stats(path) -> Result {
+    store := load(path)?
+    mut n := 0
+    mut ok := 0
+    mut fail := 0
+    if contains(keys(store), "episodes") {
+        for ep in store.episodes {
+            n = n + 1
+            if contains(keys(ep), "ok") && ep.ok {
+                ok = ok + 1
+            } else {
+                fail = fail + 1
+            }
+        }
+    }
+    Ok({"n": n, "ok": ok, "fail": fail})
+}

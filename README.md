@@ -101,10 +101,11 @@ weft run examples/sysops_host.weft -- info
 weft run examples/pipeline_etl.weft
 weft run examples/db_sqlite.weft
 
-# optional modules (install once)
+# optional modules — cohesive offline stack
+cd examples/agent_stack && weft install && weft run main.weft
+# or mold alone:
 weft get mold ./packages/mold && weft install
 weft run examples/cookbook/14_mold.weft
-weft run examples/mold_ai.weft
 ```
 
 ## How it fits together

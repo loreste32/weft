@@ -1,0 +1,99 @@
+// Keep only relevant snippets. Drop noise. Prefer high signal / low waste.
+
+fn words(s) {
+    str.fields("" + s)
+}
+
+fn is_stop(w) {
+    // tiny stop list — not English NLP, just thrift
+    x := str.lower(w)
+    if x == "the" || x == "a" || x == "an" || x == "and" || x == "or" || x == "to" || x == "of" || x == "in" || x == "for" || x == "is" || x == "are" || x == "on" || x == "with" || x == "how" || x == "do" || x == "i" || x == "my" || x == "me" {
+        return true
+    }
+    false
+}
+
+fn score(task_words, chunk) {
+    if chunk == null { return 0 }
+    c := str.lower("" + chunk)
+    mut hit := 0
+    for w in task_words {
+        ww := str.lower("" + w)
+        if len(ww) < 3 { continue }
+        if is_stop(ww) { continue }
+        if str.contains(c, ww) { hit = hit + 1 }
+    }
+    // density: reward short high-hit snippets (more signal per token)
+    mut dens := hit * 10
+    n := len(c)
+    if n > 0 {
+        dens = dens - (n / 80)
+    }
+    if dens < 0 { dens = 0 }
+    dens
+}
+
+fn chunk_text(ch) {
+    if ch == null { return "" }
+    // string or value coerced
+    "" + ch
+}
+
+// pick(task, chunks, k) -> [str]  top-k relevant only
+pub fn pick(task, chunks, k) {
+    if chunks == null || len(chunks) == 0 { return [] }
+    mut kk := k
+    if kk == null || kk <= 0 { kk = 3 }
+    tw := words(task)
+    mut scored := []
+    mut i := 0
+    while i < len(chunks) {
+        tbody := chunk_text(chunks[i])
+        sc := score(tw, tbody)
+        push(scored, {"s": sc, "t": tbody})
+        i = i + 1
+    }
+    mut a := scored
+    mut n := len(a)
+    mut x := 0
+    while x < n {
+        mut best := x
+        mut y := x + 1
+        while y < n {
+            if a[y].s > a[best].s { best = y }
+            y = y + 1
+        }
+        if best != x {
+            tmp := a[x]
+            a[x] = a[best]
+            a[best] = tmp
+        }
+        x = x + 1
+    }
+    mut out := []
+    mut j := 0
+    while j < kk && j < n {
+        if a[j].s > 0 {
+            push(out, a[j].t)
+        }
+        j = j + 1
+    }
+    out
+}
+
+// pick_examples(task, bank, k) — bank items are {q, a} or strings "q => a"
+pub fn pick_examples(task, bank, k) {
+    if bank == null || len(bank) == 0 { return [] }
+    mut kk := k
+    if kk == null || kk <= 0 { kk = 1 }
+    // score by q (or full string)
+    mut texts := []
+    mut i := 0
+    while i < len(bank) {
+        b := bank[i]
+        // coerce whole item to string for scoring; prefer .q if present via stringify
+        push(texts, "" + b)
+        i = i + 1
+    }
+    pick(task, texts, kk)
+}

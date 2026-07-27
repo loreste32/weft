@@ -132,6 +132,10 @@ done
 # ML as separate module (not core stdlib)
 /tmp/weft-ci mod check packages/ml | grep -q exports
 (
+  # cohesive agent stack (mold + tokensave + ml, offline)
+  (cd examples/agent_stack && /tmp/weft-ci install && /tmp/weft-ci run main.weft) | tee /tmp/weft-agent-stack.txt
+  grep -q "agent stack ok" /tmp/weft-agent-stack.txt
+
   cd examples/ml_demo
   /tmp/weft-ci install >/dev/null
   test -d vendor/ml

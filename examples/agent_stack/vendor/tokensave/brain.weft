@@ -1,0 +1,180 @@
+// Brain: clarify → recall memory → pick → pack → optional remember.
+// Gets smarter with use; feeds local + paid models better tasks.
+
+use "./pick.weft" as pickmod
+use "./pack.weft" as packmod
+use "./clarify.weft" as clar
+use "./memory.weft" as mem
+
+// brain(ask, knowledge, opts?)
+// opts.memory_path — JSON store; when set, recall past successes and auto-remember
+// opts.remember — default true if memory_path set
+// opts.clarify — default true
+pub fn brain(ask, knowledge, opts) {
+    mut k := 3
+    mut kind := ""
+    mut max_total := 1200
+    mut max_docs := 3
+    mut max_doc_tokens := 120
+    mut hist := null
+    mut keep_last := 4
+    mut hints := null
+    mut examples_bank := null
+    mut n_ex := 1
+    mut do_frame := true
+    mut do_clarify := true
+    mut memory_path := ""
+    mut do_remember := true
+    mut recall_k := 2
+    if opts != null {
+        ks := keys(opts)
+        if contains(ks, "k") { k = opts.k }
+        if contains(ks, "kind") && opts.kind != "" { kind = opts.kind }
+        if contains(ks, "max_total") { max_total = opts.max_total }
+        if contains(ks, "max_docs") { max_docs = opts.max_docs }
+        if contains(ks, "max_doc_tokens") { max_doc_tokens = opts.max_doc_tokens }
+        if contains(ks, "history") { hist = opts.history }
+        if contains(ks, "keep_last") { keep_last = opts.keep_last }
+        if contains(ks, "hints") { hints = opts.hints }
+        if contains(ks, "examples") { examples_bank = opts.examples }
+        if contains(ks, "n_examples") { n_ex = opts.n_examples }
+        if contains(ks, "frame") { do_frame = opts.frame }
+        if contains(ks, "clarify") { do_clarify = opts.clarify }
+        if contains(ks, "memory_path") { memory_path = "" + opts.memory_path }
+        if contains(ks, "remember") { do_remember = opts.remember }
+        if contains(ks, "recall_k") { recall_k = opts.recall_k }
+    }
+
+    mut task := "" + ask
+    mut clarified := null
+    if do_clarify {
+        mut c_opts := {}
+        if kind != "" { c_opts = {"kind": kind} }
+        if hints != null {
+            hks := keys(hints)
+            mut cm := ""
+            mut ca := ""
+            mut cf := ""
+            if contains(hks, "must") { cm = "" + hints.must }
+            if contains(hks, "avoid") { ca = "" + hints.avoid }
+            if contains(hks, "format") { cf = "" + hints.format }
+            c_opts = {"kind": kind, "must": cm, "avoid": ca, "format": cf}
+        }
+        clarified = clar.clarify(ask, c_opts)
+        task = clarified.goal
+        if kind == "" { kind = clarified.kind }
+        if hints == null {
+            hints = {
+                "must": clarified.must,
+                "avoid": clarified.avoid,
+                "format": clarified.format,
+            }
+        }
+    }
+    if kind == "" { kind = "short" }
+
+    mut pick_q := task
+    if clarified != null {
+        pick_q = ("" + clarified.raw) + " " + clarified.goal
+    }
+
+    // merge live knowledge + recalled memory
+    mut pool := []
+    if knowledge != null {
+        for d in knowledge {
+            push(pool, d)
+        }
+    }
+    mut recalled := []
+    if memory_path != "" {
+        r := mem.recall(memory_path, pick_q, recall_k)
+        if r.ok {
+            recalled = r.value
+            for d in recalled {
+                push(pool, d)
+            }
+        }
+    }
+
+    docs := pickmod.pick(pick_q, pool, k)
+    mut exs := []
+    if examples_bank != null {
+        exs = pickmod.pick_examples(pick_q, examples_bank, n_ex)
+    }
+
+    p := packmod.pack(task, docs, {
+        "kind": kind,
+        "max_total": max_total,
+        "max_docs": max_docs,
+        "max_doc_tokens": max_doc_tokens,
+        "history": hist,
+        "keep_last": keep_last,
+        "hints": hints,
+        "examples": exs,
+        "frame": do_frame,
+        "knowledge_all": pool,
+    })
+
+    mut goal_out := task
+    mut clear_out := ""
+    mut must_out := ""
+    if clarified != null {
+        goal_out = clarified.goal
+        clear_out = clarified.clear
+        must_out = clarified.must
+    }
+
+    // auto-remember this packing (smarter next time)
+    mut mem_id := ""
+    if memory_path != "" && do_remember {
+        saved := mem.remember(memory_path, {
+            "ask": "" + ask,
+            "goal": goal_out,
+            "kind": kind,
+            "docs": docs,
+            "ok": true,
+            "score": 1,
+        })
+        if saved.ok {
+            mem_id = saved.value.id
+        }
+    }
+
+    {
+        "system": p.system,
+        "user": p.user,
+        "messages": p.messages,
+        "tokens": p.tokens,
+        "raw_tokens": p.raw_tokens,
+        "saved": p.saved,
+        "kind": kind,
+        "ask": "" + ask,
+        "goal": goal_out,
+        "clear": clear_out,
+        "must": must_out,
+        "docs": docs,
+        "recalled": recalled,
+        "memory_id": mem_id,
+    }
+}
+
+pub fn ask(ask_text, knowledge, opts) -> Result {
+    p := brain(ask_text, knowledge, opts)
+    reply := llm.chat({
+        "system": p.system,
+        "prompt": p.user,
+    })?
+    // if memory on, store model answer as note for training gold
+    if opts != null && contains(keys(opts), "memory_path") && contains(keys(opts), "learn_answers") && opts.learn_answers {
+        mem.remember(opts.memory_path, {
+            "ask": p.ask,
+            "goal": p.goal,
+            "kind": p.kind,
+            "docs": p.docs,
+            "ok": true,
+            "score": 1,
+            "note": reply,
+        })?
+    }
+    Ok(reply)
+}

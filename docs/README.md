@@ -125,8 +125,9 @@ fn main {
 | **`examples/cookbook/`** | Language + agent recipes (offline) |
 | `examples/hello.weft` | Minimal |
 | `examples/htmx.weft` · `webapp.weft` | HTTP / HTMX |
-| `examples/mold_ai.weft` · `cookbook/14_mold.weft` | mold |
-| `examples/ml_demo/` | ml module |
+| **`examples/agent_stack/`** | mold + tokensave + ml (offline) |
+| `examples/mold_ai.weft` · `cookbook/14_mold.weft` | mold alone |
+| `examples/ml_demo/` · `tokensave_demo/` | single-module demos |
 | `examples/cli_tool.weft` · `sysops_host.weft` | CLI / ops |
 | `examples/realworld/` | Agents, pipelines |
 | `packages/{mold,ml,tokensave}` | Optional modules |

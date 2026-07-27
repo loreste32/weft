@@ -90,10 +90,12 @@ Offline samples:
 
 | Example | Shows |
 |---------|--------|
+| **[`examples/agent_stack/`](../examples/agent_stack/)** | **mold + tokensave + ml together** (no network) |
 | [`examples/cookbook/13_agent.weft`](../examples/cookbook/13_agent.weft) | `llm` tools (stdlib, mock-friendly) |
 | [`examples/cookbook/14_mold.weft`](../examples/cookbook/14_mold.weft) | mold parse / extract / tool_params |
-| [`examples/mold_ai.weft`](../examples/mold_ai.weft) | mold end-to-end |
+| [`examples/mold_ai.weft`](../examples/mold_ai.weft) | mold + tool_spec wire formats |
 | [`examples/ml_demo/`](../examples/ml_demo/) | ml vectors (after install) |
+| [`examples/tokensave_demo/`](../examples/tokensave_demo/) | tokensave brain + memory |
 
 ---
 

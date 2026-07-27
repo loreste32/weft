@@ -1,24 +1,24 @@
 {
   "name": "weft-packages",
-  "description": "Monorepo catalog — not a public registry. Install via path/git.",
+  "description": "Monorepo catalog — not a public registry. Install via path/git. Order follows the agent stack (docs/ECOSYSTEM.md).",
   "packages": [
     {
-      "name": "ml",
-      "path": "./ml",
+      "name": "mold",
+      "path": "./mold",
       "version": "0.1.0",
-      "summary": "Embeddings, vectors, RAG index, metrics"
+      "summary": "Structure & validate agent JSON — JSON Schema, tool_params, tool_spec"
     },
     {
       "name": "tokensave",
       "path": "./tokensave",
       "version": "0.5.0",
-      "summary": "Model brain: clarify asks, relevant context, memory, teach → train"
+      "summary": "Thrift context, memory, teach → train gold"
     },
     {
-      "name": "mold",
-      "path": "./mold",
+      "name": "ml",
+      "path": "./ml",
       "version": "0.1.0",
-      "summary": "Pour LLM/API JSON into structured maps — validate, JSON Schema, tool params"
+      "summary": "Embeddings, vectors, RAG index, metrics"
     }
   ]
 }

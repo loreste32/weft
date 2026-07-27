@@ -63,7 +63,9 @@ fn main -> Result {
 | `mold.validate(model, map)` | same without JSON parse |
 | `mold.extract(model, text)` | strip \`\`\` fences + parse (LLM output) |
 | `mold.json_schema(model, title?)` | JSON Schema object |
-| `mold.tool_params(model)` | `{type, properties, required, …}` for tools |
+| `mold.tool_params(model)` | `{type, properties, required, …}` parameters object |
+| `mold.tool_spec(name, model, desc?)` | OpenAI-style `tools[]` entry |
+| `mold.input_schema_tool(name, model, desc?)` | Anthropic-style `{name, input_schema}` |
 | `mold.errors(result)` / `mold.ok(result)` | validation error list / ok flag |
 
 ### Field shorthands

@@ -94,9 +94,7 @@ No host capabilities required (pure logic + `json`).
 ## Docs
 
 - Topic guide: [`docs/MOLD.md`](../../docs/MOLD.md)
-- Stack map: [`docs/ECOSYSTEM.md`](../../docs/ECOSYSTEM.md)
 - Cookbook: [`examples/cookbook/14_mold.weft`](../../examples/cookbook/14_mold.weft)
-- Full stack offline: [`examples/agent_stack/`](../../examples/agent_stack/)
 - Catalog: `weft packages get mold`
 
 ## Tests

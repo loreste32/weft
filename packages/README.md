@@ -7,11 +7,19 @@ How this fits the rest of Weft: **[docs/ECOSYSTEM.md](../docs/ECOSYSTEM.md)**.
 
 ## Catalog
 
+Order matches the agent stack (`llm` → mold → tokensave / ml).
+
 | Module | Role | Caps (typical) | Docs |
 |--------|------|----------------|------|
-| [`mold`](mold/) | Structured models — validate LLM/API JSON, JSON Schema, tool params | none (pure) | [docs/MOLD.md](../docs/MOLD.md) |
-| [`ml`](ml/) | Embeddings, vectors, RAG index, metrics | `@agent` + fs + env | [docs/ML.md](../docs/ML.md) |
+| [`mold`](mold/) | Structure & validate JSON; `tool_params` / `tool_spec` | none (pure) | [docs/MOLD.md](../docs/MOLD.md) |
 | [`tokensave`](tokensave/) | Context thrift, memory, teach → train export | `@agent` + fs + env | [README](tokensave/README.md) |
+| [`ml`](ml/) | Embeddings, vectors, RAG index, metrics | `@agent` + fs + env | [docs/ML.md](../docs/ML.md) |
+
+**Cohesive offline demo** (all three):
+
+```bash
+cd examples/agent_stack && weft install && weft run main.weft
+```
 
 Index file (not a public registry): [`index.json`](index.json).
 

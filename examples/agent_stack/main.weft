@@ -1,0 +1,63 @@
+// Agent stack — cohesive offline demo (no network, no API keys).
+//
+//   docs/ECOSYSTEM.md
+//   cd examples/agent_stack && weft install && weft run main.weft
+//
+// Layers exercised:
+//   1) tokensave — clarify + pick relevant knowledge
+//   2) mold      — structure tool args + provider tool_spec
+//   3) ml        — vector topk (RAG-scale, pure Weft)
+
+use mold
+use tokensave
+use ml
+
+fn main -> Result {
+    // --- 1) thrift context (tokensave) ------------------------------------
+    knowledge := [
+        "Paris is the capital of France.",
+        "Berlin is the capital of Germany.",
+        "Lunch menu: pasta (noise).",
+        "Weft uses Result and ? for fallible work.",
+    ]
+    packed := tokensave.brain("what is the capital of France?", knowledge, {
+        "k": 2,
+        "max_total": 400,
+        "remember": false,
+        "clarify": true,
+    })
+    say("1) tokensave goal:", packed["goal"])
+    say("1) tokensave docs:", len(packed["docs"]))
+
+    // --- 2) structure tool / model JSON (mold) ----------------------------
+    Weather := mold.model({
+        "city": "str!",
+        "units": "str?",
+    })?
+    // simulate model tool call JSON
+    args := mold.parse(Weather, "{\"city\":\"Paris\"}")?
+    say("2) mold city:", args["city"])
+    // OpenAI-compat tools[] entry
+    spec := mold.tool_spec("get_weather", Weather, "look up weather by city")
+    say("2) tool name:", spec["function"]["name"])
+    if spec["function"]["parameters"]["type"] != "object" {
+        return Err("expected tool parameters type object")
+    }
+    // fenced model output
+    fenced := "```json\n{\"city\":\"Oslo\",\"units\":\"c\"}\n```"
+    out := mold.extract(Weather, fenced)?
+    say("2) extract city:", out["city"])
+
+    // --- 3) local vectors (ml) --------------------------------------------
+    q := [1.0, 0.0, 0.0]
+    hits := ml.topk(q, [
+        {"id": "paris", "vec": [0.95, 0.05, 0.0], "meta": {"text": "Paris"}},
+        {"id": "noise", "vec": [0.0, 1.0, 0.0], "meta": {"text": "noise"}},
+    ], 1)
+    say("3) ml top id:", hits[0]["id"])
+    if hits[0]["id"] != "paris" {
+        return Err("expected paris as top hit")
+    }
+
+    say("agent stack ok — mold + tokensave + ml")
+}

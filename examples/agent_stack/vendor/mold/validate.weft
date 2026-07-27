@@ -1,0 +1,329 @@
+// Parse / validate / coerce against a model.
+
+use "./kind.weft" as kind
+use "./fields.weft" as F
+
+pub fn validate(model, data) -> Result {
+    validate_mut(model, data)
+}
+
+pub fn parse(model, raw) -> Result {
+    mut data := raw
+    if kind.of(raw) == "str" {
+        data = json.parse(raw)?
+    }
+    validate_mut(model, data)
+}
+
+// extract: strip fences then parse+validate (LLM structured output)
+pub fn extract(model, text) -> Result {
+    s := strip_fences(text)
+    parse(model, s)
+}
+
+// Err.message is a string — we store a JSON payload so callers can recover paths.
+pub fn errors(result) {
+    if result.ok {
+        return []
+    }
+    msg := result.err.message
+    if kind.of(msg) != "str" {
+        return [{"path": "", "msg": json.stringify(msg)}]
+    }
+    r := json.parse(msg)
+    if r.ok {
+        p := r.value
+        if p["errors"] != null {
+            return p["errors"]
+        }
+    }
+    [{"path": "", "msg": msg}]
+}
+
+pub fn ok(result) {
+    result.ok
+}
+
+// Caps hostile / nested LLM payloads (stack + CPU).
+const max_depth = 32
+const max_list = 10000
+
+pub fn validate_mut(model, data) -> Result {
+    // errs is a map path -> msg (maps support mutation; list append is limited)
+    box := {"errs": {}, "n": 0}
+    out := check_object(model_fields(model), data, "", box, 0)
+    if box["n"] > 0 {
+        mut elist := []
+        // materialize as list of {path,msg} via json
+        raw := json.parse(json.stringify(box["errs"]))?
+        for p in raw {
+            elist = pack_err(elist, p, raw[p])
+        }
+        payload := json.stringify({
+            "message": "validation failed",
+            "kind": "mold",
+            "errors": elist,
+        })
+        return Err(payload)
+    }
+    Ok(out)
+}
+
+fn pack_err(elist, p, msg) {
+    // grow error list with fixed patterns
+    e := {"path": p, "msg": msg}
+    n := len(elist)
+    if n == 0 {
+        return [e]
+    }
+    if n == 1 {
+        return [elist[0], e]
+    }
+    if n == 2 {
+        return [elist[0], elist[1], e]
+    }
+    if n == 3 {
+        return [elist[0], elist[1], elist[2], e]
+    }
+    if n == 4 {
+        return [elist[0], elist[1], elist[2], elist[3], e]
+    }
+    // cap reporting
+    elist
+}
+
+fn model_fields(model) {
+    if model["fields"] != null {
+        return model["fields"]
+    }
+    model
+}
+
+fn check_object(fields, data, path, box, depth) {
+    if depth > max_depth {
+        add_err(box, path, "max_depth")
+        return {}
+    }
+    if kind.of(data) != "map" {
+        add_err(box, path, "expected object")
+        return {}
+    }
+    out := {}
+    for name in fields {
+        f := fields[name]
+        p := join_path(path, name)
+        has := has_key(data, name)
+        if !has {
+            if f["required"] == true && f["default"] == null {
+                add_err(box, p, "required")
+                continue
+            }
+            if f["default"] != null {
+                out[name] = f["default"]
+            }
+            continue
+        }
+        out[name] = check_value(f, data[name], p, box, depth + 1)
+    }
+    out
+}
+
+fn check_value(f, v, path, box, depth) {
+    if depth > max_depth {
+        add_err(box, path, "max_depth")
+        return null
+    }
+    mut typ := f["type"]
+    if typ == null {
+        typ = "any"
+    }
+    if v == null {
+        if f["required"] == true {
+            add_err(box, path, "required")
+        }
+        return null
+    }
+    mut v2 := coerce(typ, v)
+    k := kind.of(v2)
+    if typ == "any" {
+        return v2
+    }
+    if typ == "str" {
+        if k != "str" {
+            v2 = to_str(v2)
+        }
+        if f["min_len"] != null && len(v2) < f["min_len"] {
+            add_err(box, path, "min_len")
+        }
+        if f["max_len"] != null && len(v2) > f["max_len"] {
+            add_err(box, path, "max_len")
+        }
+        return v2
+    }
+    if typ == "int" {
+        if k != "int" && k != "float" {
+            add_err(box, path, "expected int")
+            return v2
+        }
+        n := v2 + 0
+        if f["min"] != null && n < f["min"] {
+            add_err(box, path, "min")
+        }
+        if f["max"] != null && n > f["max"] {
+            add_err(box, path, "max")
+        }
+        return n
+    }
+    if typ == "float" || typ == "number" {
+        if k != "int" && k != "float" {
+            add_err(box, path, "expected number")
+            return v2
+        }
+        n := v2 + 0
+        if f["min"] != null && n < f["min"] {
+            add_err(box, path, "min")
+        }
+        if f["max"] != null && n > f["max"] {
+            add_err(box, path, "max")
+        }
+        return n
+    }
+    if typ == "bool" {
+        if k != "bool" {
+            if k == "str" {
+                if v2 == "true" || v2 == "1" {
+                    return true
+                }
+                if v2 == "false" || v2 == "0" {
+                    return false
+                }
+            }
+            add_err(box, path, "expected bool")
+            return v2
+        }
+        return v2
+    }
+    if typ == "list" {
+        if k != "list" {
+            add_err(box, path, "expected list")
+            return v2
+        }
+        if len(v2) > max_list {
+            add_err(box, path, "max_list")
+            return []
+        }
+        item := f["items"]
+        // rebuild list via json array string
+        mut parts := ""
+        mut i := 0
+        for el in v2 {
+            mut val := el
+            if item != null {
+                val = check_value(item, el, path + "[$i]", box, depth + 1)
+            }
+            if i > 0 {
+                parts = parts + ","
+            }
+            parts = parts + json.stringify(val)
+            i = i + 1
+        }
+        return json.parse("[" + parts + "]")?
+    }
+    if typ == "object" || typ == "map" {
+        fields := f["fields"]
+        if fields == null {
+            if k != "map" {
+                add_err(box, path, "expected object")
+            }
+            return v2
+        }
+        return check_object(fields, v2, path, box, depth)
+    }
+    v2
+}
+
+fn coerce(typ, v) {
+    k := kind.of(v)
+    if (typ == "int" || typ == "float" || typ == "number") && k == "str" {
+        r := json.parse(v)
+        if r.ok {
+            return r.value
+        }
+    }
+    if typ == "bool" && k == "str" {
+        if v == "true" {
+            return true
+        }
+        if v == "false" {
+            return false
+        }
+    }
+    v
+}
+
+fn to_str(v) {
+    if kind.of(v) == "str" {
+        return v
+    }
+    s := json.stringify(v)
+    if str.starts_with(s, "\"") {
+        n := len(s)
+        return str.slice(s, 1, n - 1)
+    }
+    s
+}
+
+fn is_field_map(v) {
+    kind.of(v) == "map" && v["type"] != null
+}
+
+fn has_key(m, k) {
+    for x in m {
+        if x == k {
+            return true
+        }
+    }
+    false
+}
+
+fn join_path(base, name) {
+    if base == "" {
+        return name
+    }
+    base + "." + name
+}
+
+fn add_err(box, path, msg) {
+    errs := box["errs"]
+    errs[path] = msg
+    box["errs"] = errs
+    box["n"] = box["n"] + 1
+}
+
+// Strip ``` / ```json fences; list concat is unsupported so build a string only.
+fn strip_fences(text) {
+    s := str.trim(text)
+    if !str.starts_with(s, "```") {
+        return s
+    }
+    lines := str.lines(s)
+    mut body := ""
+    mut i := 0
+    mut first := true
+    for ln in lines {
+        if i == 0 {
+            i = i + 1
+            continue
+        }
+        if str.starts_with(str.trim(ln), "```") {
+            break
+        }
+        if !first {
+            body = body + "\n"
+        }
+        body = body + ln
+        first = false
+        i = i + 1
+    }
+    str.trim(body)
+}

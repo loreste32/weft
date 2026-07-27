@@ -1,0 +1,11 @@
+{
+  "name": "agent_stack_demo",
+  "version": "0.1.0",
+  "type": "app",
+  "description": "Offline cohesive demo: mold + tokensave + ml (docs/ECOSYSTEM.md)",
+  "deps": {
+    "mold": { "path": "../../packages/mold" },
+    "tokensave": { "path": "../../packages/tokensave" },
+    "ml": { "path": "../../packages/ml" }
+  }
+}
