@@ -521,8 +521,8 @@ func doRequest(env *runtime.Env, method, urlStr, body string, headers map[string
 		}
 		tr.TLSClientConfig.InsecureSkipVerify = true //nolint:gosec // explicit opt-in for local TLS
 		client = &http.Client{
-			Timeout:   client.Timeout,
-			Transport: tr,
+			Timeout:       client.Timeout,
+			Transport:     tr,
 			CheckRedirect: client.CheckRedirect,
 			Jar:           client.Jar,
 		}
