@@ -1,6 +1,7 @@
 package stdlib
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -11,24 +12,26 @@ import (
 // packageLog — structured-ish logging for production CLIs/workers.
 func packageLog(env *runtime.Env) runtime.Value {
 	p := pkg()
-	level := "info" // package-level default via closure on map field
+	level := "info"
+	jsonMode := false
 
 	write := func(lvl string, args []runtime.Value) {
-		// respect level: debug < info < warn < error
 		order := map[string]int{"debug": 0, "info": 1, "warn": 2, "error": 3}
 		if order[lvl] < order[level] {
 			return
 		}
-		// last map arg → structured fields (k=v)
-		var fields string
+		fieldMap := map[string]any{}
 		msgArgs := args
 		if len(args) > 0 && args[len(args)-1].Kind == runtime.KindMap {
 			mo := args[len(args)-1].Obj.(*runtime.MapObj)
-			var kvs []string
 			for _, k := range mo.Keys {
-				kvs = append(kvs, k+"="+mo.Vals[k].String())
+				fieldMap[k] = mo.Vals[k].String()
 			}
-			fields = strings.Join(kvs, " ")
+			for k, v := range mo.Vals {
+				if _, ok := fieldMap[k]; !ok {
+					fieldMap[k] = v.String()
+				}
+			}
 			msgArgs = args[:len(args)-1]
 		}
 		parts := make([]string, len(msgArgs))
@@ -36,13 +39,31 @@ func packageLog(env *runtime.Env) runtime.Value {
 			parts[i] = a.String()
 		}
 		msg := strings.Join(parts, " ")
-		line := fmt.Sprintf("%s level=%s msg=%s",
-			time.Now().UTC().Format(time.RFC3339),
-			lvl,
-			msg,
-		)
-		if fields != "" {
-			line += " " + fields
+		var line string
+		if jsonMode {
+			rec := map[string]any{
+				"ts":    time.Now().UTC().Format(time.RFC3339),
+				"level": lvl,
+				"msg":   msg,
+			}
+			for k, v := range fieldMap {
+				rec[k] = v
+			}
+			b, _ := json.Marshal(rec)
+			line = string(b)
+		} else {
+			line = fmt.Sprintf("%s level=%s msg=%s",
+				time.Now().UTC().Format(time.RFC3339),
+				lvl,
+				msg,
+			)
+			if len(fieldMap) > 0 {
+				var kvs []string
+				for k, v := range fieldMap {
+					kvs = append(kvs, fmt.Sprintf("%s=%v", k, v))
+				}
+				line += " " + strings.Join(kvs, " ")
+			}
 		}
 		if lvl == "error" || lvl == "warn" {
 			fmt.Fprintln(env.Stderr, line)
@@ -54,6 +75,15 @@ func packageLog(env *runtime.Env) runtime.Value {
 	set(p, "set_level", func(args []runtime.Value) (runtime.Value, error) {
 		if len(args) >= 1 {
 			level = strings.ToLower(args[0].String())
+		}
+		return runtime.Unit(), nil
+	}, 1)
+	// log.set_json(true|false) — JSON lines for agents/ops collectors
+	set(p, "set_json", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) >= 1 {
+			jsonMode = args[0].IsTruthy()
+		} else {
+			jsonMode = true
 		}
 		return runtime.Unit(), nil
 	}, 1)
@@ -73,6 +103,5 @@ func packageLog(env *runtime.Env) runtime.Value {
 		write("error", args)
 		return runtime.Unit(), nil
 	}, -1)
-	// log.with fields: log.info("msg", {"key": "val"}) already works as multi-arg
 	return p
 }

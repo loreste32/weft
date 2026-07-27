@@ -2,7 +2,7 @@
 
 Weft is for agent scripts, HTTP glue, and ops tooling. It is not trying to replace CPython or the scientific Python stack.
 
-## Where we are now (0.3.27)
+## Where we are now (0.3.28)
 
 We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.3.35** — see [VERSIONING.md](VERSIONING.md)). You can build the binary, write real scripts, and run them without a Python runtime on the critical path.
 
@@ -29,6 +29,7 @@ We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.3.
 - Stdlib for I/O, HTTP, web, text/math, config (yaml/toml/ini), some “lite” cousins of common Python modules  
 - Day-to-day tools: `weft check`, `test`, `fmt`, `bench`, `stdlib`, LSP (incl. format)  
 - Sysops surface: `sh`/`fs`/`cli`/`env`/`platform`/`secrets` + host-check example ([SYSOPS.md](SYSOPS.md))  
+- Stdlib Tier A/B lite: `shlex`, `signal`, `binstruct`, `difflib`, `copy`, `functools`, `traceback`, fs bytes/path, secrets tokens, log JSON ([STDLIB_GAPS.md](STDLIB_GAPS.md))  
 - Docs: tutorial, language reference, cookbook + `examples/cookbook/` (CI smoke)  
 - Gold corpus includes closures, enums, and match (train eval 100%)  
 - Agent/LLM ergonomics: multi-turn `llm.chat`, `ask`+opts, `stream_text` (in gold corpus)  

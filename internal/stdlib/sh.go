@@ -95,15 +95,57 @@ func packageSH(env *runtime.Env) runtime.Value {
 		return runtime.Str(p), nil
 	}, 1)
 
+	// sh.lines(cmd, args?, opts?) -> Result[[str]]  stdout split lines (fails if non-zero)
+	set(p, "lines", func(args []runtime.Value) (runtime.Value, error) {
+		cmd, argv, opts, err := parseShArgs(args)
+		if err != nil {
+			return errRes(err.Error(), "sh"), nil
+		}
+		opts.check = true
+		res, err := runCmd(env, cmd, argv, opts, true)
+		if err != nil {
+			return res, err
+		}
+		if res.Kind != runtime.KindResult {
+			return res, nil
+		}
+		ro := res.Obj.(*runtime.ResultObj)
+		if !ro.Ok {
+			return res, nil
+		}
+		out, _ := mapGet(ro.Val, "stdout")
+		text := strings.TrimSuffix(out.String(), "\n")
+		if text == "" {
+			return runtime.Ok(runtime.List()), nil
+		}
+		parts := strings.Split(text, "\n")
+		items := make([]runtime.Value, len(parts))
+		for i, s := range parts {
+			items[i] = runtime.Str(s)
+		}
+		return runtime.Ok(runtime.List(items...)), nil
+	}, 3)
+
+	// sh.combined(cmd, args?, opts?) -> Result[{code,ok,output}]  stdout+stderr merged
+	set(p, "combined", func(args []runtime.Value) (runtime.Value, error) {
+		cmd, argv, opts, err := parseShArgs(args)
+		if err != nil {
+			return errRes(err.Error(), "sh"), nil
+		}
+		opts.mergeOut = true
+		return runCmd(env, cmd, argv, opts, false)
+	}, 3)
+
 	return p
 }
 
 type shOpts struct {
-	dir     string
-	env     []string // KEY=VAL extra
-	timeout time.Duration
-	check   bool // fail Result on non-zero
-	stdin   string
+	dir      string
+	env      []string // KEY=VAL extra
+	timeout  time.Duration
+	check    bool // fail Result on non-zero
+	stdin    string
+	mergeOut bool // combined stdout+stderr
 }
 
 func parseShArgs(args []runtime.Value) (cmd string, argv []string, opts shOpts, err error) {
@@ -150,14 +192,25 @@ func parseShOpts(v runtime.Value) shOpts {
 	o.stdin = mapGetStr(v, "stdin", "")
 	if n := mapGetInt(v, "timeout", 0); n > 0 {
 		o.timeout = time.Duration(n) * time.Second
+	} else if s := mapGetStr(v, "timeout", ""); s != "" {
+		if d, err := time.ParseDuration(s); err == nil {
+			o.timeout = d
+		}
 	}
 	if b, ok := mapGet(v, "check"); ok && b.Kind == runtime.KindBool {
 		o.check = b.B
+	}
+	if b, ok := mapGet(v, "merge"); ok && b.Kind == runtime.KindBool {
+		o.mergeOut = b.B
 	}
 	if e, ok := mapGet(v, "env"); ok && e.Kind == runtime.KindMap {
 		mo := e.Obj.(*runtime.MapObj)
 		for _, k := range mo.Keys {
 			o.env = append(o.env, k+"="+mo.Vals[k].String())
+		}
+	} else if e, ok := mapGet(v, "env"); ok && e.Kind == runtime.KindList {
+		for _, it := range e.Obj.(*runtime.ListObj).Items {
+			o.env = append(o.env, it.String())
 		}
 	}
 	return o
@@ -172,15 +225,19 @@ func runCmd(env *runtime.Env, name string, argv []string, opts shOpts, captureOn
 		c.Env = append(c.Environ(), opts.env...)
 	}
 	var stdout, stderr bytes.Buffer
-	c.Stdout = &stdout
-	c.Stderr = &stderr
+	if opts.mergeOut {
+		c.Stdout = &stdout
+		c.Stderr = &stdout
+	} else {
+		c.Stdout = &stdout
+		c.Stderr = &stderr
+	}
 	if opts.stdin != "" {
 		c.Stdin = strings.NewReader(opts.stdin)
 	}
 
 	var err error
 	if opts.timeout > 0 {
-		// simple: start + wait with timer
 		err = c.Start()
 		if err == nil {
 			done := make(chan error, 1)
@@ -188,7 +245,9 @@ func runCmd(env *runtime.Env, name string, argv []string, opts shOpts, captureOn
 			select {
 			case err = <-done:
 			case <-time.After(opts.timeout):
-				_ = c.Process.Kill()
+				if c.Process != nil {
+					_ = c.Process.Kill()
+				}
 				err = fmt.Errorf("timeout after %s", opts.timeout)
 			}
 		}
@@ -205,7 +264,6 @@ func runCmd(env *runtime.Env, name string, argv []string, opts shOpts, captureOn
 		} else if _, ok := err.(*exec.Error); ok {
 			return errRes(err.Error(), "sh"), nil
 		} else {
-			// ExitError already handled; other
 			if code == 0 {
 				code = 1
 			}
@@ -222,10 +280,16 @@ func runCmd(env *runtime.Env, name string, argv []string, opts shOpts, captureOn
 	put("ok", runtime.Bool(ok))
 	put("stdout", runtime.Str(stdout.String()))
 	put("stderr", runtime.Str(stderr.String()))
+	if opts.mergeOut {
+		put("output", runtime.Str(stdout.String()))
+	}
 	put("cmd", runtime.Str(name+" "+strings.Join(argv, " ")))
 
 	if (opts.check || captureOnly) && !ok {
 		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = strings.TrimSpace(stdout.String())
+		}
 		if msg == "" {
 			msg = fmt.Sprintf("command exited %d", code)
 		}

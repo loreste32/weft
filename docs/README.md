@@ -1,6 +1,6 @@
 # Weft documentation
 
-Weft is a small scripting language for **agents, HTTP glue, and ops tools**. One Go binary, no Python on the critical path, packages vendored like `go mod`.
+Weft is a small scripting language for **agents, HTTP glue, and ops tools**. One Go binary; packages vendored into `vendor/`.
 
 This folder is the human-facing docs set. Start with the language guide and the cookbook; dive into topic pages when you need detail.
 
@@ -13,6 +13,7 @@ This folder is the human-facing docs set. Start with the language guide and the 
 | **[COOKBOOK.md](COOKBOOK.md)** | Recipes you can paste and adapt — files, HTTP, JSON, CLI, agents, concurrency, packages, tests |
 | **[SYNTAX.md](SYNTAX.md)** | Short cheatsheet and style preferences |
 | **[STDLIB.md](STDLIB.md)** | Stdlib map (`weft stdlib` for the live list) |
+| **[STDLIB_GAPS.md](STDLIB_GAPS.md)** | Coverage tiers A/B and permanent non-goals (C) |
 | **[ROADMAP.md](ROADMAP.md)** | Where we are (0.3.x) and what we will / won’t do |
 
 Runnable recipe files: **[examples/cookbook/](../examples/cookbook/)** (offline-friendly).

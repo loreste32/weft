@@ -49,7 +49,80 @@ func packageXML() runtime.Value {
 		return runtime.Str(xmlUnescape(args[0].String())), nil
 	}, 1)
 
+	// xml.find(node, name) -> map|null  first descendant (or self) with name
+	set(p, "find", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 2 {
+			return runtime.Null(), nil
+		}
+		if n, ok := xmlFind(args[0], args[1].String()); ok {
+			return n, nil
+		}
+		return runtime.Null(), nil
+	}, 2)
+
+	// xml.findall(node, name) -> list  all descendants with name
+	set(p, "findall", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 2 {
+			return runtime.List(), nil
+		}
+		var out []runtime.Value
+		xmlFindAll(args[0], args[1].String(), &out)
+		return runtime.List(out...), nil
+	}, 2)
+
+	// xml.text(node) -> str
+	set(p, "text", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 {
+			return runtime.Str(""), nil
+		}
+		return runtime.Str(mapGetStr(args[0], "text", "")), nil
+	}, 1)
+
+	// xml.attr(node, key) -> str|null
+	set(p, "attr", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 2 {
+			return runtime.Null(), nil
+		}
+		attrs, ok := mapGet(args[0], "attrs")
+		if !ok || attrs.Kind != runtime.KindMap {
+			return runtime.Null(), nil
+		}
+		if v, ok := mapGet(attrs, args[1].String()); ok {
+			return v, nil
+		}
+		return runtime.Null(), nil
+	}, 2)
+
 	return p
+}
+
+func xmlFind(node runtime.Value, name string) (runtime.Value, bool) {
+	if mapGetStr(node, "name", "") == name {
+		return node, true
+	}
+	kids, ok := mapGet(node, "children")
+	if !ok || kids.Kind != runtime.KindList {
+		return runtime.Null(), false
+	}
+	for _, c := range kids.Obj.(*runtime.ListObj).Items {
+		if n, ok := xmlFind(c, name); ok {
+			return n, true
+		}
+	}
+	return runtime.Null(), false
+}
+
+func xmlFindAll(node runtime.Value, name string, out *[]runtime.Value) {
+	if mapGetStr(node, "name", "") == name {
+		*out = append(*out, node)
+	}
+	kids, ok := mapGet(node, "children")
+	if !ok || kids.Kind != runtime.KindList {
+		return
+	}
+	for _, c := range kids.Obj.(*runtime.ListObj).Items {
+		xmlFindAll(c, name, out)
+	}
 }
 
 type xmlNode struct {

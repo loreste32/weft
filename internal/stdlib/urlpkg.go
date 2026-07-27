@@ -165,5 +165,42 @@ func packageURL() runtime.Value {
 		return runtime.Str(url.PathEscape(args[0].String())), nil
 	}, 1)
 
+	// url.merge_query(base_url, params_map) -> str  merge/override query keys
+	set(p, "merge_query", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 2 {
+			return errRes("url.merge_query(base, params)", "url"), nil
+		}
+		u, err := url.Parse(args[0].String())
+		if err != nil {
+			return errRes(err.Error(), "url"), nil
+		}
+		q := u.Query()
+		if args[1].Kind == runtime.KindMap {
+			mo := args[1].Obj.(*runtime.MapObj)
+			for _, k := range mo.Keys {
+				q.Set(k, mo.Vals[k].String())
+			}
+			for k, v := range mo.Vals {
+				if q.Get(k) == "" {
+					q.Set(k, v.String())
+				}
+			}
+		}
+		u.RawQuery = q.Encode()
+		return runtime.Str(u.String()), nil
+	}, 2)
+
+	// url.path_unescape
+	set(p, "path_unescape", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 {
+			return errRes("url.path_unescape(s)", "url"), nil
+		}
+		s, err := url.PathUnescape(args[0].String())
+		if err != nil {
+			return errRes(err.Error(), "url"), nil
+		}
+		return runtime.Ok(runtime.Str(s)), nil
+	}, 1)
+
 	return p
 }

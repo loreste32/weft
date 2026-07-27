@@ -425,6 +425,74 @@ func packageMath() runtime.Value {
 		return runtime.Int(aa / g * bb), nil
 	}, 2)
 
+	// math.quantile(list, q) -> float  q in [0,1], linear interpolation
+	set(p, "quantile", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 2 || args[0].Kind != runtime.KindList {
+			return runtime.Float(math.NaN()), nil
+		}
+		q, ok := num(args, 1)
+		if !ok || q < 0 || q > 1 {
+			return runtime.Float(math.NaN()), nil
+		}
+		var xs []float64
+		for _, it := range args[0].Obj.(*runtime.ListObj).Items {
+			if x, ok := asFloat64(it); ok {
+				xs = append(xs, x)
+			}
+		}
+		if len(xs) == 0 {
+			return runtime.Float(math.NaN()), nil
+		}
+		// insertion sort
+		for i := 1; i < len(xs); i++ {
+			j := i
+			for j > 0 && xs[j-1] > xs[j] {
+				xs[j-1], xs[j] = xs[j], xs[j-1]
+				j--
+			}
+		}
+		if len(xs) == 1 {
+			return runtime.Float(xs[0]), nil
+		}
+		pos := q * float64(len(xs)-1)
+		lo := int(math.Floor(pos))
+		hi := int(math.Ceil(pos))
+		if lo == hi {
+			return runtime.Float(xs[lo]), nil
+		}
+		w := pos - float64(lo)
+		return runtime.Float(xs[lo]*(1-w) + xs[hi]*w), nil
+	}, 2)
+
+	// math.mode(list) -> most common number|str (first on ties)
+	set(p, "mode", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 || args[0].Kind != runtime.KindList {
+			return runtime.Null(), nil
+		}
+		items := args[0].Obj.(*runtime.ListObj).Items
+		if len(items) == 0 {
+			return runtime.Null(), nil
+		}
+		counts := map[string]int{}
+		first := map[string]runtime.Value{}
+		order := []string{}
+		for _, it := range items {
+			k := it.String()
+			if _, ok := counts[k]; !ok {
+				order = append(order, k)
+				first[k] = it
+			}
+			counts[k]++
+		}
+		bestK, bestN := order[0], counts[order[0]]
+		for _, k := range order[1:] {
+			if counts[k] > bestN {
+				bestK, bestN = k, counts[k]
+			}
+		}
+		return first[bestK], nil
+	}, 1)
+
 	return p
 }
 

@@ -1,6 +1,13 @@
 package stdlib
 
-import "github.com/loreste/weft/internal/runtime"
+import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
+	"encoding/hex"
+
+	"github.com/loreste/weft/internal/runtime"
+)
 
 func packageSecrets(env *runtime.Env) runtime.Value {
 	p := pkg()
@@ -49,6 +56,50 @@ func packageSecrets(env *runtime.Env) runtime.Value {
 		}
 		return runtime.Str(SecretString(args[0])), nil
 	}, 1)
+
+	// secrets.token_hex(n_bytes?) -> str  CSPRNG hex (default 32 bytes → 64 chars)
+	set(p, "token_hex", func(args []runtime.Value) (runtime.Value, error) {
+		n := 32
+		if len(args) >= 1 {
+			if x, err := runtime.AsInt(args[0]); err == nil && x > 0 && x <= 1024 {
+				n = int(x)
+			}
+		}
+		b := make([]byte, n)
+		if _, err := rand.Read(b); err != nil {
+			return errRes(err.Error(), "secrets"), nil
+		}
+		return runtime.Str(hex.EncodeToString(b)), nil
+	}, 1)
+
+	// secrets.token_urlsafe(n_bytes?) -> str  base64url without padding
+	set(p, "token_urlsafe", func(args []runtime.Value) (runtime.Value, error) {
+		n := 32
+		if len(args) >= 1 {
+			if x, err := runtime.AsInt(args[0]); err == nil && x > 0 && x <= 1024 {
+				n = int(x)
+			}
+		}
+		b := make([]byte, n)
+		if _, err := rand.Read(b); err != nil {
+			return errRes(err.Error(), "secrets"), nil
+		}
+		return runtime.Str(base64.RawURLEncoding.EncodeToString(b)), nil
+	}, 1)
+
+	// secrets.compare(a, b) -> bool  constant-time (Secret or str)
+	set(p, "compare", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 2 {
+			return runtime.Bool(false), nil
+		}
+		a := []byte(SecretString(args[0]))
+		b := []byte(SecretString(args[1]))
+		if len(a) != len(b) {
+			return runtime.Bool(false), nil
+		}
+		return runtime.Bool(subtle.ConstantTimeCompare(a, b) == 1), nil
+	}, 2)
+
 	return p
 }
 

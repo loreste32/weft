@@ -15,7 +15,7 @@ It is early (0.3.x). Useful for small tools; not a finished ecosystem.
 |--|--|
 | CLI | `weft` |
 | Files | `.weft` |
-| Version | 0.3.27 (git `main`, through 0.3.35) |
+| Version | 0.3.28 (git `main`, through 0.3.35) |
 | Docs | [docs/README.md](docs/README.md) |
 | Ops notes | [docs/SYSOPS.md](docs/SYSOPS.md) |
 

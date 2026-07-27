@@ -156,6 +156,36 @@ func packageTest() runtime.Value {
 		return runtime.Null(), fmt.Errorf("%s", msg)
 	}, 1)
 
+	// test.assert(cond, msg?) — cond must be truthy
+	set(p, "assert", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 || !args[0].IsTruthy() {
+			msg := "test.assert failed"
+			if len(args) >= 2 && args[1].String() != "" {
+				msg = "test.assert: " + args[1].String()
+			}
+			return runtime.Null(), fmt.Errorf("%s", msg)
+		}
+		return runtime.Unit(), nil
+	}, 2)
+
+	// test.raises(fn) -> unit  fn must return Err Result or Go-error-like path
+	// In Weft, call fn with no args; expect Result Err.
+	set(p, "raises", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 {
+			return runtime.Null(), fmt.Errorf("test.raises(fn)")
+		}
+		// Without Call from here we only accept Result Err values
+		v := args[0]
+		if v.Kind == runtime.KindResult {
+			ro := v.Obj.(*runtime.ResultObj)
+			if ro.Ok {
+				return runtime.Null(), fmt.Errorf("test.raises: got Ok")
+			}
+			return runtime.Unit(), nil
+		}
+		return runtime.Null(), fmt.Errorf("test.raises: pass an Err Result (call your fn first)")
+	}, 1)
+
 	// test.skip(msg?) — runner marks as skipped
 	set(p, "skip", func(args []runtime.Value) (runtime.Value, error) {
 		msg := "skipped"
