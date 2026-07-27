@@ -57,7 +57,7 @@ pub fn validate_mut(model, data) -> Result {
         }
         payload := json.stringify({
             "message": "validation failed",
-            "kind": "schema",
+            "kind": "mold",
             "errors": elist,
         })
         return Err(payload)

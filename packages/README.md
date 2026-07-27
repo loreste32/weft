@@ -6,7 +6,7 @@ Not core stdlib — install what you need.
 |---------|------|
 | [`ml`](ml/) | embeddings, vectors, RAG index, metrics |
 | [`tokensave`](tokensave/) | model brain — clarify asks, memory, train export (local **and** paid) |
-| [`schema`](schema/) | structured models, validation, JSON Schema / tool params for agents |
+| [`mold`](mold/) | pour LLM/API JSON into shape — validate, JSON Schema, tool params |
 
 ```bash
 weft get ml ./packages/ml   # monorepo path

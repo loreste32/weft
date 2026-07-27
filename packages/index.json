@@ -15,10 +15,10 @@
       "summary": "Model brain: clarify asks, relevant context, memory, teach → train"
     },
     {
-      "name": "schema",
-      "path": "./schema",
+      "name": "mold",
+      "path": "./mold",
       "version": "0.1.0",
-      "summary": "Structured models, validation, JSON Schema / tool params for agents"
+      "summary": "Pour LLM/API JSON into structured maps — validate, JSON Schema, tool params"
     }
   ]
 }
