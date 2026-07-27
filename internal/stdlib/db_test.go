@@ -39,6 +39,126 @@ fn main -> Result {
 	}
 }
 
+func TestSQLiteJSONColumn(t *testing.T) {
+	dbpath := filepath.Join(t.TempDir(), "j.db")
+	src := `
+fn main -> Result {
+    c := db.open("sqlite:` + dbpath + `")?
+    c.exec("CREATE TABLE docs(id INTEGER PRIMARY KEY, data TEXT)")?
+    c.exec("INSERT INTO docs(data) VALUES (?)", ["{\"name\":\"Ada\",\"scores\":[1,2,3]}"])?
+    rows := c.query("SELECT json(data) as data FROM docs")?
+    doc := rows[0].data
+    println(doc.name)
+    println(doc.scores)
+    c.close()?
+}
+`
+	var out bytes.Buffer
+	ctx := weft.New(weft.Options{Stdout: &out, Stderr: &out})
+	if err := ctx.RunSource(context.Background(), "json.weft", src); err != nil {
+		t.Fatal(err, out.String())
+	}
+	s := out.String()
+	if !strings.Contains(s, "Ada") {
+		t.Fatalf("JSON column not parsed: %s", s)
+	}
+	if !strings.Contains(s, "[1, 2, 3]") {
+		t.Fatalf("JSON array not parsed: %s", s)
+	}
+}
+
+func TestSQLiteJSONBRoundTrip(t *testing.T) {
+	dbpath := filepath.Join(t.TempDir(), "jb.db")
+	src := `
+fn main -> Result {
+    c := db.open("sqlite:` + dbpath + `")?
+    c.exec("CREATE TABLE kv(key TEXT PRIMARY KEY, val TEXT)")?
+    c.exec("INSERT INTO kv VALUES (?, ?)", ["config", "{\"port\":8080,\"debug\":true}"])?
+    row := c.query_one("SELECT json(val) as val FROM kv WHERE key = ?", ["config"])?
+    println(row.val.port)
+    println(row.val.debug)
+    c.close()?
+}
+`
+	var out bytes.Buffer
+	ctx := weft.New(weft.Options{Stdout: &out, Stderr: &out})
+	if err := ctx.RunSource(context.Background(), "jsonb.weft", src); err != nil {
+		t.Fatal(err, out.String())
+	}
+	s := out.String()
+	if !strings.Contains(s, "8080") || !strings.Contains(s, "true") {
+		t.Fatalf("JSONB round-trip: %s", s)
+	}
+}
+
+func TestSQLiteJSONNestedAccess(t *testing.T) {
+	dbpath := filepath.Join(t.TempDir(), "n.db")
+	src := `
+fn main -> Result {
+    c := db.open("sqlite:` + dbpath + `")?
+    c.exec("CREATE TABLE t(d TEXT)")?
+    c.exec("INSERT INTO t VALUES (?)", ["{\"a\":{\"b\":{\"c\":42}}}"])?
+    row := c.query_one("SELECT json(d) as d FROM t")?
+    println(row.d.a.b.c)
+    c.close()?
+}
+`
+	var out bytes.Buffer
+	ctx := weft.New(weft.Options{Stdout: &out, Stderr: &out})
+	if err := ctx.RunSource(context.Background(), "nest.weft", src); err != nil {
+		t.Fatal(err, out.String())
+	}
+	if !strings.Contains(out.String(), "42") {
+		t.Fatalf("nested JSON: %s", out.String())
+	}
+}
+
+func TestSQLiteJSONArray(t *testing.T) {
+	dbpath := filepath.Join(t.TempDir(), "arr.db")
+	src := `
+fn main -> Result {
+    c := db.open("sqlite:` + dbpath + `")?
+    c.exec("CREATE TABLE t(d TEXT)")?
+    c.exec("INSERT INTO t VALUES (?)", ["[1,2,3]"])?
+    row := c.query_one("SELECT json(d) as d FROM t")?
+    println(row.d[0])
+    println(len(row.d))
+    c.close()?
+}
+`
+	var out bytes.Buffer
+	ctx := weft.New(weft.Options{Stdout: &out, Stderr: &out})
+	if err := ctx.RunSource(context.Background(), "arr.weft", src); err != nil {
+		t.Fatal(err, out.String())
+	}
+	s := out.String()
+	if !strings.Contains(s, "1") || !strings.Contains(s, "3") {
+		t.Fatalf("JSON array: %s", s)
+	}
+}
+
+func TestSQLitePlainTextNotParsed(t *testing.T) {
+	dbpath := filepath.Join(t.TempDir(), "plain.db")
+	src := `
+fn main -> Result {
+    c := db.open("sqlite:` + dbpath + `")?
+    c.exec("CREATE TABLE t(name TEXT)")?
+    c.exec("INSERT INTO t VALUES (?)", ["hello world"])?
+    row := c.query_one("SELECT name FROM t")?
+    println(row.name)
+    c.close()?
+}
+`
+	var out bytes.Buffer
+	ctx := weft.New(weft.Options{Stdout: &out, Stderr: &out})
+	if err := ctx.RunSource(context.Background(), "plain.weft", src); err != nil {
+		t.Fatal(err, out.String())
+	}
+	if !strings.Contains(out.String(), "hello world") {
+		t.Fatalf("plain text: %s", out.String())
+	}
+}
+
 func TestDBDrivers(t *testing.T) {
 	src := `fn main { println(db.drivers()) }`
 	var out bytes.Buffer

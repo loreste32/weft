@@ -3,6 +3,7 @@ package stdlib
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -406,8 +407,7 @@ func sqlVal(v any) runtime.Value {
 	}
 	switch x := v.(type) {
 	case []byte:
-		// try number-looking, else string
-		return runtime.Str(string(x))
+		return bytesVal(x)
 	case int64:
 		return runtime.Int(x)
 	case float64:
@@ -415,10 +415,47 @@ func sqlVal(v any) runtime.Value {
 	case bool:
 		return runtime.Bool(x)
 	case string:
-		return runtime.Str(x)
+		return stringVal(x)
 	case time.Time:
 		return runtime.Str(x.UTC().Format(time.RFC3339))
 	default:
 		return runtime.Str(fmt.Sprint(x))
 	}
+}
+
+// tryParseJSON attempts to parse s as a JSON object or array.
+// Returns the parsed Weft value and true, or zero value and false.
+func tryParseJSON(s string) (runtime.Value, bool) {
+	s = strings.TrimSpace(s)
+	if len(s) < 2 {
+		return runtime.Value{}, false
+	}
+	if (s[0] == '{' && s[len(s)-1] == '}') || (s[0] == '[' && s[len(s)-1] == ']') {
+		var raw any
+		if err := json.Unmarshal([]byte(s), &raw); err == nil {
+			return goToValue(raw), true
+		}
+	}
+	return runtime.Value{}, false
+}
+
+// bytesVal handles []byte from SQL drivers (PostgreSQL JSONB, blobs).
+func bytesVal(b []byte) runtime.Value {
+	if len(b) == 0 {
+		return runtime.Str("")
+	}
+	if v, ok := tryParseJSON(string(b)); ok {
+		return v
+	}
+	return runtime.Str(string(b))
+}
+
+// stringVal handles string from SQL drivers (SQLite TEXT, etc.).
+// JSON/JSONB stored in TEXT columns is auto-parsed so scripts can
+// access fields directly: row.data.name instead of json.parse(row.data)?.name
+func stringVal(s string) runtime.Value {
+	if v, ok := tryParseJSON(s); ok {
+		return v
+	}
+	return runtime.Str(s)
 }
