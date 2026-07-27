@@ -7,7 +7,7 @@ Weave agents into code.
 
 ![Wifty — Weft mascot](assets/brand/wifty.jpg)
 
-Weft is a small scripting language aimed at LLM agents, HTTP glue, and ops scripts. One Go binary, no Python on the core path, packages vendored like `go mod`. Syntax is its own (braces, `:=`, `?` for errors) — not Python with braces.
+**Weft** is a small scripting language for **LLM agents**, **HTTP glue**, and **ops automation**. One Go binary. Own syntax (`:=`, braces, `Result`/`?`). Packages install into `vendor/` like a lockfile workflow.
 
 | | |
 |--|--|
@@ -16,14 +16,15 @@ Weft is a small scripting language aimed at LLM agents, HTTP glue, and ops scrip
 | Version | 0.3.27 (git `main`, patch line through 0.3.35) |
 | Mascot | Wifty |
 | Brand | [docs/BRAND.md](docs/BRAND.md) |
+| Sysops | [docs/SYSOPS.md](docs/SYSOPS.md) |
 
 ## Where we are (0.3.27)
 
-Weft is **usable** for agent scripts, HTTP glue, and small ops tools. It is **not** a finished ecosystem or a CPython stand-in.
+Weft is **usable** for agent scripts, HTTP glue, workers, and small ops tools. It is **early** as a language ecosystem — not a finished platform.
 
-You get a single binary, a real language loop (parse → VM), `Result`/`?` errors, concurrent map/filter without `async`/`await`, **closures that capture outer locals by value**, string enums + richer `match`, vendored packages, LLM providers (OpenAI-compat, Anthropic, Ollama, vLLM), and day-to-day commands (`check`, `test`, `fmt`, `bench`). Optional private fine-tune stays on your GPU; cloud upload is opt-in.
+You get a single binary, a real language loop (lex → parse → compile → stack VM), `Result`/`?` errors, concurrent map/filter without `async`/`await`, **closures that capture outer locals by value**, string enums + richer `match`, vendored packages, LLM providers (OpenAI-compat, Anthropic, Ollama, vLLM), and day-to-day commands (`check`, `test`, `fmt`, `bench`). Optional private fine-tune stays on your GPU; cloud upload is opt-in.
 
-Still rough: types are gradual, LSP/fmt are practical but not gofmt/IDE-grade, stdlib is broad-and-shallow, and there is no public package registry yet (path/git + monorepo catalog; optional `WEFT_CATALOG_URL` and lite `^`/`~`/`>=` constraints).
+Still rough: types are gradual, LSP/fmt are practical but not IDE-grade, stdlib is broad-and-shallow, and there is no public package registry yet (path/git + monorepo catalog; optional `WEFT_CATALOG_URL` and lite `^`/`~`/`>=` constraints).
 
 | Area | Notes |
 |------|--------|
@@ -41,9 +42,9 @@ Still rough: types are gradual, LSP/fmt are practical but not gofmt/IDE-grade, s
 
 Through **0.3.35** we want the boring parts to feel ordinary: clearer errors, sturdier check/test/fmt, stdlib only where scripts hurt, better modules, a less painful editor story, and honest docs.
 
-We are **not** aiming at NumPy, in-process training, or `async`/`await`. A public registry or fancier packaging only if path/git becomes a real tax.
+We are **not** aiming at scientific array stacks, in-process GPU training frameworks, or `async`/`await` keywords. A public registry or fancier packaging only if path/git becomes a real tax.
 
-**Documentation:** **[docs/README.md](docs/README.md)** (index) · **[docs/TUTORIAL.md](docs/TUTORIAL.md)** (first hour) · **[docs/LANGUAGE.md](docs/LANGUAGE.md)** (language reference) · **[docs/COOKBOOK.md](docs/COOKBOOK.md)** (recipes) · **[docs/STDLIB.md](docs/STDLIB.md)** (stdlib map) · **[examples/cookbook/](examples/cookbook/)** (runnable recipes).
+**Documentation:** **[docs/README.md](docs/README.md)** (index) · **[docs/TUTORIAL.md](docs/TUTORIAL.md)** (first hour) · **[docs/LANGUAGE.md](docs/LANGUAGE.md)** (language reference) · **[docs/COOKBOOK.md](docs/COOKBOOK.md)** (recipes) · **[docs/STDLIB.md](docs/STDLIB.md)** (stdlib map) · **[docs/SYSOPS.md](docs/SYSOPS.md)** (ops) · **[examples/cookbook/](examples/cookbook/)** (runnable recipes).
 
 Longer write-up: **[docs/ROADMAP.md](docs/ROADMAP.md)** (now / next / never). Version policy: [docs/VERSIONING.md](docs/VERSIONING.md). Ops notes: [docs/PRODUCTION.md](docs/PRODUCTION.md).
 
@@ -52,10 +53,11 @@ Longer write-up: **[docs/ROADMAP.md](docs/ROADMAP.md)** (now / next / never). Ve
 ```bash
 # build
 go build -o weft ./cmd/weft
-# or: make install
+# or: make install   → ~/.local/bin/weft
 
 ./weft doctor
 ./weft run examples/hello.weft
+./weft run examples/sysops_host.weft -- info
 ./weft run examples/weft_style.weft
 ./weft check examples/fib.weft --types
 ```
@@ -142,11 +144,11 @@ weft train finetune --private --preset qwen-7b
 weft train offline -o weft-airgap --expand
 weft train presets
 
-# Public OpenAI only with explicit consent (uploads chat.jsonl)
+# Cloud only with explicit consent (uploads chat.jsonl)
 export OPENAI_API_KEY=sk-...
 weft train finetune --backend openai --allow-upload --wait
 
-# English → Weft (points at any OpenAI-compatible base, incl. private)
+# English → Weft (any OpenAI-compatible base, including private)
 weft gen "sum 1..5 and print it" -o sum.weft --run
 ```
 
@@ -154,7 +156,8 @@ Docs: [`docs/FINETUNE.md`](docs/FINETUNE.md) · [`llm-pack/README.md`](llm-pack/
 
 ### Packages & modules
 
-Libraries are plain `.weft` folders with a `weft.json`. They install into `vendor/` (no venv).
+Libraries are plain `.weft` folders with a `weft.json`. They install into `vendor/` next to your app.
+
 ```bash
 # Author a module
 weft new module greeter
@@ -176,6 +179,7 @@ Multi-file + deps demo: [`examples/modules/`](examples/modules/) · docs: [`docs
 ### Web
 
 Small HTTP apps, WebSockets, and a simple WebRTC signaling helper:
+
 ```weft
 fn main {
     app := web.app()
@@ -215,7 +219,7 @@ weft run examples/viz_dashboard.weft   # live charts on :8080
 
 Docs: [`docs/viz.md`](docs/viz.md)
 
-### CLI / devops / data processing
+### CLI / sysops / data processing
 
 ```weft
 fn main -> Result {
@@ -236,10 +240,11 @@ fn main -> Result {
 
 ```bash
 weft run examples/cli_tool.weft -- --help
+weft run examples/sysops_host.weft -- check -r git,sh
 weft run examples/data_pipeline.weft -- -i examples/data/users.jsonl -f ok -v
 ```
 
-Docs: [`docs/cli.md`](docs/cli.md)
+Docs: [`docs/cli.md`](docs/cli.md) · [`docs/SYSOPS.md`](docs/SYSOPS.md)
 
 ### Databases & messaging
 
@@ -318,6 +323,7 @@ fn main() -> Result {
 | [docs/TUTORIAL.md](docs/TUTORIAL.md) | Guided first hour |
 | [docs/LANGUAGE.md](docs/LANGUAGE.md) | End-to-end language reference |
 | [docs/COOKBOOK.md](docs/COOKBOOK.md) | Recipes (files, HTTP, agents, CLI, …) |
+| [docs/SYSOPS.md](docs/SYSOPS.md) | Ops / runbooks / host checks |
 | [examples/cookbook/](examples/cookbook/) | Runnable offline recipes |
 | [docs/STDLIB.md](docs/STDLIB.md) | Stdlib package map |
 | [docs/SYNTAX.md](docs/SYNTAX.md) | Short cheatsheet |
@@ -325,14 +331,14 @@ fn main() -> Result {
 
 ## Why Weft
 
-| Python pain | Weft |
-|-------------|------|
-| Slow cold start | Single binary, no site-packages |
-| GIL | Goroutine tasks, no shared mutable heap |
-| async coloring | `spawn` / `TaskGroup` (no function colors) |
-| Packaging hell | Core stdlib in the binary + vendor packages |
-| Indentation-only bugs | Required braces |
-| Schema/tools bolted on | `TypeInfo`, tools, Agent in stdlib |
+| Need | Weft |
+|------|------|
+| Fast start for scripts | Single static-friendly Go binary |
+| Safe concurrent glue | Tasks + deep-copy; channels preferred |
+| No async function coloring | `spawn` / groups / map fan-out by default |
+| Predictable packaging | Stdlib in the binary + `vendor/` + lock |
+| Clear structure | Required braces; small surface |
+| Agents as first-class | Tools, `llm.ask` / `llm.agent`, structured decode |
 
 ## Design principles
 
