@@ -1119,6 +1119,66 @@ fn main { boom() }`)
 	}
 }
 
+func TestSumTypePayload(t *testing.T) {
+	out := run(t, `
+enum Shape {
+    Circle(radius)
+    Rect(w, h)
+    Point
+}
+
+fn area(s) {
+    match s {
+        Shape.Circle(radius) { radius * radius }
+        Shape.Rect(w, h) { w * h }
+        Shape.Point { 0 }
+        _ { -1 }
+    }
+}
+
+fn main {
+    say(area(Shape.Circle(5)))
+    say(area(Shape.Rect(3, 4)))
+    say(area(Shape.Point))
+}`)
+	if out != "25\n12\n0" {
+		t.Fatalf("sum types = %q", out)
+	}
+}
+
+func TestSumTypeTag(t *testing.T) {
+	out := run(t, `
+enum Color {
+    RGB(r, g, b)
+    Hex(code)
+}
+fn main {
+    c := Color.RGB(255, 0, 0)
+    say(c._tag)
+    say(c.r)
+}`)
+	if out != "Color.RGB\n255" {
+		t.Fatalf("sum type tag = %q", out)
+	}
+}
+
+func TestPlainEnumBackwardCompat(t *testing.T) {
+	out := run(t, `
+enum Dir { Up, Down, Left, Right }
+fn main {
+    say(Dir.Up)
+    r := match Dir.Down {
+        Dir.Up { "u" }
+        Dir.Down { "d" }
+        _ { "?" }
+    }
+    say(r)
+}`)
+	if out != "Up\nd" {
+		t.Fatalf("plain enum = %q", out)
+	}
+}
+
 func TestRuntimeErrorMultiFrame(t *testing.T) {
 	re := &vm.RuntimeError{
 		Msg: "bad",

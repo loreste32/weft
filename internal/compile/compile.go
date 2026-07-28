@@ -106,10 +106,12 @@ func compileFile(file *ast.File, env *runtime.Env, requireMain, replMode bool) (
 			}
 		case *ast.EnumDecl:
 			// enum Status { Ok, Err } → global map Status with Status.Ok == "Ok"
+			// enum Shape { Circle(r), Point } → Shape.Circle(r) returns tagged struct
 			m := runtime.NewMap()
 			mo := m.Obj.(*runtime.MapObj)
 			seen := map[string]bool{}
-			for _, v := range d.Variants {
+			for _, pv := range d.Payloads {
+				v := pv.Name
 				if v == "" || seen[v] {
 					if seen[v] {
 						c.errorf(d.Pos(), "duplicate enum variant %s.%s", d.Name, v)
@@ -118,7 +120,37 @@ func compileFile(file *ast.File, env *runtime.Env, requireMain, replMode bool) (
 				}
 				seen[v] = true
 				mo.Keys = append(mo.Keys, v)
-				mo.Vals[v] = runtime.Str(v)
+				if len(pv.Fields) == 0 && !enumHasPayloads(d) {
+					// Pure unit enum: Status.Ok == "Ok" (backward compat)
+					mo.Vals[v] = runtime.Str(v)
+				} else if len(pv.Fields) == 0 {
+					// Unit variant in a mixed enum: wrap as tagged struct for consistent matching
+					enumName := d.Name
+					variantName := v
+					mo.Vals[v] = runtime.Struct(enumName, map[string]runtime.Value{
+						"_tag": runtime.Str(enumName + "." + variantName),
+					}, []string{"_tag"})
+				} else {
+					// Payload variant: Shape.Circle(5) → struct
+					enumName := d.Name
+					fields := pv.Fields
+					variantName := v
+					mo.Vals[v] = runtime.MakeBuiltin(d.Name+"."+v, len(fields), func(args []runtime.Value) (runtime.Value, error) {
+						fmap := map[string]runtime.Value{
+							"_tag": runtime.Str(enumName + "." + variantName),
+						}
+						order := []string{"_tag"}
+						for i, fname := range fields {
+							if i < len(args) {
+								fmap[fname] = args[i]
+							} else {
+								fmap[fname] = runtime.Null()
+							}
+							order = append(order, fname)
+						}
+						return runtime.Struct(enumName, fmap, order), nil
+					})
+				}
 			}
 			env.Set(d.Name, m)
 			prog.Globals = append(prog.Globals, d.Name)
@@ -661,13 +693,41 @@ func (c *Compiler) compileMatchExpr(e *ast.MatchExpr) {
 			c.errorf(arm.Pos_, "invalid match pattern")
 			continue
 		}
-		c.emitArg(OpLoadLocal, uint16(slot), arm.Pos_)
-		c.compileExpr(arm.Pattern)
-		c.emit(OpEq, arm.Pos_)
-		failJ := c.emitJump(OpJumpIfFalsePop, arm.Pos_)
-		c.compileBlockValue(arm.Body)
-		endJumps = append(endJumps, c.emitJump(OpJump, arm.Pos_))
-		c.patchJump(failJ)
+		if len(arm.Bindings) > 0 {
+			// Payload destructuring: compare _tag, then extract fields
+			// Load scrutinee._tag
+			c.emitArg(OpLoadLocal, uint16(slot), arm.Pos_)
+			idx := c.addConst(runtime.Str("_tag"))
+			c.emitArg(OpLoadConst, idx, arm.Pos_)
+			c.emit(OpGetField, arm.Pos_)
+			// Compare with expected tag string (e.g. "Shape.Circle")
+			tagStr := patternToTagString(arm.Pattern)
+			tagIdx := c.addConst(runtime.Str(tagStr))
+			c.emitArg(OpLoadConst, tagIdx, arm.Pos_)
+			c.emit(OpEq, arm.Pos_)
+			failJ := c.emitJump(OpJumpIfFalsePop, arm.Pos_)
+			// Bind each payload field to a local
+			for _, bname := range arm.Bindings {
+				c.emitArg(OpLoadLocal, uint16(slot), arm.Pos_)
+				bidx := c.addConst(runtime.Str(bname))
+				c.emitArg(OpLoadConst, bidx, arm.Pos_)
+				c.emit(OpGetField, arm.Pos_)
+				bslot := c.declareLocal(bname, false, false)
+				c.emitArg(OpStoreLocal, uint16(bslot), arm.Pos_)
+			}
+			c.compileBlockValue(arm.Body)
+			endJumps = append(endJumps, c.emitJump(OpJump, arm.Pos_))
+			c.patchJump(failJ)
+		} else {
+			// Simple equality match (existing behavior)
+			c.emitArg(OpLoadLocal, uint16(slot), arm.Pos_)
+			c.compileExpr(arm.Pattern)
+			c.emit(OpEq, arm.Pos_)
+			failJ := c.emitJump(OpJumpIfFalsePop, arm.Pos_)
+			c.compileBlockValue(arm.Body)
+			endJumps = append(endJumps, c.emitJump(OpJump, arm.Pos_))
+			c.patchJump(failJ)
+		}
 	}
 	// Fall-through when no pattern matched and no trailing wildcard.
 	if !e.Arms[len(e.Arms)-1].IsWildcard {
@@ -675,6 +735,29 @@ func (c *Compiler) compileMatchExpr(e *ast.MatchExpr) {
 	}
 	for _, j := range endJumps {
 		c.patchJump(j)
+	}
+}
+
+// enumHasPayloads reports whether any variant in the enum carries fields.
+func enumHasPayloads(d *ast.EnumDecl) bool {
+	for _, pv := range d.Payloads {
+		if len(pv.Fields) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// patternToTagString converts a match pattern AST (Ident or FieldExpr chain) to a dot-joined string.
+// Shape.Circle → "Shape.Circle"
+func patternToTagString(e ast.Expr) string {
+	switch e := e.(type) {
+	case *ast.Ident:
+		return e.Name
+	case *ast.FieldExpr:
+		return patternToTagString(e.X) + "." + e.Name
+	default:
+		return ""
 	}
 }
 

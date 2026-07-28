@@ -267,8 +267,29 @@ func (p *Parser) parseEnum(pub bool) *ast.EnumDecl {
 			p.next()
 			continue
 		}
-		d.Variants = append(d.Variants, p.tok.Lit)
+		vname := p.tok.Lit
 		p.next()
+		d.Variants = append(d.Variants, vname)
+
+		// Check for payload: Circle(radius) or Rect(w, h)
+		var fields []string
+		if p.tok.Kind == token.LParen {
+			p.next() // (
+			for p.tok.Kind != token.RParen && p.tok.Kind != token.EOF {
+				if p.tok.Kind != token.Ident {
+					p.errorf(p.tok.Pos, "expected field name in enum variant")
+					break
+				}
+				fields = append(fields, p.tok.Lit)
+				p.next()
+				if p.tok.Kind == token.Comma {
+					p.next()
+				}
+			}
+			p.expect(token.RParen)
+		}
+		d.Payloads = append(d.Payloads, ast.EnumVariant{Name: vname, Fields: fields})
+
 		if p.tok.Kind == token.Comma {
 			p.next()
 		}
@@ -560,8 +581,24 @@ func (p *Parser) parseMatchExpr() *ast.MatchExpr {
 				arm.IsWildcard = true
 				p.next()
 			} else {
-				// Status or Status.Ok (enum / const patterns)
+				// Status or Status.Ok or Shape.Circle(r, ...)
 				arm.Pattern = p.parseMatchPattern()
+				// Check for destructuring bindings: Pattern(a, b, ...)
+				if p.tok.Kind == token.LParen {
+					p.next() // (
+					for p.tok.Kind != token.RParen && p.tok.Kind != token.EOF {
+						if p.tok.Kind != token.Ident {
+							p.errorf(p.tok.Pos, "expected binding name in match pattern")
+							break
+						}
+						arm.Bindings = append(arm.Bindings, p.tok.Lit)
+						p.next()
+						if p.tok.Kind == token.Comma {
+							p.next()
+						}
+					}
+					p.expect(token.RParen)
+				}
 			}
 		case token.String, token.RawString, token.Int, token.Float, token.True, token.False, token.Null:
 			t := p.tok

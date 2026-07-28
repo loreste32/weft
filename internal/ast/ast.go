@@ -94,12 +94,22 @@ func (d *ConstDecl) Pos() token.Pos { return d.Pos_ }
 func (d *ConstDecl) declNode()      {}
 func (d *ConstDecl) stmtNode()      {}
 
-// EnumDecl: enum Name { A, B, C } — string-tagged names as a map (Name.A == "A").
+// EnumVariant is one variant in an enum declaration.
+// Fields is nil for unit variants (no payload).
+type EnumVariant struct {
+	Name   string
+	Fields []string // param names, nil for unit variants
+}
+
+// EnumDecl: enum Name { A, B(x), C(x, y) }
+// Unit variants: Name.A == "A" (backward compat).
+// Payload variants: Name.B(1) → struct with tag + fields.
 type EnumDecl struct {
 	Pos_     token.Pos
 	Pub      bool
 	Name     string
-	Variants []string
+	Variants []string      // flat names for backward compat
+	Payloads []EnumVariant // full variant info (includes unit + payload)
 }
 
 func (d *EnumDecl) Pos() token.Pos { return d.Pos_ }
@@ -434,9 +444,10 @@ func (e *MatchExpr) exprNode()      {}
 // MatchArm is one pattern → body branch.
 type MatchArm struct {
 	Pos_       token.Pos
-	Pattern    Expr // nil when Wildcard
+	Pattern    Expr     // nil when Wildcard
 	Body       *Block
 	IsWildcard bool
+	Bindings   []string // destructured payload bindings: Shape.Circle(r) → ["r"]
 }
 
 // FuncLit: anonymous fn
