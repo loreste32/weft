@@ -24,7 +24,7 @@ func Publish(dir, keyName string) error {
 }
 
 // RegistrySearch lists packages from the public registry.
-func RegistrySearch(query string) error {
+func RegistrySearch(query string, showAll bool) error {
 	registryURL := pkgman.RegistryURL()
 	idx, err := pkgman.FetchIndex(registryURL)
 	if err != nil {
@@ -39,24 +39,38 @@ func RegistrySearch(query string) error {
 		}
 		return nil
 	}
-	// deduplicate: show only the latest version of each package
-	latest := make(map[string]pkgman.RegistryPackage)
-	for _, p := range results {
-		if cur, ok := latest[p.Name]; !ok || pkgman.VersionGreater(p.Version, cur.Version) {
-			latest[p.Name] = p
+	// deduplicate unless --all
+	type entry struct {
+		name, version, summary string
+		signed                 bool
+	}
+	var display []entry
+	if showAll {
+		for _, p := range results {
+			display = append(display, entry{p.Name, p.Version, p.Summary, p.Signature != ""})
+		}
+	} else {
+		latest := make(map[string]pkgman.RegistryPackage)
+		for _, p := range results {
+			if cur, ok := latest[p.Name]; !ok || pkgman.VersionGreater(p.Version, cur.Version) {
+				latest[p.Name] = p
+			}
+		}
+		for _, p := range latest {
+			display = append(display, entry{p.Name, p.Version, p.Summary, p.Signature != ""})
 		}
 	}
-	fmt.Printf("registry  %s (%d packages)\n", registryURL, len(latest))
-	for _, p := range latest {
-		sum := p.Summary
+	fmt.Printf("registry  %s (%d packages)\n", registryURL, len(display))
+	for _, e := range display {
+		sum := e.summary
 		if sum == "" {
 			sum = "-"
 		}
 		signed := ""
-		if p.Signature != "" {
+		if e.signed {
 			signed = " [signed]"
 		}
-		fmt.Printf("  %-16s  %s  %s%s\n", p.Name, p.Version, sum, signed)
+		fmt.Printf("  %-16s  %s  %s%s\n", e.name, e.version, sum, signed)
 	}
 	return nil
 }
@@ -95,7 +109,18 @@ func RegistryInfo(name string) error {
 	if len(pkg.Deps) > 0 {
 		fmt.Printf("deps       %s\n", strings.Join(depsStr(pkg.Deps), ", "))
 	}
+	// list all available versions
+	var versions []string
+	for _, p := range idx.Packages {
+		if p.Name == name {
+			versions = append(versions, p.Version)
+		}
+	}
+	if len(versions) > 1 {
+		fmt.Printf("versions   %s\n", strings.Join(versions, ", "))
+	}
 	fmt.Printf("install    weft registry install %s\n", pkg.Name)
+	fmt.Printf("pin ver    weft registry install %s@%s\n", pkg.Name, pkg.Version)
 	return nil
 }
 

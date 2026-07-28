@@ -352,7 +352,7 @@ func TestFmtFiles(t *testing.T) {
 func TestRegistrySearchOffline(t *testing.T) {
 	// This will fail to connect but should not panic
 	t.Setenv("WEFT_REGISTRY", "http://127.0.0.1:1")
-	err := RegistrySearch("test")
+	err := RegistrySearch("test", false)
 	if err == nil {
 		t.Fatal("should error on unreachable registry")
 	}
@@ -582,11 +582,11 @@ func TestRegistrySearchMock(t *testing.T) {
 	defer srv.Close()
 
 	t.Setenv("WEFT_REGISTRY", srv.URL)
-	if err := RegistrySearch("bar"); err != nil {
+	if err := RegistrySearch("bar", false); err != nil {
 		t.Fatal(err)
 	}
 	// empty query
-	if err := RegistrySearch(""); err != nil {
+	if err := RegistrySearch("", false); err != nil {
 		t.Fatal(err)
 	}
 }

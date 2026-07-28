@@ -306,10 +306,18 @@ func cmdRegistry(args []string) int {
 	switch args[0] {
 	case "search", "list":
 		q := ""
-		if len(args) > 1 {
-			q = strings.Join(args[1:], " ")
+		showAll := false
+		for _, a := range args[1:] {
+			if a == "--all" || a == "-a" {
+				showAll = true
+			} else {
+				if q != "" {
+					q += " "
+				}
+				q += a
+			}
 		}
-		if err := weft.RegistrySearch(q); err != nil {
+		if err := weft.RegistrySearch(q, showAll); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
