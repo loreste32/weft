@@ -12,6 +12,8 @@ import (
 	"github.com/loreste/weft/internal/runtime"
 )
 
+// parseSignal is in proc_unix.go / proc_windows.go
+
 // packageProc — process management for ops scripts (ps, kill, pid info).
 func packageProc() runtime.Value {
 	p := pkg()
@@ -42,26 +44,7 @@ func packageProc() runtime.Value {
 		}
 		sig := syscall.SIGTERM
 		if len(args) >= 2 {
-			s := args[1].String()
-			switch strings.ToUpper(strings.TrimPrefix(s, "SIG")) {
-			case "KILL", "9":
-				sig = syscall.SIGKILL
-			case "INT", "2":
-				sig = syscall.SIGINT
-			case "HUP", "1":
-				sig = syscall.SIGHUP
-			case "USR1", "10":
-				sig = syscall.SIGUSR1
-			case "USR2", "12":
-				sig = syscall.SIGUSR2
-			case "TERM", "15":
-				sig = syscall.SIGTERM
-			default:
-				// try numeric
-				if n, e := strconv.Atoi(s); e == nil {
-					sig = syscall.Signal(n)
-				}
-			}
+			sig = parseSignal(args[1].String())
 		}
 		proc, err := os.FindProcess(int(pid))
 		if err != nil {
