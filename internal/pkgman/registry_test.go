@@ -254,16 +254,16 @@ func TestDownloadVerifiesChecksum(t *testing.T) {
 }
 
 func TestVersionGreater(t *testing.T) {
-	if !versionGreater("2.0.0", "1.0.0") {
+	if !VersionGreater("2.0.0", "1.0.0") {
 		t.Fatal("2 > 1")
 	}
-	if !versionGreater("1.1.0", "1.0.0") {
+	if !VersionGreater("1.1.0", "1.0.0") {
 		t.Fatal("1.1 > 1.0")
 	}
-	if !versionGreater("1.0.1", "1.0.0") {
+	if !VersionGreater("1.0.1", "1.0.0") {
 		t.Fatal("1.0.1 > 1.0.0")
 	}
-	if versionGreater("1.0.0", "1.0.0") {
+	if VersionGreater("1.0.0", "1.0.0") {
 		t.Fatal("equal")
 	}
 }

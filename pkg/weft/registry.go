@@ -39,21 +39,24 @@ func RegistrySearch(query string) error {
 		}
 		return nil
 	}
-	fmt.Printf("registry  %s\n", registryURL)
+	// deduplicate: show only the latest version of each package
+	latest := make(map[string]pkgman.RegistryPackage)
 	for _, p := range results {
+		if cur, ok := latest[p.Name]; !ok || pkgman.VersionGreater(p.Version, cur.Version) {
+			latest[p.Name] = p
+		}
+	}
+	fmt.Printf("registry  %s (%d packages)\n", registryURL, len(latest))
+	for _, p := range latest {
 		sum := p.Summary
 		if sum == "" {
 			sum = "-"
-		}
-		ver := p.Version
-		if ver == "" {
-			ver = "-"
 		}
 		signed := ""
 		if p.Signature != "" {
 			signed = " [signed]"
 		}
-		fmt.Printf("  %-16s  %s  %s%s\n", p.Name, ver, sum, signed)
+		fmt.Printf("  %-16s  %s  %s%s\n", p.Name, p.Version, sum, signed)
 	}
 	return nil
 }

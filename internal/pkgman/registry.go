@@ -108,7 +108,7 @@ func FindRegistryPackage(idx *RegistryIndex, name, constraint string) (*Registry
 			}
 		}
 		p := &idx.Packages[i]
-		if best == nil || versionGreater(p.Version, best.Version) {
+		if best == nil || VersionGreater(p.Version, best.Version) {
 			best = p
 		}
 	}
@@ -118,7 +118,8 @@ func FindRegistryPackage(idx *RegistryIndex, name, constraint string) (*Registry
 	return best, nil
 }
 
-func versionGreater(a, b string) bool {
+// VersionGreater reports whether version a is greater than b (semver).
+func VersionGreater(a, b string) bool {
 	am, ai, ap, _ := ParseSemver(a)
 	bm, bi, bp, _ := ParseSemver(b)
 	if am != bm {
