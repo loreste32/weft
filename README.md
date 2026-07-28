@@ -15,7 +15,7 @@ It handles errors with `Result` / `?` instead of exceptions, runs concurrent wor
 
 | | |
 |--|--|
-| Version | 0.3.31 (`main` branch) |
+| Version | 0.3.32 (`main` branch) |
 | Install | `go build -o weft ./cmd/weft` |
 | Docs | [docs/README.md](docs/README.md) |
 | Security | [SECURITY.md](SECURITY.md) |
@@ -96,14 +96,22 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 - Monorepo catalog: `weft packages list`
 - Capability system for third-party package sandboxing
 
-**Optional modules** (not in the binary — install via `weft get`):
+**Optional modules** (install via `weft registry install <name>`):
 
 | Module | What it does |
 |--------|-------------|
-| [warp](packages/warp/) | N-dimensional array math (pure Weft) |
+| [telecom](packages/telecom/) | IVA voice agents, FreeSWITCH ESL, Asterisk ARI, STT/TTS, DTMF, routing, queues, CDR |
 | [mold](packages/mold/) | Structured LLM JSON, validation, tool params |
 | [ml](packages/ml/) | Embeddings, vectors, RAG index |
 | [tokensave](packages/tokensave/) | Context thrift, memory, train data |
+| [warp](packages/warp/) | N-dimensional array math (pure Weft) |
+| [retry](packages/retry/) | Exponential backoff for flaky operations |
+| [semver](packages/semver/) | Parse, compare, and check semantic versions |
+| [cache](packages/cache/) | In-memory key-value cache with TTL |
+| [color](packages/color/) | ANSI terminal colors for CLI tools |
+| [jwt](packages/jwt/) | Decode and inspect JWT tokens |
+
+Browse all: [registry.weftproject.dev](https://registry.weftproject.dev)
 
 ## CLI
 
@@ -117,10 +125,13 @@ weft notebook <file> [-o out.html]
 weft bench | stdlib | doctor | version | lsp
 weft debug <file.weft>            debugger
 weft profile <file.weft>          profiler
+weft update                       update weft to latest version
+weft upgrade                      upgrade installed packages
 
 weft new module|app|cli <name>    scaffold a project
 weft get <name> <path|git>        add a dependency
 weft install                      install from weft.json
+weft upgrade                      upgrade packages to latest
 weft publish [--key name]         sign and upload to registry
 weft registry search|install|keygen|serve
 ```

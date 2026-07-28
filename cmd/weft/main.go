@@ -163,6 +163,22 @@ func run(args []string) int {
 		return weft.PrintEvalReport(cases)
 	case "gen":
 		return cmdGen(args[1:])
+	case "update":
+		if err := weft.SelfUpdate(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	case "upgrade":
+		dir := "."
+		if len(args) > 1 {
+			dir = args[1]
+		}
+		if err := weft.UpgradePackages(dir); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
 	case "doctor":
 		if err := weft.Doctor(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -191,6 +207,8 @@ Language:
   weft fmt [--check] <file.weft|dir>…  # format (--check for CI)
   weft bench [path…] [-n N]  # microbench fn bench_* in *_bench.weft
   weft gen "task" [-o out.weft] [--run]   # LLM writes Weft (pure Go API)
+  weft update                update weft to the latest version
+  weft upgrade               upgrade installed packages to latest
   weft doctor                environment readiness
   weft lsp                   Language Server (stdio) for editors
   weft ollama list|chat|ps   # local Ollama

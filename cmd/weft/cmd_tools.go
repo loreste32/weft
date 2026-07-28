@@ -17,7 +17,8 @@ func isCommand(s string) bool {
 		"repl", "check", "test", "stdlib", "fmt", "bench", "init", "new", "mod", "get", "install", "list", "deps",
 		"packages", "pkgs", "catalog",
 		"publish", "registry", "notebook", "nb", "debug", "profile",
-		"prompt", "teach", "train", "eval", "gen", "doctor", "ollama", "vllm", "lsp":
+		"prompt", "teach", "train", "eval", "gen", "doctor", "ollama", "vllm", "lsp",
+		"update", "upgrade":
 		return true
 	}
 	return false

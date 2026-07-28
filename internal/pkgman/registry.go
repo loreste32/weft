@@ -36,17 +36,17 @@ type RegistryIndex struct {
 
 // RegistryPackage is one published package in the registry.
 type RegistryPackage struct {
-	Name       string            `json:"name"`
-	Version    string            `json:"version"`
-	Summary    string            `json:"summary,omitempty"`
-	Author     string            `json:"author,omitempty"`
-	License    string            `json:"license,omitempty"`
-	PublicKey  string            `json:"public_key,omitempty"` // hex ed25519
-	Signature  string            `json:"signature,omitempty"`  // hex of archive sig
-	ArchiveURL string            `json:"archive_url"`          // relative or absolute
-	Sum        string            `json:"sum,omitempty"`        // sha256 of archive
-	Keywords   []string          `json:"keywords,omitempty"`
-	Deps        map[string]string `json:"deps,omitempty"`        // name → version constraint
+	Name        string            `json:"name"`
+	Version     string            `json:"version"`
+	Summary     string            `json:"summary,omitempty"`
+	Author      string            `json:"author,omitempty"`
+	License     string            `json:"license,omitempty"`
+	PublicKey   string            `json:"public_key,omitempty"` // hex ed25519
+	Signature   string            `json:"signature,omitempty"`  // hex of archive sig
+	ArchiveURL  string            `json:"archive_url"`          // relative or absolute
+	Sum         string            `json:"sum,omitempty"`        // sha256 of archive
+	Keywords    []string          `json:"keywords,omitempty"`
+	Deps        map[string]string `json:"deps,omitempty"` // name → version constraint
 	Published   string            `json:"published,omitempty"`
 	Exports     []string          `json:"exports,omitempty"`     // pub fn/type names
 	Description string            `json:"description,omitempty"` // long description
