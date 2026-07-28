@@ -2,6 +2,7 @@ package weft
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/loreste/weft/internal/pkgman"
@@ -164,8 +165,18 @@ func RegistryInstall(projectDir, spec string) error {
 		fmt.Printf("signature verified (%s)\n", pkg.PublicKey[:16]+"…")
 	}
 
-	// Add as dep and install
-	return pkgman.AddDep(projectDir, name, archivePath)
+	// Extract archive to temp dir, then add as path dep
+	extractDir, err := os.MkdirTemp("", "weft-registry-*")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(extractDir)
+
+	if err := pkgman.ExtractArchive(archivePath, extractDir); err != nil {
+		return fmt.Errorf("extract %s: %w", pkg.Name, err)
+	}
+
+	return pkgman.AddDep(projectDir, name, extractDir)
 }
 
 // RegistryKeygen generates a new signing keypair.

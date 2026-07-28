@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -102,6 +103,12 @@ func SelfUpdate() error {
 	if err := os.Chmod(tmpPath, 0o755); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("chmod: %w", err)
+	}
+
+	// macOS: remove quarantine and ad-hoc sign so Gatekeeper doesn't kill it
+	if runtime.GOOS == "darwin" {
+		exec.Command("xattr", "-cr", tmpPath).Run()
+		exec.Command("codesign", "--force", "-s", "-", tmpPath).Run()
 	}
 
 	// atomic replace: rename old, rename new, remove old

@@ -522,6 +522,11 @@ func extOf(url string) string {
 	}
 }
 
+// ExtractArchive extracts a .zip, .tar.gz, or .tar archive to dest.
+func ExtractArchive(archive, dest string) error {
+	return extractArchive(archive, dest)
+}
+
 func extractArchive(archive, dest string) error {
 	switch {
 	case strings.HasSuffix(archive, ".zip"):
