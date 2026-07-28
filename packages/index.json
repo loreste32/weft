@@ -19,6 +19,12 @@
       "path": "./ml",
       "version": "0.1.0",
       "summary": "Embeddings, vectors, RAG index, metrics"
+    },
+    {
+      "name": "warp",
+      "path": "./warp",
+      "version": "0.1.0",
+      "summary": "N-dimensional array math — pure Weft, no native deps"
     }
   ]
 }

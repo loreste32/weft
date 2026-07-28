@@ -1,0 +1,21 @@
+{
+  "name": "warp",
+  "version": "0.1.0",
+  "description": "N-dimensional array math for Weft — pure .weft, no native deps",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": [
+    "array", "zeros", "ones", "arange", "linspace", "full",
+    "shape", "size", "ndim", "reshape", "flatten", "T",
+    "add", "sub", "mul", "div", "neg", "abs_",
+    "dot", "matmul",
+    "sum", "mean", "std_", "var_", "min_", "max_", "argmin", "argmax",
+    "sqrt", "pow_", "exp", "log_",
+    "where", "clip", "round_",
+    "eye", "diag",
+    "equal", "less", "greater",
+    "to_list", "print_"
+  ],
+  "license": "Apache-2.0",
+  "keywords": ["array", "math", "science", "ndarray", "warp"]
+}
