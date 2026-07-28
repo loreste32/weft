@@ -99,6 +99,52 @@ func packageWeb(env *runtime.Env) runtime.Value {
 		return m, nil
 	}, 1)
 
+	// web.sse_channel() -> {send(data), close(), response}
+	// Push-based SSE: handler returns response, then calls send() to push events.
+	set(p, "sse_channel", func(args []runtime.Value) (runtime.Value, error) {
+		ch := make(chan string, 64)
+		done := make(chan struct{})
+
+		// Iterator that pulls from channel
+		iter := &chanSSEIter{ch: ch, done: done}
+
+		// Build response with the iterator as stream source
+		resp := runtime.NewMap()
+		rmo := resp.Obj.(*runtime.MapObj)
+		rmo.Keys = []string{"status", "type", "stream", "sse"}
+		rmo.Vals["status"] = runtime.Int(200)
+		rmo.Vals["type"] = runtime.Str("text/event-stream; charset=utf-8")
+		rmo.Vals["stream"] = runtime.MakeIter(iter)
+		rmo.Vals["sse"] = runtime.Bool(true)
+
+		// Build control handle
+		handle := runtime.NewMap()
+		hmo := handle.Obj.(*runtime.MapObj)
+		hmo.Keys = []string{"send", "close", "response"}
+		hmo.Vals["send"] = runtime.MakeBuiltin("sse.send", 1, func(args []runtime.Value) (runtime.Value, error) {
+			if len(args) < 1 {
+				return runtime.Unit(), nil
+			}
+			msg := args[0].String()
+			select {
+			case ch <- msg:
+			case <-done:
+			}
+			return runtime.Unit(), nil
+		})
+		hmo.Vals["close"] = runtime.MakeBuiltin("sse.close", 0, func(args []runtime.Value) (runtime.Value, error) {
+			select {
+			case <-done:
+			default:
+				close(done)
+			}
+			return runtime.Unit(), nil
+		})
+		hmo.Vals["response"] = resp
+
+		return handle, nil
+	}, 0)
+
 	// --- HTMX ---------------------------------------------------------------
 	// web.is_htmx(req) -> bool  (HX-Request: true)
 	set(p, "is_htmx", func(args []runtime.Value) (runtime.Value, error) {
@@ -1399,4 +1445,22 @@ func displayAddr(addr string) string {
 		return "127.0.0.1" + addr
 	}
 	return addr
+}
+
+// chanSSEIter is a pull iterator backed by a channel for push-based SSE.
+type chanSSEIter struct {
+	ch   <-chan string
+	done <-chan struct{}
+}
+
+func (it *chanSSEIter) Next() (runtime.Value, bool) {
+	select {
+	case msg, ok := <-it.ch:
+		if !ok {
+			return runtime.Null(), false
+		}
+		return runtime.Str(msg), true
+	case <-it.done:
+		return runtime.Null(), false
+	}
 }

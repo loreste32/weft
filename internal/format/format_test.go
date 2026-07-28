@@ -491,3 +491,239 @@ func TestFormatPreservesNumberLits(t *testing.T) {
 		t.Fatalf("not stable:\n%s\nvs\n%s", out, out2)
 	}
 }
+
+func TestFormatTypeAnnotations(t *testing.T) {
+	src := `fn add(a: int, b: int) -> int {
+    a + b
+}
+fn main { say(add(1, 2)) }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, ": int") {
+		t.Fatal(out)
+	}
+	if !strings.Contains(out, "-> int") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatListType(t *testing.T) {
+	src := `type Bag {
+    items: [str]
+}
+fn main { say(1) }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "[str]") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatMapType(t *testing.T) {
+	src := `type Config {
+    data: Map[str, int]
+}
+fn main { say(1) }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = out
+}
+
+func TestFormatResultType(t *testing.T) {
+	src := `fn fetch() -> Result[str] { Ok("hi") }
+fn main { say(fetch()) }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Result") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatOptionalType(t *testing.T) {
+	src := `type User {
+    name: str
+    email: str?
+}
+fn main { say(1) }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "str?") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatSumTypeEnum(t *testing.T) {
+	src := `enum Shape {
+    Circle(r)
+    Rect(w, h)
+    Point
+}
+fn main { say(Shape.Circle(5)) }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Circle") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatMatchDestructure(t *testing.T) {
+	src := `enum Shape {
+    Circle(r)
+    Point
+}
+fn main {
+    s := Shape.Circle(5)
+    r := match s {
+        Shape.Circle(r) { r * r }
+        Shape.Point { 0 }
+        _ { -1 }
+    }
+    say(r)
+}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = out
+}
+
+func TestFormatBinaryPrecedence(t *testing.T) {
+	src := `fn main {
+    x := 1 + 2 * 3
+    y := (1 + 2) * 3
+    z := true && false || true
+    w := 1 == 2 || 3 != 4
+    v := null ?? 42
+    say(x, y, z, w, v)
+}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "??") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatNestedCalls(t *testing.T) {
+	src := `fn main {
+    say(len(filter([1, 2, 3, 4, 5], fn(x) { x > 2 })))
+}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = out
+}
+
+func TestFormatLongList(t *testing.T) {
+	src := `fn main {
+    x := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]
+    say(x)
+}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = out
+}
+
+func TestFormatStructLitMultiField(t *testing.T) {
+	src := `type Config {
+    name: str
+    port: int
+    debug: bool
+    host: str
+    workers: int
+}
+fn main {
+    c := Config{name: "app", port: 8080, debug: true, host: "localhost", workers: 4}
+    say(c)
+}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = out
+}
+
+func TestFormatWhileBreakContinue(t *testing.T) {
+	src := `fn main {
+    mut i := 0
+    while i < 10 {
+        if i == 5 { break }
+        if i % 2 == 0 {
+            i = i + 1
+            continue
+        }
+        say(i)
+        i = i + 1
+    }
+}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "break") && !strings.Contains(out, "continue") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatEmptyFn(t *testing.T) {
+	src := `fn noop {}
+fn main { noop() }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "fn noop") {
+		t.Fatal(out)
+	}
+}
+
+func TestFormatMultilineIfElse(t *testing.T) {
+	src := `fn main {
+    x := 5
+    if x > 10 {
+        say("big")
+    } else if x > 5 {
+        say("medium")
+    } else {
+        say("small")
+    }
+}
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out2, _ := format.Source("t.weft", out)
+	if out != out2 {
+		t.Fatalf("not stable:\n%s\nvs\n%s", out, out2)
+	}
+}
