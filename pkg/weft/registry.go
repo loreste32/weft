@@ -3,6 +3,7 @@ package weft
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/loreste/weft/internal/pkgman"
@@ -165,18 +166,38 @@ func RegistryInstall(projectDir, spec string) error {
 		fmt.Printf("signature verified (%s)\n", pkg.PublicKey[:16]+"…")
 	}
 
-	// Extract archive to temp dir, then add as path dep
-	extractDir, err := os.MkdirTemp("", "weft-registry-*")
-	if err != nil {
-		return fmt.Errorf("create temp dir: %w", err)
+	// Extract archive directly to vendor/
+	vendorDir := filepath.Join(projectDir, "vendor", name)
+	os.RemoveAll(vendorDir) // clean previous version
+	if err := os.MkdirAll(vendorDir, 0o755); err != nil {
+		return fmt.Errorf("create vendor dir: %w", err)
 	}
-	defer os.RemoveAll(extractDir)
-
-	if err := pkgman.ExtractArchive(archivePath, extractDir); err != nil {
+	if err := pkgman.ExtractArchive(archivePath, vendorDir); err != nil {
+		os.RemoveAll(vendorDir)
 		return fmt.Errorf("extract %s: %w", pkg.Name, err)
 	}
 
-	return pkgman.AddDep(projectDir, name, extractDir)
+	// Init weft.json if needed
+	manifestPath := filepath.Join(projectDir, "weft.json")
+	if _, err := os.Stat(manifestPath); err != nil {
+		pkgman.Init(projectDir, filepath.Base(projectDir))
+	}
+
+	// Update weft.json deps
+	m, err := pkgman.LoadManifest(projectDir)
+	if err != nil {
+		return err
+	}
+	if m.Deps == nil {
+		m.Deps = map[string]pkgman.DepSpec{}
+	}
+	m.Deps[name] = pkgman.DepSpec{Path: "vendor/" + name, Version: pkg.Version}
+	if err := pkgman.SaveManifest(projectDir, m); err != nil {
+		return err
+	}
+
+	fmt.Printf("installed %s@%s to vendor/%s\n", name, pkg.Version, name)
+	return nil
 }
 
 // RegistryKeygen generates a new signing keypair.
