@@ -2,7 +2,6 @@ package weft
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/loreste/weft/internal/pkgman"
@@ -189,7 +188,8 @@ func RegistryExportPublicKey(name string) error {
 	return nil
 }
 
-func init() {
-	// Ensure weft help shows registry commands
-	_ = os.Getenv("WEFT_REGISTRY")
+// RegistryServe starts a local registry server.
+func RegistryServe(addr, dataDir, token string) error {
+	srv := pkgman.NewRegistryServer(dataDir, token)
+	return srv.ListenAndServe(addr)
 }

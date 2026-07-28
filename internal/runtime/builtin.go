@@ -51,6 +51,10 @@ type Env struct {
 	// PackageRoot, when non-empty, confines relative path imports to this tree
 	// (installed / named packages). Empty for app scripts (path imports free).
 	PackageRoot string
+
+	// Coverage tracking (weft test --coverage)
+	// When non-nil, VM records "file:func" keys on each call.
+	Coverage map[string]bool
 }
 
 // Context returns env.Ctx or background.

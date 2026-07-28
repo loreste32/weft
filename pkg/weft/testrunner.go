@@ -27,12 +27,20 @@ type TestCase struct {
 
 // TestReport aggregates weft test results.
 type TestReport struct {
-	Cases []TestCase
-	Pass  int
-	Fail  int
-	Skip  int
-	Files int
-	Total int
+	Cases    []TestCase
+	Pass     int
+	Fail     int
+	Skip     int
+	Files    int
+	Total    int
+	Coverage *CoverageReport // nil unless --coverage
+}
+
+// CoverageReport tracks which functions were hit during test runs.
+type CoverageReport struct {
+	Hit   map[string]bool // "file:func" → true
+	All   map[string]bool // all declared functions
+	Pct   float64
 }
 
 // TestOptions configures discovery and execution.
@@ -43,6 +51,8 @@ type TestOptions struct {
 	Quiet bool
 	// Filter substring: only run test names containing Filter.
 	Filter string
+	// Coverage enables function-level coverage tracking.
+	Coverage bool
 	// Options for the Weft runtime (LLM mock, env, …).
 	Runtime Options
 }
@@ -66,16 +76,28 @@ func RunTests(opts TestOptions) (*TestReport, error) {
 		opts.Runtime.LLMDo = defaultEvalLLMMock
 	}
 
+	// Shared coverage set across all test files
+	var covHit map[string]bool
+	var covAll map[string]bool
+	if opts.Coverage {
+		covHit = map[string]bool{}
+		covAll = map[string]bool{}
+	}
+
 	for _, f := range files {
-		cases, err := runTestFile(f, opts)
+		cases, allFuncs, err := runTestFile(f, opts, covHit)
 		if err != nil {
-			// file-level failure (parse/compile)
 			rep.Cases = append(rep.Cases, TestCase{
 				File: f, Name: "(file)", OK: false, Err: err.Error(),
 			})
 			rep.Fail++
 			rep.Total++
 			continue
+		}
+		if covAll != nil {
+			for k := range allFuncs {
+				covAll[k] = true
+			}
 		}
 		for _, c := range cases {
 			rep.Cases = append(rep.Cases, c)
@@ -90,6 +112,15 @@ func RunTests(opts TestOptions) (*TestReport, error) {
 			}
 		}
 	}
+
+	if opts.Coverage && len(covAll) > 0 {
+		rep.Coverage = &CoverageReport{
+			Hit: covHit,
+			All: covAll,
+			Pct: float64(len(covHit)) / float64(len(covAll)) * 100,
+		}
+	}
+
 	return rep, nil
 }
 
@@ -152,19 +183,24 @@ func isTestFile(path string) bool {
 	return strings.HasSuffix(name, "_test") || strings.HasPrefix(name, "test_")
 }
 
-func runTestFile(path string, opts TestOptions) ([]TestCase, error) {
+func runTestFile(path string, opts TestOptions, covHit map[string]bool) ([]TestCase, map[string]bool, error) {
 	src, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	file, perrs := parse.ParseFile(path, string(src))
 	if perrs.HasErrors() {
-		return nil, fmt.Errorf("parse: %v", perrs)
+		return nil, nil, fmt.Errorf("parse: %v", perrs)
 	}
 
 	// Fresh env per file so tests don't share mutable state.
 	ctx := New(opts.Runtime)
 	env := ctx.Env()
+
+	// Enable coverage tracking
+	if covHit != nil {
+		env.Coverage = covHit
+	}
 	// Package-dir tests: load weft.json entry first so `use "./lib.weft"` resolves and
 	// same-folder modules work without a full vendor install.
 	if dir := filepath.Dir(path); dir != "" {
@@ -176,7 +212,14 @@ func runTestFile(path string, opts TestOptions) ([]TestCase, error) {
 
 	prog, cerrs := compile.CompileFileLib(file, env)
 	if cerrs.HasErrors() {
-		return nil, fmt.Errorf("compile: %v", cerrs)
+		return nil, nil, fmt.Errorf("compile: %v", cerrs)
+	}
+
+	// Collect all declared functions for coverage denominator
+	allFuncs := map[string]bool{}
+	for name := range prog.Funcs {
+		key := path + ":" + name
+		allFuncs[key] = true
 	}
 
 	var names []string
@@ -196,11 +239,10 @@ func runTestFile(path string, opts TestOptions) ([]TestCase, error) {
 
 	var cases []TestCase
 	if len(names) == 0 {
-		// File matched pattern but no test_* — still report
 		cases = append(cases, TestCase{
 			File: path, Name: "(no test_* fns)", Skipped: true, Reason: "no tests", OK: true,
 		})
-		return cases, nil
+		return cases, allFuncs, nil
 	}
 
 	machine := vm.New(env)
@@ -224,7 +266,7 @@ func runTestFile(path string, opts TestOptions) ([]TestCase, error) {
 		}
 		cases = append(cases, c)
 	}
-	return cases, nil
+	return cases, allFuncs, nil
 }
 
 // PrintTestReport writes a human summary; returns process exit code.
@@ -256,6 +298,29 @@ func PrintTestReport(rep *TestReport, quiet bool) int {
 	}
 	fmt.Printf("weft test  %d passed, %d failed, %d skipped  (%d files, %d cases)\n",
 		rep.Pass, rep.Fail, rep.Skip, rep.Files, rep.Total)
+
+	if rep.Coverage != nil {
+		fmt.Printf("\ncoverage:  %.1f%% of functions (%d/%d)\n", rep.Coverage.Pct, len(rep.Coverage.Hit), len(rep.Coverage.All))
+		if !quiet {
+			// Show uncovered functions
+			var uncovered []string
+			for fn := range rep.Coverage.All {
+				if !rep.Coverage.Hit[fn] {
+					uncovered = append(uncovered, fn)
+				}
+			}
+			sort.Strings(uncovered)
+			if len(uncovered) > 0 && len(uncovered) <= 30 {
+				fmt.Println("uncovered:")
+				for _, fn := range uncovered {
+					fmt.Printf("  %s\n", fn)
+				}
+			} else if len(uncovered) > 30 {
+				fmt.Printf("uncovered: %d functions (use -q for summary only)\n", len(uncovered))
+			}
+		}
+	}
+
 	if rep.Fail > 0 {
 		return 1
 	}

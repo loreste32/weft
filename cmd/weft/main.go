@@ -1109,6 +1109,8 @@ func cmdTest(args []string) int {
 		switch {
 		case a == "-q" || a == "--quiet":
 			opts.Quiet = true
+		case a == "--coverage" || a == "--cover" || a == "-cover":
+			opts.Coverage = true
 		case a == "-run" || a == "--run":
 			if i+1 < len(args) {
 				i++
@@ -1210,8 +1212,31 @@ func cmdRegistry(args []string) int {
 			return 1
 		}
 		return 0
+	case "serve":
+		addr := ":8089"
+		dataDir := "./registry-data"
+		token := os.Getenv("WEFT_REGISTRY_TOKEN")
+		for i := 1; i < len(args); i++ {
+			switch {
+			case args[i] == "--addr" || args[i] == "-a":
+				if i+1 < len(args) {
+					i++
+					addr = args[i]
+				}
+			case args[i] == "--data" || args[i] == "-d":
+				if i+1 < len(args) {
+					i++
+					dataDir = args[i]
+				}
+			}
+		}
+		if err := weft.RegistryServe(addr, dataDir, token); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
 	default:
-		fmt.Fprintln(os.Stderr, "usage: weft registry search|info|install|keygen|keys")
+		fmt.Fprintln(os.Stderr, "usage: weft registry search|info|install|keygen|keys|serve")
 		return 2
 	}
 }

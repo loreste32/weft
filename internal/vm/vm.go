@@ -590,6 +590,14 @@ func (vm *VM) call(callee runtime.Value, args []runtime.Value) (runtime.Value, e
 		return v, nil
 	case runtime.KindFunc:
 		fn := callee.Obj.(*runtime.FuncObj)
+		// Coverage: record function hit
+		if vm.Env.Coverage != nil && fn.Name != "" {
+			key := fn.Name
+			if ch, ok := fn.Chunk.(*compile.Chunk); ok && ch.File != "" {
+				key = ch.File + ":" + fn.Name
+			}
+			vm.Env.Coverage[key] = true
+		}
 		// Package/module functions carry a home Env for sibling globals.
 		if fn.Env != nil && fn.Env != vm.Env {
 			sub := New(fn.Env)
