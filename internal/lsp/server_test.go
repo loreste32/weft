@@ -581,3 +581,145 @@ func TestLSPFormattingAndEnumCompletion(t *testing.T) {
 		t.Fatal("enum definition missing", msgs)
 	}
 }
+
+func TestLSPRename(t *testing.T) {
+	src := "fn add(a, b) { a + b }\nfn main { say(add(1, 2)) }\n"
+	in := &bytes.Buffer{}
+	out := &bytes.Buffer{}
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "textDocument/didOpen",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": "file:///tmp/r.weft", "text": src},
+		},
+	})
+	// prepareRename on "add" at line 0, char 3
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "textDocument/prepareRename",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": "file:///tmp/r.weft"},
+			"position":     map[string]any{"line": 0, "character": 3},
+		},
+	})
+	// rename "add" → "sum"
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "id": 3, "method": "textDocument/rename",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": "file:///tmp/r.weft"},
+			"position":     map[string]any{"line": 0, "character": 3},
+			"newName":      "sum",
+		},
+	})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 9, "method": "shutdown"})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "method": "exit"})
+	if err := lsp.Run(in, out); err != nil {
+		t.Fatal(err)
+	}
+	msgs := readAllMessages(out)
+	var prepareOK, renameOK bool
+	for _, m := range msgs {
+		id, _ := m["id"].(float64)
+		if id == 2 && m["result"] != nil {
+			prepareOK = true
+		}
+		if id == 3 {
+			if res, ok := m["result"].(map[string]any); ok && res != nil {
+				if changes, ok := res["changes"].(map[string]any); ok {
+					for _, edits := range changes {
+						if es, ok := edits.([]any); ok && len(es) >= 2 {
+							renameOK = true
+						}
+					}
+				}
+			}
+		}
+	}
+	if !prepareOK {
+		t.Fatal("prepareRename failed", msgs)
+	}
+	if !renameOK {
+		t.Fatal("rename failed", msgs)
+	}
+}
+
+func TestLSPRenameKeyword(t *testing.T) {
+	in := &bytes.Buffer{}
+	out := &bytes.Buffer{}
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "textDocument/didOpen",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": "file:///tmp/k.weft", "text": "fn main { say(1) }"},
+		},
+	})
+	// try to rename "fn" (keyword) — should return null
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "textDocument/prepareRename",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": "file:///tmp/k.weft"},
+			"position":     map[string]any{"line": 0, "character": 0},
+		},
+	})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 9, "method": "shutdown"})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "method": "exit"})
+	lsp.Run(in, out)
+	msgs := readAllMessages(out)
+	for _, m := range msgs {
+		id, _ := m["id"].(float64)
+		if id == 2 && m["result"] != nil {
+			t.Fatal("keywords should not be renameable")
+		}
+	}
+}
+
+func TestLSPDidChange(t *testing.T) {
+	in := &bytes.Buffer{}
+	out := &bytes.Buffer{}
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "textDocument/didOpen",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": "file:///tmp/c.weft", "text": "fn main { say(1) }"},
+		},
+	})
+	// Change content
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "textDocument/didChange",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": "file:///tmp/c.weft"},
+			"contentChanges": []any{
+				map[string]any{"text": "fn main { say(2) }"},
+			},
+		},
+	})
+	// Close
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "textDocument/didClose",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": "file:///tmp/c.weft"},
+		},
+	})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 9, "method": "shutdown"})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "method": "exit"})
+	if err := lsp.Run(in, out); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLSPUnknownMethod(t *testing.T) {
+	in := &bytes.Buffer{}
+	out := &bytes.Buffer{}
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "custom/unknown", "params": map[string]any{}})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "method": "custom/notification"})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 9, "method": "shutdown"})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "method": "exit"})
+	if err := lsp.Run(in, out); err != nil {
+		t.Fatal(err)
+	}
+}
