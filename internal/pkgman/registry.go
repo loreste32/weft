@@ -174,11 +174,13 @@ func DownloadAndVerify(registryURL string, pkg RegistryPackage, dest string) err
 		}
 	}
 
-	// Verify signature if present
+	// Verify signature — reject unsigned packages unless WEFT_ALLOW_UNSIGNED=1
 	if pkg.PublicKey != "" && pkg.Signature != "" {
 		if err := Verify(pkg.PublicKey, data, pkg.Signature); err != nil {
 			return fmt.Errorf("signature verification failed for %s@%s: %w", pkg.Name, pkg.Version, err)
 		}
+	} else if os.Getenv("WEFT_ALLOW_UNSIGNED") != "1" {
+		return fmt.Errorf("package %s@%s is unsigned — refusing to install (set WEFT_ALLOW_UNSIGNED=1 to override)", pkg.Name, pkg.Version)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {

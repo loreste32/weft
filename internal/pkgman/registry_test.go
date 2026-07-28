@@ -201,8 +201,14 @@ func TestDownloadUnsigned(t *testing.T) {
 	}
 
 	dest := filepath.Join(t.TempDir(), "unsigned.tar.gz")
+	// Unsigned packages are rejected by default
+	if err := DownloadAndVerify(srv.URL, pkg, dest); err == nil {
+		t.Fatal("unsigned should be rejected by default")
+	}
+	// With override, should work
+	t.Setenv("WEFT_ALLOW_UNSIGNED", "1")
 	if err := DownloadAndVerify(srv.URL, pkg, dest); err != nil {
-		t.Fatal("unsigned should still download")
+		t.Fatalf("unsigned should download with WEFT_ALLOW_UNSIGNED=1: %v", err)
 	}
 }
 
