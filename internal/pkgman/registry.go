@@ -19,7 +19,7 @@ import (
 
 // DefaultRegistryURL is the public Weft package registry.
 // Override with WEFT_REGISTRY env var.
-const DefaultRegistryURL = "https://registry.weft.dev"
+const DefaultRegistryURL = "https://registry.weftproject.dev"
 
 // RegistryURL returns the active registry URL.
 func RegistryURL() string {
