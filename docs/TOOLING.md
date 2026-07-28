@@ -14,6 +14,9 @@ Small set of commands for day-to-day work. Nothing here replaces a full IDE or p
 | `weft notebook <file> [-o out.html]` | Run `.weft` as cells, output HTML. |
 | `weft debug <file>` | Interactive source-level debugger. |
 | `weft profile <file>` | Execution profiler. |
+| `weft mcp serve <file>` | Run Weft functions as MCP tools (for AI assistants). |
+| `weft update` | Self-update weft binary to latest version. |
+| `weft upgrade` | Upgrade installed packages to latest registry versions. |
 | `weft lsp` | Language server: diagnostics, completion, hover, definition, symbols, **format**. |
 | `weft eval [dir]` | Smoke-run scripts that have `fn main`. |
 | `weft train eval` | Score the embedded gold examples (parse/compile). |

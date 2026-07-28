@@ -15,7 +15,7 @@ It handles errors with `Result` / `?` instead of exceptions, runs concurrent wor
 
 | | |
 |--|--|
-| Version | 0.3.32 (`main` branch) |
+| Version | 0.3.33 (`main` branch) |
 | Install | `go build -o weft ./cmd/weft` |
 | Docs | [docs/README.md](docs/README.md) |
 | Security | [SECURITY.md](SECURITY.md) |
@@ -88,6 +88,7 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 - `weft bench` — microbenchmarks
 - `weft debug <file>` — interactive source-level debugger
 - `weft profile <file>` — execution profiler
+- `weft mcp serve <file>` — run Weft functions as MCP tools for AI assistants
 - `weft lsp` — Language Server (completion, hover, rename, diagnostics)
 
 **Packages:**
