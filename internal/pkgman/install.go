@@ -528,6 +528,24 @@ func ExtractArchive(archive, dest string) error {
 }
 
 func extractArchive(archive, dest string) error {
+	// detect format by magic bytes, not extension (PackArchive creates zip but
+	// registry names files .tar.gz)
+	f, err := os.Open(archive)
+	if err != nil {
+		return err
+	}
+	var magic [4]byte
+	f.Read(magic[:])
+	f.Close()
+
+	if magic[0] == 'P' && magic[1] == 'K' { // zip magic: PK\x03\x04
+		return unzip(archive, dest)
+	}
+	if magic[0] == 0x1f && magic[1] == 0x8b { // gzip magic
+		return untarGz(archive, dest)
+	}
+
+	// fall back to extension
 	switch {
 	case strings.HasSuffix(archive, ".zip"):
 		return unzip(archive, dest)
@@ -536,7 +554,6 @@ func extractArchive(archive, dest string) error {
 	case strings.HasSuffix(archive, ".tar"):
 		return untar(archive, dest)
 	default:
-		// single file package?
 		return fmt.Errorf("unsupported archive type: %s", archive)
 	}
 }
