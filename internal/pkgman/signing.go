@@ -35,6 +35,9 @@ func GenerateKey(name string) (*KeyPair, error) {
 
 // SaveKey writes a keypair to ~/.weft/keys/<name>.json.
 func SaveKey(name string, kp *KeyPair) error {
+	if err := validateKeyName(name); err != nil {
+		return err
+	}
 	dir, err := keysDir()
 	if err != nil {
 		return err
@@ -57,6 +60,9 @@ func SaveKey(name string, kp *KeyPair) error {
 
 // LoadKey reads a keypair from ~/.weft/keys/<name>.json.
 func LoadKey(name string) (*KeyPair, error) {
+	if err := validateKeyName(name); err != nil {
+		return nil, err
+	}
 	dir, err := keysDir()
 	if err != nil {
 		return nil, err
@@ -141,6 +147,23 @@ func VerifyFile(pubHex, path, sigHex string) error {
 		return err
 	}
 	return Verify(pubHex, data, sigHex)
+}
+
+// validateKeyName rejects path traversal and shell-hostile characters in key names.
+func validateKeyName(name string) error {
+	if name == "" {
+		return fmt.Errorf("key name required")
+	}
+	if strings.ContainsAny(name, "/\\") || strings.Contains(name, "..") {
+		return fmt.Errorf("key name must not contain path separators or '..'")
+	}
+	if strings.HasPrefix(name, "-") || strings.HasPrefix(name, ".") {
+		return fmt.Errorf("key name must not start with '-' or '.'")
+	}
+	if strings.ContainsAny(name, "\x00\r\n") {
+		return fmt.Errorf("key name contains illegal characters")
+	}
+	return nil
 }
 
 func keysDir() (string, error) {

@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/loreste/weft/internal/netsafe"
 )
 
 // DefaultRegistryURL is the public Weft package registry.
@@ -51,7 +53,10 @@ type RegistryPackage struct {
 // FetchIndex downloads the registry index.
 func FetchIndex(registryURL string) (*RegistryIndex, error) {
 	url := registryURL + "/v1/index.json"
-	client := &http.Client{Timeout: 30 * time.Second}
+	if err := netsafe.CheckURL(url); err != nil {
+		return nil, fmt.Errorf("registry URL rejected: %w", err)
+	}
+	client := netsafe.SafeHTTPClient(30 * time.Second)
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("registry fetch: %w", err)
@@ -124,17 +129,30 @@ func versionGreater(a, b string) bool {
 }
 
 // ResolveArchiveURL builds the full download URL for a package archive.
+// Absolute URLs in the index are allowed (CDN hosting) but validated by
+// DownloadAndVerify before fetch.
 func ResolveArchiveURL(registryURL string, pkg RegistryPackage) string {
-	if strings.HasPrefix(pkg.ArchiveURL, "http://") || strings.HasPrefix(pkg.ArchiveURL, "https://") {
-		return pkg.ArchiveURL
+	u := pkg.ArchiveURL
+	if strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
+		return u
 	}
-	return registryURL + "/" + strings.TrimPrefix(pkg.ArchiveURL, "/")
+	// Reject path traversal in relative archive URLs
+	if strings.Contains(u, "..") {
+		return registryURL + "/invalid"
+	}
+	return registryURL + "/" + strings.TrimPrefix(u, "/")
 }
 
 // DownloadAndVerify fetches a package archive, verifies its signature, and saves to dest.
 func DownloadAndVerify(registryURL string, pkg RegistryPackage, dest string) error {
 	archiveURL := ResolveArchiveURL(registryURL, pkg)
-	client := &http.Client{Timeout: 120 * time.Second}
+
+	// SSRF: validate the resolved URL before fetching
+	if err := netsafe.CheckURL(archiveURL); err != nil {
+		return fmt.Errorf("download %s rejected: %w", pkg.Name, err)
+	}
+
+	client := netsafe.SafeHTTPClient(120 * time.Second)
 	resp, err := client.Get(archiveURL)
 	if err != nil {
 		return fmt.Errorf("download %s: %w", pkg.Name, err)
@@ -143,9 +161,17 @@ func DownloadAndVerify(registryURL string, pkg RegistryPackage, dest string) err
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("download %s: HTTP %d", pkg.Name, resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20)) // 64 MiB max
+	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxArchiveBytes))
 	if err != nil {
 		return err
+	}
+
+	// Verify hash if present (before sig — cheap check first)
+	if pkg.Sum != "" {
+		got := "sha256:" + hex.EncodeToString(sha256Sum(data))
+		if got != pkg.Sum {
+			return fmt.Errorf("checksum mismatch for %s@%s: expected %s, got %s", pkg.Name, pkg.Version, pkg.Sum, got)
+		}
 	}
 
 	// Verify signature if present
@@ -159,6 +185,11 @@ func DownloadAndVerify(registryURL string, pkg RegistryPackage, dest string) err
 		return err
 	}
 	return os.WriteFile(dest, data, 0o644)
+}
+
+func sha256Sum(data []byte) []byte {
+	h := sha256.Sum256(data)
+	return h[:]
 }
 
 // PublishPackage validates, packs, signs, and uploads a package to the registry.
@@ -181,8 +212,10 @@ func PublishPackage(dir, keyName, registryURL string) error {
 		return fmt.Errorf("weft.json must have name and version to publish")
 	}
 
-	// Pack archive
-	archivePath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%s.tar.gz", m.Name, m.Version))
+	// Sanitize name/version for temp path (no path traversal)
+	safeName := strings.ReplaceAll(strings.ReplaceAll(m.Name, "/", "_"), "..", "_")
+	safeVer := strings.ReplaceAll(strings.ReplaceAll(m.Version, "/", "_"), "..", "_")
+	archivePath := filepath.Join(os.TempDir(), fmt.Sprintf("weft-publish-%s-%s.tar.gz", safeName, safeVer))
 	defer os.Remove(archivePath)
 	if err := PackArchive(dir, archivePath); err != nil {
 		return fmt.Errorf("pack: %w", err)
@@ -264,6 +297,9 @@ func uploadPackage(registryURL string, meta RegistryPackage, archivePath string)
 	w.Close()
 
 	url := registryURL + "/v1/publish"
+	if err := netsafe.CheckURL(url); err != nil {
+		return fmt.Errorf("registry URL rejected: %w", err)
+	}
 	req, err := http.NewRequest("POST", url, &body)
 	if err != nil {
 		return err
@@ -275,7 +311,7 @@ func uploadPackage(registryURL string, meta RegistryPackage, archivePath string)
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := netsafe.SafeHTTPClient(120 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("publish: %w", err)

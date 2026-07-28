@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -202,6 +203,47 @@ func TestDownloadUnsigned(t *testing.T) {
 	dest := filepath.Join(t.TempDir(), "unsigned.tar.gz")
 	if err := DownloadAndVerify(srv.URL, pkg, dest); err != nil {
 		t.Fatal("unsigned should still download")
+	}
+}
+
+func TestResolveArchiveURLPathTraversal(t *testing.T) {
+	pkg := RegistryPackage{ArchiveURL: "../../../etc/passwd"}
+	url := ResolveArchiveURL("https://registry.example.com", pkg)
+	if strings.Contains(url, "..") {
+		t.Fatal("path traversal should be sanitized")
+	}
+}
+
+func TestDownloadRejectsPrivateIP(t *testing.T) {
+	t.Setenv("WEFT_HTTP_ALLOW_PRIVATE", "")
+	pkg := RegistryPackage{
+		Name:       "evil",
+		Version:    "1.0.0",
+		ArchiveURL: "http://169.254.169.254/latest/meta-data/",
+	}
+	dest := filepath.Join(t.TempDir(), "evil.tar.gz")
+	err := DownloadAndVerify("https://registry.example.com", pkg, dest)
+	if err == nil {
+		t.Fatal("metadata IP should be rejected")
+	}
+}
+
+func TestDownloadVerifiesChecksum(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("actual content"))
+	}))
+	defer srv.Close()
+
+	pkg := RegistryPackage{
+		Name:       "badsum",
+		Version:    "1.0.0",
+		ArchiveURL: srv.URL + "/pkg.tar.gz",
+		Sum:        "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+	}
+	dest := filepath.Join(t.TempDir(), "pkg.tar.gz")
+	err := DownloadAndVerify(srv.URL, pkg, dest)
+	if err == nil {
+		t.Fatal("bad checksum should fail")
 	}
 }
 

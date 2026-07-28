@@ -158,3 +158,34 @@ func TestVerifyBadKeyLength(t *testing.T) {
 		t.Fatal("short key should error")
 	}
 }
+
+func TestValidateKeyName(t *testing.T) {
+	good := []string{"default", "my-key", "key_2024", "prod"}
+	for _, n := range good {
+		if err := validateKeyName(n); err != nil {
+			t.Fatalf("good name %q rejected: %v", n, err)
+		}
+	}
+	bad := []string{"", "../etc/passwd", "/absolute", "a\\b", "..hidden", "-flag", ".dotfile", "a\x00b"}
+	for _, n := range bad {
+		if err := validateKeyName(n); err == nil {
+			t.Fatalf("bad name %q should be rejected", n)
+		}
+	}
+}
+
+func TestSaveKeyPathTraversal(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	kp, _ := GenerateKey("test")
+	if err := SaveKey("../../etc/evil", kp); err == nil {
+		t.Fatal("path traversal should be rejected")
+	}
+}
+
+func TestLoadKeyPathTraversal(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	_, err := LoadKey("../../etc/passwd")
+	if err == nil {
+		t.Fatal("path traversal should be rejected")
+	}
+}
