@@ -1,11 +1,13 @@
-// ml — installable Weft module (not core stdlib).
+// ml — embeddings, vectors, RAG index, metrics (optional module).
 //
-//   weft get ml ./packages/ml   # or path/git
-//   weft install
+// Agent stack: docs/ECOSYSTEM.md
+//   llm (stdlib) → mold (shapes) → tokensave / ml (siblings)
+//
+//   weft packages get ml && weft install
 //   use ml
 //
-// Scope (balanced): embeddings + vectors + RAG index + metrics.
-// Not in scope: heavy tensors, training loops — use weft train / Ollama / vLLM.
+// Scope: embeddings + vectors + RAG index + metrics.
+// Not in scope: heavy tensors / training loops — weft train / Ollama / vLLM.
 
 use "./vec.weft" as vec
 use "./embed.weft" as emb

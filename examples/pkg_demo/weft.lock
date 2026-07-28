@@ -3,7 +3,7 @@
   "packages": [
     {
       "name": "greeter",
-      "source": "path:/Users/loreste/coucou/examples/packages/greeter",
+      "source": "path:/Users/loreste/weft/examples/packages/greeter",
       "version": "0.1.0",
       "sum": "sha256:c7eede463b335ffb5b6278911342a77f9b63ae449e4ae192fb0d829a91cb9f0a",
       "dir": "vendor/greeter"

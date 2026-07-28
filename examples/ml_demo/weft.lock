@@ -3,9 +3,9 @@
   "packages": [
     {
       "name": "ml",
-      "source": "path:/Users/loreste/coucou/packages/ml",
+      "source": "path:/Users/loreste/weft/packages/ml",
       "version": "0.1.0",
-      "sum": "sha256:3eb42f060ff5bc4c03fcbde6425b245e190b495b8b718248806feee94dcd6d9d",
+      "sum": "sha256:25dcb62fce4033663a6f775e0f58e7df9ce00618fec7a10f12db07072afd6e2d",
       "dir": "vendor/ml"
     }
   ]
