@@ -15,6 +15,16 @@ type VM struct {
 	stack       []runtime.Value
 	frames      []frame
 	calledFrame bool // last OpCall installed a new frame
+	// Debug hooks (nil = no debugging)
+	Debug *DebugState
+}
+
+// DebugState holds debugger state for step/breakpoint execution.
+type DebugState struct {
+	Breakpoints map[string]bool // "file:line" → true
+	StepMode    bool            // pause after every statement
+	Paused      bool
+	OnPause     func(loc FrameLoc, locals map[string]runtime.Value) // callback when paused
 }
 
 type deferredCall struct {
@@ -91,6 +101,10 @@ func (vm *VM) run() (runtime.Value, error) {
 			}
 			vm.push(runtime.Unit())
 			continue
+		}
+		// Debug hook: check breakpoints / step mode before each instruction
+		if vm.Debug != nil {
+			vm.debugCheck(fr)
 		}
 		op := compile.Op(ch.Code[fr.ip])
 		fr.ip++
@@ -631,5 +645,43 @@ func (vm *VM) call(callee runtime.Value, args []runtime.Value) (runtime.Value, e
 		return runtime.Null(), nil
 	default:
 		return runtime.Null(), vm.errf("cannot call %s", callee.KindName())
+	}
+}
+
+// debugCheck pauses execution if a breakpoint matches or step mode is on.
+func (vm *VM) debugCheck(fr *frame) {
+	if vm.Debug == nil || vm.Debug.OnPause == nil {
+		return
+	}
+	loc := frameLoc(fr)
+	shouldPause := vm.Debug.StepMode
+	if !shouldPause && loc.File != "" && loc.Line > 0 {
+		key := fmt.Sprintf("%s:%d", loc.File, loc.Line)
+		if vm.Debug.Breakpoints[key] {
+			shouldPause = true
+		}
+	}
+	if shouldPause {
+		// Collect locals for inspection
+		locals := map[string]runtime.Value{}
+		for i, slot := range fr.slots {
+			name := fmt.Sprintf("local_%d", i)
+			if fr.fn != nil && fr.fn.Chunk != nil {
+				if ch, ok := fr.fn.Chunk.(*compile.Chunk); ok && i < len(ch.LocalNames) {
+					name = ch.LocalNames[i]
+				}
+			}
+			locals[name] = slot
+		}
+		vm.Debug.Paused = true
+		vm.Debug.OnPause(loc, locals)
+		vm.Debug.Paused = false
+	}
+}
+
+// NewDebugState creates a debug state with no breakpoints.
+func NewDebugState() *DebugState {
+	return &DebugState{
+		Breakpoints: map[string]bool{},
 	}
 }

@@ -73,11 +73,12 @@ func (op Op) String() string {
 
 // Chunk is a compiled function body.
 type Chunk struct {
-	Code    []byte
-	Consts  []any
-	Lines   []int
-	NumLocs int
-	Name    string
-	Arity   int
-	File    string // source path for stack traces
+	Code       []byte
+	Consts     []any
+	Lines      []int
+	NumLocs    int
+	Name       string
+	Arity      int
+	File       string   // source path for stack traces
+	LocalNames []string // debug: slot index → local variable name
 }

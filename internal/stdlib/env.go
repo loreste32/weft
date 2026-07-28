@@ -124,5 +124,76 @@ func packageEnv(env *runtime.Env) runtime.Value {
 		return runtime.Str(""), nil
 	}, 0)
 
+	// env.load(path?) -> Result  load .env or .yaml/.yml config
+	// .env: KEY=VALUE, # comments, export prefix stripped
+	// .yaml/.yml: flat key: value map set as env vars
+	set(p, "load", func(args []runtime.Value) (runtime.Value, error) {
+		path := ".env"
+		if len(args) >= 1 && args[0].String() != "" {
+			path = args[0].String()
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return errRes(err.Error(), "env"), nil
+		}
+		// YAML detection by extension
+		if strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml") {
+			return loadYAMLEnv(env, data)
+		}
+		n := 0
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			line = strings.TrimPrefix(line, "export ")
+			eq := strings.IndexByte(line, '=')
+			if eq <= 0 {
+				continue
+			}
+			k := strings.TrimSpace(line[:eq])
+			v := strings.TrimSpace(line[eq+1:])
+			if len(v) >= 2 && ((v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'')) {
+				v = v[1 : len(v)-1]
+			}
+			if env.Environ != nil {
+				env.Environ[k] = v
+			}
+			_ = os.Setenv(k, v)
+			n++
+		}
+		return runtime.Ok(runtime.Int(int64(n))), nil
+	}, 1)
+
 	return p
+}
+
+// loadYAMLEnv parses simple YAML (key: value) into env vars.
+// Supports flat maps only — nested structures are flattened with _ separator.
+func loadYAMLEnv(env *runtime.Env, data []byte) (runtime.Value, error) {
+	n := 0
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "---") {
+			continue
+		}
+		colon := strings.IndexByte(line, ':')
+		if colon <= 0 {
+			continue
+		}
+		k := strings.TrimSpace(line[:colon])
+		v := strings.TrimSpace(line[colon+1:])
+		// strip quotes
+		if len(v) >= 2 && ((v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'')) {
+			v = v[1 : len(v)-1]
+		}
+		// Convert key to upper snake case for env convention
+		envKey := strings.ToUpper(strings.ReplaceAll(strings.ReplaceAll(k, "-", "_"), ".", "_"))
+		if env.Environ != nil {
+			env.Environ[envKey] = v
+		}
+		_ = os.Setenv(envKey, v)
+		n++
+	}
+	return runtime.Ok(runtime.Int(int64(n))), nil
 }

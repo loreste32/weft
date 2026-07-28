@@ -233,9 +233,14 @@ func newWSConnValue(env *runtime.Env, c *wsConn, params map[string]string, r *ht
 // packageWS exposes standalone helpers if needed.
 func packageWS(env *runtime.Env) runtime.Value {
 	p := pkg()
-	// ws is primarily used via app.ws; keep package for discoverability
+	// ws.connect(url) -> Result[conn] — client-side WebSocket
+	mo := p.Obj.(*runtime.MapObj)
+	connectFn := wsConnectBuiltin(env)
+	mo.Keys = append(mo.Keys, "connect")
+	mo.Vals["connect"] = connectFn
+	// ws.ok — help text
 	set(p, "ok", func(args []runtime.Value) (runtime.Value, error) {
-		return runtime.Str("use app.ws(path, handler) — conn.send / conn.recv / conn.close"), nil
+		return runtime.Str("ws.connect(url) for client; app.ws(path, handler) for server"), nil
 	}, 0)
 	return p
 }

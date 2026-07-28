@@ -82,6 +82,8 @@ var packages = []struct {
 	{"tokenizer", func(env *runtime.Env) runtime.Value { return packageTokenizer() }},
 	{"metrics", func(env *runtime.Env) runtime.Value { return packageMetrics() }},
 	{"dataset", func(env *runtime.Env) runtime.Value { return packageDataset() }},
+	{"ratelimit", func(env *runtime.Env) runtime.Value { return packageRatelimit() }},
+	{"migrate", packageMigrate},
 	{"log", packageLog},
 	{"crypto", func(env *runtime.Env) runtime.Value { return packageCrypto() }},
 	{"re", func(env *runtime.Env) runtime.Value { return packageRe() }},

@@ -457,6 +457,11 @@ func (c *Compiler) compileFnWithFree(d *ast.FnDecl, free []string) (*runtime.Fun
 		sub.emit(OpReturn, d.Body.Pos())
 	}
 	sub.chunk.NumLocs = len(sub.locals)
+	// Debug: record local variable names for debugger inspection
+	sub.chunk.LocalNames = make([]string, len(sub.locals))
+	for i, l := range sub.locals {
+		sub.chunk.LocalNames[i] = l.name
+	}
 
 	fn := &runtime.FuncObj{
 		Name:  d.Name,

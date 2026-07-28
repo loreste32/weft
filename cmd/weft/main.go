@@ -242,6 +242,26 @@ Registry (public packages with ed25519 signing):
 		return 0
 	case "notebook", "nb":
 		return cmdNotebook(args[1:])
+	case "debug":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: weft debug <file.weft>")
+			return 2
+		}
+		if err := weft.StartDebug(args[1]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	case "profile":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: weft profile <file.weft>")
+			return 2
+		}
+		if err := weft.RunProfile(args[1]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
 	case "publish":
 		return cmdPublish(args[1:])
 	case "registry":
@@ -879,7 +899,7 @@ func isCommand(s string) bool {
 	case "run", "version", "--version", "-v", "help", "-h", "--help",
 		"repl", "check", "test", "stdlib", "fmt", "bench", "init", "new", "mod", "get", "install", "list", "deps",
 		"packages", "pkgs", "catalog",
-		"publish", "registry", "notebook", "nb",
+		"publish", "registry", "notebook", "nb", "debug", "profile",
 		"prompt", "teach", "train", "eval", "gen", "doctor", "ollama", "vllm", "lsp":
 		return true
 	}
