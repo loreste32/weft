@@ -231,6 +231,10 @@ Packages & modules (for other developers):
   weft packages get <name[@constraint]>  # add path dep (+ pin version)
 `)
 		return 0
+	case "publish":
+		return cmdPublish(args[1:])
+	case "registry":
+		return cmdRegistry(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", args[0])
 		return 2
@@ -864,6 +868,7 @@ func isCommand(s string) bool {
 	case "run", "version", "--version", "-v", "help", "-h", "--help",
 		"repl", "check", "test", "stdlib", "fmt", "bench", "init", "new", "mod", "get", "install", "list", "deps",
 		"packages", "pkgs", "catalog",
+		"publish", "registry",
 		"prompt", "teach", "train", "eval", "gen", "doctor", "ollama", "vllm", "lsp":
 		return true
 	}
@@ -1026,4 +1031,85 @@ func cmdTest(args []string) int {
 		return 1
 	}
 	return weft.PrintTestReport(rep, opts.Quiet)
+}
+
+func cmdPublish(args []string) int {
+	wd, _ := os.Getwd()
+	dir := wd
+	keyName := ""
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--key" || args[i] == "-k":
+			if i+1 < len(args) {
+				keyName = args[i+1]
+				i++
+			}
+		case !strings.HasPrefix(args[i], "-"):
+			dir = args[i]
+		}
+	}
+	if err := weft.Publish(dir, keyName); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func cmdRegistry(args []string) int {
+	if len(args) == 0 {
+		args = []string{"search"}
+	}
+	switch args[0] {
+	case "search", "list":
+		q := ""
+		if len(args) > 1 {
+			q = strings.Join(args[1:], " ")
+		}
+		if err := weft.RegistrySearch(q); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	case "info":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: weft registry info <name>")
+			return 2
+		}
+		if err := weft.RegistryInfo(args[1]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	case "install", "get":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: weft registry install <name[@constraint]>")
+			return 2
+		}
+		wd, _ := os.Getwd()
+		if err := weft.RegistryInstall(wd, args[1]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		fmt.Println("ok")
+		return 0
+	case "keygen":
+		name := "default"
+		if len(args) > 1 {
+			name = args[1]
+		}
+		if err := weft.RegistryKeygen(name); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	case "keys":
+		if err := weft.RegistryListKeys(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	default:
+		fmt.Fprintln(os.Stderr, "usage: weft registry search|info|install|keygen|keys")
+		return 2
+	}
 }
