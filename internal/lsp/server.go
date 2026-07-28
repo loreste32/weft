@@ -71,6 +71,7 @@ func (s *server) handle(raw []byte) error {
 				"documentSymbolProvider":     true,
 				"documentFormattingProvider": true,
 				"signatureHelpProvider":      map[string]any{"triggerCharacters": []string{"(", ","}},
+				"renameProvider":             map[string]any{"prepareProvider": true},
 			},
 			"serverInfo": map[string]any{"name": "weft-lsp", "version": "0.3.30"},
 		})
@@ -198,6 +199,33 @@ func (s *server) handle(raw []byte) error {
 		}
 		_ = json.Unmarshal(envelope.Params, &p)
 		return s.reply(envelope.ID, signatureHelp(s.docs[p.TextDocument.URI], p.Position.Line, p.Position.Character))
+	case "textDocument/prepareRename":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+			Position struct {
+				Line      int `json:"line"`
+				Character int `json:"character"`
+			} `json:"position"`
+		}
+		_ = json.Unmarshal(envelope.Params, &p)
+		result := prepareRename(s.docs[p.TextDocument.URI], p.Position.Line, p.Position.Character)
+		return s.reply(envelope.ID, result)
+	case "textDocument/rename":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+			Position struct {
+				Line      int `json:"line"`
+				Character int `json:"character"`
+			} `json:"position"`
+			NewName string `json:"newName"`
+		}
+		_ = json.Unmarshal(envelope.Params, &p)
+		result := rename(s.docs[p.TextDocument.URI], p.TextDocument.URI, p.Position.Line, p.Position.Character, p.NewName)
+		return s.reply(envelope.ID, result)
 	default:
 		if len(envelope.ID) > 0 && string(envelope.ID) != "null" {
 			return s.reply(envelope.ID, nil)

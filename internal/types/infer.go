@@ -56,8 +56,19 @@ func Infer(file *ast.File) (Info, diag.List) {
 			inf.userTypes[d.Name] = tyNamed(d.Name)
 			inf.globals[d.Name] = tyNamed(d.Name) // type as value / TypeInfo
 		case *ast.EnumDecl:
-			// enum Name { A, B } → global map of string tags
-			inf.globals[d.Name] = tyMap(tyStr(), tyStr())
+			// enum Name { A, B } → global map; variants with payloads have constructors
+			hasPayloads := false
+			for _, pv := range d.Payloads {
+				if len(pv.Fields) > 0 {
+					hasPayloads = true
+					break
+				}
+			}
+			if hasPayloads {
+				inf.globals[d.Name] = tyNamed(d.Name)
+			} else {
+				inf.globals[d.Name] = tyMap(tyStr(), tyStr())
+			}
 		case *ast.ConstDecl:
 			// later
 		case *ast.ImportDecl:
@@ -533,7 +544,13 @@ func (inf *inferrer) inferExpr(e ast.Expr, locals map[string]*Type) *Type {
 			if arm.Pattern != nil {
 				inf.inferExpr(arm.Pattern, locals)
 			}
-			bt := inf.inferBlock(arm.Body, copyTypes(locals), nil)
+			armLocals := copyTypes(locals)
+			// Bind destructured payload fields as any
+			for _, b := range arm.Bindings {
+				armLocals[b] = tyAny()
+				inf.bindings[b] = tyAny()
+			}
+			bt := inf.inferBlock(arm.Body, armLocals, nil)
 			if i == 0 {
 				t = bt
 			} else {
@@ -730,6 +747,118 @@ func (inf *inferrer) inferMethod(fe *ast.FieldExpr, args []*Type) *Type {
 	case "int":
 		if fe.Name == "parse" {
 			return tyResult(tyInt())
+		}
+	case "math":
+		switch fe.Name {
+		case "abs", "floor", "ceil", "round", "sqrt", "pow", "log", "exp",
+			"sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+			"min", "max", "clamp":
+			return tyFloat()
+		case "pi", "e":
+			return tyFloat()
+		}
+	case "random":
+		switch fe.Name {
+		case "int":
+			return tyInt()
+		case "float":
+			return tyFloat()
+		case "choice":
+			return tyAny()
+		case "shuffle":
+			return tyList(tyAny())
+		}
+	case "base64":
+		switch fe.Name {
+		case "encode", "decode":
+			return tyStr()
+		}
+	case "url":
+		switch fe.Name {
+		case "parse":
+			return tyResult(tyMap(tyStr(), tyStr()))
+		case "encode", "decode":
+			return tyStr()
+		}
+	case "uuid":
+		if fe.Name == "v4" {
+			return tyStr()
+		}
+	case "yaml", "toml", "ini", "xml":
+		switch fe.Name {
+		case "parse", "read":
+			return tyResult(tyAny())
+		case "stringify", "encode":
+			return tyStr()
+		}
+	case "crypto":
+		switch fe.Name {
+		case "sha256", "sha512", "md5", "hmac":
+			return tyStr()
+		}
+	case "re":
+		switch fe.Name {
+		case "find", "match":
+			return tyAny()
+		case "find_all":
+			return tyList(tyStr())
+		case "replace":
+			return tyStr()
+		case "test":
+			return tyBool()
+		}
+	case "platform":
+		switch fe.Name {
+		case "os", "arch", "hostname":
+			return tyStr()
+		case "cpus":
+			return tyInt()
+		}
+	case "ip":
+		switch fe.Name {
+		case "is_valid", "is_private", "is_loopback":
+			return tyBool()
+		case "resolve":
+			return tyResult(tyStr())
+		}
+	case "log":
+		return tyUnit()
+	case "test":
+		return tyUnit()
+	case "pcap":
+		switch fe.Name {
+		case "write", "read":
+			return tyResult(tyAny())
+		case "ethernet", "ipv4", "tcp", "udp", "raw", "hex":
+			return tyList(tyInt())
+		case "packet":
+			return tyMap(tyStr(), tyAny())
+		}
+	case "heap":
+		switch fe.Name {
+		case "push":
+			return tyList(tyAny())
+		case "pop":
+			return tyResult(tyAny())
+		}
+	case "bisect":
+		switch fe.Name {
+		case "left", "right":
+			return tyInt()
+		}
+	case "collections":
+		switch fe.Name {
+		case "counter":
+			return tyMap(tyStr(), tyInt())
+		case "group_by":
+			return tyMap(tyStr(), tyList(tyAny()))
+		}
+	case "decimal":
+		switch fe.Name {
+		case "new":
+			return tyResult(tyAny())
+		case "add", "sub", "mul", "div":
+			return tyAny()
 		}
 	}
 	return tyAny()

@@ -240,6 +240,8 @@ Registry (public packages with ed25519 signing):
   weft publish [--key name]   # validate, sign, upload
 `)
 		return 0
+	case "notebook", "nb":
+		return cmdNotebook(args[1:])
 	case "publish":
 		return cmdPublish(args[1:])
 	case "registry":
@@ -877,7 +879,7 @@ func isCommand(s string) bool {
 	case "run", "version", "--version", "-v", "help", "-h", "--help",
 		"repl", "check", "test", "stdlib", "fmt", "bench", "init", "new", "mod", "get", "install", "list", "deps",
 		"packages", "pkgs", "catalog",
-		"publish", "registry",
+		"publish", "registry", "notebook", "nb",
 		"prompt", "teach", "train", "eval", "gen", "doctor", "ollama", "vllm", "lsp":
 		return true
 	}
@@ -1239,4 +1241,38 @@ func cmdRegistry(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: weft registry search|info|install|keygen|keys|serve")
 		return 2
 	}
+}
+
+func cmdNotebook(args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: weft notebook <file.weft> [-o output.html]")
+		return 2
+	}
+	path := ""
+	outPath := ""
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "-o" || args[i] == "--output":
+			if i+1 < len(args) {
+				i++
+				outPath = args[i]
+			}
+		case !strings.HasPrefix(args[i], "-"):
+			path = args[i]
+		}
+	}
+	if path == "" {
+		fmt.Fprintln(os.Stderr, "usage: weft notebook <file.weft> [-o output.html]")
+		return 2
+	}
+	if err := weft.RunNotebookToHTML(path, outPath); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	out := outPath
+	if out == "" {
+		out = strings.TrimSuffix(path, filepath.Ext(path)) + ".html"
+	}
+	fmt.Printf("wrote %s\n", out)
+	return 0
 }
