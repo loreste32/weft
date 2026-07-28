@@ -1,0 +1,9 @@
+{
+  "name": "dataframe",
+  "version": "0.1.0",
+  "description": "Tabular data wrangling — filter, group, join, pivot, sort, aggregate",
+  "type": "module",
+  "entry": "lib.weft",
+  "license": "Apache-2.0",
+  "keywords": ["data", "table", "dataframe", "pandas", "etl"]
+}

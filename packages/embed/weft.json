@@ -1,0 +1,10 @@
+{
+  "name": "embed",
+  "version": "0.1.0",
+  "description": "Embeddings client + in-memory vector store with cosine search",
+  "type": "module",
+  "entry": "lib.weft",
+  "capabilities": ["http", "llm", "fs"],
+  "license": "Apache-2.0",
+  "keywords": ["embeddings", "vectors", "rag", "search", "semantic"]
+}

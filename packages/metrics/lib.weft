@@ -1,0 +1,58 @@
+// metrics module — wraps stdlib metrics with print helpers
+// The heavy math is in Go (stdlib metrics), this adds convenience.
+//
+//   use metrics as m
+//   m.report(true_labels, predicted)
+//   m.compare([{"name": "v1", ...}, {"name": "v2", ...}])
+
+use metrics as _m
+use str
+
+// --- re-exports from stdlib ---
+
+pub fn accuracy(y, p) { _m.accuracy(y, p) }
+pub fn precision(y, p, label) { _m.precision(y, p, label) }
+pub fn recall(y, p, label) { _m.recall(y, p, label) }
+pub fn f1(y, p, label) { _m.f1(y, p, label) }
+pub fn confusion_matrix(y, p) { _m.confusion_matrix(y, p) }
+pub fn classification_report(y, p) { _m.classification_report(y, p) }
+pub fn bleu(ref, hyp, n) { _m.bleu(ref, hyp, n) }
+pub fn rouge_l(ref, hyp) { _m.rouge_l(ref, hyp) }
+pub fn cosine(a, b) { _m.cosine(a, b) }
+pub fn mse(y, p) { _m.mse(y, p) }
+pub fn mae(y, p) { _m.mae(y, p) }
+pub fn r2(y, p) { _m.r2(y, p) }
+
+// --- convenience ---
+
+// report(true, predicted) -> prints classification report
+pub fn report(y, p) {
+    acc := _m.accuracy(y, p)
+    say("accuracy: " + acc)
+    say("")
+    cr := _m.classification_report(y, p)
+    say("label\t\tprec\trecall\tf1\tsupport")
+    say("---\t\t---\t---\t---\t---")
+    for label in keys(cr) {
+        entry := cr[label]
+        say(label + "\t\t" + _fmt(entry.precision) + "\t" + _fmt(entry.recall) + "\t" + _fmt(entry.f1) + "\t" + entry.support)
+    }
+}
+
+// compare(runs) -> print comparison table
+// runs: [{name, accuracy, f1, ...}]
+pub fn compare(runs) {
+    say("run\t\tacc\tf1\tprec\trecall")
+    say("---\t\t---\t---\t---\t---")
+    for r in runs {
+        say(r.name + "\t\t" + _fmtOr(r, "accuracy") + "\t" + _fmtOr(r, "f1") + "\t" + _fmtOr(r, "precision") + "\t" + _fmtOr(r, "recall"))
+    }
+}
+
+fn _fmt(v) {
+    if v == null { "-" } else { "" + v }
+}
+
+fn _fmtOr(m, key) {
+    if m[key] != null { "" + m[key] } else { "-" }
+}

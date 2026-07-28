@@ -1,0 +1,141 @@
+// experiment — track ML runs, parameters, and metrics
+// MLflow-lite: one JSONL file, no server, no database.
+//
+//   use experiment as exp
+//   run := exp.start("train-v1", {"lr": 0.001, "epochs": 10})
+//   exp.log_metric(run, "loss", 0.42)
+//   exp.log_metric(run, "accuracy", 0.95)
+//   exp.end(run)
+//   exp.compare("experiments.jsonl")
+
+use json
+use time
+
+// start(name, params?, log_file?) -> run handle
+pub fn start(name, params, log_file) {
+    p := if params == null { {} } else { params }
+    f := if log_file == null { "experiments.jsonl" } else { log_file }
+    {
+        "_run": true,
+        "name": name,
+        "params": p,
+        "metrics": {},
+        "log_file": f,
+        "start_ms": time.now_ms(),
+        "status": "running",
+    }
+}
+
+// log_metric(run, key, value) -> run with metric added
+pub fn log_metric(run, key, value) {
+    mut m := run.metrics
+    m[key] = value
+    mut r := run
+    r["metrics"] = m
+    r
+}
+
+// log_metrics(run, map) -> run with multiple metrics
+pub fn log_metrics(run, kv) {
+    mut r := run
+    for k in keys(kv) {
+        r = log_metric(r, k, kv[k])
+    }
+    r
+}
+
+// end(run) -> Result  finalize and append to log file
+pub fn end(run) -> Result {
+    elapsed := time.now_ms() - run.start_ms
+    entry := json.stringify({
+        "name": run.name,
+        "params": run.params,
+        "metrics": run.metrics,
+        "duration_ms": elapsed,
+        "status": "done",
+        "timestamp": time.iso(time.now()),
+    })
+    fs.append(run.log_file, entry + "\n")?
+    say("logged: " + run.name + " (" + elapsed + "ms)")
+}
+
+// list(log_file?) -> Result[[run]]  load all runs from log
+pub fn list(log_file) -> Result {
+    f := if log_file == null { "experiments.jsonl" } else { log_file }
+    raw := fs.read(f)?
+    mut runs := []
+    for line in str.split(raw, "\n") {
+        if str.trim(line) != "" {
+            r := json.parse(line)?
+            runs = push(runs, r)
+        }
+    }
+    Ok(runs)
+}
+
+// compare(log_file?) -> print comparison table of all runs
+pub fn compare(log_file) -> Result {
+    runs := list(log_file)?
+    if len(runs) == 0 {
+        say("no experiments logged")
+        return Ok(unit)
+    }
+    // collect all metric keys
+    mut all_keys := []
+    for r in runs {
+        if r.metrics != null {
+            for k in keys(r.metrics) {
+                if !contains(all_keys, k) {
+                    all_keys = push(all_keys, k)
+                }
+            }
+        }
+    }
+    // header
+    mut header := "name\t"
+    for k in all_keys {
+        header = header + k + "\t"
+    }
+    header = header + "duration"
+    say(header)
+    say(str.repeat("-", 60))
+    // rows
+    for r in runs {
+        mut row := r.name + "\t"
+        for k in all_keys {
+            v := if r.metrics != null && r.metrics[k] != null { "" + r.metrics[k] } else { "-" }
+            row = row + v + "\t"
+        }
+        dur := if r.duration_ms != null { "" + r.duration_ms + "ms" } else { "-" }
+        row = row + dur
+        say(row)
+    }
+}
+
+// best(log_file, metric, higher_is_better?) -> Result[run]
+pub fn best(log_file, metric, higher) -> Result {
+    runs := list(log_file)?
+    hib := if higher == null { true } else { higher }
+    mut best_run := null
+    mut best_val := null
+    for r in runs {
+        if r.metrics != null && r.metrics[metric] != null {
+            v := r.metrics[metric]
+            if best_val == null {
+                best_val = v
+                best_run = r
+            } else if hib && v > best_val {
+                best_val = v
+                best_run = r
+            } else if !hib && v < best_val {
+                best_val = v
+                best_run = r
+            }
+        }
+    }
+    if best_run == null {
+        Err("no runs with metric " + metric)
+    } else {
+        Ok(best_run)
+    }
+}

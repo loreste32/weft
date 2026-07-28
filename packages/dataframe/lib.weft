@@ -1,0 +1,279 @@
+// dataframe — tabular data wrangling for Weft
+// Like pandas but honest about what a scripting language should do.
+//
+//   use dataframe as df
+//   t := df.from_rows([{"name": "Ada", "age": 30}, {"name": "Bob", "age": 25}])
+//   young := df.filter(t, fn(r) { r.age < 28 })
+//   df.print_(young)
+
+use math
+use str
+
+// --- constructors ---
+
+// from_rows(rows) -> dataframe from list of maps
+pub fn from_rows(rows) {
+    if len(rows) == 0 {
+        return {"_df": true, "columns": [], "rows": []}
+    }
+    cols := keys(rows[0])
+    {"_df": true, "columns": cols, "rows": rows}
+}
+
+// from_columns(col_map) -> dataframe from {col: [values]}
+pub fn from_columns(col_map) {
+    cols := keys(col_map)
+    vals := values(col_map)
+    n := if len(vals) > 0 { len(vals[0]) } else { 0 }
+    mut rows := []
+    mut i := 0
+    while i < n {
+        mut row := {}
+        for c in cols {
+            row[c] = col_map[c][i]
+        }
+        rows = push(rows, row)
+        i = i + 1
+    }
+    {"_df": true, "columns": cols, "rows": rows}
+}
+
+// --- access ---
+
+pub fn columns(t) { t.columns }
+pub fn rows(t) { t.rows }
+pub fn nrows(t) { len(t.rows) }
+pub fn ncols(t) { len(t.columns) }
+
+// col(t, name) -> list of values for one column
+pub fn col(t, name) {
+    map(t.rows, fn(r) { r[name] })
+}
+
+// head(t, n?) -> first n rows (default 5)
+pub fn head(t, n) {
+    cnt := if n == null { 5 } else { n }
+    from_rows(slice(t.rows, 0, cnt))
+}
+
+// tail(t, n?) -> last n rows (default 5)
+pub fn tail(t, n) {
+    cnt := if n == null { 5 } else { n }
+    start := len(t.rows) - cnt
+    if start < 0 { start = 0 }
+    from_rows(slice(t.rows, start))
+}
+
+// --- transform ---
+
+// select_(t, cols) -> dataframe with only named columns
+pub fn select_(t, cols) {
+    new_rows := map(t.rows, fn(r) {
+        mut nr := {}
+        for c in cols { nr[c] = r[c] }
+        nr
+    })
+    {"_df": true, "columns": cols, "rows": new_rows}
+}
+
+// rename(t, old, new_name) -> rename a column
+pub fn rename(t, old, new_name) {
+    new_cols := map(t.columns, fn(c) { if c == old { new_name } else { c } })
+    new_rows := map(t.rows, fn(r) {
+        mut nr := {}
+        for c in t.columns {
+            nc := if c == old { new_name } else { c }
+            nr[nc] = r[c]
+        }
+        nr
+    })
+    {"_df": true, "columns": new_cols, "rows": new_rows}
+}
+
+// add_column(t, name, fn(row) -> value) -> add computed column
+pub fn add_column(t, name, f) {
+    new_cols := concat(t.columns, [name])
+    new_rows := map(t.rows, fn(r) {
+        mut nr := {}
+        for c in t.columns { nr[c] = r[c] }
+        nr[name] = f(r)
+        nr
+    })
+    {"_df": true, "columns": new_cols, "rows": new_rows}
+}
+
+// drop(t, cols) -> remove columns
+pub fn drop(t, cols) {
+    keep := filter(t.columns, fn(c) { !contains(cols, c) })
+    select_(t, keep)
+}
+
+// filter(t, pred) -> rows matching predicate
+pub fn filter_(t, pred) {
+    from_rows(filter(t.rows, pred))
+}
+
+// sort_by(t, col, desc?) -> sort by column
+pub fn sort_by(t, column, desc) {
+    sorted := sort(t.rows, fn(a, b) {
+        if desc {
+            a[column] < b[column]
+        } else {
+            a[column] > b[column]
+        }
+    })
+    from_rows(sorted)
+}
+
+// --- aggregation ---
+
+// group_by(t, col, aggs) -> group and aggregate
+// aggs: {new_col: {col, fn}}  e.g. {"avg_age": {"col": "age", "op": "mean"}}
+pub fn group_by(t, col, aggs) {
+    // collect groups
+    mut groups := {}
+    for r in t.rows {
+        k := r[col]
+        ks := "" + k
+        if groups[ks] == null {
+            groups[ks] = {"key": k, "rows": []}
+        }
+        groups[ks] = {"key": groups[ks].key, "rows": push(groups[ks].rows, r)}
+    }
+    // aggregate each group
+    mut result := []
+    for gk in keys(groups) {
+        g := groups[gk]
+        mut row := {}
+        row[col] = g.key
+        for agg_name in keys(aggs) {
+            spec := aggs[agg_name]
+            src_col := spec.col
+            vals := map(g.rows, fn(r) { r[src_col] })
+            row[agg_name] = _agg(spec.op, vals)
+        }
+        result = push(result, row)
+    }
+    new_cols := concat([col], keys(aggs))
+    {"_df": true, "columns": new_cols, "rows": result}
+}
+
+fn _agg(op, vals) {
+    match op {
+        "sum" { reduce(vals, 0, fn(a, x) { a + x }) }
+        "mean" {
+            s := reduce(vals, 0, fn(a, x) { a + x })
+            s / len(vals)
+        }
+        "count" { len(vals) }
+        "min" { reduce(vals, vals[0], fn(a, x) { if x < a { x } else { a } }) }
+        "max" { reduce(vals, vals[0], fn(a, x) { if x > a { x } else { a } }) }
+        "first" { vals[0] }
+        "last" { vals[len(vals) - 1] }
+        _ { null }
+    }
+}
+
+// --- joins ---
+
+// join(left, right, on, how?) -> join two dataframes
+// how: "inner" (default), "left"
+pub fn join(left, right, on, how) {
+    join_type := if how == null { "inner" } else { how }
+    // build right index
+    mut idx := {}
+    for r in right.rows {
+        k := "" + r[on]
+        idx[k] = r
+    }
+    mut result := []
+    for lr in left.rows {
+        k := "" + lr[on]
+        rr := idx[k]
+        if rr != null {
+            mut merged := {}
+            for c in left.columns { merged[c] = lr[c] }
+            for c in right.columns {
+                if c != on { merged[c] = rr[c] }
+            }
+            result = push(result, merged)
+        } else if join_type == "left" {
+            mut merged := {}
+            for c in left.columns { merged[c] = lr[c] }
+            for c in right.columns {
+                if c != on { merged[c] = null }
+            }
+            result = push(result, merged)
+        }
+    }
+    // merge column lists
+    mut all_cols := []
+    for c in left.columns { all_cols = push(all_cols, c) }
+    for c in right.columns {
+        if c != on && !contains(all_cols, c) {
+            all_cols = push(all_cols, c)
+        }
+    }
+    {"_df": true, "columns": all_cols, "rows": result}
+}
+
+// --- stats ---
+
+pub fn describe(t, column) {
+    vals := map(t.rows, fn(r) { r[column] })
+    nums := filter(vals, fn(x) { x != null })
+    n := len(nums)
+    if n == 0 { return {"count": 0} }
+    s := reduce(nums, 0, fn(a, x) { a + x })
+    mn := s / n
+    sorted := sort(nums)
+    {"count": n, "mean": mn, "min": sorted[0], "max": sorted[n - 1],
+     "sum": s, "median": sorted[n / 2]}
+}
+
+// value_counts(t, col) -> {value: count}
+pub fn value_counts(t, column) {
+    mut counts := {}
+    for r in t.rows {
+        k := "" + r[column]
+        if counts[k] == null {
+            counts[k] = 0
+        }
+        counts[k] = counts[k] + 1
+    }
+    counts
+}
+
+// --- i/o ---
+
+// to_csv(t) -> CSV string
+pub fn to_csv(t) {
+    mut lines := []
+    lines = push(lines, str.join(t.columns, ","))
+    for r in t.rows {
+        mut vals := []
+        for c in t.columns {
+            vals = push(vals, "" + r[c])
+        }
+        lines = push(lines, str.join(vals, ","))
+    }
+    str.join(lines, "\n")
+}
+
+// print_(t, n?) -> display first n rows
+pub fn print_(t, n) {
+    cnt := if n == null { len(t.rows) } else { n }
+    if cnt > len(t.rows) { cnt = len(t.rows) }
+    say(str.join(t.columns, "\t"))
+    say(str.join(map(t.columns, fn(c) { "---" }), "\t"))
+    mut i := 0
+    while i < cnt {
+        r := t.rows[i]
+        mut vals := []
+        for c in t.columns {
+            vals = push(vals, "" + r[c])
+        }
+        say(str.join(vals, "\t"))
+        i = i + 1
+    }
+}

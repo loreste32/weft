@@ -1,0 +1,10 @@
+{
+  "name": "experiment",
+  "version": "0.1.0",
+  "description": "Experiment tracking — log runs, params, metrics to JSONL + compare",
+  "type": "module",
+  "entry": "lib.weft",
+  "capabilities": ["fs"],
+  "license": "Apache-2.0",
+  "keywords": ["experiment", "tracking", "mlops", "runs", "compare"]
+}

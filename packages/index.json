@@ -25,6 +25,24 @@
       "path": "./warp",
       "version": "0.1.0",
       "summary": "N-dimensional array math — pure Weft, no native deps"
+    },
+    {
+      "name": "dataframe",
+      "path": "./dataframe",
+      "version": "0.1.0",
+      "summary": "Tabular data wrangling — filter, group, join, pivot, sort"
+    },
+    {
+      "name": "embed",
+      "path": "./embed",
+      "version": "0.1.0",
+      "summary": "Embeddings client + vector store with cosine search"
+    },
+    {
+      "name": "experiment",
+      "path": "./experiment",
+      "version": "0.1.0",
+      "summary": "Experiment tracking — log runs, params, metrics, compare"
     }
   ]
 }
