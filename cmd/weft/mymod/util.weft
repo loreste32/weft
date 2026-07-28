@@ -1,5 +1,0 @@
-// Internal helper module — import from lib.weft with:
-//   use "./util.weft" as util
-pub fn trim(s) {
-    s
-}
