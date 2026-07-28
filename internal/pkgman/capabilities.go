@@ -31,6 +31,9 @@ var RestrictedByDefault = []string{
 	"socket",  // raw network
 	"email",   // outbound SMTP
 	"pickle",  // arbitrary deserialize
+	"sysinfo", // system metrics (memory, disk, interfaces)
+	"proc",    // process list / kill
+	"netutil", // network diagnostics (port scan, DNS)
 }
 
 // CapsAll is the grant-everything token.

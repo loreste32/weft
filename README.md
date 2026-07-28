@@ -77,7 +77,7 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 
 **Language:** lex, parse, compile, stack VM. Closures (capture by value), sum types with payloads (`enum Shape { Circle(r) }`), `match` with destructuring, `defer`, `Result`/`?`. Concurrent `map`/`filter`, `spawn`, channels — no `async`/`await`.
 
-**Stdlib (in the binary):** `http`, `web`, `json`, `db` (SQLite/Postgres/MySQL with auto JSON/JSONB parsing), `fs`, `sh`, `cli`, `llm` (OpenAI/Anthropic/Ollama/vLLM), `csv`, `yaml`, `pcap`, `crypto`, `re`, `time`, and [many more](docs/STDLIB.md). Run `weft stdlib` to see them all.
+**Stdlib (in the binary):** `http`, `web`, `json`, `db` (SQLite/Postgres/MySQL with auto JSON/JSONB parsing), `fs`, `sh`, `cli`, `llm` (OpenAI/Anthropic/Ollama/vLLM), `sysinfo` (CPU/memory/disk/uptime), `proc` (process list/kill), `netutil` (port check/DNS/scan), `csv`, `yaml`, `pcap`, `crypto`, `re`, `time`, and [many more](docs/STDLIB.md). Run `weft stdlib` to see them all.
 
 **Tooling:**
 - `weft check [--types]` — type checking

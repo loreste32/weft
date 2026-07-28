@@ -92,6 +92,9 @@ var packages = []struct {
 	{"llm", packageLLM},
 	{"ollama", packageOllama},
 	{"vllm", packageVLLM},
+	{"sysinfo", func(env *runtime.Env) runtime.Value { return packageSysinfo() }},
+	{"proc", func(env *runtime.Env) runtime.Value { return packageProc() }},
+	{"netutil", packageNetutil},
 }
 
 // packageIndex is built once from packages for O(1) IsPackage.

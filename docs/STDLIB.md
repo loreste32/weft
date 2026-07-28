@@ -31,6 +31,9 @@ What we keep vs won’t: **[STDLIB_GAPS.md](STDLIB_GAPS.md)**.
 | Messaging | `nats`, `amqp`, `email`, `socket` |
 | LLM | `llm`, `ollama`, `vllm` |
 | Collections helpers | `iter`, `collections`, `heap`, `bisect`, `pipe`, `functools` |
+| System info | `sysinfo` (CPU, memory, disk, uptime, interfaces) |
+| Process mgmt | `proc` (list, find, kill, exists) |
+| Network diag | `netutil` (port check, TCP ping, DNS, port scan) |
 | Crypto | `crypto` |
 | Errors | `traceback` |
 | Charts | `viz` |
@@ -187,6 +190,68 @@ Builders: `ethernet`, `ipv4`, `tcp`, `udp`, `raw`, `hex`, `packet`.
 I/O: `write`, `read`.
 
 TCP flags: `"SYN"`, `"ACK"`, `"SYN|ACK"`, `"FIN"`, `"RST"`, `"PSH"`, `"URG"` (pipe-separated).
+
+### sysinfo
+
+System metrics — cross-platform, structured, no subprocess parsing.
+
+```weft
+info := sysinfo.memory()?
+say("RAM: ${info.percent}% used (${info.used} / ${info.total})")
+
+disk := sysinfo.disk("/")?
+say("Disk: ${disk.percent}% used")
+
+up := sysinfo.uptime()?
+say("Up ${up.human}")
+
+load := sysinfo.loadavg()?
+say("Load: $load")
+
+ifaces := sysinfo.net_interfaces()?
+for iface in ifaces { say(iface.name, iface.addrs) }
+
+say(sysinfo.cpu_count())
+say(sysinfo.env_summary())
+```
+
+Members: `memory`, `disk`, `uptime`, `loadavg`, `cpu_count`, `net_interfaces`, `env_summary`.
+
+### proc
+
+Process management — list, find, kill, check.
+
+```weft
+me := proc.self()
+say("pid=${me.pid}")
+
+proc.exists(1)?          // check if PID exists
+procs := proc.list()?    // all processes
+nginx := proc.find("nginx")?   // search by name
+proc.kill(pid, "TERM")?  // signal a process
+```
+
+Members: `self`, `exists`, `list`, `find`, `kill`.
+
+### netutil
+
+Network diagnostics — port checks, TCP ping, DNS lookups, port scanning.
+
+```weft
+open := netutil.port_open("localhost", 8080)?
+ping := netutil.tcp_ping("example.com", 443)?
+say("latency: ${ping.latency_ms}ms")
+
+ips := netutil.resolve("example.com")?
+mx := netutil.lookup_mx("example.com")?
+txt := netutil.lookup_txt("example.com")?
+names := netutil.reverse_lookup("8.8.8.8")?
+
+results := netutil.scan_ports("localhost", [22, 80, 443, 8080])?
+for r in results { say("port ${r.port}: ${r.open}") }
+```
+
+Members: `port_open`, `tcp_ping`, `resolve`, `lookup_host`, `lookup_txt`, `lookup_mx`, `reverse_lookup`, `scan_ports`.
 
 ### db / csv / table
 

@@ -18,6 +18,9 @@ Language: [LANGUAGE.md](LANGUAGE.md) · CLI flags: [cli.md](cli.md) · Stdlib ma
 | Logs | `log.info`… + `log.set_json` |
 | HTTP | `http.get/post/…` opts: `timeout`, `retries`, `headers`, `insecure` |
 | Config | `json`, `yaml`, `toml`, `ini` (`sections`, `has_section`) |
+| System info | `sysinfo.memory` / `disk` / `uptime` / `loadavg` / `net_interfaces` |
+| Process mgmt | `proc.list` / `find` / `kill` / `exists` / `self` |
+| Network diag | `netutil.port_open` / `tcp_ping` / `resolve` / `scan_ports` / DNS lookups |
 | Binary / diff / stats | `binstruct`, `difflib`, `math.quantile` / `mode` |
 | Scaffold | `weft new cli <name>` |
 
@@ -80,6 +83,46 @@ fn main -> Result {
     })?
     if !r.ok {
         return Err("deploy failed: " + r.stderr, "deploy")
+    }
+    Ok(unit)
+}
+```
+
+## Health check
+
+```weft
+fn main -> Result {
+    // system vitals
+    mem := sysinfo.memory()?
+    disk := sysinfo.disk("/")?
+    up := sysinfo.uptime()?
+    load := sysinfo.loadavg()?
+
+    say("uptime: ${up.human}")
+    say("memory: ${mem.percent}% used")
+    say("disk:   ${disk.percent}% used")
+    say("load:   ${load}")
+
+    if mem.percent > 90 { log.warn("memory pressure", {"pct": mem.percent}) }
+    if disk.percent > 85 { log.warn("disk pressure", {"pct": disk.percent}) }
+
+    // service ports
+    services := {"web": 8080, "api": 3000, "db": 5432}
+    for name, port in services {
+        ping := netutil.tcp_ping("localhost", port)?
+        if ping.open {
+            say("$name :$port ok (${ping.latency_ms}ms)")
+        } else {
+            log.error("$name :$port down")
+        }
+    }
+
+    // check critical processes
+    for name in ["nginx", "postgres"] {
+        found := proc.find(name)?
+        if len(found) == 0 {
+            log.error("$name not running")
+        }
     }
     Ok(unit)
 }
