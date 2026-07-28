@@ -1,7 +1,7 @@
 {
   "name": "telecom",
-  "version": "0.1.0",
-  "description": "Modern telephony: IVA (voice agents), STT/TTS, call flows, DTMF, routing, queues, CDR",
+  "version": "0.2.0",
+  "description": "Modern telephony: IVA, STT/TTS, FreeSWITCH ESL, Asterisk ARI, call flows, routing, queues",
   "type": "module",
   "entry": "lib.weft",
   "exports": [
@@ -18,16 +18,27 @@
     "round_robin", "failover",
     "normalize", "is_e164", "country", "area_code", "is_tollfree",
     "caller_id_build", "mask", "sip_uri",
-    "webhook_server", "parse_event"
+    "webhook_server", "parse_event",
+    "esl_connect", "esl_api", "esl_execute", "esl_subscribe",
+    "esl_answer", "esl_hangup", "esl_playback", "esl_bridge",
+    "esl_transfer", "esl_record", "esl_send_dtmf", "esl_originate",
+    "esl_conference", "esl_play_and_get_digits", "esl_outbound_server",
+    "esl_status", "esl_show", "esl_close",
+    "ari_connect", "ari_originate", "ari_answer", "ari_hangup",
+    "ari_play", "ari_record", "ari_send_dtmf", "ari_hold", "ari_unhold",
+    "ari_create_bridge", "ari_add_to_bridge", "ari_destroy_bridge",
+    "ari_channels", "ari_endpoints", "ari_redirect", "ari_snoop",
+    "ari_listen"
   ],
   "license": "Apache-2.0",
   "keywords": [
     "telecom", "telephony", "voip", "sip", "ivr", "iva",
+    "freeswitch", "esl", "asterisk", "ari", "pjsip",
     "voice-agent", "stt", "tts", "speech", "dtmf",
     "call-center", "contact-center", "queue", "routing",
     "cdr", "dialplan", "ssml", "llm"
   ],
   "capability_profile": "agent",
-  "capabilities": ["http", "ws", "fs", "env"],
+  "capabilities": ["http", "ws", "fs", "env", "socket"],
   "deps": {}
 }

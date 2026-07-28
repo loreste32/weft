@@ -20,6 +20,8 @@ use "./queue.weft" as queue_mod
 use "./cdr.weft" as cdr_mod
 use "./routing.weft" as routing_mod
 use "./dialplan.weft" as dialplan_mod
+use "./esl.weft" as esl_mod
+use "./ari.weft" as ari_mod
 
 // ─── call flow actions ─────────────────────────────────────────────
 
@@ -245,3 +247,113 @@ pub fn mask(number) { dialplan_mod.mask(number) }
 
 // telecom.sip_uri(user, domain, opts?) -> str
 pub fn sip_uri(user, domain, opts) { dialplan_mod.sip_uri(user, domain, opts) }
+
+// ─── FreeSWITCH ESL ───────────────────────────────────────────────
+
+// telecom.esl_connect(host?, port?, password?) -> Result[map]
+pub fn esl_connect(host, port, password) -> Result { esl_mod.connect(host, port, password) }
+
+// telecom.esl_api(esl, cmd) -> Result[str]
+pub fn esl_api(e, cmd) -> Result { esl_mod.api(e, cmd) }
+
+// telecom.esl_execute(esl, uuid, app, arg?) -> Result
+pub fn esl_execute(e, uuid, app, arg) -> Result { esl_mod.execute(e, uuid, app, arg) }
+
+// telecom.esl_subscribe(esl, events) -> Result
+pub fn esl_subscribe(e, events) -> Result { esl_mod.subscribe(e, events) }
+
+// telecom.esl_answer(esl, uuid) -> Result
+pub fn esl_answer(e, uuid) -> Result { esl_mod.answer(e, uuid) }
+
+// telecom.esl_hangup(esl, uuid, cause?) -> Result
+pub fn esl_hangup(e, uuid, cause) -> Result { esl_mod.hangup(e, uuid, cause) }
+
+// telecom.esl_playback(esl, uuid, file) -> Result
+pub fn esl_playback(e, uuid, file) -> Result { esl_mod.playback(e, uuid, file) }
+
+// telecom.esl_bridge(esl, uuid, destination) -> Result
+pub fn esl_bridge(e, uuid, dest) -> Result { esl_mod.bridge(e, uuid, dest) }
+
+// telecom.esl_transfer(esl, uuid, extension, context?) -> Result
+pub fn esl_transfer(e, uuid, ext, ctx) -> Result { esl_mod.transfer(e, uuid, ext, ctx) }
+
+// telecom.esl_record(esl, uuid, file, max_sec?, silence?) -> Result
+pub fn esl_record(e, uuid, file, max_sec, silence) -> Result { esl_mod.record(e, uuid, file, max_sec, silence) }
+
+// telecom.esl_send_dtmf(esl, uuid, digits) -> Result
+pub fn esl_send_dtmf(e, uuid, digits) -> Result { esl_mod.send_dtmf(e, uuid, digits) }
+
+// telecom.esl_originate(esl, dest, app?, arg?) -> Result[str]
+pub fn esl_originate(e, dest, app, arg) -> Result { esl_mod.originate(e, dest, app, arg) }
+
+// telecom.esl_conference(esl, uuid, room, opts?) -> Result
+pub fn esl_conference(e, uuid, room, opts) -> Result { esl_mod.conference(e, uuid, room, opts) }
+
+// telecom.esl_play_and_get_digits(esl, uuid, opts) -> Result
+pub fn esl_play_and_get_digits(e, uuid, opts) -> Result { esl_mod.play_and_get_digits(e, uuid, opts) }
+
+// telecom.esl_outbound_server(port, handler) -> unit
+pub fn esl_outbound_server(port, handler) { esl_mod.outbound_server(port, handler) }
+
+// telecom.esl_status(esl) -> Result[str]
+pub fn esl_status(e) -> Result { esl_mod.status(e) }
+
+// telecom.esl_show(esl, what) -> Result[str]
+pub fn esl_show(e, what) -> Result { esl_mod.show(e, what) }
+
+// telecom.esl_close(esl) -> Result
+pub fn esl_close(e) -> Result { esl_mod.close(e) }
+
+// ─── Asterisk ARI ──────────────────────────────────────────────────
+
+// telecom.ari_connect(opts?) -> map
+pub fn ari_connect(opts) { ari_mod.connect(opts) }
+
+// telecom.ari_originate(client, endpoint, opts?) -> Result[map]
+pub fn ari_originate(c, endpoint, opts) -> Result { ari_mod.originate(c, endpoint, opts) }
+
+// telecom.ari_answer(client, channel_id) -> Result
+pub fn ari_answer(c, id) -> Result { ari_mod.answer_channel(c, id) }
+
+// telecom.ari_hangup(client, channel_id, reason?) -> Result
+pub fn ari_hangup(c, id, reason) -> Result { ari_mod.hangup_channel(c, id, reason) }
+
+// telecom.ari_play(client, channel_id, media, playback_id?) -> Result[map]
+pub fn ari_play(c, id, media, pb_id) -> Result { ari_mod.play_channel(c, id, media, pb_id) }
+
+// telecom.ari_record(client, channel_id, name, opts?) -> Result[map]
+pub fn ari_record(c, id, name, opts) -> Result { ari_mod.record_channel(c, id, name, opts) }
+
+// telecom.ari_send_dtmf(client, channel_id, digits) -> Result
+pub fn ari_send_dtmf(c, id, digits) -> Result { ari_mod.send_dtmf_channel(c, id, digits) }
+
+// telecom.ari_hold(client, channel_id) -> Result
+pub fn ari_hold(c, id) -> Result { ari_mod.hold(c, id) }
+
+// telecom.ari_unhold(client, channel_id) -> Result
+pub fn ari_unhold(c, id) -> Result { ari_mod.unhold(c, id) }
+
+// telecom.ari_create_bridge(client, type?) -> Result[map]
+pub fn ari_create_bridge(c, bk) -> Result { ari_mod.create_bridge(c, bk) }
+
+// telecom.ari_add_to_bridge(client, bridge_id, channel_ids) -> Result
+pub fn ari_add_to_bridge(c, bid, cids) -> Result { ari_mod.add_to_bridge(c, bid, cids) }
+
+// telecom.ari_destroy_bridge(client, bridge_id) -> Result
+pub fn ari_destroy_bridge(c, bid) -> Result { ari_mod.destroy_bridge(c, bid) }
+
+// telecom.ari_channels(client) -> Result[[map]]
+pub fn ari_channels(c) -> Result { ari_mod.channels(c) }
+
+// telecom.ari_endpoints(client) -> Result[[map]]
+pub fn ari_endpoints(c) -> Result { ari_mod.endpoints(c) }
+
+// telecom.ari_redirect(client, channel_id, endpoint) -> Result
+pub fn ari_redirect(c, id, ep) -> Result { ari_mod.redirect_channel(c, id, ep) }
+
+// telecom.ari_snoop(client, channel_id, app, opts?) -> Result[map]
+pub fn ari_snoop(c, id, app_name, opts) -> Result { ari_mod.snoop(c, id, app_name, opts) }
+
+// telecom.ari_listen(client, handler) -> Result
+// Connect to ARI WebSocket and handle events in real-time.
+pub fn ari_listen(c, handler) -> Result { ari_mod.listen(c, handler) }
