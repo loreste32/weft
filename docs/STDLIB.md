@@ -34,6 +34,7 @@ What we keep vs won’t: **[STDLIB_GAPS.md](STDLIB_GAPS.md)**.
 | System info | `sysinfo` (CPU, memory, disk, uptime, interfaces) |
 | Process mgmt | `proc` (list, find, kill, exists) |
 | Network diag | `netutil` (port check, TCP ping, DNS, port scan) |
+| MCP | `mcp` (connect to MCP servers, expose tools) |
 | Crypto | `crypto` |
 | Errors | `traceback` |
 | Charts | `viz` |
@@ -252,6 +253,26 @@ for r in results { say("port ${r.port}: ${r.open}") }
 ```
 
 Members: `port_open`, `tcp_ping`, `resolve`, `lookup_host`, `lookup_txt`, `lookup_mx`, `reverse_lookup`, `scan_ports`.
+
+### mcp
+
+Model Context Protocol — connect to MCP servers or expose Weft functions as MCP tools.
+
+```weft
+// connect to an MCP server
+client := mcp.connect("npx", ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"])?
+tools := client.list_tools()?
+result := client.call_tool("read_file", {"path": "/tmp/data.txt"})?
+
+// expose Weft functions as MCP tools
+mcp.serve_stdio([
+    mcp.tool("lookup_user", "Find a user by name", lookup_user),
+    mcp.tool("check_balance", "Get account balance", check_balance),
+])
+```
+
+Client: `connect`, `connect_sse` → `list_tools`, `call_tool`, `list_resources`, `read_resource`, `close`.
+Server: `tool`, `serve_stdio`.
 
 ### db / csv / table
 

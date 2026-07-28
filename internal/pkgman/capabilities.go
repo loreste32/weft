@@ -34,6 +34,7 @@ var RestrictedByDefault = []string{
 	"sysinfo", // system metrics (memory, disk, interfaces)
 	"proc",    // process list / kill
 	"netutil", // network diagnostics (port scan, DNS)
+	"mcp",     // MCP client/server (process spawn, network)
 }
 
 // CapsAll is the grant-everything token.

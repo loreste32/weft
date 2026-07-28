@@ -92,6 +92,7 @@ var packages = []struct {
 	{"llm", packageLLM},
 	{"ollama", packageOllama},
 	{"vllm", packageVLLM},
+	{"mcp", packageMCP},
 	{"sysinfo", func(env *runtime.Env) runtime.Value { return packageSysinfo() }},
 	{"proc", func(env *runtime.Env) runtime.Value { return packageProc() }},
 	{"netutil", packageNetutil},

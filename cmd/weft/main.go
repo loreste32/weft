@@ -179,6 +179,24 @@ func run(args []string) int {
 			return 1
 		}
 		return 0
+	case "mcp":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: weft mcp serve <file.weft>")
+			return 2
+		}
+		if args[1] == "serve" {
+			if len(args) < 3 {
+				fmt.Fprintln(os.Stderr, "usage: weft mcp serve <file.weft>")
+				return 2
+			}
+			if err := weft.MCPServe(args[2]); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			return 0
+		}
+		fmt.Fprintln(os.Stderr, "usage: weft mcp serve <file.weft>")
+		return 2
 	case "doctor":
 		if err := weft.Doctor(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
