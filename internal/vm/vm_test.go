@@ -1107,6 +1107,18 @@ fn main {
 	_ = err
 }
 
+func TestStackOverflow(t *testing.T) {
+	err := runErr(t, `
+fn boom() { boom() }
+fn main { boom() }`)
+	if err == nil {
+		t.Fatal("infinite recursion should error")
+	}
+	if !strings.Contains(err.Error(), "stack overflow") {
+		t.Fatalf("expected stack overflow, got: %v", err)
+	}
+}
+
 func TestRuntimeErrorMultiFrame(t *testing.T) {
 	re := &vm.RuntimeError{
 		Msg: "bad",

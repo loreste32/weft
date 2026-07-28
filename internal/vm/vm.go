@@ -573,7 +573,13 @@ func (vm *VM) wrapErr(err error) error {
 	}
 }
 
+// maxFrames caps call depth to catch infinite recursion before Go stack overflow.
+const maxFrames = 10_000
+
 func (vm *VM) call(callee runtime.Value, args []runtime.Value) (runtime.Value, error) {
+	if len(vm.frames) >= maxFrames {
+		return runtime.Null(), vm.errf("stack overflow: call depth exceeds %d frames", maxFrames)
+	}
 	switch callee.Kind {
 	case runtime.KindBuiltin:
 		b := callee.Obj.(*runtime.BuiltinObj)
