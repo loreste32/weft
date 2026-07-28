@@ -20,6 +20,7 @@ We will acknowledge receipt and work on a fix or coordinated disclosure.
 
 ## Scope notes
 
+- Registry packages are verified by ed25519 signature and sha256 checksum on install.
 - Package installs from path/git are trusted like local code; treat untrusted sources carefully.
 - Network helpers aim to avoid obvious SSRF mistakes but are not a hardened multi-tenant sandbox.
 - LLM/tool agents can execute whatever your scripts allow — do not point them at secrets without review.
@@ -36,6 +37,8 @@ Weft is a **host-power** scripting runtime (like a local shell + HTTP toolkit), 
 | `http` `insecure: true` | Skips TLS verify only — **SSRF dial guards stay on** |
 | Env API keys + `llm` | Env keys are **not** sent to untrusted `base_url` (allowlist: OpenAI/Anthropic hosts, localhost; extend with `WEFT_LLM_TRUST_HOSTS`) |
 | Secrets | `Secret` values print as `***`; field access sealed — use `secrets.unwrap` |
+| Registry packages | Archives verified by ed25519 signature + sha256 checksum; SSRF-safe download; key names reject path traversal |
+| VM execution | Call depth capped at 10,000 frames (infinite recursion → clean error, not crash) |
 
 ### Capability profiles (packages)
 
@@ -74,3 +77,7 @@ Apps that `use` modules needing models or disk must declare grants on the **modu
 - Multipart form: max 1024 parts (part storms)
 - `mold` module: max nest depth 32, max list length 10_000
 - CGNAT `100.64/10` blocked with private nets
+- Registry: SSRF-safe fetch/download, sha256 checksum verification, archive URL path traversal rejection
+- Signing: key name validation (rejects `/`, `\`, `..`, leading `-`/`.`)
+- VM: 10,000-frame call depth cap (stack overflow → error, not crash)
+- DB: JSON/JSONB columns auto-parsed safely via `encoding/json` (no eval)

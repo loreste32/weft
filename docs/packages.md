@@ -157,8 +157,29 @@ apps/demo         → deps.resultx = ../../packages/resultx
 # install in apps/demo → vendor/resultx + vendor/mathx
 ```
 
-## Not in v1
+## Public registry
 
-- Central registry index (use git/path/url)
+Weft has a package registry with ed25519 signed packages. Override the default endpoint with `WEFT_REGISTRY`.
+
+```bash
+# browse and install from registry
+weft registry search json
+weft registry info mypkg
+weft registry install mypkg@^1.0
+
+# generate a signing key
+weft registry keygen myname
+weft registry keys
+
+# publish (validates, signs, uploads)
+weft publish --key myname
+```
+
+Signatures are verified on install. Unsigned packages are still installable.
+
+Auth: set `WEFT_REGISTRY_TOKEN` for publish access.
+
+## Not yet
+
 - Binary native extensions (expand via pure `.weft` modules)
-- Version range solvers (`^1.2`) — pin tags/paths explicitly
+- Hosted default registry endpoint (client is ready, server not yet deployed)

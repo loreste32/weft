@@ -32,7 +32,7 @@ Works for short scripts. Rough around the edges.
 - HTMX-friendly `web` helpers (partials, OOB, cookies, `before`)  
 - basic tooling: `check`, `test`, `fmt`, `bench`, thin LSP  
 
-Still rough: gradual types, incomplete fmt/LSP edges, shallow stdlib in places, no public package registry.
+Still rough: gradual types, incomplete fmt/LSP edges, shallow stdlib in places.
 
 ## Quick start
 

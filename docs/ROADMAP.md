@@ -45,7 +45,7 @@ We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.3.
 - `weft fmt` covers the common style (enums, match arms, closures); still not every edge case  
 - LSP is usable daily (completion, hover, signatures, definition, symbols, diagnostics, format); not IDE-grade refactoring  
 - Stdlib is broad-and-shallow: good for glue, not a full OS platform  
-- No public package registry / signed packages yet  
+- Public registry and ed25519 package signing are available (`weft registry`, `weft publish`); the default registry endpoint is not yet hosted  
 - Streaming works for common SSE paths; it is not a full product surface  
 - Scientific compute and heavy training stay outside (on purpose)  
 
@@ -66,8 +66,8 @@ We are not racing to 1.0. The near goal is a boring, dependable **0.3.x** throug
 
 **Maybe later (only if they earn their keep)**
 
-- Public package discovery if path/git becomes a tax  
-- Stronger package trust (signing, richer version ranges)  
+- Host the default public registry endpoint  
+- Key trust / package ownership verification  
 - Richer editor packaging (marketplace polish)  
 - More LLM providers or stream polish — without swallowing every vendor beta  
 - Sum types with payloads (enums today are string tags only)  

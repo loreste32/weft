@@ -229,6 +229,14 @@ Packages & modules (for other developers):
   weft packages search <q>   # filter catalog by name/summary
   weft packages info <name>  # one catalog entry
   weft packages get <name[@constraint]>  # add path dep (+ pin version)
+
+Registry (public packages with ed25519 signing):
+  weft registry search [q]    # browse registry
+  weft registry info <name>   # package details
+  weft registry install <name[@constraint]>
+  weft registry keygen [name] # generate signing key
+  weft registry keys          # list signing keys
+  weft publish [--key name]   # validate, sign, upload
 `)
 		return 0
 	case "publish":
