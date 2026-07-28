@@ -73,7 +73,7 @@ func (s *server) handle(raw []byte) error {
 				"signatureHelpProvider":      map[string]any{"triggerCharacters": []string{"(", ","}},
 				"renameProvider":             map[string]any{"prepareProvider": true},
 			},
-			"serverInfo": map[string]any{"name": "weft-lsp", "version": "0.3.30"},
+			"serverInfo": map[string]any{"name": "weft-lsp", "version": "0.3.31"},
 		})
 	case "initialized", "textDocument/didSave":
 		return nil

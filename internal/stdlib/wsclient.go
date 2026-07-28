@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/loreste/weft/internal/netsafe"
 	"github.com/loreste/weft/internal/runtime"
 )
 
@@ -55,6 +56,10 @@ func wsClientDial(rawURL string) (*wsClientConn, error) {
 		} else {
 			host += ":80"
 		}
+	}
+	// SSRF check: block private/metadata IPs
+	if err := netsafe.CheckHost(u.Hostname()); err != nil {
+		return nil, fmt.Errorf("ws.connect rejected: %w", err)
 	}
 	conn, err := net.DialTimeout("tcp", host, 10*time.Second)
 	if err != nil {

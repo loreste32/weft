@@ -12,7 +12,7 @@ import (
 //	rl := ratelimit.new(10, "second")   // 10 req/sec
 //	rl := ratelimit.new(100, "minute")  // 100 req/min
 //	ratelimit.wait(rl)                  // blocks until token available
-//	ratelimit.try(rl) -> bool           // non-blocking
+//	ratelimit.acquire(rl) -> bool           // non-blocking
 func packageRatelimit() runtime.Value {
 	p := pkg()
 
@@ -46,7 +46,7 @@ func packageRatelimit() runtime.Value {
 
 		handle := runtime.NewMap()
 		mo := handle.Obj.(*runtime.MapObj)
-		mo.Keys = []string{"_rl", "wait", "try", "rate", "unit"}
+		mo.Keys = []string{"_rl", "wait", "acquire", "rate", "unit"}
 		mo.Vals["_rl"] = runtime.Str("ratelimit")
 		mo.Vals["rate"] = runtime.Int(rate)
 		mo.Vals["unit"] = runtime.Str(unit)
@@ -55,13 +55,13 @@ func packageRatelimit() runtime.Value {
 			bucket.wait()
 			return runtime.Unit(), nil
 		})
-		mo.Vals["try"] = runtime.MakeBuiltin("ratelimit.try", 0, func(_ []runtime.Value) (runtime.Value, error) {
+		mo.Vals["acquire"] = runtime.MakeBuiltin("ratelimit.acquire", 0, func(_ []runtime.Value) (runtime.Value, error) {
 			return runtime.Bool(bucket.tryAcquire()), nil
 		})
 		return handle, nil
 	}, 2)
 
-	// Convenience: ratelimit.wait(rl) and ratelimit.try(rl)
+	// Convenience: ratelimit.wait(rl) and ratelimit.acquire(rl)
 	set(p, "wait", func(args []runtime.Value) (runtime.Value, error) {
 		if len(args) < 1 {
 			return errRes("ratelimit.wait(rl)", "ratelimit"), nil
@@ -74,12 +74,12 @@ func packageRatelimit() runtime.Value {
 		return runtime.Unit(), nil
 	}, 1)
 
-	set(p, "try", func(args []runtime.Value) (runtime.Value, error) {
+	set(p, "acquire", func(args []runtime.Value) (runtime.Value, error) {
 		if len(args) < 1 {
 			return runtime.Bool(false), nil
 		}
 		if args[0].Kind == runtime.KindMap {
-			if fn, ok := args[0].Obj.(*runtime.MapObj).Vals["try"]; ok {
+			if fn, ok := args[0].Obj.(*runtime.MapObj).Vals["acquire"]; ok {
 				return fn.Obj.(*runtime.BuiltinObj).Fn(nil)
 			}
 		}
