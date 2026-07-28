@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/loreste/weft/internal/runtime"
@@ -68,6 +69,7 @@ func (c *Context) RunREPL(in io.Reader, out io.Writer) error {
 			continue
 		}
 
+		appendHistory(src)
 		v, err := c.Eval(src)
 		if err != nil {
 			fmt.Fprintln(out, err.Error())
@@ -153,10 +155,38 @@ examples:
   fn double(x) { x * 2 }
   double(21)
   llm.ask("hi")          // needs API key
+
+history saved to ~/.weft/history
+tip: use rlwrap weft for arrow-key editing
 `
 
 // StartREPL is the CLI entry using stdin/stdout.
 func StartREPL() error {
 	ctx := New(Options{Stdout: os.Stdout, Stderr: os.Stderr})
-	return ctx.RunREPL(os.Stdin, os.Stdout)
+	err := ctx.RunREPL(os.Stdin, os.Stdout)
+	return err
+}
+
+// historyPath returns ~/.weft/history (created on first write).
+func historyPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".weft", "history")
+}
+
+// appendHistory saves one line to the history file.
+func appendHistory(line string) {
+	p := historyPath()
+	if p == "" {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(p), 0o755)
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	fmt.Fprintln(f, line)
+	f.Close()
 }

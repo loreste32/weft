@@ -1,0 +1,122 @@
+// Todo app — web + SQLite + JSON API
+// Run: weft run examples/todoapp/main.weft
+// Then: curl localhost:8080/api/todos
+
+use db
+use json
+use web
+use cli
+use time
+
+fn setup_db(c) -> Result {
+    c.exec("CREATE TABLE IF NOT EXISTS todos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        done INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now'))
+    )")?
+}
+
+fn main -> Result {
+    p := cli.parse({
+        "about": "todo — a small task tracker",
+        "flags": {
+            "port": {"short": "p", "default": "8080"},
+            "db": {"default": "todos.db"},
+        },
+    })?
+    if p.help {
+        say(p.usage)
+        cli.exit(0)
+    }
+
+    c := db.open("sqlite:" + p.flags.db)?
+    setup_db(c)?
+    say("database ready: " + p.flags.db)
+
+    app := web.app()
+
+    // List todos
+    app.get("/api/todos", fn(req) {
+        rows := c.query("SELECT id, title, done, created_at FROM todos ORDER BY id")?
+        web.json(rows)
+    })
+
+    // Add todo
+    app.post("/api/todos", fn(req) {
+        body := json.parse(req.body)?
+        title := body["title"]
+        if title == "" {
+            return web.json(400, {"error": "title required"})
+        }
+        r := c.exec("INSERT INTO todos(title) VALUES (?)", [title])?
+        web.json(201, {"id": r.last_id, "title": title, "done": 0})
+    })
+
+    // Toggle done
+    app.put("/api/todos/:id/toggle", fn(req) {
+        id := req.params["id"]
+        c.exec("UPDATE todos SET done = 1 - done WHERE id = ?", [id])?
+        row := c.query_one("SELECT id, title, done FROM todos WHERE id = ?", [id])?
+        if row == null {
+            return web.json(404, {"error": "not found"})
+        }
+        web.json(row)
+    })
+
+    // Delete todo
+    app.delete("/api/todos/:id", fn(req) {
+        id := req.params["id"]
+        c.exec("DELETE FROM todos WHERE id = ?", [id])?
+        web.json({"ok": true})
+    })
+
+    // Simple HTML UI
+    app.get("/", fn(req) {
+        web.html("<!DOCTYPE html>
+<html>
+<head><title>Weft Todo</title>
+<style>
+body { font-family: sans-serif; max-width: 600px; margin: 2em auto; }
+.done { text-decoration: line-through; color: #888; }
+input { padding: 8px; width: 70%; }
+button { padding: 8px 16px; cursor: pointer; }
+li { padding: 4px 0; }
+</style></head>
+<body>
+<h1>Weft Todo</h1>
+<form onsubmit=\"addTodo(event)\">
+  <input id=\"title\" placeholder=\"What needs doing?\" autofocus>
+  <button>Add</button>
+</form>
+<ul id=\"list\"></ul>
+<script>
+async function load() {
+  const r = await fetch('/api/todos');
+  const todos = await r.json();
+  const ul = document.getElementById('list');
+  ul.innerHTML = todos.map(t =>
+    `<li class=\"${t.done?'done':''}\">
+       <span onclick=\"toggle(${t.id})\" style=\"cursor:pointer\">${t.title}</span>
+       <button onclick=\"del(${t.id})\">&times;</button>
+     </li>`
+  ).join('');
+}
+async function addTodo(e) {
+  e.preventDefault();
+  const input = document.getElementById('title');
+  await fetch('/api/todos', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({title:input.value})});
+  input.value = '';
+  load();
+}
+async function toggle(id) { await fetch(`/api/todos/${id}/toggle`, {method:'PUT'}); load(); }
+async function del(id) { await fetch(`/api/todos/${id}`, {method:'DELETE'}); load(); }
+load();
+</script>
+</body></html>")
+    })
+
+    addr := ":" + p.flags.port
+    say("listening on http://localhost" + addr)
+    app.listen(addr)
+}

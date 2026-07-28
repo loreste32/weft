@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/loreste/weft/internal/lsp"
 	"github.com/loreste/weft/pkg/weft"
@@ -187,11 +188,11 @@ func run(args []string) int {
 
 Language:
   weft                      REPL
-  weft run <file.weft>
+  weft run <file.weft> [--watch]
   weft check <file|dir>… [--types]
   weft test [path…] [-q] [-run filter]   # run fn test_* in *_test.weft
   weft stdlib [pkg]           # list stdlib packages (or members of pkg)
-  weft fmt <file.weft|dir>…   # AST pretty-print (weft style)
+  weft fmt [--check] <file.weft|dir>…  # format (--check for CI)
   weft bench [path…] [-n N]  # microbench fn bench_* in *_bench.weft
   weft gen "task" [-o out.weft] [--run]   # LLM writes Weft (pure Go API)
   weft doctor                environment readiness
@@ -884,6 +885,26 @@ func isCommand(s string) bool {
 }
 
 func cmdRun(args []string) int {
+	watch := false
+	var filtered []string
+	for _, a := range args {
+		if a == "--watch" || a == "-w" {
+			watch = true
+		} else {
+			filtered = append(filtered, a)
+		}
+	}
+	if len(filtered) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: weft run <file.weft> [--watch]")
+		return 2
+	}
+	if watch {
+		return cmdRunWatch(filtered)
+	}
+	return cmdRunOnce(filtered)
+}
+
+func cmdRunOnce(args []string) int {
 	path := args[0]
 	scriptArgs := []string{path}
 	if len(args) > 1 {
@@ -914,6 +935,54 @@ func cmdRun(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+func cmdRunWatch(args []string) int {
+	path := args[0]
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	dir := filepath.Dir(abs)
+	fmt.Fprintf(os.Stderr, "watching %s (press Ctrl-C to stop)\n", dir)
+
+	lastRun := time.Time{}
+	modTimes := map[string]time.Time{}
+
+	for {
+		changed := false
+		filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			if info.IsDir() {
+				name := info.Name()
+				if name == "vendor" || name == ".git" || name == "node_modules" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(p, ".weft") {
+				return nil
+			}
+			mt := info.ModTime()
+			if prev, ok := modTimes[p]; !ok || mt.After(prev) {
+				modTimes[p] = mt
+				if mt.After(lastRun) {
+					changed = true
+				}
+			}
+			return nil
+		})
+
+		if changed || lastRun.IsZero() {
+			lastRun = time.Now()
+			fmt.Fprintf(os.Stderr, "\n--- run %s ---\n", time.Now().Format("15:04:05"))
+			cmdRunOnce(args)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 func cmdCheck(path string, showTypes bool) int {
@@ -953,11 +1022,36 @@ func cmdStdlib(args []string) int {
 }
 
 func cmdFmt(args []string) int {
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: weft fmt <file.weft|dir>…")
+	check := false
+	var paths []string
+	for _, a := range args {
+		if a == "--check" || a == "-c" {
+			check = true
+		} else {
+			paths = append(paths, a)
+		}
+	}
+	if len(paths) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: weft fmt [--check] <file.weft|dir>…")
 		return 2
 	}
-	n, err := weft.FmtFiles(args)
+	if check {
+		dirty, err := weft.FmtCheck(paths)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if len(dirty) == 0 {
+			fmt.Println("all files formatted")
+			return 0
+		}
+		for _, f := range dirty {
+			fmt.Println(f)
+		}
+		fmt.Fprintf(os.Stderr, "%d file(s) need formatting\n", len(dirty))
+		return 1
+	}
+	n, err := weft.FmtFiles(paths)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

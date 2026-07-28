@@ -90,7 +90,7 @@ func getIndex(x, idx runtime.Value) (runtime.Value, error) {
 			return runtime.Null(), err
 		}
 		if i < 0 || int(i) >= len(lo.Items) {
-			return runtime.Null(), fmt.Errorf("index out of range")
+			return runtime.Null(), fmt.Errorf("index %d out of range (list has %d elements)", i, len(lo.Items))
 		}
 		return lo.Items[i], nil
 	case runtime.KindMap:
@@ -108,7 +108,7 @@ func getIndex(x, idx runtime.Value) (runtime.Value, error) {
 		}
 		runes := []rune(x.S)
 		if i < 0 || int(i) >= len(runes) {
-			return runtime.Null(), fmt.Errorf("index out of range")
+			return runtime.Null(), fmt.Errorf("index %d out of range (string has %d characters)", i, len(runes))
 		}
 		return runtime.Str(string(runes[i])), nil
 	default:
@@ -125,7 +125,7 @@ func setIndex(x, idx, val runtime.Value) error {
 			return err
 		}
 		if i < 0 || int(i) >= len(lo.Items) {
-			return fmt.Errorf("index out of range")
+			return fmt.Errorf("index %d out of range (list has %d elements)", i, len(lo.Items))
 		}
 		lo.Items[i] = val
 		return nil

@@ -63,6 +63,65 @@ func FmtFiles(paths []string) (int, error) {
 	return changed, nil
 }
 
+// FmtCheck returns paths that would change (for CI). No files written.
+func FmtCheck(paths []string) ([]string, error) {
+	var dirty []string
+	for _, path := range paths {
+		st, err := os.Stat(path)
+		if err != nil {
+			return dirty, err
+		}
+		if st.IsDir() {
+			err := filepath.Walk(path, func(f string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if info.IsDir() {
+					name := info.Name()
+					if name == "vendor" || name == ".git" || name == "node_modules" {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				if changed, err := fmtWouldChange(f); err != nil {
+					return err
+				} else if changed {
+					dirty = append(dirty, f)
+				}
+				return nil
+			})
+			if err != nil {
+				return dirty, err
+			}
+			continue
+		}
+		if changed, err := fmtWouldChange(path); err != nil {
+			return dirty, err
+		} else if changed {
+			dirty = append(dirty, path)
+		}
+	}
+	return dirty, nil
+}
+
+func fmtWouldChange(path string) (bool, error) {
+	if !strings.HasSuffix(path, ".weft") && !strings.HasSuffix(path, ".loom") {
+		return false, nil
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	formatted, err := format.Source(path, string(raw))
+	if err != nil {
+		formatted = string(formatWhitespace(raw))
+	}
+	if !strings.HasSuffix(formatted, "\n") && formatted != "" {
+		formatted += "\n"
+	}
+	return !bytes.Equal(raw, []byte(formatted)), nil
+}
+
 func fmtOne(path string) (int, error) {
 	if !strings.HasSuffix(path, ".weft") && !strings.HasSuffix(path, ".loom") {
 		return 0, nil
