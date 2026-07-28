@@ -358,3 +358,247 @@ func TestParseFString(t *testing.T) {
 		t.Fatalf("want FStringExpr, got %#v", call.Args[0])
 	}
 }
+
+func TestParseMatchPattern(t *testing.T) {
+	src := `fn main {
+    x := match 1 {
+        Status.Ok { "ok" }
+        Status.Err { "err" }
+        _ { "?" }
+    }
+    say(x)
+}`
+	_, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+}
+
+func TestParseMatchDestructure(t *testing.T) {
+	src := `enum Shape {
+    Circle(r)
+    Rect(w, h)
+    Point
+}
+fn main {
+    s := Shape.Circle(5)
+    r := match s {
+        Shape.Circle(r) { r }
+        Shape.Rect(w, h) { w * h }
+        Shape.Point { 0 }
+        _ { -1 }
+    }
+    say(r)
+}`
+	_, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+}
+
+func TestParseDollarInterpolation(t *testing.T) {
+	src := `fn main {
+    name := "world"
+    say("hello $name")
+    say("${1 + 2}")
+}`
+	_, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+}
+
+func TestParseColonBind(t *testing.T) {
+	src := `fn main {
+    x := 1
+    mut y := 2
+    y = 3
+    say(x, y)
+}`
+	_, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+}
+
+func TestParseFieldDefault(t *testing.T) {
+	src := `type Config {
+    port: int = 8080
+    host: str = "localhost"
+}
+fn main { say(1) }`
+	_, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+}
+
+func TestParseMapLit(t *testing.T) {
+	src := `fn main {
+    m := {"a": 1, "b": 2, "c": 3}
+    say(m)
+}`
+	_, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+}
+
+func TestParseBinaryPrecedence(t *testing.T) {
+	src := `fn main {
+    a := 1 + 2 * 3
+    b := true && false || true
+    c := 1 == 2 || 3 != 4
+    d := null ?? 42
+    say(a, b, c, d)
+}`
+	_, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+}
+
+func TestParseUnaryExpr(t *testing.T) {
+	src := `fn main {
+    a := -5
+    b := !true
+    say(a, b)
+}`
+	_, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+}
+
+func TestParsePostfix(t *testing.T) {
+	src := `fn main -> Result {
+    x := [1, 2, 3]
+    say(x[0])
+    m := {"a": 1}
+    say(m["a"])
+    say(m.a)
+    r := Ok(1)?
+    say(r)
+}`
+	_, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+}
+
+func TestParseForRange(t *testing.T) {
+	src := `fn main {
+    for i in range(10) {
+        say(i)
+    }
+    for x in [1, 2, 3] {
+        say(x)
+    }
+}`
+	_, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+}
+
+func TestParseTypeExprResult(t *testing.T) {
+	src := `fn f() -> Result[int] { Ok(1) }
+fn main { say(f()) }`
+	_, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+}
+
+func TestParseFuncLitResult(t *testing.T) {
+	src := `fn main {
+    f := fn(x) -> Result { Ok(x) }
+    say(f(1))
+}`
+	_, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+}
+
+func TestParseEnumPayload(t *testing.T) {
+	src := `enum Color {
+    RGB(r, g, b)
+    Hex(code)
+    None
+}
+fn main { say(Color.RGB(255, 0, 0)) }`
+	f, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+	ed := f.Decls[0].(*ast.EnumDecl)
+	if len(ed.Payloads) != 3 {
+		t.Fatalf("expected 3 payloads, got %d", len(ed.Payloads))
+	}
+	if len(ed.Payloads[0].Fields) != 3 {
+		t.Fatalf("RGB should have 3 fields, got %d", len(ed.Payloads[0].Fields))
+	}
+	if len(ed.Payloads[2].Fields) != 0 {
+		t.Fatal("None should have no fields")
+	}
+}
+
+func TestParseImportAlias(t *testing.T) {
+	src := `import "./util.weft" as u
+fn main { say(1) }`
+	f, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+	imp := f.Decls[0].(*ast.ImportDecl)
+	if imp.Alias != "u" {
+		t.Fatal("alias")
+	}
+	if !imp.IsPath {
+		t.Fatal("should be path import")
+	}
+}
+
+func TestParseTooManyErrors(t *testing.T) {
+	// Parser should stop after ~20 errors
+	src := `@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@`
+	_, errs := ParseFile("t.weft", src)
+	if !errs.HasErrors() {
+		t.Fatal("should have errors")
+	}
+}
+
+func TestParseConstWithType(t *testing.T) {
+	src := `const PI: float = 3.14159
+fn main { say(PI) }`
+	_, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+}
+
+func TestParseLetWithType(t *testing.T) {
+	src := `fn main {
+    let x: int = 42
+    let mut y: str = "hello"
+    say(x, y)
+}`
+	_, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+}
+
+func TestParseStructLitNested(t *testing.T) {
+	src := `type Inner { x: int }
+type Outer { inner: Inner }
+fn main {
+    o := Outer{inner: Inner{x: 1}}
+    say(o)
+}`
+	_, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+}

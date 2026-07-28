@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/loreste/weft/internal/ast"
 	"github.com/loreste/weft/internal/parse"
 )
 
@@ -525,5 +526,184 @@ fn main {
 	}
 	if info.Bindings["x"].Kind != TyInt {
 		t.Fatalf("for x: %s", info.Bindings["x"])
+	}
+}
+
+func TestInferImport(t *testing.T) {
+	_, err := inferSrc(t, `
+use json
+fn main {
+    say(json.parse("{\"a\":1}"))
+}
+`)
+	if err != "" {
+		t.Fatal(err)
+	}
+}
+
+func TestInferCallOkErr(t *testing.T) {
+	info, err := inferSrc(t, `
+fn main {
+    a := Ok(42)
+    b := Err("boom")
+    say(a, b)
+}
+`)
+	if err != "" {
+		t.Fatal(err)
+	}
+	if info.Bindings["a"] == nil {
+		t.Fatal("a")
+	}
+}
+
+func TestInferStructLit(t *testing.T) {
+	_, err := inferSrc(t, `
+type Pt { x: int, y: int }
+fn main {
+    p := Pt{x: 1, y: 2}
+    say(p)
+}
+`)
+	if err != "" {
+		t.Fatal(err)
+	}
+}
+
+func TestInferQOnNonResult(t *testing.T) {
+	_, err := inferSrc(t, `
+fn f() -> int { 42 }
+fn main -> int {
+    f()?
+}
+`)
+	if err == "" || !strings.Contains(err, "?") {
+		t.Fatalf("should warn about ? on non-Result, got %q", err)
+	}
+}
+
+func TestInferListIndex(t *testing.T) {
+	info, err := inferSrc(t, `
+fn main {
+    xs := [1, 2, 3]
+    x := xs[0]
+    say(x)
+}
+`)
+	if err != "" {
+		t.Fatal(err)
+	}
+	if info.Bindings["x"] != nil && info.Bindings["x"].Kind != TyInt {
+		t.Fatalf("list index: %s", info.Bindings["x"])
+	}
+}
+
+func TestInferMapIndex(t *testing.T) {
+	_, err := inferSrc(t, `
+fn main {
+    m := {"a": 1}
+    v := m["a"]
+    say(v)
+}
+`)
+	if err != "" {
+		t.Fatal(err)
+	}
+}
+
+func TestInferStrIndex(t *testing.T) {
+	info, err := inferSrc(t, `
+fn main {
+    s := "hello"
+    c := s[0]
+    say(c)
+}
+`)
+	if err != "" {
+		t.Fatal(err)
+	}
+	if info.Bindings["c"] != nil && info.Bindings["c"].Kind != TyStr {
+		t.Fatalf("str index: %s", info.Bindings["c"])
+	}
+}
+
+func TestInferFuncLitReturn(t *testing.T) {
+	info, err := inferSrc(t, `
+fn main {
+    f := fn(x: int) -> str { "hello" }
+    say(f(1))
+}
+`)
+	if err != "" {
+		t.Fatal(err)
+	}
+	ft := info.Bindings["f"]
+	if ft == nil || ft.Kind != TyFn {
+		t.Fatal("func lit type")
+	}
+}
+
+func TestInferEmptyBlock(t *testing.T) {
+	_, err := inferSrc(t, `
+fn main {
+    if true { }
+    say("ok")
+}
+`)
+	if err != "" {
+		t.Fatal(err)
+	}
+}
+
+func TestUnify(t *testing.T) {
+	// Unify(int, int) = int
+	if got := Unify(tyInt(), tyInt()); got.Kind != TyInt {
+		t.Errorf("int+int: %s", got)
+	}
+	// Unify(int, float) = int (Equal treats int/float as compatible, returns first)
+	if got := Unify(tyInt(), tyFloat()); got == nil {
+		t.Errorf("int+float: nil")
+	}
+	// Unify(nil, str) = str
+	if got := Unify(nil, tyStr()); got.Kind != TyStr {
+		t.Errorf("nil+str: %s", got)
+	}
+	// Unify(str, nil) = str
+	if got := Unify(tyStr(), nil); got.Kind != TyStr {
+		t.Errorf("str+nil: %s", got)
+	}
+	// Unify(nil, nil) = nil
+	if got := Unify(nil, nil); got != nil {
+		t.Errorf("nil+nil: %v", got)
+	}
+	// Unify([int], [int]) = [int]
+	if got := Unify(tyList(tyInt()), tyList(tyInt())); got.Kind != TyList {
+		t.Errorf("list+list: %s", got)
+	}
+	// Unify(any, str) = str
+	if got := Unify(tyAny(), tyStr()); got.Kind != TyStr {
+		t.Errorf("any+str: %s", got)
+	}
+}
+
+func TestFromAST(t *testing.T) {
+	cases := []struct {
+		te   ast.TypeExpr
+		want string
+	}{
+		{&ast.NamedType{Name: "int"}, "int"},
+		{&ast.NamedType{Name: "str"}, "str"},
+		{&ast.NamedType{Name: "Foo"}, "Foo"},
+		{&ast.ListType{Element: &ast.NamedType{Name: "int"}}, "[int]"},
+		{&ast.ResultType{Ok: &ast.NamedType{Name: "str"}}, "Result[str]"},
+		{&ast.OptionalType{Element: &ast.NamedType{Name: "int"}}, "int?"},
+		{&ast.ResultType{}, "Result[any]"},
+		{nil, "any"},
+	}
+	for _, tc := range cases {
+		got := FromAST(tc.te)
+		if got.String() != tc.want {
+			t.Errorf("FromAST: got %q, want %q", got.String(), tc.want)
+		}
 	}
 }
