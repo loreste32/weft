@@ -11,6 +11,9 @@ Small set of commands for day-to-day work. Nothing here replaces a full IDE or p
 | `weft fmt <path>…` | Pretty-print from the AST (or whitespace-only if the file doesn’t parse). |
 | `weft bench [path…]` | Rough microbenches: `*_bench.weft` / `fn bench_*`. |
 | `weft stdlib [pkg]` | List stdlib packages, or members of one package. |
+| `weft notebook <file> [-o out.html]` | Run `.weft` as cells, output HTML. |
+| `weft debug <file>` | Interactive source-level debugger. |
+| `weft profile <file>` | Execution profiler. |
 | `weft lsp` | Language server: diagnostics, completion, hover, definition, symbols, **format**. |
 | `weft eval [dir]` | Smoke-run scripts that have `fn main`. |
 | `weft train eval` | Score the embedded gold examples (parse/compile). |

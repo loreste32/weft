@@ -2,7 +2,7 @@
 
 Weft is for agent scripts, HTTP glue, and ops tooling. It stays small on purpose.
 
-## Where we are now (0.3.30)
+## Where we are now (0.3.31)
 
 We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.3.35** — see [VERSIONING.md](VERSIONING.md)). You can build the binary, write real scripts, and run them on a single Go runtime.
 
@@ -11,8 +11,8 @@ We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.3.
 - Language loop: lex → parse → compile → stack VM  
 - Own syntax (`:=`, `mut`, `use`, `say`, `?`, match, defer, enum)  
 - **Closures capture outer locals by value** (deep-copied at creation — safe under concurrency)  
-- **Enums** as string-tagged maps (`enum Status { Ok, Err }` → `Status.Ok == "Ok"`)  
-- **Match** on literals, consts, and field patterns (`Status.Ok`) plus `_`  
+- **Enums**: simple tags (`enum Status { Ok, Err }`) and sum types with payloads (`enum Shape { Circle(r), Rect(w,h) }`)  
+- **Match** on literals, consts, field patterns (`Status.Ok`), and destructuring (`Shape.Circle(r)`) plus `_`  
 - Errors via `Result` + `?` (no try/catch)  
 - Concurrency without `async`/`await` (map/filter fan-out, spawn, channels)  
 - Packages: path/git, vendor, lock; monorepo catalog (`ml`, `tokensave`, `mold`); optional `WEFT_CATALOG_URL`  
@@ -37,7 +37,11 @@ We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.3.
 - Docs: tutorial, language reference, cookbook + `examples/cookbook/` (CI smoke)  
 - Gold corpus includes closures, enums, and match (train eval 100%)  
 - Agent/LLM ergonomics: multi-turn `llm.chat`, `ask`+opts, `stream_text` (in gold corpus)  
-- Glue ergonomics: `json.get`/`env.get` defaults, `http.get_json`, `str.starts_with` (in gold)  
+- Glue ergonomics: `json.get`/`env.get` defaults, `http.get_json`, `str.starts_with` (in gold)
+- **Sum types with payloads**: `enum Shape { Circle(r), Rect(w,h) }` + destructuring in `match`  
+- `weft debug <file>` — interactive source-level debugger  
+- `weft profile <file>` — execution profiler  
+- `weft notebook <file> [-o out.html]` — run `.weft` as cells, output HTML    
 
 **Still rough or incomplete**
 
@@ -70,7 +74,6 @@ We are not racing to 1.0. The near goal is a boring, dependable **0.3.x** throug
 - Key trust / package ownership verification  
 - Richer editor packaging (marketplace polish)  
 - More LLM providers or stream polish — without swallowing every vendor beta  
-- Sum types with payloads (enums today are string tags only)  
 
 **Probably never in core**
 

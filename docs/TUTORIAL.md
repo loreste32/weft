@@ -10,7 +10,7 @@ A guided path from install to a small real script. Work in order; each step is s
 
 ```bash
 git clone <your-weft-repo>   # or open this monorepo
-cd coucou                   # repo root
+cd weft                     # repo root
 go build -o weft ./cmd/weft
 ./weft doctor
 ./weft version
@@ -158,10 +158,11 @@ Env: `WEFT_WORKERS=N` caps default concurrency. Details: [CONCURRENCY.md](CONCUR
 
 ## Minute 35–45 — Enums, match, closures
 
-### Enums (string tags)
+### Enums and sum types
 
 ```weft
 enum Status { Ok, Err, Pending }
+enum Shape { Circle(r), Rect(w, h), Point }
 
 fn main {
     s := Status.Pending
@@ -171,6 +172,13 @@ fn main {
         Status.Pending { "wait" }
         _ { "?" }
     })
+
+    area := match Shape.Circle(5) {
+        Shape.Circle(r) { 3.14 * r * r }
+        Shape.Rect(w, h) { w * h }
+        Shape.Point { 0 }
+    }
+    say("area=$area")
 }
 ```
 

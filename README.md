@@ -15,7 +15,7 @@ It handles errors with `Result` / `?` instead of exceptions, runs concurrent wor
 
 | | |
 |--|--|
-| Version | 0.3.x (`main` branch) |
+| Version | 0.3.31 (`main` branch) |
 | Install | `go build -o weft ./cmd/weft` |
 | Docs | [docs/README.md](docs/README.md) |
 | Security | [SECURITY.md](SECURITY.md) |
@@ -75,7 +75,7 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 
 ## What's in the box
 
-**Language:** lex, parse, compile, stack VM. Closures (capture by value), enums with payloads, `match`, `defer`, `Result`/`?`. Concurrent `map`/`filter`, `spawn`, channels — no `async`/`await`.
+**Language:** lex, parse, compile, stack VM. Closures (capture by value), sum types with payloads (`enum Shape { Circle(r) }`), `match` with destructuring, `defer`, `Result`/`?`. Concurrent `map`/`filter`, `spawn`, channels — no `async`/`await`.
 
 **Stdlib (in the binary):** `http`, `web`, `json`, `db` (SQLite/Postgres/MySQL with auto JSON/JSONB parsing), `fs`, `sh`, `cli`, `llm` (OpenAI/Anthropic/Ollama/vLLM), `csv`, `yaml`, `pcap`, `crypto`, `re`, `time`, and [many more](docs/STDLIB.md). Run `weft stdlib` to see them all.
 
@@ -86,6 +86,8 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 - `weft run [--watch]` — run scripts, auto-reload on file changes
 - `weft notebook` — run `.weft` as cells, output HTML
 - `weft bench` — microbenchmarks
+- `weft debug <file>` — interactive source-level debugger
+- `weft profile <file>` — execution profiler
 - `weft lsp` — Language Server (completion, hover, rename, diagnostics)
 
 **Packages:**
@@ -113,6 +115,8 @@ weft test [path] [--coverage]     run tests
 weft fmt [--check] <file|dir>     format (--check for CI)
 weft notebook <file> [-o out.html]
 weft bench | stdlib | doctor | version | lsp
+weft debug <file.weft>            debugger
+weft profile <file.weft>          profiler
 
 weft new module|app|cli <name>    scaffold a project
 weft get <name> <path|git>        add a dependency
