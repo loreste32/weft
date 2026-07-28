@@ -38,9 +38,9 @@ type TestReport struct {
 
 // CoverageReport tracks which functions were hit during test runs.
 type CoverageReport struct {
-	Hit   map[string]bool // "file:func" → true
-	All   map[string]bool // all declared functions
-	Pct   float64
+	Hit map[string]bool // "file:func" → true
+	All map[string]bool // all declared functions
+	Pct float64
 }
 
 // TestOptions configures discovery and execution.

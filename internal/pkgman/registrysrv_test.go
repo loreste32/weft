@@ -87,7 +87,10 @@ func TestRegistryServerPublishAndIndex(t *testing.T) {
 	publishToServer(t, ts, "mylib", "1.0.0", "")
 
 	// Check index
-	resp, _ := http.Get(ts.URL + "/v1/index.json")
+	resp, err := http.Get(ts.URL + "/v1/index.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer resp.Body.Close()
 	var idx RegistryIndex
 	json.NewDecoder(resp.Body).Decode(&idx)
@@ -188,7 +191,10 @@ func TestRegistryServerMultipleVersions(t *testing.T) {
 	publishToServer(t, ts, "lib", "1.1.0", "")
 	publishToServer(t, ts, "other", "0.1.0", "")
 
-	resp, _ := http.Get(ts.URL + "/v1/index.json")
+	resp, err := http.Get(ts.URL + "/v1/index.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer resp.Body.Close()
 	var idx RegistryIndex
 	json.NewDecoder(resp.Body).Decode(&idx)

@@ -444,7 +444,7 @@ func (e *MatchExpr) exprNode()      {}
 // MatchArm is one pattern → body branch.
 type MatchArm struct {
 	Pos_       token.Pos
-	Pattern    Expr     // nil when Wildcard
+	Pattern    Expr // nil when Wildcard
 	Body       *Block
 	IsWildcard bool
 	Bindings   []string // destructured payload bindings: Shape.Circle(r) → ["r"]
