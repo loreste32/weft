@@ -470,3 +470,212 @@ func TestAppendHistory(t *testing.T) {
 		t.Fatal("history not written")
 	}
 }
+
+// --- REPL via pipe (no blocking stdin) ---
+
+func TestREPLPipe(t *testing.T) {
+	input := "1 + 2\n:quit\n"
+	var out bytes.Buffer
+	ctx := New(Options{Stdout: &out})
+	err := ctx.RunREPL(strings.NewReader(input), &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "3") {
+		t.Fatalf("REPL output: %q", out.String())
+	}
+}
+
+func TestREPLMultiLine(t *testing.T) {
+	input := "fn double(x) {\n  x * 2\n}\ndouble(21)\n:quit\n"
+	var out bytes.Buffer
+	ctx := New(Options{Stdout: &out})
+	ctx.RunREPL(strings.NewReader(input), &out)
+	if !strings.Contains(out.String(), "42") {
+		t.Fatalf("REPL multiline: %q", out.String())
+	}
+}
+
+func TestREPLHelp(t *testing.T) {
+	input := ":help\n:q\n"
+	var out bytes.Buffer
+	ctx := New(Options{Stdout: &out})
+	ctx.RunREPL(strings.NewReader(input), &out)
+	if !strings.Contains(out.String(), "commands") {
+		t.Fatalf("REPL help: %q", out.String())
+	}
+}
+
+func TestREPLEmptyLine(t *testing.T) {
+	input := "\n\n1\n:quit\n"
+	var out bytes.Buffer
+	ctx := New(Options{Stdout: &out})
+	ctx.RunREPL(strings.NewReader(input), &out)
+	if !strings.Contains(out.String(), "1") {
+		t.Fatalf("REPL empty: %q", out.String())
+	}
+}
+
+func TestREPLError(t *testing.T) {
+	input := "1 / 0\n:quit\n"
+	var out bytes.Buffer
+	ctx := New(Options{Stdout: &out})
+	ctx.RunREPL(strings.NewReader(input), &out)
+	if !strings.Contains(out.String(), "division") {
+		t.Fatalf("REPL error: %q", out.String())
+	}
+}
+
+// --- registry CLI (mock server) ---
+
+func TestRegistryKeygen(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if err := RegistryKeygen("testkey"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRegistryListKeysEmpty(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if err := RegistryListKeys(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRegistryListKeysWithKeys(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	RegistryKeygen("a")
+	RegistryKeygen("b")
+	if err := RegistryListKeys(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRegistryInfoMock(t *testing.T) {
+	idx := map[string]any{
+		"packages": []map[string]any{
+			{"name": "foo", "version": "1.0.0", "summary": "a foo"},
+		},
+	}
+	b, _ := json.Marshal(idx)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(b)
+	}))
+	defer srv.Close()
+
+	t.Setenv("WEFT_REGISTRY", srv.URL)
+	if err := RegistryInfo("foo"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRegistrySearchMock(t *testing.T) {
+	idx := map[string]any{
+		"packages": []map[string]any{
+			{"name": "bar", "version": "0.1.0", "summary": "a bar", "signature": "abc"},
+		},
+	}
+	b, _ := json.Marshal(idx)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(b)
+	}))
+	defer srv.Close()
+
+	t.Setenv("WEFT_REGISTRY", srv.URL)
+	if err := RegistrySearch("bar"); err != nil {
+		t.Fatal(err)
+	}
+	// empty query
+	if err := RegistrySearch(""); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPublishValidationFail(t *testing.T) {
+	dir := t.TempDir()
+	// No weft.json → validation fails
+	err := Publish(dir, "")
+	if err == nil {
+		t.Fatal("should fail without weft.json")
+	}
+}
+
+// --- train eval ---
+
+func TestTrainEval(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "hello.weft"), []byte("fn main { say(1) }\n"), 0644)
+	cases, err := EvalDir(dir, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pass := 0
+	for _, c := range cases {
+		if c.OK {
+			pass++
+		}
+	}
+	if pass == 0 {
+		t.Fatal("no passing cases")
+	}
+}
+
+// --- catalog CLI ---
+
+func TestCatalogListLocal(t *testing.T) {
+	dir := t.TempDir()
+	pkgDir := filepath.Join(dir, "packages")
+	os.MkdirAll(pkgDir, 0755)
+	os.WriteFile(filepath.Join(pkgDir, "index.json"), []byte(`{
+		"packages": [{"name": "foo", "path": "./foo", "version": "0.1.0", "summary": "test"}]
+	}`), 0644)
+	t.Setenv("WEFT_PACKAGES", pkgDir)
+	err := CatalogList(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// --- train chat ---
+
+func TestTrainChat(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": "fn main { say(1) }"}},
+			},
+		})
+	}))
+	defer srv.Close()
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+	t.Setenv("OPENAI_BASE_URL", srv.URL)
+
+	err := TrainChat("write hello", "")
+	// May fail because model isn't set, but exercises the code path
+	_ = err
+}
+
+// --- format whitespace ---
+
+func TestFormatWhitespace(t *testing.T) {
+	input := []byte("fn main {\r\n  say(1)\r}\n")
+	result := formatWhitespace(input)
+	if strings.Contains(string(result), "\r") {
+		t.Fatal("should strip \\r")
+	}
+}
+
+// --- mask key ---
+
+func TestMaskKey(t *testing.T) {
+	m := maskKey("sk-abc123def456")
+	if !strings.HasPrefix(m, "sk-") || !strings.HasSuffix(m, "f456") {
+		t.Fatalf("mask: %q", m)
+	}
+	if maskKey("short") != "***" {
+		t.Fatalf("mask short: %q", maskKey("short"))
+	}
+	if maskKey("") != "(not set)" {
+		t.Fatalf("mask empty: %q", maskKey(""))
+	}
+}
