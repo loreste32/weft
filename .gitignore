@@ -61,3 +61,4 @@ ci_mod/
 /weft.lock
 # optional root app manifest from local experiments
 /weft.json
+.tokensave/
