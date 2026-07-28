@@ -1,0 +1,16 @@
+{
+  "name": "retry",
+  "version": "0.3.0",
+  "description": "Retry with exponential backoff for flaky operations — API calls, network, CI",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": [
+    "run",
+    "linear",
+    "once",
+    "with_timeout"
+  ],
+  "license": "Apache-2.0",
+  "keywords": ["retry", "backoff", "resilience", "ops", "api", "network"],
+  "deps": {}
+}

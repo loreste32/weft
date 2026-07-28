@@ -46,8 +46,10 @@ type RegistryPackage struct {
 	ArchiveURL string            `json:"archive_url"`          // relative or absolute
 	Sum        string            `json:"sum,omitempty"`        // sha256 of archive
 	Keywords   []string          `json:"keywords,omitempty"`
-	Deps       map[string]string `json:"deps,omitempty"` // name → version constraint
-	Published  string            `json:"published,omitempty"`
+	Deps        map[string]string `json:"deps,omitempty"`        // name → version constraint
+	Published   string            `json:"published,omitempty"`
+	Exports     []string          `json:"exports,omitempty"`     // pub fn/type names
+	Description string            `json:"description,omitempty"` // long description
 }
 
 // FetchIndex downloads the registry index.
@@ -257,6 +259,9 @@ func PublishPackage(dir, keyName, registryURL string) error {
 	}
 	if len(m.Authors) > 0 {
 		meta.Author = m.Authors[0]
+	}
+	if len(m.Exports) > 0 {
+		meta.Exports = m.Exports
 	}
 	// Convert deps
 	if len(m.Deps) > 0 {

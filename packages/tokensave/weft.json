@@ -1,6 +1,6 @@
 {
   "name": "tokensave",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "description": "Agent stack: clarify, thrift context, memory, teach → train export",
   "type": "module",
   "entry": "lib.weft",

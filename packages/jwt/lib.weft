@@ -1,0 +1,82 @@
+// jwt — decode and inspect JWT tokens (no verification — use for claims inspection).
+//
+//   weft registry install jwt
+//   use jwt
+//
+// Pure module — no capabilities required.
+// NOTE: This decodes JWTs but does NOT verify signatures.
+// For auth, verify on your backend. This is for inspecting tokens in scripts.
+
+// jwt.decode(token) -> Result[map]  {header, payload, signature}
+pub fn decode(token) -> Result {
+    parts := str.split(token, ".")
+    ensure(len(parts) == 3, "invalid JWT: expected 3 parts, got ${len(parts)}")?
+
+    header := json.parse(base64.url_decode(parts[0])?)?
+    payload := json.parse(base64.url_decode(parts[1])?)?
+
+    Ok({
+        "header": header,
+        "payload": payload,
+        "signature": parts[2],
+    })
+}
+
+// jwt.claims(token) -> Result[map]  Just the payload claims
+pub fn claims(token) -> Result {
+    d := decode(token)?
+    Ok(d.payload)
+}
+
+// jwt.expired(token) -> Result[bool]  Check exp claim against now
+pub fn expired(token) -> Result {
+    c := claims(token)?
+    if c.exp == null { return Ok(false) }
+    Ok(time.now() > c.exp)
+}
+
+// jwt.expires_in(token) -> Result[int]  Seconds until expiry (negative = already expired)
+pub fn expires_in(token) -> Result {
+    c := claims(token)?
+    if c.exp == null { return Err("no exp claim") }
+    Ok(int(c.exp - time.now()))
+}
+
+// jwt.has_claim(token, key) -> Result[bool]
+pub fn has_claim(token, key) -> Result {
+    c := claims(token)?
+    Ok(c[key] != null)
+}
+
+// jwt.issuer(token) -> Result[str|null]
+pub fn issuer(token) -> Result {
+    c := claims(token)?
+    Ok(c.iss)
+}
+
+// jwt.subject(token) -> Result[str|null]
+pub fn subject(token) -> Result {
+    c := claims(token)?
+    Ok(c.sub)
+}
+
+// jwt.audience(token) -> Result
+pub fn audience(token) -> Result {
+    c := claims(token)?
+    Ok(c.aud)
+}
+
+// jwt.summary(token) -> Result[map]  Quick overview
+pub fn summary(token) -> Result {
+    d := decode(token)?
+    c := d.payload
+    Ok({
+        "alg": d.header.alg,
+        "typ": d.header.typ,
+        "iss": c.iss,
+        "sub": c.sub,
+        "exp": c.exp,
+        "expired": if c.exp != null { time.now() > c.exp } else { null },
+        "claims": len(c),
+    })
+}

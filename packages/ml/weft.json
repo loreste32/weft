@@ -1,6 +1,6 @@
 {
   "name": "ml",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Agent stack: embeddings, vectors, RAG index, metrics",
   "type": "module",
   "entry": "lib.weft",

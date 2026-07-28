@@ -1,0 +1,21 @@
+{
+  "name": "jwt",
+  "version": "0.3.0",
+  "description": "Decode and inspect JWT tokens — claims, expiry, issuer (no signature verification)",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": [
+    "decode",
+    "claims",
+    "expired",
+    "expires_in",
+    "has_claim",
+    "issuer",
+    "subject",
+    "audience",
+    "summary"
+  ],
+  "license": "Apache-2.0",
+  "keywords": ["jwt", "token", "auth", "claims", "decode", "inspect"],
+  "deps": {}
+}

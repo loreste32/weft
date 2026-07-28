@@ -1,0 +1,19 @@
+{
+  "name": "semver",
+  "version": "0.3.0",
+  "description": "Parse, compare, and check semantic version strings",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": [
+    "parse",
+    "compare",
+    "gt", "gte", "lt", "lte", "eq",
+    "satisfies",
+    "bump",
+    "format",
+    "valid"
+  ],
+  "license": "Apache-2.0",
+  "keywords": ["semver", "version", "compare", "constraint", "bump"],
+  "deps": {}
+}

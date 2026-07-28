@@ -1,0 +1,102 @@
+// retry — retry with exponential backoff for flaky operations.
+//
+//   weft registry install retry
+//   use retry
+//
+// Pure module — no capabilities required.
+
+// retry.run(fn, opts?) -> Result
+// Calls fn() up to max_attempts times with exponential backoff.
+// opts: {max_attempts, delay_ms, backoff, max_delay_ms, on_retry}
+pub fn run(f, opts) -> Result {
+    max := 3
+    delay := 200
+    bk := 2.0
+    max_delay := 30000
+    on_retry := null
+
+    if opts != null {
+        if opts.max_attempts != null { max = opts.max_attempts }
+        if opts.delay_ms != null { delay = opts.delay_ms }
+        if opts.backoff != null { bk = opts.backoff }
+        if opts.max_delay_ms != null { max_delay = opts.max_delay_ms }
+        if opts.on_retry != null { on_retry = opts.on_retry }
+    }
+
+    mut attempt := 0
+    mut last_err := null
+    mut current_delay := delay
+
+    while attempt < max {
+        attempt = attempt + 1
+        r := f()
+        if r.ok {
+            return Ok(r.value)
+        }
+        last_err = r.err
+        if attempt < max {
+            if on_retry != null {
+                on_retry(attempt, last_err, current_delay)
+            }
+            time.sleep_ms(current_delay)
+            current_delay = int(current_delay * bk)
+            if current_delay > max_delay {
+                current_delay = max_delay
+            }
+        }
+    }
+    Err(last_err)
+}
+
+// retry.linear(fn, attempts?, delay_ms?) -> Result
+// Fixed-delay retry (no backoff).
+pub fn linear(f, attempts, delay_ms) -> Result {
+    max := if attempts != null { attempts } else { 3 }
+    d := if delay_ms != null { delay_ms } else { 500 }
+    run(f, {"max_attempts": max, "delay_ms": d, "backoff": 1.0})
+}
+
+// retry.once(fn) -> Result
+// Try once more on failure (2 total attempts).
+pub fn once(f) -> Result {
+    run(f, {"max_attempts": 2, "delay_ms": 100})
+}
+
+// retry.with_timeout(fn, timeout_sec, opts?) -> Result
+// Retry until timeout expires.
+pub fn with_timeout(f, timeout_sec, opts) -> Result {
+    max := 1000
+    delay := 200
+    bk := 1.5
+    max_delay := 5000
+    if opts != null {
+        if opts.delay_ms != null { delay = opts.delay_ms }
+        if opts.backoff != null { bk = opts.backoff }
+        if opts.max_delay_ms != null { max_delay = opts.max_delay_ms }
+    }
+    deadline := time.now() + timeout_sec
+    mut attempt := 0
+    mut last_err := null
+    mut current_delay := delay
+
+    while attempt < max {
+        if time.now() > deadline {
+            return Err(last_err)
+        }
+        attempt = attempt + 1
+        r := f()
+        if r.ok {
+            return Ok(r.value)
+        }
+        last_err = r.err
+        if time.now() + (current_delay / 1000.0) > deadline {
+            return Err(last_err)
+        }
+        time.sleep_ms(current_delay)
+        current_delay = int(current_delay * bk)
+        if current_delay > max_delay {
+            current_delay = max_delay
+        }
+    }
+    Err(last_err)
+}

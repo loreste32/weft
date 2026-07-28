@@ -1,0 +1,22 @@
+{
+  "name": "cache",
+  "version": "0.3.0",
+  "description": "In-memory key-value cache with TTL — for API responses, computations, memoization",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": [
+    "new",
+    "get",
+    "set",
+    "has",
+    "delete",
+    "clear",
+    "size",
+    "keys",
+    "get_or_set",
+    "memoize"
+  ],
+  "license": "Apache-2.0",
+  "keywords": ["cache", "ttl", "memoize", "key-value", "api", "performance"],
+  "deps": {}
+}

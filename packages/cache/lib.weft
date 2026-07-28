@@ -1,0 +1,110 @@
+// cache — in-memory key-value cache with TTL for API responses, computations, etc.
+//
+//   weft registry install cache
+//   use cache
+//
+// Pure module — no capabilities required.
+
+// cache.new(opts?) -> map
+// Create a new cache. opts: {ttl_sec, max_size}
+pub fn new(opts) {
+    ttl := 300
+    max_size := 1000
+    if opts != null {
+        if opts.ttl_sec != null { ttl = opts.ttl_sec }
+        if opts.max_size != null { max_size = opts.max_size }
+    }
+    {
+        "_entries": {},
+        "_order": [],
+        "_ttl": ttl,
+        "_max": max_size,
+    }
+}
+
+// cache.get(c, key) -> value|null
+pub fn get(c, key) {
+    entries := c._entries
+    if entries[key] == null { return null }
+    entry := entries[key]
+    if time.now() > entry._expires {
+        // expired
+        entries[key] = null
+        return null
+    }
+    entry.value
+}
+
+// cache.set(c, key, value, ttl_sec?) -> unit
+pub fn set(c, key, value, ttl_sec) {
+    ttl := if ttl_sec != null { ttl_sec } else { c._ttl }
+    c._entries[key] = {"value": value, "_expires": time.now() + ttl}
+    push(c._order, key)
+    // evict oldest if over max
+    if len(c._order) > c._max {
+        old_key := c._order[0]
+        c._order = str.slice(c._order, 1)
+        c._entries[old_key] = null
+    }
+}
+
+// cache.has(c, key) -> bool
+pub fn has(c, key) {
+    get(c, key) != null
+}
+
+// cache.delete(c, key) -> unit
+pub fn delete(c, key) {
+    c._entries[key] = null
+}
+
+// cache.clear(c) -> unit
+pub fn clear(c) {
+    c._entries = {}
+    c._order = []
+}
+
+// cache.size(c) -> int
+pub fn size(c) {
+    mut n := 0
+    now := time.now()
+    for k in c._order {
+        entry := c._entries[k]
+        if entry != null && now <= entry._expires {
+            n = n + 1
+        }
+    }
+    n
+}
+
+// cache.keys(c) -> [str]
+pub fn keys(c) {
+    mut result := []
+    now := time.now()
+    for k in c._order {
+        entry := c._entries[k]
+        if entry != null && now <= entry._expires {
+            push(result, k)
+        }
+    }
+    result
+}
+
+// cache.get_or_set(c, key, fn, ttl_sec?) -> Result
+// Return cached value, or call fn() and cache the result.
+pub fn get_or_set(c, key, f, ttl_sec) -> Result {
+    v := get(c, key)
+    if v != null { return Ok(v) }
+    result := f()?
+    set(c, key, result, ttl_sec)
+    Ok(result)
+}
+
+// cache.memoize(fn, ttl_sec?) -> fn
+// Wrap a single-arg function with caching.
+pub fn memoize(f, ttl_sec) {
+    c := new({"ttl_sec": if ttl_sec != null { ttl_sec } else { 300 }})
+    fn(arg) -> Result {
+        get_or_set(c, "$arg", fn() { f(arg) }, ttl_sec)
+    }
+}

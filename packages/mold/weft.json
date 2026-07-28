@@ -1,6 +1,6 @@
 {
   "name": "mold",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Agent stack: pour LLM/API JSON into maps — validate, JSON Schema, tool_params / tool_spec",
   "type": "module",
   "entry": "lib.weft",

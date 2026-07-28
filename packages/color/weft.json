@@ -1,0 +1,16 @@
+{
+  "name": "color",
+  "version": "0.3.0",
+  "description": "ANSI terminal colors and styles for CLI tools",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": [
+    "red", "green", "yellow", "blue", "magenta", "cyan", "white", "gray",
+    "bold", "dim", "italic", "underline", "strike",
+    "bg_red", "bg_green", "bg_yellow", "bg_blue",
+    "strip", "ok", "fail", "warn", "info", "header", "code"
+  ],
+  "license": "Apache-2.0",
+  "keywords": ["color", "ansi", "terminal", "cli", "style", "formatting"],
+  "deps": {}
+}

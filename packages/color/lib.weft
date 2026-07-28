@@ -1,0 +1,57 @@
+// color — ANSI terminal colors for CLI tools.
+//
+//   weft registry install color
+//   use color
+//
+// Pure module — no capabilities required.
+
+// --- basic colors ---
+
+pub fn red(s)     { "\x1b[31m$s\x1b[0m" }
+pub fn green(s)   { "\x1b[32m$s\x1b[0m" }
+pub fn yellow(s)  { "\x1b[33m$s\x1b[0m" }
+pub fn blue(s)    { "\x1b[34m$s\x1b[0m" }
+pub fn magenta(s) { "\x1b[35m$s\x1b[0m" }
+pub fn cyan(s)    { "\x1b[36m$s\x1b[0m" }
+pub fn white(s)   { "\x1b[37m$s\x1b[0m" }
+pub fn gray(s)    { "\x1b[90m$s\x1b[0m" }
+
+// --- styles ---
+
+pub fn bold(s)      { "\x1b[1m$s\x1b[0m" }
+pub fn dim(s)       { "\x1b[2m$s\x1b[0m" }
+pub fn italic(s)    { "\x1b[3m$s\x1b[0m" }
+pub fn underline(s) { "\x1b[4m$s\x1b[0m" }
+pub fn strike(s)    { "\x1b[9m$s\x1b[0m" }
+
+// --- background colors ---
+
+pub fn bg_red(s)     { "\x1b[41m$s\x1b[0m" }
+pub fn bg_green(s)   { "\x1b[42m$s\x1b[0m" }
+pub fn bg_yellow(s)  { "\x1b[43m$s\x1b[0m" }
+pub fn bg_blue(s)    { "\x1b[44m$s\x1b[0m" }
+
+// --- utilities ---
+
+// color.strip(s) -> str  Remove all ANSI escape codes
+pub fn strip(s) {
+    re.replace_all(s, `\x1b\[[0-9;]*m`, "")
+}
+
+// color.ok(msg) -> str  Green checkmark prefix
+pub fn ok(msg)   { green("✓") + " " + msg }
+
+// color.fail(msg) -> str  Red cross prefix
+pub fn fail(msg) { red("✗") + " " + msg }
+
+// color.warn(msg) -> str  Yellow warning prefix
+pub fn warn(msg) { yellow("⚠") + " " + msg }
+
+// color.info(msg) -> str  Blue info prefix
+pub fn info(msg) { blue("ℹ") + " " + msg }
+
+// color.header(msg) -> str  Bold + underline
+pub fn header(msg) { "\x1b[1;4m$msg\x1b[0m" }
+
+// color.code(s) -> str  Dim monospace-style
+pub fn code(s) { dim("`$s`") }
