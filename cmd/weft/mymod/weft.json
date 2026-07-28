@@ -1,0 +1,12 @@
+{
+  "name": "mymod",
+  "version": "0.1.0",
+  "description": "mymod — Weft module",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": [
+    "hello",
+    "greet"
+  ],
+  "license": "Apache-2.0"
+}
