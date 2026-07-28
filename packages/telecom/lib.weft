@@ -1,0 +1,247 @@
+// telecom — voice agents, IVA, STT/TTS, call flows for modern telephony.
+//
+// This module handles the application layer. SIP signaling is handled
+// by your platform (FreeSWITCH, Otel, Otel, Otel, cloud provider, etc.).
+// Telecom generates actions for the platform to execute and processes
+// events (DTMF, speech, call state) via webhooks or WebSocket.
+//
+//   weft registry install telecom
+//   use telecom
+//
+// Capabilities: http, ws, llm, env (talks to STT/TTS/LLM services)
+
+use "./call.weft" as call
+use "./dtmf.weft" as dtmf_mod
+use "./iva.weft" as iva_mod
+use "./stt.weft" as stt_mod
+use "./tts.weft" as tts_mod
+use "./prompt.weft" as prompt_mod
+use "./queue.weft" as queue_mod
+use "./cdr.weft" as cdr_mod
+use "./routing.weft" as routing_mod
+use "./dialplan.weft" as dialplan_mod
+
+// ─── call flow actions ─────────────────────────────────────────────
+
+// telecom.answer(opts?) -> action
+// Answer an incoming call.
+pub fn answer(opts) { call.answer(opts) }
+
+// telecom.hangup(opts?) -> action
+// End the call.
+pub fn hangup(opts) { call.hangup(opts) }
+
+// telecom.play(url_or_text, opts?) -> action
+// Play audio file or TTS text. opts: {tts, voice, language, loop, bargin}
+pub fn play(src, opts) { call.play(src, opts) }
+
+// telecom.speak(text, opts?) -> action
+// Speak text via TTS. Shorthand for play with tts: true.
+pub fn speak(text, opts) { call.say_text(text, opts) }
+
+// telecom.gather(opts) -> action
+// Collect DTMF or speech input.
+// opts: {type: "dtmf"|"speech"|"both", timeout, max_digits, finish_on_key,
+//        prompt, language, speech_timeout, hints}
+pub fn gather(opts) { call.gather(opts) }
+
+// telecom.record(opts?) -> action
+// Record the call. opts: {max_duration, beep, format, trim_silence}
+pub fn record(opts) { call.record(opts) }
+
+// telecom.pause(seconds?) -> action
+pub fn pause(seconds) { call.pause(seconds) }
+
+// telecom.transfer(destination, opts?) -> action
+// Transfer call. opts: {type: "blind"|"attended", headers, caller_id}
+pub fn transfer(dest, opts) { call.transfer(dest, opts) }
+
+// telecom.bridge(call_id, opts?) -> action
+// Bridge two call legs.
+pub fn bridge(call_id, opts) { call.bridge(call_id, opts) }
+
+// telecom.conference(room, opts?) -> action
+// Join a conference room. opts: {muted, moderator, beep_on_enter, max_participants}
+pub fn conference(room, opts) { call.conference(room, opts) }
+
+// telecom.redirect(url) -> action
+// Redirect call flow to a different webhook URL.
+pub fn redirect(url) { call.redirect(url) }
+
+// telecom.reject(reason?) -> action
+// Reject an incoming call. reason: "busy"|"rejected"
+pub fn reject(reason) { call.reject(reason) }
+
+// telecom.actions(list) -> map
+// Bundle multiple actions into a response.
+pub fn actions(list) { {"actions": list} }
+
+// ─── DTMF ──────────────────────────────────────────────────────────
+
+// telecom.dtmf_menu(prompt, routes, opts?) -> action
+// Build a DTMF menu. routes: {"1": action_or_fn, "2": ..., "*": default}
+pub fn dtmf_menu(prompt_text, routes, opts) { dtmf_mod.menu(prompt_text, routes, opts) }
+
+// telecom.dtmf_collect(prompt, max_digits, opts?) -> action
+// Collect a specific number of digits (account number, PIN, etc.)
+pub fn dtmf_collect(prompt_text, max_digits, opts) { dtmf_mod.collect(prompt_text, max_digits, opts) }
+
+// telecom.dtmf_confirm(prompt, opts?) -> action
+// Yes/no confirmation via DTMF (1=yes, 2=no).
+pub fn dtmf_confirm(prompt_text, opts) { dtmf_mod.confirm(prompt_text, opts) }
+
+// ─── IVA (Interactive Voice Agent) ─────────────────────────────────
+
+// telecom.iva(config) -> map
+// Create an LLM-powered Interactive Voice Agent.
+// config: {system, tools, voice, language, stt_url, tts_url,
+//          greeting, max_turns, end_on, llm_opts}
+pub fn iva(config) { iva_mod.create(config) }
+
+// telecom.iva_turn(agent, input) -> Result[map]
+// Process one turn of IVA conversation.
+// Returns: {response, audio_url, actions, done, tool_calls}
+pub fn iva_turn(agent, input) -> Result { iva_mod.turn(agent, input) }
+
+// telecom.iva_handle_event(agent, event) -> Result[map]
+// Handle a telephony event (speech result, DTMF, etc.) and produce next actions.
+pub fn iva_handle_event(agent, event) -> Result { iva_mod.handle_event(agent, event) }
+
+// ─── STT (Speech-to-Text) ──────────────────────────────────────────
+
+// telecom.stt_transcribe(audio_url, opts?) -> Result[map]
+// Transcribe audio file. Returns: {text, confidence, language, words}
+pub fn stt_transcribe(audio_url, opts) -> Result { stt_mod.transcribe(audio_url, opts) }
+
+// telecom.stt_stream_url(opts?) -> str
+// Get a WebSocket URL for streaming STT.
+pub fn stt_stream_url(opts) { stt_mod.stream_url(opts) }
+
+// telecom.stt_config(opts) -> map
+// Configure STT defaults: {url, api_key, language, model}
+pub fn stt_config(opts) { stt_mod.config(opts) }
+
+// ─── TTS (Text-to-Speech) ──────────────────────────────────────────
+
+// telecom.tts_speak(text, opts?) -> Result[map]
+// Convert text to audio. Returns: {audio_url, duration_ms, format}
+pub fn tts_speak(text, opts) -> Result { tts_mod.speak(text, opts) }
+
+// telecom.tts_voices(opts?) -> Result[[map]]
+// List available TTS voices.
+pub fn tts_voices(opts) -> Result { tts_mod.voices(opts) }
+
+// telecom.tts_config(opts) -> map
+// Configure TTS defaults: {url, api_key, voice, language, format}
+pub fn tts_config(opts) { tts_mod.config(opts) }
+
+// ─── prompts ───────────────────────────────────────────────────────
+
+// telecom.prompt(text, opts?) -> map
+// Build a prompt (TTS text + optional SSML, bargin, language).
+pub fn prompt(text, opts) { prompt_mod.build(text, opts) }
+
+// telecom.ssml(parts) -> str
+// Build SSML from parts: [{text: "hi"}, {break: "500ms"}, {say_as: {type: "digits", text: "123"}}]
+pub fn ssml(parts) { prompt_mod.ssml(parts) }
+
+// telecom.audio_prompt(url, opts?) -> map
+// Build an audio file prompt.
+pub fn audio_prompt(url, opts) { prompt_mod.audio(url, opts) }
+
+// ─── call queues ───────────────────────────────────────────────────
+
+// telecom.queue_create(name, opts?) -> map
+// Create a call queue. opts: {max_wait_sec, max_size, music_url, announce_position}
+pub fn queue_create(name, opts) { queue_mod.create(name, opts) }
+
+// telecom.queue_add(queue, call_id, opts?) -> map
+// Add a call to the queue.
+pub fn queue_add(q, call_id, opts) { queue_mod.add(q, call_id, opts) }
+
+// telecom.queue_next(queue) -> map|null
+// Get the next call from the queue (FIFO).
+pub fn queue_next(q) { queue_mod.next(q) }
+
+// telecom.queue_stats(queue) -> map
+// Queue statistics: {size, waiting, avg_wait_sec, longest_wait_sec}
+pub fn queue_stats(q) { queue_mod.stats(q) }
+
+// ─── CDR (Call Detail Records) ──────────────────────────────────────
+
+// telecom.cdr(event) -> map
+// Extract a structured CDR from a call event.
+pub fn cdr(event) { cdr_mod.from_event(event) }
+
+// telecom.cdr_store(record, path) -> Result
+// Append CDR to a JSONL file.
+pub fn cdr_store(record, path) -> Result { cdr_mod.store(record, path) }
+
+// ─── webhook helpers ───────────────────────────────────────────────
+
+// telecom.webhook_server(port, handler) -> unit
+// Start a webhook server for telephony events.
+// handler(event) should return an actions map.
+pub fn webhook_server(port, handler) {
+    http.serve(":$port", fn(req) {
+        event := json.parse(req.body)?
+        result := handler(event)
+        http.json(result)
+    })
+}
+
+// telecom.parse_event(req) -> Result[map]
+// Parse an incoming telephony webhook event.
+pub fn parse_event(req) -> Result {
+    if req.body != null && req.body != "" {
+        return json.parse(req.body)
+    }
+    // fall back to query params
+    Ok(req.params)
+}
+
+// ─── routing ───────────────────────────────────────────────────────
+
+// telecom.did_route(did, routes) -> map|null
+pub fn did_route(did, routes) { routing_mod.did_route(did, routes) }
+
+// telecom.time_route(routes) -> map|null
+pub fn time_route(routes) { routing_mod.time_route(routes) }
+
+// telecom.skill_route(call, agents) -> map|null
+pub fn skill_route(call_data, agents) { routing_mod.skill_route(call_data, agents) }
+
+// telecom.geo_route(caller_id, routes) -> map|null
+pub fn geo_route(caller_id, routes) { routing_mod.geo_route(caller_id, routes) }
+
+// telecom.round_robin(agents) -> map|null
+pub fn round_robin(agents) { routing_mod.round_robin(agents) }
+
+// telecom.failover(destinations, check_fn) -> map|null
+pub fn failover(destinations, check_fn) { routing_mod.failover(destinations, check_fn) }
+
+// ─── dial plan ─────────────────────────────────────────────────────
+
+// telecom.normalize(number, country_code?) -> str
+pub fn normalize(number, country_code) { dialplan_mod.normalize(number, country_code) }
+
+// telecom.is_e164(number) -> bool
+pub fn is_e164(number) { dialplan_mod.is_e164(number) }
+
+// telecom.country(number) -> str|null
+pub fn country(number) { dialplan_mod.country(number) }
+
+// telecom.area_code(number) -> str|null
+pub fn area_code(number) { dialplan_mod.area_code(number) }
+
+// telecom.is_tollfree(number) -> bool
+pub fn is_tollfree(number) { dialplan_mod.is_tollfree(number) }
+
+// telecom.caller_id(name, number) -> map
+pub fn caller_id_build(name, number) { dialplan_mod.caller_id(name, number) }
+
+// telecom.mask(number) -> str
+pub fn mask(number) { dialplan_mod.mask(number) }
+
+// telecom.sip_uri(user, domain, opts?) -> str
+pub fn sip_uri(user, domain, opts) { dialplan_mod.sip_uri(user, domain, opts) }

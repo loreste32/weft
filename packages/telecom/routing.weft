@@ -1,0 +1,136 @@
+// routing.weft — call routing: DID mapping, time-of-day, skills-based, geographic.
+
+// routing.did_route(did, routes) -> map|null
+// Match a DID (called number) against a route table.
+// routes: {"18005551234": handler, "+44*": handler, "*": default_handler}
+pub fn did_route(did, routes) {
+    // exact match first
+    if routes[did] != null { return routes[did] }
+
+    // wildcard/prefix match
+    for pattern in keys(routes) {
+        if str.ends_with(pattern, "*") {
+            prefix := str.slice(pattern, 0, len(pattern) - 1)
+            if str.starts_with(did, prefix) { return routes[pattern] }
+        }
+    }
+
+    // default
+    if routes["*"] != null { return routes["*"] }
+    null
+}
+
+// routing.time_route(routes) -> map|null
+// Route based on time of day.
+// routes: [{start: "08:00", end: "18:00", days: ["mon","tue","wed","thu","fri"], handler: ...},
+//          {handler: default_handler}]
+pub fn time_route(routes) {
+    now := time.now()
+    hour := time.format(now, "15:04")
+    day := str.lower(time.format(now, "Mon"))
+
+    for r in routes {
+        if r.start == null && r.end == null {
+            // default/fallback route
+            return r.handler
+        }
+        in_time := hour >= r.start && hour < r.end
+        in_day := true
+        if r.days != null {
+            in_day = false
+            for d in r.days {
+                if str.lower(d) == day || str.starts_with(str.lower(d), day) {
+                    in_day = true
+                }
+            }
+        }
+        if in_time && in_day { return r.handler }
+    }
+    null
+}
+
+// routing.skill_route(call, agents) -> map|null
+// Skills-based routing: match call skill requirements to available agents.
+// call: {skill_tags: ["billing", "spanish"]}
+// agents: [{id, skills: ["billing", "english"], available: true, calls_today: 5}]
+pub fn skill_route(call_data, agents) {
+    required := if call_data.skill_tags != null { call_data.skill_tags } else { [] }
+
+    mut best := null
+    mut best_score := -1
+
+    for agent in agents {
+        if !agent.available { continue }
+
+        // check all required skills are present
+        mut has_all := true
+        mut score := 0
+        for req in required {
+            mut found := false
+            for s in agent.skills {
+                if s == req { found = true
+        score = score + 1 }
+            }
+            if !found { has_all = false }
+        }
+
+        if !has_all { continue }
+
+        // prefer agents with fewer calls today (load balance)
+        calls := if agent.calls_today != null { agent.calls_today } else { 0 }
+        agent_score := score * 1000 - calls
+
+        if agent_score > best_score {
+            best_score = agent_score
+            best = agent
+        }
+    }
+    best
+}
+
+// routing.geo_route(caller_id, routes) -> map|null
+// Route by caller's country/area code.
+// routes: {"+1": us_handler, "+44": uk_handler, "+33": fr_handler, "*": default}
+pub fn geo_route(caller_id, routes) {
+    // try longest prefix match
+    mut best := null
+    mut best_len := 0
+
+    for prefix in keys(routes) {
+        if prefix == "*" { continue }
+        if str.starts_with(caller_id, prefix) && len(prefix) > best_len {
+            best = routes[prefix]
+            best_len = len(prefix)
+        }
+    }
+    if best != null { return best }
+    if routes["*"] != null { return routes["*"] }
+    null
+}
+
+// routing.round_robin(agents) -> map
+// Simple round-robin across available agents.
+// Returns the agent map and updates internal counter.
+pub fn round_robin(agents) {
+    available := filter(agents, fn(a) { a.available })
+    if len(available) == 0 { return null }
+    // use a simple modulo approach
+    idx := int(time.now() * 1000) % len(available)
+    available[idx]
+}
+
+// routing.failover(destinations, check_fn) -> map|null
+// Try destinations in order until one is available.
+// check_fn(dest) -> bool (is this destination reachable?)
+pub fn failover(destinations, check_fn) {
+    for dest in destinations {
+        if check_fn(dest) { return dest }
+    }
+    null
+}
+
+fn keys(m) {
+    mut ks := []
+    for k in m { push(ks, k) }
+    ks
+}

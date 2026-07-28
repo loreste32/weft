@@ -1,0 +1,121 @@
+// prompt.weft — voice prompt builders, SSML, audio references.
+
+// prompt.build(text, opts?) -> map
+// Build a prompt descriptor.
+// opts: {tts, voice, language, bargin, loop, ssml}
+pub fn build(text, opts) {
+    p := {"text": text, "tts": true}
+    if opts != null {
+        if opts.voice != null { p.voice = opts.voice }
+        if opts.language != null { p.language = opts.language }
+        if opts.bargin != null { p.bargin = opts.bargin }
+        if opts.loop != null { p.loop = opts.loop }
+        if opts.ssml != null { p.ssml = true
+        p.text = opts.ssml }
+    }
+    p
+}
+
+// prompt.audio(url, opts?) -> map
+// Build an audio file prompt.
+pub fn audio(url, opts) {
+    p := {"audio_url": url, "tts": false}
+    if opts != null {
+        if opts.bargin != null { p.bargin = opts.bargin }
+        if opts.loop != null { p.loop = opts.loop }
+    }
+    p
+}
+
+// prompt.ssml(parts) -> str
+// Build SSML from a list of parts.
+// Parts: {text: "hi"}, {break: "500ms"}, {say_as: {interpret_as: "digits", text: "123"}},
+//        {emphasis: {level: "strong", text: "important"}},
+//        {prosody: {rate: "slow", text: "slowly"}},
+//        {sub: {alias: "World Wide Web", text: "WWW"}},
+//        {audio: {src: "https://..."}},
+//        {p: "paragraph text"}, {s: "sentence text"}
+pub fn ssml(parts) {
+    mut out := "<speak>"
+    for part in parts {
+        if part.text != null {
+            out = out + part.text
+        }
+        if part.pause_dur != null {
+            out = out + "<break time=\"${part.pause_dur}\"/>"
+        }
+        if part.say_as != null {
+            out = out + "<say-as interpret-as=\"${part.say_as.interpret_as}\">${part.say_as.text}</say-as>"
+        }
+        if part.emphasis != null {
+            level := if part.emphasis.level != null { part.emphasis.level } else { "moderate" }
+            out = out + "<emphasis level=\"$level\">${part.emphasis.text}</emphasis>"
+        }
+        if part.prosody != null {
+            attrs := ""
+            if part.prosody.rate != null { attrs = attrs + " rate=\"${part.prosody.rate}\"" }
+            if part.prosody.pitch != null { attrs = attrs + " pitch=\"${part.prosody.pitch}\"" }
+            if part.prosody.volume != null { attrs = attrs + " volume=\"${part.prosody.volume}\"" }
+            out = out + "<prosody$attrs>${part.prosody.text}</prosody>"
+        }
+        if part.sub != null {
+            out = out + "<sub alias=\"${part.sub.alias}\">${part.sub.text}</sub>"
+        }
+        if part.audio != null {
+            out = out + "<audio src=\"${part.audio.src}\"/>"
+        }
+        if part.p != null {
+            out = out + "<p>${part.p}</p>"
+        }
+        if part.s != null {
+            out = out + "<s>${part.s}</s>"
+        }
+    }
+    out + "</speak>"
+}
+
+// prompt.digits(number) -> str
+// SSML to speak a number as individual digits (for account numbers, PINs).
+pub fn digits(number) {
+    ssml([{"say_as": {"interpret_as": "digits", "text": "$number"}}])
+}
+
+// prompt.spell(word) -> str
+// SSML to spell out a word letter by letter.
+pub fn spell(word) {
+    ssml([{"say_as": {"interpret_as": "characters", "text": word}}])
+}
+
+// prompt.phone(number) -> str
+// SSML to speak a phone number naturally.
+pub fn phone(number) {
+    ssml([{"say_as": {"interpret_as": "telephone", "text": number}}])
+}
+
+// prompt.date(d) -> str
+// SSML to speak a date.
+pub fn date(d) {
+    ssml([{"say_as": {"interpret_as": "date", "text": d}}])
+}
+
+// prompt.currency(amount) -> str
+// SSML to speak a currency amount.
+pub fn currency(amount) {
+    ssml([{"say_as": {"interpret_as": "currency", "text": amount}}])
+}
+
+// prompt.sequence(prompts) -> [map]
+// Chain multiple prompts into a sequence of play actions.
+pub fn sequence(prompts) {
+    mut actions := []
+    for p in prompts {
+        if p.audio_url != null {
+            push(actions, {"action": "play", "src": p.audio_url})
+        } else if p.text != null {
+            push(actions, {"action": "play", "src": p.text, "tts": true,
+                "voice": if p.voice != null { p.voice } else { null },
+                "language": if p.language != null { p.language } else { null }})
+        }
+    }
+    actions
+}

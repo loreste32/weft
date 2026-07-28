@@ -1,0 +1,33 @@
+{
+  "name": "telecom",
+  "version": "0.1.0",
+  "description": "Modern telephony: IVA (voice agents), STT/TTS, call flows, DTMF, routing, queues, CDR",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": [
+    "answer", "hangup", "play", "speak", "gather", "record", "pause",
+    "transfer", "bridge", "conference", "redirect", "reject", "actions",
+    "dtmf_menu", "dtmf_collect", "dtmf_confirm",
+    "iva", "iva_turn", "iva_handle_event",
+    "stt_transcribe", "stt_stream_url", "stt_config",
+    "tts_speak", "tts_voices", "tts_config",
+    "prompt", "ssml", "audio_prompt",
+    "queue_create", "queue_add", "queue_next", "queue_stats",
+    "cdr", "cdr_store",
+    "did_route", "time_route", "skill_route", "geo_route",
+    "round_robin", "failover",
+    "normalize", "is_e164", "country", "area_code", "is_tollfree",
+    "caller_id_build", "mask", "sip_uri",
+    "webhook_server", "parse_event"
+  ],
+  "license": "Apache-2.0",
+  "keywords": [
+    "telecom", "telephony", "voip", "sip", "ivr", "iva",
+    "voice-agent", "stt", "tts", "speech", "dtmf",
+    "call-center", "contact-center", "queue", "routing",
+    "cdr", "dialplan", "ssml", "llm"
+  ],
+  "capability_profile": "agent",
+  "capabilities": ["http", "ws", "fs", "env"],
+  "deps": {}
+}

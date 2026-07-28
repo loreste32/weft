@@ -1,0 +1,111 @@
+// tts.weft — Text-to-Speech integration.
+// Converts text to audio via HTTP TTS service.
+
+pub fn config(opts) {
+    cfg := {
+        "url": env.get("WEFT_TTS_URL", "https://tts.lancethedev.com"),
+        "api_key": env.get("WEFT_TTS_KEY", ""),
+        "voice": "default",
+        "language": "en-US",
+        "format": "wav",
+        "sample_rate": 16000,
+        "speed": 1.0,
+        "pitch": 1.0,
+    }
+    if opts != null {
+        if opts.url != null { cfg.url = opts.url }
+        if opts.api_key != null { cfg.api_key = opts.api_key }
+        if opts.voice != null { cfg.voice = opts.voice }
+        if opts.language != null { cfg.language = opts.language }
+        if opts.format != null { cfg.format = opts.format }
+        if opts.sample_rate != null { cfg.sample_rate = opts.sample_rate }
+        if opts.speed != null { cfg.speed = opts.speed }
+        if opts.pitch != null { cfg.pitch = opts.pitch }
+    }
+    cfg
+}
+
+// tts.speak(text, opts?) -> Result[map]
+// Convert text to audio. Returns: {audio_url, duration_ms, format, size}
+pub fn speak(text, opts) -> Result {
+    cfg := config(opts)
+    headers := {"Content-Type": "application/json"}
+    if cfg.api_key != "" {
+        headers["Authorization"] = "Bearer ${cfg.api_key}"
+    }
+    body := json.stringify({
+        "text": text,
+        "voice": cfg.voice,
+        "language": cfg.language,
+        "format": cfg.format,
+        "sample_rate": cfg.sample_rate,
+        "speed": cfg.speed,
+        "pitch": cfg.pitch,
+    })
+    resp := http.post("${cfg.url}/v1/synthesize", body, {
+        "headers": headers,
+        "timeout": 30,
+    })?
+    data := json.parse(resp)?
+    Ok({
+        "audio_url": if data.audio_url != null { data.audio_url } else { "" },
+        "duration_ms": if data.duration_ms != null { data.duration_ms } else { 0 },
+        "format": cfg.format,
+        "size": if data.size != null { data.size } else { 0 },
+    })
+}
+
+// tts.speak_ssml(ssml, opts?) -> Result[map]
+// Synthesize from SSML markup.
+pub fn speak_ssml(ssml_text, opts) -> Result {
+    cfg := config(opts)
+    headers := {"Content-Type": "application/json"}
+    if cfg.api_key != "" {
+        headers["Authorization"] = "Bearer ${cfg.api_key}"
+    }
+    body := json.stringify({
+        "ssml": ssml_text,
+        "voice": cfg.voice,
+        "format": cfg.format,
+        "sample_rate": cfg.sample_rate,
+    })
+    resp := http.post("${cfg.url}/v1/synthesize", body, {
+        "headers": headers,
+        "timeout": 30,
+    })?
+    json.parse(resp)
+}
+
+// tts.voices(opts?) -> Result[[map]]
+// List available voices. Returns: [{id, name, language, gender}]
+pub fn voices(opts) -> Result {
+    cfg := config(opts)
+    headers := {}
+    if cfg.api_key != "" {
+        headers["Authorization"] = "Bearer ${cfg.api_key}"
+    }
+    resp := http.get("${cfg.url}/v1/voices", {"headers": headers})?
+    data := json.parse(resp)?
+    Ok(if data.voices != null { data.voices } else { data })
+}
+
+// tts.cache_speak(text, cache_dir, opts?) -> Result[str]
+// Speak with local file caching. Returns the file path.
+pub fn cache_speak(text, cache_dir, opts) -> Result {
+    // hash text for cache key
+    hash := crypto.sha256(text)
+    short := str.slice(hash, 0, 16)
+    cfg := config(opts)
+    path := fs.join(cache_dir, "${short}.${cfg.format}")
+    if fs.exists(path) {
+        return Ok(path)
+    }
+    result := speak(text, opts)?
+    if result.audio_url != "" {
+        // download audio to cache
+        audio := http.get(result.audio_url)?
+        fs.mkdir(cache_dir)?
+        fs.write_bytes(path, audio)?
+    }
+    Ok(path)
+}

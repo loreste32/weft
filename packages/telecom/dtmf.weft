@@ -1,0 +1,69 @@
+// dtmf.weft — DTMF menu builders, digit collection, confirmations.
+
+pub fn menu(prompt_text, routes, opts) {
+    timeout := 5
+    max_digits := 1
+    retries := 3
+    invalid_msg := "Invalid selection. Please try again."
+    if opts != null {
+        if opts.timeout != null { timeout = opts.timeout }
+        if opts.max_digits != null { max_digits = opts.max_digits }
+        if opts.retries != null { retries = opts.retries }
+        if opts.invalid_msg != null { invalid_msg = opts.invalid_msg }
+    }
+
+    {
+        "action": "dtmf_menu",
+        "prompt": prompt_text,
+        "routes": routes,
+        "timeout": timeout,
+        "max_digits": max_digits,
+        "retries": retries,
+        "invalid_msg": invalid_msg,
+    }
+}
+
+pub fn collect(prompt_text, max_digits, opts) {
+    timeout := 10
+    finish_on_key := "#"
+    if opts != null {
+        if opts.timeout != null { timeout = opts.timeout }
+        if opts.finish_on_key != null { finish_on_key = opts.finish_on_key }
+    }
+
+    {
+        "action": "gather",
+        "kind": "dtmf",
+        "prompt": {"action": "play", "src": prompt_text, "tts": true},
+        "max_digits": max_digits,
+        "timeout": timeout,
+        "finish_on_key": finish_on_key,
+    }
+}
+
+pub fn confirm(prompt_text, opts) {
+    yes_key := "1"
+    no_key := "2"
+    if opts != null {
+        if opts.yes_key != null { yes_key = opts.yes_key }
+        if opts.no_key != null { no_key = opts.no_key }
+    }
+
+    full_prompt := "$prompt_text Press $yes_key to confirm, $no_key to cancel."
+    menu(full_prompt, {
+        "$yes_key": {"result": "confirmed"},
+        "$no_key": {"result": "cancelled"},
+    }, {"max_digits": 1})
+}
+
+// dtmf.route(digit, event) -> map|null
+// Match a digit against a route table.
+pub fn route(digit, routes) {
+    if routes[digit] != null {
+        return routes[digit]
+    }
+    if routes["*"] != null {
+        return routes["*"]
+    }
+    null
+}
