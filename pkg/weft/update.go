@@ -88,7 +88,11 @@ func SelfUpdate() error {
 	dir := filepath.Dir(exe)
 	tmp, err := os.CreateTemp(dir, "weft-update-*")
 	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
+		// fallback to system temp if target dir isn't writable
+		tmp, err = os.CreateTemp("", "weft-update-*")
+		if err != nil {
+			return fmt.Errorf("create temp file: %w", err)
+		}
 	}
 	tmpPath := tmp.Name()
 
@@ -111,23 +115,61 @@ func SelfUpdate() error {
 		exec.Command("codesign", "--force", "-s", "-", tmpPath).Run()
 	}
 
-	// atomic replace: rename old, rename new, remove old
+	// replace the binary — try rename first, fall back to copy (cross-device or permissions)
 	oldPath := exe + ".old"
-	os.Remove(oldPath) // clean up any previous .old
+	os.Remove(oldPath)
 
-	if err := os.Rename(exe, oldPath); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("backup old binary: %w", err)
+	err = os.Rename(exe, oldPath)
+	if err == nil {
+		err = os.Rename(tmpPath, exe)
+		if err != nil {
+			os.Rename(oldPath, exe) // restore
+			// try copy fallback
+			err = copyFile(tmpPath, exe)
+		}
+		if err == nil {
+			os.Remove(oldPath)
+		}
+	} else {
+		// can't rename (permission denied) — try copy with sudo
+		err = copyFile(tmpPath, exe)
+		if err != nil {
+			// last resort: sudo cp
+			fmt.Println("installing to", exe, "(requires sudo)...")
+			sudoErr := exec.Command("sudo", "cp", tmpPath, exe).Run()
+			if sudoErr != nil {
+				os.Remove(tmpPath)
+				return fmt.Errorf("replace binary: %w (sudo also failed: %v)", err, sudoErr)
+			}
+			exec.Command("sudo", "chmod", "+x", exe).Run()
+			err = nil
+		}
 	}
-	if err := os.Rename(tmpPath, exe); err != nil {
-		// try to restore old binary
-		os.Rename(oldPath, exe)
+	os.Remove(tmpPath)
+
+	if err != nil {
 		return fmt.Errorf("replace binary: %w", err)
 	}
-	os.Remove(oldPath)
 
 	fmt.Printf("\n  weft updated to %s\n\n", info.Version)
 	return nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return os.Chmod(dst, 0o755)
 }
 
 // UpgradePackages upgrades installed packages in vendor/ to latest registry versions.
