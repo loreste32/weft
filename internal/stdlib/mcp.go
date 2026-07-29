@@ -230,7 +230,7 @@ func (c *mcpStdioClient) initialize() error {
 	_, err := c.call("initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "weft", "version": "0.3.33"},
+		"clientInfo":      map[string]any{"name": "weft", "version": "0.3.34"},
 	})
 	if err != nil {
 		return err
@@ -398,7 +398,7 @@ func (c *mcpSSEClient) initialize() error {
 	_, err := c.call("initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "weft", "version": "0.3.33"},
+		"clientInfo":      map[string]any{"name": "weft", "version": "0.3.34"},
 	})
 	return err
 }
@@ -439,7 +439,7 @@ func (s *mcpStdioServer) handle(req jsonRPCRequest) *jsonRPCResponse {
 				},
 				"serverInfo": map[string]any{
 					"name":    "weft",
-					"version": "0.3.33",
+					"version": "0.3.34",
 				},
 			},
 		}
