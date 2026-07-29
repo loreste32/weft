@@ -1,26 +1,17 @@
-// WebRTC signaling server — browser P2P audio/video
-// Weft exchanges offer/answer/ICE; media stays peer-to-peer.
-
 fn main {
     app := web.app()
     hub := webrtc.hub()
-
-    app.get("/", fn(req) {
-        web.redirect("/rtc")
-    })
-
+    app.get("/", fn(req) { web.redirect("/rtc") })
     app.get("/rtc", fn(req) {
         html := fs.read("examples/web/public/rtc.html")?
         web.html(html)
     })
-
     app.get("/api/ice", fn(req) {
         servers := webrtc.ice_servers()
         web.json({"iceServers": servers})
     })
-
     hub.attach(app, "/ws/signal")?
-
-    println("WebRTC room → http://127.0.0.1:8080/rtc  (open two tabs)")
+    say("WebRTC room → http://127.0.0.1:8080/rtc  (open two tabs)")
     app.listen(":8080")
 }
+

@@ -4,7 +4,7 @@ Weft is for agent scripts, telecom, HTTP glue, and ops tooling. It stays small o
 
 ## Where we are now (0.4.1)
 
-We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.4.1** — see [VERSIONING.md](VERSIONING.md)). You can build the binary, write real scripts, and run them on a single Go runtime.
+Weft is on the **0.4.x** line (0.3.x complete — see [VERSIONING.md](VERSIONING.md)). Positioning and maturity: [STABILITY.md](STABILITY.md). You can build the binary, write real scripts, and run them on a single Go runtime.
 
 **Language**
 
@@ -80,9 +80,11 @@ We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.4.
 - `weft fmt` covers the common style; still not every edge case  
 - LSP is usable daily; not IDE-grade refactoring  
 - Stdlib is broad-and-shallow: good for glue, not a full OS platform  
-- Streaming works for common paths; not a full product surface  
+- Binary is convenience-first (~40MB with drivers); not a minimal embed  
+- Concurrent-by-default `map`/`filter` need discipline (`seq_map` for stateful work)  
+- Package signatures prove key identity, not human ownership (trust store helps)  
 
-In one line: **production-usable for agents, telecom, and ops scripts; still maturing as a language ecosystem.**
+In one line: **useful for agents, telecom, and ops scripts when versions are pinned and tested; not a finished ecosystem.**
 
 ## Where we hope to go
 
@@ -92,22 +94,30 @@ The **0.3.x line is complete** (0.3.31–0.4.1). Everything shipped.
 
 ## 0.4.x — make it solid
 
+**Shipped in 0.4.x so far:** optional type annotations + `--strict`, DAP debugging, browser Wasm playground, registry namespace trust, telecom SIP REFER / WebRTC bridge, VS Code 0.4.1 (LSP types + DAP), bytecode validation, fuzz/race/bench smoke targets.
+
+**Reliability (priority now — prove the core):**
+- Language/VM fuzzing and malformed-input testing (`make fuzz-smoke`) — done (smoke + weekly deep)  
+- Race detector + concurrency stress (`make race-smoke`) — done  
+- Cross-platform reproducible releases — done (`make release-smoke`)  
+- Compatibility / gold corpus discipline — done (`testdata/compat`, still expand)  
+- Benchmarks vs Python for glue scripts — done (`make bench` + `make bench-glue`)  
+- Optional stdlib build tags / binary size — done (`make build-slim`)  
+- Formatter + LSP edge cases — partial (format corpus green; locals + multi-file rename + extract)  
+- Error-message hardening — partial (arity, Illegal lit, use::, else-brace, empty match)
+
 **Language maturity:**
-- Harden error messages: show source context, caret pointing at the problem  
-- Type system: better inference, optional annotations, clearer errors  
-- REPL: multi-line input, tab completion, history search  
+- Harden error messages further (more edge cases)
+- REPL: multi-line, history, tab completion / ↑↓ — done (TTY); pipes still Scanner-based
 
 **IDE & tooling:**
-- LSP: find-all-references, rename across files, extract function  
-- VS Code marketplace: publish extension with syntax highlighting, snippets  
-- DAP (Debug Adapter Protocol) for IDE-integrated debugging  
+- LSP: locals, multi-file rename, extract-function — done  
+- VS Code extension 0.4.2 VSIX packaged; Marketplace publish needs `VSCE_PAT`
 
 **Scale & adoption:**
-- Interactive playground: try Weft in the browser  
-- Wasm target: compile Weft to WebAssembly  
-- Performance benchmark suite, VM hot-path optimization  
-- Namespace ownership and key trust in the registry  
-- More telecom: SIP REFER, WebRTC gateway bridge  
+- Key rotation policy for namespaces  
+- More telecom (SIP REFER already partially in-module)  
+- Production-quality reference apps (small set, polished)  
 
 **Probably never in core**
 

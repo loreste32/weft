@@ -1,7 +1,8 @@
 // Package lsp is a minimal Language Server Protocol implementation for Weft.
-// Supports: initialize, shutdown, textDocument/completion (stdlib + package/enum members),
-// textDocument/hover, textDocument/definition (local fns/enums), textDocument/documentSymbol,
-// textDocument/formatting (weft fmt), textDocument/publishDiagnostics via didOpen/didChange.
+// Supports: initialize, shutdown, textDocument/completion (stdlib + package/enum members + types + locals),
+// textDocument/hover (stdlib + inferred/annotated types), textDocument/definition (top-level + locals),
+// textDocument/documentHighlight, textDocument/documentSymbol, textDocument/formatting,
+// textDocument/references, textDocument/rename, publishDiagnostics (parse + type check).
 package lsp
 
 import (
@@ -14,6 +15,7 @@ import (
 	"unicode"
 
 	"github.com/loreste/weft/internal/ast"
+	"github.com/loreste/weft/internal/diag"
 	"github.com/loreste/weft/internal/format"
 	"github.com/loreste/weft/internal/parse"
 	"github.com/loreste/weft/internal/stdlib"
@@ -22,7 +24,7 @@ import (
 
 // Run starts the LSP on r/w (usually stdin/stdout).
 func Run(r io.Reader, w io.Writer) error {
-	s := &server{w: w, docs: map[string]string{}}
+	s := &server{w: w, docs: map[string]string{}, typeInfo: map[string]types.Info{}}
 	br := bufio.NewReader(r)
 	for {
 		msg, err := readMessage(br)
@@ -42,10 +44,12 @@ func Run(r io.Reader, w io.Writer) error {
 }
 
 type server struct {
-	w      io.Writer
-	docs   map[string]string
-	exit   bool
-	nextID int
+	w        io.Writer
+	docs     map[string]string
+	typeInfo map[string]types.Info // uri → last successful inference
+	rootURI  string                // workspace root from initialize (optional)
+	exit     bool
+	nextID   int
 }
 
 func (s *server) handle(raw []byte) error {
@@ -60,6 +64,21 @@ func (s *server) handle(raw []byte) error {
 	}
 	switch envelope.Method {
 	case "initialize":
+		var initP struct {
+			RootURI          string `json:"rootUri"`
+			RootPath         string `json:"rootPath"`
+			WorkspaceFolders []struct {
+				URI string `json:"uri"`
+			} `json:"workspaceFolders"`
+		}
+		_ = json.Unmarshal(envelope.Params, &initP)
+		if initP.RootURI != "" {
+			s.rootURI = initP.RootURI
+		} else if initP.RootPath != "" {
+			s.rootURI = pathToURI(initP.RootPath)
+		} else if len(initP.WorkspaceFolders) > 0 {
+			s.rootURI = initP.WorkspaceFolders[0].URI
+		}
 		return s.reply(envelope.ID, map[string]any{
 			"capabilities": map[string]any{
 				"textDocumentSync": 1, // full
@@ -68,13 +87,17 @@ func (s *server) handle(raw []byte) error {
 				},
 				"hoverProvider":              true,
 				"definitionProvider":         true,
+				"documentHighlightProvider":  true,
 				"documentSymbolProvider":     true,
 				"documentFormattingProvider": true,
 				"signatureHelpProvider":      map[string]any{"triggerCharacters": []string{"(", ","}},
 				"referencesProvider":         true,
 				"renameProvider":             map[string]any{"prepareProvider": true},
+				"codeActionProvider": map[string]any{
+					"codeActionKinds": []string{"refactor.extract", "refactor.extract.function"},
+				},
 			},
-			"serverInfo": map[string]any{"name": "weft-lsp", "version": "0.4.0"},
+			"serverInfo": map[string]any{"name": "weft-lsp", "version": "0.4.2"},
 		})
 	case "initialized", "textDocument/didSave":
 		return nil
@@ -117,6 +140,7 @@ func (s *server) handle(raw []byte) error {
 		}
 		_ = json.Unmarshal(envelope.Params, &p)
 		delete(s.docs, p.TextDocument.URI)
+		delete(s.typeInfo, p.TextDocument.URI)
 		// clear diagnostics for closed buffer
 		_ = s.notify("textDocument/publishDiagnostics", map[string]any{
 			"uri": p.TextDocument.URI, "diagnostics": []any{},
@@ -133,7 +157,7 @@ func (s *server) handle(raw []byte) error {
 			} `json:"position"`
 		}
 		_ = json.Unmarshal(envelope.Params, &p)
-		return s.reply(envelope.ID, s.completions(s.docs[p.TextDocument.URI], p.Position.Line, p.Position.Character))
+		return s.reply(envelope.ID, s.completions(p.TextDocument.URI, s.docs[p.TextDocument.URI], p.Position.Line, p.Position.Character))
 	case "textDocument/hover":
 		var p struct {
 			TextDocument struct {
@@ -152,11 +176,19 @@ func (s *server) handle(raw []byte) error {
 			if h := hoverForMember(pkg, mem); h != nil {
 				return s.reply(envelope.ID, h)
 			}
+			// typed struct field: u.name where u has known fields
+			if h := s.hoverTypedField(p.TextDocument.URI, pkg, mem); h != nil {
+				return s.reply(envelope.ID, h)
+			}
 			if h := hoverEnumVariant(text, pkg, mem); h != nil {
 				return s.reply(envelope.ID, h)
 			}
 		}
 		if h := hoverLocalEnum(text, word); h != nil {
+			return s.reply(envelope.ID, h)
+		}
+		// Inferred / annotated types from the type checker
+		if h := s.hoverTyped(p.TextDocument.URI, word); h != nil {
 			return s.reply(envelope.ID, h)
 		}
 		return s.reply(envelope.ID, hoverFor(word))
@@ -172,6 +204,19 @@ func (s *server) handle(raw []byte) error {
 		}
 		_ = json.Unmarshal(envelope.Params, &p)
 		return s.reply(envelope.ID, s.definition(p.TextDocument.URI, p.Position.Line, p.Position.Character))
+	case "textDocument/documentHighlight":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+			Position struct {
+				Line      int `json:"line"`
+				Character int `json:"character"`
+			} `json:"position"`
+		}
+		_ = json.Unmarshal(envelope.Params, &p)
+		text := s.docs[p.TextDocument.URI]
+		return s.reply(envelope.ID, documentHighlights(text, p.Position.Line, p.Position.Character))
 	case "textDocument/documentSymbol":
 		var p struct {
 			TextDocument struct {
@@ -238,7 +283,29 @@ func (s *server) handle(raw []byte) error {
 			NewName string `json:"newName"`
 		}
 		_ = json.Unmarshal(envelope.Params, &p)
-		result := rename(s.docs[p.TextDocument.URI], p.TextDocument.URI, p.Position.Line, p.Position.Character, p.NewName)
+		result := s.rename(p.TextDocument.URI, p.Position.Line, p.Position.Character, p.NewName)
+		return s.reply(envelope.ID, result)
+	case "textDocument/codeAction":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+			Range struct {
+				Start struct {
+					Line      int `json:"line"`
+					Character int `json:"character"`
+				} `json:"start"`
+				End struct {
+					Line      int `json:"line"`
+					Character int `json:"character"`
+				} `json:"end"`
+			} `json:"range"`
+			Context struct {
+				Only []string `json:"only"`
+			} `json:"context"`
+		}
+		_ = json.Unmarshal(envelope.Params, &p)
+		result := s.codeActions(p.TextDocument.URI, p.Range.Start.Line, p.Range.Start.Character, p.Range.End.Line, p.Range.End.Character)
 		return s.reply(envelope.ID, result)
 	default:
 		if len(envelope.ID) > 0 && string(envelope.ID) != "null" {
@@ -248,8 +315,9 @@ func (s *server) handle(raw []byte) error {
 	}
 }
 
-func (s *server) completions(text string, line, character int) []map[string]any {
+func (s *server) completions(uri, text string, line, character int) []map[string]any {
 	// package member after "pkg." or enum variants after "Status."
+	// or typed struct fields after "user."
 	if prefix := nameBeforeDot(text, line, character); prefix != "" {
 		if stdlib.IsPackage(prefix) {
 			var items []map[string]any
@@ -272,6 +340,17 @@ func (s *server) completions(text string, line, character int) []map[string]any 
 				return items
 			}
 		}
+		if fields := s.typedFields(uri, prefix); len(fields) > 0 {
+			var items []map[string]any
+			for name, ty := range fields {
+				items = append(items, map[string]any{
+					"label":  name,
+					"kind":   5, // Field
+					"detail": ty,
+				})
+			}
+			return items
+		}
 		if variants := enumVariantsIn(text, prefix); len(variants) > 0 {
 			var items []map[string]any
 			for _, v := range variants {
@@ -283,6 +362,18 @@ func (s *server) completions(text string, line, character int) []map[string]any 
 			}
 			return items
 		}
+	}
+	// After ": " offer common type names (annotations)
+	if inTypeAnnotationContext(text, line, character) {
+		var items []map[string]any
+		for _, n := range []string{"int", "float", "str", "bool", "any", "unit", "Result", "channel"} {
+			items = append(items, map[string]any{"label": n, "kind": 25, "detail": "type"}) // TypeParameter-ish
+		}
+		// user type decls in buffer
+		for _, name := range localTypeNames(text) {
+			items = append(items, map[string]any{"label": name, "kind": 22, "detail": "type"}) // Struct
+		}
+		return items
 	}
 	var items []map[string]any
 	// keywords / control
@@ -304,10 +395,33 @@ func (s *server) completions(text string, line, character int) []map[string]any 
 	}
 	// local functions / enums from open buffer
 	for _, name := range localFnNames(text) {
-		items = append(items, map[string]any{"label": name, "kind": 3, "detail": "local"})
+		detail := "local"
+		if info, ok := s.typeInfo[uri]; ok {
+			if t := info.Globals[name]; t != nil {
+				detail = t.String()
+			} else if t := info.FnRet[name]; t != nil {
+				detail = "fn -> " + t.String()
+			}
+		}
+		items = append(items, map[string]any{"label": name, "kind": 3, "detail": detail})
+	}
+	// params / lets / for-vars / consts (same file)
+	for _, name := range localBindingNames(text) {
+		detail := "local"
+		if info, ok := s.typeInfo[uri]; ok {
+			if t := info.Bindings[name]; t != nil {
+				detail = t.String()
+			} else if t := info.Globals[name]; t != nil {
+				detail = t.String()
+			}
+		}
+		items = append(items, map[string]any{"label": name, "kind": 6, "detail": detail}) // Variable
 	}
 	for _, name := range localEnumNames(text) {
 		items = append(items, map[string]any{"label": name, "kind": 13, "detail": "enum"}) // Enum
+	}
+	for _, name := range localTypeNames(text) {
+		items = append(items, map[string]any{"label": name, "kind": 22, "detail": "type"})
 	}
 	for _, n := range stdlib.Names() {
 		items = append(items, map[string]any{"label": n, "kind": 9, "detail": "stdlib package"})
@@ -355,45 +469,16 @@ func (s *server) definition(uri string, line, character int) any {
 	if word == "" {
 		return nil
 	}
-	path := uriToPath(uri)
-	file, errs := parse.ParseFile(path, text)
-	if errs.HasErrors() || file == nil {
-		// fallback: scan for fn / enum name
-		if loc := scanFnLine(text, word); loc >= 0 {
-			return location(uri, loc, 0)
-		}
-		if loc := scanEnumLine(text, word); loc >= 0 {
-			return location(uri, loc, 0)
-		}
-		return nil
+	// Prefer binding walk: top-level + params + lets + for-vars (same file).
+	if b, ok := findBindingDefinition(text, word); ok {
+		return defLocation(uri, text, b)
 	}
-	for _, d := range file.Decls {
-		switch n := d.(type) {
-		case *ast.FnDecl:
-			if n.Name == word {
-				ln := n.Pos().Line
-				if ln < 1 {
-					ln = 1
-				}
-				return location(uri, ln-1, 0)
-			}
-		case *ast.EnumDecl:
-			if n.Name == word {
-				ln := n.Pos().Line
-				if ln < 1 {
-					ln = 1
-				}
-				return location(uri, ln-1, 0)
-			}
-		case *ast.TypeDecl:
-			if n.Name == word {
-				ln := n.Pos().Line
-				if ln < 1 {
-					ln = 1
-				}
-				return location(uri, ln-1, 0)
-			}
-		}
+	// Fallback scans for incomplete buffers
+	if loc := scanFnLine(text, word); loc >= 0 {
+		return location(uri, loc, 0)
+	}
+	if loc := scanEnumLine(text, word); loc >= 0 {
+		return location(uri, loc, 0)
 	}
 	return nil
 }
@@ -629,14 +714,19 @@ func (s *server) publishDiags(uri, text string) {
 	diags := []map[string]any{}
 	file, perrs := parse.ParseFile(path, text)
 	if perrs.HasErrors() {
+		delete(s.typeInfo, uri)
 		for _, e := range perrs {
-			diags = append(diags, diagItem(e.Pos.Line, e.Pos.Column, e.Message))
+			diags = append(diags, diagItem(e.Pos.Line, e.Pos.Column, e.Message, 1))
 		}
 	} else {
-		if _, cerrs := types.Infer(file); cerrs.HasErrors() {
-			for _, e := range cerrs {
-				diags = append(diags, diagItem(e.Pos.Line, e.Pos.Column, e.Message))
+		info, cerrs := types.Infer(file)
+		s.typeInfo[uri] = info
+		for _, e := range cerrs {
+			sev := 1 // Error
+			if e.Severity == diag.Warning {
+				sev = 2 // Warning
 			}
+			diags = append(diags, diagItem(e.Pos.Line, e.Pos.Column, e.Message, sev))
 		}
 	}
 	_ = s.notify("textDocument/publishDiagnostics", map[string]any{
@@ -645,22 +735,156 @@ func (s *server) publishDiags(uri, text string) {
 	})
 }
 
-func diagItem(line, col int, msg string) map[string]any {
+func diagItem(line, col int, msg string, severity int) map[string]any {
 	if line < 1 {
 		line = 1
 	}
 	if col < 1 {
 		col = 1
 	}
+	if severity < 1 {
+		severity = 1
+	}
 	return map[string]any{
 		"range": map[string]any{
 			"start": map[string]int{"line": line - 1, "character": col - 1},
 			"end":   map[string]int{"line": line - 1, "character": col},
 		},
-		"severity": 1,
+		"severity": severity,
 		"source":   "weft",
 		"message":  msg,
 	}
+}
+
+// hoverTyped shows inferred/annotated types for locals and functions.
+func (s *server) hoverTyped(uri, word string) any {
+	if word == "" {
+		return nil
+	}
+	info, ok := s.typeInfo[uri]
+	if !ok {
+		return nil
+	}
+	if t := info.Bindings[word]; t != nil {
+		return typeHover(word, t.String(), "binding")
+	}
+	if t := info.Globals[word]; t != nil {
+		// skip opaque package: names
+		s := t.String()
+		if strings.HasPrefix(s, "package:") || strings.HasPrefix(t.Name, "package:") {
+			return nil
+		}
+		return typeHover(word, s, "global")
+	}
+	if t := info.FnRet[word]; t != nil {
+		return typeHover(word, "fn -> "+t.String(), "function return")
+	}
+	return nil
+}
+
+func (s *server) hoverTypedField(uri, recv, field string) any {
+	if recv == "" || field == "" {
+		return nil
+	}
+	fields := s.typedFields(uri, recv)
+	if ty, ok := fields[field]; ok {
+		return typeHover(recv+"."+field, ty, "field")
+	}
+	return nil
+}
+
+// typedFields returns field name → type string for a binding/global with struct fields.
+func (s *server) typedFields(uri, name string) map[string]string {
+	info, ok := s.typeInfo[uri]
+	if !ok {
+		return nil
+	}
+	var t *types.Type
+	if b := info.Bindings[name]; b != nil {
+		t = b
+	} else if g := info.Globals[name]; g != nil {
+		t = g
+	}
+	if t == nil || t.Fields == nil {
+		return nil
+	}
+	out := make(map[string]string, len(t.Fields))
+	for k, v := range t.Fields {
+		if v != nil {
+			out[k] = v.String()
+		} else {
+			out[k] = "any"
+		}
+	}
+	return out
+}
+
+func typeHover(name, ty, kind string) any {
+	return map[string]any{
+		"contents": map[string]any{
+			"kind":  "markdown",
+			"value": fmt.Sprintf("**%s**: `%s`\n\n_%s_", name, ty, kind),
+		},
+	}
+}
+
+// inTypeAnnotationContext is true when the cursor is after `name:` (optional type slot).
+func inTypeAnnotationContext(text string, line, character int) bool {
+	lines := strings.Split(text, "\n")
+	if line < 0 || line >= len(lines) {
+		return false
+	}
+	s := lines[line]
+	if character > len(s) {
+		character = len(s)
+	}
+	// look left for "ident :" with only spaces after colon until cursor
+	prefix := s[:character]
+	// strip trailing word being typed
+	i := len(prefix)
+	for i > 0 && isIdentByte(prefix[i-1]) {
+		i--
+	}
+	for i > 0 && (prefix[i-1] == ' ' || prefix[i-1] == '\t') {
+		i--
+	}
+	if i <= 0 || prefix[i-1] != ':' {
+		return false
+	}
+	// before colon: identifier (param / binding / field)
+	j := i - 1
+	for j > 0 && (prefix[j-1] == ' ' || prefix[j-1] == '\t') {
+		j--
+	}
+	if j <= 0 {
+		return false
+	}
+	// must end with ident char before spaces
+	return isIdentByte(prefix[j-1])
+}
+
+func localTypeNames(text string) []string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		line = strings.TrimPrefix(line, "pub ")
+		if !strings.HasPrefix(line, "type ") {
+			continue
+		}
+		rest := strings.TrimSpace(strings.TrimPrefix(line, "type "))
+		name := ""
+		for _, c := range rest {
+			if unicode.IsLetter(c) || unicode.IsDigit(c) || c == '_' {
+				name += string(c)
+			} else {
+				break
+			}
+		}
+		if name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 func (s *server) reply(id json.RawMessage, result any) error {
@@ -721,7 +945,25 @@ func writeMessage(w io.Writer, v any) error {
 
 func uriToPath(uri string) string {
 	uri = strings.TrimPrefix(uri, "file://")
+	// file:///path on unix; file:///C:/path on windows — keep simple
+	if strings.HasPrefix(uri, "/") || (len(uri) > 2 && uri[1] == ':') {
+		return uri
+	}
 	return uri
+}
+
+func pathToURI(path string) string {
+	if path == "" {
+		return ""
+	}
+	if strings.HasPrefix(path, "file://") {
+		return path
+	}
+	// Absolute path
+	if !strings.HasPrefix(path, "/") && !(len(path) > 1 && path[1] == ':') {
+		return "file://" + path
+	}
+	return "file://" + path
 }
 
 func wordAt(text string, line, character int) string {

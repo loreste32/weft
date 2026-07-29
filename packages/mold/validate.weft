@@ -1,13 +1,13 @@
-// Parse / validate / coerce against a model.
-
 use "./kind.weft" as kind
+
+
 use "./fields.weft" as F
 
-pub fn validate(model, data) -> Result {
-    validate_mut(model, data)
-}
 
-pub fn parse(model, raw) -> Result {
+pub fn validate(model, data) -> Result[any] { validate_mut(model, data) }
+
+
+pub fn parse(model, raw) -> Result[any] {
     mut data := raw
     if kind.of(raw) == "str" {
         data = json.parse(raw)?
@@ -15,20 +15,22 @@ pub fn parse(model, raw) -> Result {
     validate_mut(model, data)
 }
 
-// extract: strip fences then parse+validate (LLM structured output)
-pub fn extract(model, text) -> Result {
+
+pub fn extract(model, text) -> Result[any] {
     s := strip_fences(text)
     parse(model, s)
 }
 
-// Err.message is a string — we store a JSON payload so callers can recover paths.
+
 pub fn errors(result) {
     if result.ok {
         return []
     }
     msg := result.err.message
     if kind.of(msg) != "str" {
-        return [{"path": "", "msg": json.stringify(msg)}]
+        return [
+            {"path": "", "msg": json.stringify(msg)},
+        ]
     }
     r := json.parse(msg)
     if r.ok {
@@ -37,24 +39,29 @@ pub fn errors(result) {
             return p["errors"]
         }
     }
-    [{"path": "", "msg": msg}]
+    [
+        {"path": "", "msg": msg},
+    ]
 }
 
-pub fn ok(result) {
-    result.ok
-}
 
-// Caps hostile / nested LLM payloads (stack + CPU).
+pub fn ok(result) { result.ok }
+
+
 const max_depth = 32
+
+
 const max_list = 10000
 
-pub fn validate_mut(model, data) -> Result {
-    // errs is a map path -> msg (maps support mutation; list append is limited)
-    box := {"errs": {}, "n": 0}
+
+pub fn validate_mut(model, data) -> Result[any] {
+    box := {
+        "errs": {},
+        "n": 0,
+    }
     out := check_object(model_fields(model), data, "", box, 0)
     if box["n"] > 0 {
         mut elist := []
-        // materialize as list of {path,msg} via json
         raw := json.parse(json.stringify(box["errs"]))?
         for p in raw {
             elist = pack_err(elist, p, raw[p])
@@ -69,8 +76,8 @@ pub fn validate_mut(model, data) -> Result {
     Ok(out)
 }
 
+
 fn pack_err(elist, p, msg) {
-    // grow error list with fixed patterns
     e := {"path": p, "msg": msg}
     n := len(elist)
     if n == 0 {
@@ -88,9 +95,9 @@ fn pack_err(elist, p, msg) {
     if n == 4 {
         return [elist[0], elist[1], elist[2], elist[3], e]
     }
-    // cap reporting
     elist
 }
+
 
 fn model_fields(model) {
     if model["fields"] != null {
@@ -98,6 +105,7 @@ fn model_fields(model) {
     }
     model
 }
+
 
 fn check_object(fields, data, path, box, depth) {
     if depth > max_depth {
@@ -128,6 +136,7 @@ fn check_object(fields, data, path, box, depth) {
     out
 }
 
+
 fn check_value(f, v, path, box, depth) {
     if depth > max_depth {
         add_err(box, path, "max_depth")
@@ -138,9 +147,7 @@ fn check_value(f, v, path, box, depth) {
         typ = "any"
     }
     if v == null {
-        if f["required"] == true {
-            add_err(box, path, "required")
-        }
+        if f["required"] == true { add_err(box, path, "required") }
         return null
     }
     mut v2 := coerce(typ, v)
@@ -152,12 +159,8 @@ fn check_value(f, v, path, box, depth) {
         if k != "str" {
             v2 = to_str(v2)
         }
-        if f["min_len"] != null && len(v2) < f["min_len"] {
-            add_err(box, path, "min_len")
-        }
-        if f["max_len"] != null && len(v2) > f["max_len"] {
-            add_err(box, path, "max_len")
-        }
+        if f["min_len"] != null && len(v2) < f["min_len"] { add_err(box, path, "min_len") }
+        if f["max_len"] != null && len(v2) > f["max_len"] { add_err(box, path, "max_len") }
         return v2
     }
     if typ == "int" {
@@ -166,12 +169,8 @@ fn check_value(f, v, path, box, depth) {
             return v2
         }
         n := v2 + 0
-        if f["min"] != null && n < f["min"] {
-            add_err(box, path, "min")
-        }
-        if f["max"] != null && n > f["max"] {
-            add_err(box, path, "max")
-        }
+        if f["min"] != null && n < f["min"] { add_err(box, path, "min") }
+        if f["max"] != null && n > f["max"] { add_err(box, path, "max") }
         return n
     }
     if typ == "float" || typ == "number" {
@@ -180,12 +179,8 @@ fn check_value(f, v, path, box, depth) {
             return v2
         }
         n := v2 + 0
-        if f["min"] != null && n < f["min"] {
-            add_err(box, path, "min")
-        }
-        if f["max"] != null && n > f["max"] {
-            add_err(box, path, "max")
-        }
+        if f["min"] != null && n < f["min"] { add_err(box, path, "min") }
+        if f["max"] != null && n > f["max"] { add_err(box, path, "max") }
         return n
     }
     if typ == "bool" {
@@ -213,7 +208,6 @@ fn check_value(f, v, path, box, depth) {
             return []
         }
         item := f["items"]
-        // rebuild list via json array string
         mut parts := ""
         mut i := 0
         for el in v2 {
@@ -232,15 +226,14 @@ fn check_value(f, v, path, box, depth) {
     if typ == "object" || typ == "map" {
         fields := f["fields"]
         if fields == null {
-            if k != "map" {
-                add_err(box, path, "expected object")
-            }
+            if k != "map" { add_err(box, path, "expected object") }
             return v2
         }
         return check_object(fields, v2, path, box, depth)
     }
     v2
 }
+
 
 fn coerce(typ, v) {
     k := kind.of(v)
@@ -261,6 +254,7 @@ fn coerce(typ, v) {
     v
 }
 
+
 fn to_str(v) {
     if kind.of(v) == "str" {
         return v
@@ -273,9 +267,9 @@ fn to_str(v) {
     s
 }
 
-fn is_field_map(v) {
-    kind.of(v) == "map" && v["type"] != null
-}
+
+fn is_field_map(v) { kind.of(v) == "map" && v["type"] != null }
+
 
 fn has_key(m, k) {
     for x in m {
@@ -286,12 +280,14 @@ fn has_key(m, k) {
     false
 }
 
+
 fn join_path(base, name) {
     if base == "" {
         return name
     }
     base + "." + name
 }
+
 
 fn add_err(box, path, msg) {
     errs := box["errs"]
@@ -300,7 +296,7 @@ fn add_err(box, path, msg) {
     box["n"] = box["n"] + 1
 }
 
-// Strip ``` / ```json fences; list concat is unsupported so build a string only.
+
 fn strip_fences(text) {
     s := str.trim(text)
     if !str.starts_with(s, "```") {
@@ -327,3 +323,4 @@ fn strip_fences(text) {
     }
     str.trim(body)
 }
+

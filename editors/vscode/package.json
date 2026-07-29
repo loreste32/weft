@@ -1,8 +1,8 @@
 {
   "name": "weft",
   "displayName": "Weft",
-  "description": "Weft language support \u2014 syntax highlighting and Language Server (weft lsp)",
-  "version": "0.3.30",
+  "description": "Weft language support — syntax, LSP (types/hover/completion/extract/rename), snippets, and DAP debugging",
+  "version": "0.4.2",
   "publisher": "weft",
   "license": "Apache-2.0",
   "icon": "media/icon.png",
@@ -24,17 +24,20 @@
   "categories": [
     "Programming Languages",
     "Linters",
-    "Snippets"
+    "Snippets",
+    "Debuggers"
   ],
   "keywords": [
     "weft",
     "llm",
     "agents",
     "scripting",
-    "lsp"
+    "lsp",
+    "debug"
   ],
   "activationEvents": [
-    "onLanguage:weft"
+    "onLanguage:weft",
+    "onDebugResolve:weft"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -120,7 +123,77 @@
           "strings": false
         }
       }
-    }
+    },
+    "debuggers": [
+      {
+        "type": "weft",
+        "label": "Weft",
+        "languages": [
+          "weft"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Path to the .weft file to debug.",
+                "default": "${file}"
+              },
+              "weftPath": {
+                "type": "string",
+                "description": "Path to the weft binary.",
+                "default": "weft"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Stop on the first statement.",
+                "default": false
+              },
+              "args": {
+                "type": "array",
+                "description": "Arguments passed to the Weft program (as args).",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Working directory.",
+                "default": "${workspaceFolder}"
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "weft",
+            "request": "launch",
+            "name": "Debug Weft file",
+            "program": "${file}",
+            "weftPath": "weft",
+            "stopOnEntry": false
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Weft: Launch",
+            "description": "Debug a .weft file",
+            "body": {
+              "type": "weft",
+              "request": "launch",
+              "name": "Debug Weft",
+              "program": "^\"\\${file}\"",
+              "weftPath": "weft",
+              "stopOnEntry": false
+            }
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "postinstall": "node -e \"try{require('vscode-languageclient')}catch(e){console.log('run: npm install')}\"",

@@ -46,23 +46,29 @@ func run(args []string) int {
 		return cmdRun(args[1:])
 	case "check":
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "usage: weft check <file.weft|dir>… [--types]")
+			fmt.Fprintln(os.Stderr, "usage: weft check <file.weft|dir>… [--types] [--strict]")
 			return 2
 		}
 		showTypes := false
+		strict := false
 		var paths []string
 		for _, a := range args[1:] {
 			if a == "--types" || a == "-t" {
 				showTypes = true
-			} else if !strings.HasPrefix(a, "-") {
+			} else if a == "--strict" || a == "-s" {
+				strict = true
+			} else if strings.HasPrefix(a, "-") {
+				fmt.Fprintf(os.Stderr, "unknown flag %q\nusage: weft check <file.weft|dir>… [--types] [--strict]\n", a)
+				return 2
+			} else {
 				paths = append(paths, a)
 			}
 		}
 		if len(paths) == 0 {
-			fmt.Fprintln(os.Stderr, "usage: weft check <file.weft|dir>… [--types]")
+			fmt.Fprintln(os.Stderr, "usage: weft check <file.weft|dir>… [--types] [--strict]")
 			return 2
 		}
-		return cmdCheckPaths(paths, showTypes)
+		return cmdCheckPaths(paths, showTypes, strict)
 	case "test":
 		return cmdTest(args[1:])
 	case "stdlib":
@@ -264,7 +270,8 @@ Language:
   weft                      REPL
   weft run <file.weft> [--watch]    run a script
   weft build [dir] [entry] [-o out] bundle into .weftapp archive
-  weft check <file|dir>… [--types]
+  weft check <file|dir>… [--types] [--strict]  # --strict: type warnings fail CI
+  weft debug [--dap] [file.weft]               # interactive or DAP (IDE) debugger
   weft test [path…] [-q] [-run filter]   # run fn test_* in *_test.weft
   weft stdlib [pkg]           # list stdlib packages (or members of pkg)
   weft fmt [--check] <file.weft|dir>…  # format (--check for CI)
@@ -314,17 +321,41 @@ Registry (public packages with ed25519 signing):
   weft registry install <name[@constraint]>
   weft registry keygen [name] # generate signing key
   weft registry keys          # list signing keys
+  weft registry trust <ns> <pubkey|--key name>
+  weft registry untrust <ns> [pubkey]
+  weft registry trusts        # list trusted namespaces
+  weft registry trust-rotate <ns> <new-pubkey> [--retire old]
   weft publish [--key name]   # validate, sign, upload
 `)
 		return 0
 	case "notebook", "nb":
 		return cmdNotebook(args[1:])
 	case "debug":
-		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "usage: weft debug <file.weft>")
+		// weft debug [--dap] [file.weft]
+		dapMode := false
+		var path string
+		for _, a := range args[1:] {
+			if a == "--dap" {
+				dapMode = true
+			} else if !strings.HasPrefix(a, "-") {
+				path = a
+			} else {
+				fmt.Fprintf(os.Stderr, "unknown flag %q\nusage: weft debug [--dap] [file.weft]\n", a)
+				return 2
+			}
+		}
+		if dapMode {
+			if err := weft.StartDAP(path); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			return 0
+		}
+		if path == "" {
+			fmt.Fprintln(os.Stderr, "usage: weft debug [--dap] [file.weft]")
 			return 2
 		}
-		if err := weft.StartDebug(args[1]); err != nil {
+		if err := weft.StartDebug(path); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}

@@ -1,7 +1,8 @@
-// Path import — short and clear
-import "./lib/math.weft" as m
+use "./lib/math.weft" as m
 
-fn main() {
-    println(m.add(2, 3))
-    println(m.double(21))
+
+fn main {
+    say(m.add(2, 3))
+    say(m.double(21))
 }
+

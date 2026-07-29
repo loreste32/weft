@@ -6,7 +6,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/loreste/weft/internal/runtime"
 )
@@ -14,29 +16,55 @@ import (
 // RunREPL starts an interactive session on in/out.
 func (c *Context) RunREPL(in io.Reader, out io.Writer) error {
 	fmt.Fprintf(out, "weft %s — type :help, :quit\n", Version)
-	sc := bufio.NewScanner(in)
-	// allow large pastes
-	buf := make([]byte, 0, 64*1024)
-	sc.Buffer(buf, 1024*1024)
+
+	// Session history (also mirrored to ~/.weft/history).
+	hist := loadHistory()
+
+	// Interactive TTY: line editing + tab completion. Pipes keep Scanner path.
+	termR := tryTermReader(in, out, &hist)
+	var sc *bufio.Scanner
+	if termR == nil {
+		sc = bufio.NewScanner(in)
+		buf := make([]byte, 0, 64*1024)
+		sc.Buffer(buf, 1024*1024)
+	}
 
 	var multi strings.Builder
 	depth := 0
 
-	prompt := func() {
+	promptStr := func() string {
 		if depth > 0 || multi.Len() > 0 {
-			fmt.Fprint(out, "... ")
-		} else {
-			fmt.Fprint(out, "> ")
+			return "... "
 		}
+		return "> "
+	}
+
+	readLine := func() (string, error) {
+		if termR != nil {
+			return termR.ReadLine(promptStr())
+		}
+		fmt.Fprint(out, promptStr())
+		if !sc.Scan() {
+			fmt.Fprintln(out)
+			return "", sc.Err()
+		}
+		return sc.Text(), nil
 	}
 
 	for {
-		prompt()
-		if !sc.Scan() {
-			fmt.Fprintln(out)
-			return sc.Err()
+		line, err := readLine()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			// Ctrl-C → new prompt
+			if strings.Contains(err.Error(), "interrupt") {
+				multi.Reset()
+				depth = 0
+				continue
+			}
+			return err
 		}
-		line := sc.Text()
 
 		if multi.Len() == 0 {
 			trim := strings.TrimSpace(line)
@@ -49,8 +77,29 @@ func (c *Context) RunREPL(in io.Reader, out io.Writer) error {
 			case trim == ":clear" || trim == ":c":
 				fmt.Fprint(out, "\033[H\033[2J")
 				continue
-			case trim == ":history":
-				showHistory(out)
+			case trim == ":history" || strings.HasPrefix(trim, ":history "):
+				showHistoryFiltered(out, hist, strings.TrimSpace(strings.TrimPrefix(trim, ":history")))
+				continue
+			case strings.HasPrefix(trim, ":!") || (strings.HasPrefix(trim, "!") && len(trim) > 1 && unicode.IsDigit(rune(trim[1]))):
+				// :!N or !N — re-run history entry N (1-based)
+				numStr := strings.TrimPrefix(trim, ":")
+				numStr = strings.TrimPrefix(numStr, "!")
+				n, err := strconv.Atoi(numStr)
+				if err != nil || n < 1 || n > len(hist) {
+					fmt.Fprintf(out, "no history entry %s (have %d)\n", numStr, len(hist))
+					continue
+				}
+				src := hist[n-1]
+				fmt.Fprintf(out, "// re-run %d: %s\n", n, firstLine(src))
+				appendHistoryLine(&hist, src)
+				v, err := c.Eval(src)
+				if err != nil {
+					fmt.Fprintln(out, err.Error())
+					continue
+				}
+				if shouldPrint(v) {
+					fmt.Fprintln(out, v.String())
+				}
 				continue
 			case trim == ":version" || trim == ":v":
 				fmt.Fprintf(out, "weft %s\n", Version)
@@ -59,30 +108,39 @@ func (c *Context) RunREPL(in io.Reader, out io.Writer) error {
 				pkg := strings.TrimSpace(strings.TrimPrefix(trim, ":stdlib"))
 				showStdlibHelp(out, pkg)
 				continue
+			case trim == ":cancel":
+				// no multi-line buffer at primary prompt
+				continue
 			case trim == "":
+				continue
+			}
+		} else {
+			// Mid multi-line buffer
+			trim := strings.TrimSpace(line)
+			if trim == ":cancel" || trim == ":c" {
+				multi.Reset()
+				depth = 0
+				fmt.Fprintln(out, "(cancelled)")
 				continue
 			}
 		}
 
 		multi.WriteString(line)
 		multi.WriteByte('\n')
-		depth = braceDepth(multi.String())
-		if depth > 0 {
-			continue
-		}
-		// incomplete string? simple check
-		if unbalancedQuotes(multi.String()) {
+		srcSoFar := multi.String()
+		depth = braceDepth(srcSoFar)
+		if depth > 0 || unbalancedQuotes(srcSoFar) || incompleteLine(srcSoFar) {
 			continue
 		}
 
-		src := strings.TrimSpace(multi.String())
+		src := strings.TrimSpace(srcSoFar)
 		multi.Reset()
 		depth = 0
 		if src == "" {
 			continue
 		}
 
-		appendHistory(src)
+		appendHistoryLine(&hist, src)
 		v, err := c.Eval(src)
 		if err != nil {
 			fmt.Fprintln(out, err.Error())
@@ -157,19 +215,80 @@ func unbalancedQuotes(s string) bool {
 	return n%2 == 1
 }
 
-const replHelp = `commands:
-  :help      this text
-  :quit      exit
-  :clear     clear screen
-  :stdlib    list stdlib packages
-  :stdlib fs show members of a package
-  :history   show recent history
-  :version   show version
+// incompleteLine is true when the buffer looks like a partial statement that
+// should keep reading (trailing operator / keyword), even if braces are balanced.
+func incompleteLine(s string) bool {
+	t := strings.TrimRight(s, " \t\r\n")
+	if t == "" {
+		return false
+	}
+	// Ignore a final full-line // comment for the trailing check.
+	if i := strings.LastIndex(t, "\n"); i >= 0 {
+		last := strings.TrimSpace(t[i+1:])
+		if strings.HasPrefix(last, "//") {
+			t = strings.TrimRight(t[:i], " \t\r\n")
+		}
+	}
+	if t == "" {
+		return false
+	}
+	// Trailing binary operators / separators (not complete statements).
+	switch t[len(t)-1] {
+	case '+', '-', '*', '/', '%', ',', '.', '=', '<', '>', '!', '&', '|', '?':
+		return true
+	case ':':
+		// `x :=` incomplete; bare labels unlikely in Weft
+		return true
+	}
+	// Last token is an opening keyword (word boundary).
+	last := lastWord(t)
+	switch last {
+	case "fn", "if", "else", "for", "while", "match", "return", "type", "enum",
+		"use", "import", "const", "mut", "let", "defer", "pub", "in", "as":
+		return true
+	}
+	return false
+}
 
-multi-line: open braces continue on next line
-  fn add(a, b) {
-  ...   a + b
-  ... }
+func lastWord(s string) string {
+	i := len(s)
+	for i > 0 {
+		r := rune(s[i-1])
+		if unicode.IsLetter(r) || r == '_' {
+			i--
+			continue
+		}
+		break
+	}
+	return s[i:]
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if len(s) > 80 {
+		return s[:77] + "..."
+	}
+	return s
+}
+
+const replHelp = `commands:
+  :help              this text
+  :quit / :q         exit
+  :clear             clear screen
+  :cancel / :c       abort multi-line input
+  :stdlib            list stdlib packages
+  :stdlib fs         show members of a package
+  :history           show recent history
+  :history <text>    filter history by substring
+  :!N  or  !N        re-run history entry N
+  :version           show version
+
+multi-line:
+  open braces/parens/brackets continue on the next line
+  trailing operators (+, ,, :=, …) also continue
+  :cancel (or :c while multi-line) aborts the buffer
 
 examples:
   1 + 2
@@ -180,7 +299,8 @@ examples:
   map([1,2,3], fn(x) { x * x })
 
 history saved to ~/.weft/history
-tip: use rlwrap weft for arrow-key editing
+interactive TTY: Tab completes keywords/stdlib/:commands; ↑/↓ history
+(non-TTY / pipes still work; rlwrap optional)
 `
 
 // StartREPL is the CLI entry using stdin/stdout.
@@ -190,24 +310,33 @@ func StartREPL() error {
 	return err
 }
 
-func showHistory(out io.Writer) {
-	p := historyPath()
-	if p == "" {
-		return
-	}
-	data, err := os.ReadFile(p)
-	if err != nil {
+func showHistoryFiltered(out io.Writer, hist []string, filter string) {
+	if len(hist) == 0 {
 		fmt.Fprintln(out, "(no history)")
 		return
 	}
-	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 	start := 0
-	if len(lines) > 20 {
-		start = len(lines) - 20
+	if len(hist) > 40 {
+		start = len(hist) - 40
 	}
-	for i := start; i < len(lines); i++ {
-		fmt.Fprintf(out, "  %d  %s\n", i+1, lines[i])
+	n := 0
+	for i := start; i < len(hist); i++ {
+		line := hist[i]
+		if filter != "" && !strings.Contains(strings.ToLower(line), strings.ToLower(filter)) {
+			continue
+		}
+		// One visual line for multi-line entries
+		fmt.Fprintf(out, "  %d  %s\n", i+1, firstLine(line))
+		n++
 	}
+	if n == 0 && filter != "" {
+		fmt.Fprintf(out, "(no history matching %q)\n", filter)
+	}
+}
+
+// showHistory is kept for tests / external callers (last 20 from file).
+func showHistory(out io.Writer) {
+	showHistoryFiltered(out, loadHistory(), "")
 }
 
 func showStdlibHelp(out io.Writer, pkg string) {
@@ -237,8 +366,47 @@ func historyPath() string {
 	return filepath.Join(home, ".weft", "history")
 }
 
-// appendHistory saves one line to the history file.
+func loadHistory() []string {
+	p := historyPath()
+	if p == "" {
+		return nil
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimRight(line, "\r")
+		if line == "" {
+			continue
+		}
+		// File stores one physical line per entry; multi-line was flattened
+		// with spaces historically — keep as-is.
+		out = append(out, line)
+	}
+	// Cap in-memory to last 500
+	if len(out) > 500 {
+		out = out[len(out)-500:]
+	}
+	return out
+}
+
+// appendHistory saves one entry to the history file (legacy helper).
 func appendHistory(line string) {
+	var hist []string
+	appendHistoryLine(&hist, line)
+}
+
+func appendHistoryLine(hist *[]string, line string) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return
+	}
+	// Flatten newlines for the file (one entry per line).
+	flat := strings.ReplaceAll(line, "\n", " ")
+	flat = strings.Join(strings.Fields(flat), " ")
+	*hist = append(*hist, line)
 	p := historyPath()
 	if p == "" {
 		return
@@ -248,6 +416,6 @@ func appendHistory(line string) {
 	if err != nil {
 		return
 	}
-	fmt.Fprintln(f, line)
+	fmt.Fprintln(f, flat)
 	f.Close()
 }

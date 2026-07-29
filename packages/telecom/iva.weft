@@ -1,27 +1,19 @@
-// iva.weft — Interactive Voice Agent (LLM-powered voice conversations).
-//
-// An IVA takes speech/DTMF input, sends it to an LLM with tools,
-// and produces speech output + call actions.
-
-// iva.create(config) -> map
-// config: {system, tools, voice, language, stt_url, tts_url,
-//          greeting, max_turns, end_on, llm_opts, stt_opts, tts_opts}
 pub fn create(config) {
     system := "You are a helpful voice assistant. Keep responses concise and conversational. When the caller wants to end the conversation, use the end_call tool."
-    if config.system != null { system = config.system }
-
+    if config.system != null {
+        system = config.system
+    }
     tools := []
-    if config.tools != null { tools = config.tools }
-
-    // always include an end_call tool
+    if config.tools != null {
+        tools = config.tools
+    }
     mut has_end := false
     for t in tools {
-        if t.name == "end_call" { has_end = true }
+        if t.name == "end_call" {
+            has_end = true
+        }
     }
-    if !has_end {
-        push(tools, llm.tool("end_call", fn() { {"action": "hangup"} }, "End the phone call when the caller is done or says goodbye"))
-    }
-
+    if !has_end { push(tools, llm.tool("end_call", fn() { {"action": "hangup"} }, "End the phone call when the caller is done or says goodbye")) }
     {
         "_type": "iva",
         "system": system,
@@ -30,9 +22,15 @@ pub fn create(config) {
         "language": if config.language != null { config.language } else { "en-US" },
         "stt_url": config.stt_url,
         "tts_url": config.tts_url,
-        "stt_opts": if config.stt_opts != null { config.stt_opts } else { {} },
-        "tts_opts": if config.tts_opts != null { config.tts_opts } else { {} },
-        "llm_opts": if config.llm_opts != null { config.llm_opts } else { {} },
+        "stt_opts": if config.stt_opts != null { config.stt_opts } else {
+            {}
+        },
+        "tts_opts": if config.tts_opts != null { config.tts_opts } else {
+            {}
+        },
+        "llm_opts": if config.llm_opts != null { config.llm_opts } else {
+            {}
+        },
         "greeting": config.greeting,
         "max_turns": if config.max_turns != null { config.max_turns } else { 50 },
         "end_on": if config.end_on != null { config.end_on } else { ["goodbye", "bye", "hang up", "end call"] },
@@ -42,90 +40,78 @@ pub fn create(config) {
     }
 }
 
-// iva.turn(agent, input) -> Result[map]
-// Process one conversation turn.
-// input: user speech text (from STT) or DTMF digits.
-// Returns: {response, actions, done, tool_calls}
-pub fn turn(agent, input) -> Result {
-    if agent.done {
-        return Ok({"response": "", "actions": [{"action": "hangup"}], "done": true, "tool_calls": []})
-    }
 
-    agent.turn_count = agent.turn_count + 1
-    if agent.turn_count > agent.max_turns {
-        agent.done = true
+pub fn turn(agent, input) -> Result[any] {
+    if agent.done {
         return Ok({
-            "response": "I'm sorry, we've reached the maximum conversation length. Goodbye.",
+            "response": "",
             "actions": [
-                {"action": "play", "src": "I'm sorry, we've reached the maximum conversation length. Goodbye.", "tts": true},
                 {"action": "hangup"},
             ],
             "done": true,
             "tool_calls": [],
         })
     }
-
-    // build messages
-    push(agent.history, {"role": "user", "content": input})
-
-    msgs := [{"role": "system", "content": agent.system}]
-    for m in agent.history {
-        push(msgs, m)
+    agent.turn_count = agent.turn_count + 1
+    if agent.turn_count > agent.max_turns {
+        agent.done = true
+        return Ok({
+            "response": "I'm sorry, we've reached the maximum conversation length. Goodbye.",
+            "actions": [
+                {
+                    "action": "play",
+                    "src": "I'm sorry, we've reached the maximum conversation length. Goodbye.",
+                    "tts": true,
+                },
+                {"action": "hangup"},
+            ],
+            "done": true,
+            "tool_calls": [],
+        })
     }
-
-    // call LLM with tools
+    push(agent.history, {"role": "user", "content": input})
+    msgs := [
+        {"role": "system", "content": agent.system},
+    ]
+    for m in agent.history { push(msgs, m) }
     llm_opts := agent.llm_opts
     llm_opts.system = agent.system
     if len(agent.tools) > 0 {
         llm_opts.max_steps = if llm_opts.max_steps != null { llm_opts.max_steps } else { 5 }
     }
-
     mut response := ""
     mut tool_calls := []
     mut call_actions := []
     done := false
-
     if len(agent.tools) > 0 {
         response = llm.ask(input, agent.tools, llm_opts)?
     } else {
         response = llm.chat(msgs, llm_opts)?
     }
-
     push(agent.history, {"role": "assistant", "content": response})
-
-    // check for end signals
     lower := str.lower(response)
     for phrase in agent.end_on {
         if str.contains(lower, phrase) {
             done = true
         }
     }
-
-    // build actions
-    if response != "" {
-        push(call_actions, {
-            "action": "play",
-            "src": response,
-            "tts": true,
-            "voice": agent.voice,
-            "language": agent.language,
-        })
-    }
-
+    if response != "" { push(call_actions, {
+        "action": "play",
+        "src": response,
+        "tts": true,
+        "voice": agent.voice,
+        "language": agent.language,
+    }) }
     if done {
         agent.done = true
         push(call_actions, {"action": "hangup"})
-    } else {
-        // gather next input
-        push(call_actions, {
-            "action": "gather",
-            "kind": "speech",
-            "language": agent.language,
-            "speech_timeout": 3,
-            "timeout": 10,
-        })
-    }
-
+    } else { push(call_actions, {
+        "action": "gather",
+        "kind": "speech",
+        "language": agent.language,
+        "speech_timeout": 3,
+        "timeout": 10,
+    }) }
     Ok({
         "response": response,
         "actions": call_actions,
@@ -134,53 +120,68 @@ pub fn turn(agent, input) -> Result {
     })
 }
 
-// iva.handle_event(agent, event) -> Result[map]
-// Handle a telephony event and produce the next set of actions.
-// event: {type: "speech"|"dtmf"|"call_start"|"call_end", ...}
-pub fn handle_event(agent, event) -> Result {
+
+pub fn handle_event(agent, event) -> Result[any] {
     match event.kind {
         "call_start" {
-            // initial greeting
             if agent.greeting != null {
                 push(agent.history, {"role": "assistant", "content": agent.greeting})
                 Ok({
                     "response": agent.greeting,
                     "actions": [
                         {"action": "answer"},
-                        {"action": "play", "src": agent.greeting, "tts": true, "voice": agent.voice},
-                        {"action": "gather", "kind": "speech", "language": agent.language, "speech_timeout": 3},
+                        {
+                            "action": "play",
+                            "src": agent.greeting,
+                            "tts": true,
+                            "voice": agent.voice,
+                        },
+                        {
+                            "action": "gather",
+                            "kind": "speech",
+                            "language": agent.language,
+                            "speech_timeout": 3,
+                        },
                     ],
                     "done": false,
                     "tool_calls": [],
                 })
-            } else {
-                Ok({
-                    "response": "",
-                    "actions": [
-                        {"action": "answer"},
-                        {"action": "gather", "kind": "speech", "language": agent.language, "speech_timeout": 3},
-                    ],
-                    "done": false,
-                    "tool_calls": [],
-                })
-            }
+            } else { Ok({
+                "response": "",
+                "actions": [
+                    {"action": "answer"},
+                    {
+                        "action": "gather",
+                        "kind": "speech",
+                        "language": agent.language,
+                        "speech_timeout": 3,
+                    },
+                ],
+                "done": false,
+                "tool_calls": [],
+            }) }
         }
         "speech" {
             text := if event.text != null { event.text } else { "" }
-            if text == "" {
-                // no speech detected — reprompt
-                Ok({
-                    "response": "",
-                    "actions": [
-                        {"action": "play", "src": "I didn't catch that. Could you say that again?", "tts": true, "voice": agent.voice},
-                        {"action": "gather", "kind": "speech", "language": agent.language, "speech_timeout": 4},
-                    ],
-                    "done": false,
-                    "tool_calls": [],
-                })
-            } else {
-                turn(agent, text)
-            }
+            if text == "" { Ok({
+                "response": "",
+                "actions": [
+                    {
+                        "action": "play",
+                        "src": "I didn't catch that. Could you say that again?",
+                        "tts": true,
+                        "voice": agent.voice,
+                    },
+                    {
+                        "action": "gather",
+                        "kind": "speech",
+                        "language": agent.language,
+                        "speech_timeout": 4,
+                    },
+                ],
+                "done": false,
+                "tool_calls": [],
+            }) } else { turn(agent, text) }
         }
         "dtmf" {
             digits := if event.digits != null { event.digits } else { "" }
@@ -188,10 +189,19 @@ pub fn handle_event(agent, event) -> Result {
         }
         "call_end" {
             agent.done = true
-            Ok({"response": "", "actions": [], "done": true, "tool_calls": []})
+            Ok({
+                "response": "",
+                "actions": [],
+                "done": true,
+                "tool_calls": [],
+            })
         }
-        _ {
-            Ok({"response": "", "actions": [], "done": false, "tool_calls": []})
-        }
+        _ { Ok({
+            "response": "",
+            "actions": [],
+            "done": false,
+            "tool_calls": [],
+        }) }
     }
 }
+

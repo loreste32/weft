@@ -1,11 +1,8 @@
-// greeter package tests
-//   weft mod check examples/packages/greeter --tests
 use "./lib.weft" as g
 
-fn test_greet {
-    test.eq(g.greet("weft"), "hello, weft")
-}
 
-fn test_shout {
-    test.eq(g.shout("x"), "hello, x!")
-}
+fn test_greet { test.eq(g.greet("weft"), "hello, weft") }
+
+
+fn test_shout { test.eq(g.shout("x"), "hello, x!") }
+

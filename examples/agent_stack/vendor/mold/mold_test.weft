@@ -1,24 +1,23 @@
-// mold package tests
-//   weft mod check packages/mold --tests
 use "./lib.weft" as mold
 
-fn person_model() {
-    mold.model({
-        "name": "str!",
-        "age": mold.integer({"min": 0, "max": 150})?,
-        "email": "str?",
-        "tags": ["str"],
-        "active": mold.boolean({"default": true})?,
-    })?
-}
+
+fn person_model { mold.model({
+    "name": "str!",
+    "age": mold.integer({"min": 0, "max": 150})?,
+    "email": "str?",
+    "tags": ["str"],
+    "active": mold.boolean({"default": true})?,
+})? }
+
 
 fn test_parse_ok {
     m := person_model()
     r := mold.parse(m, "{\"name\":\"Ada\",\"age\":36,\"tags\":[\"math\"]}")?
     test.eq(r["name"], "Ada")
     test.eq(r["age"], 36)
-    test.eq(r["active"], true) // default
+    test.eq(r["active"], true)
 }
+
 
 fn test_required {
     m := person_model()
@@ -26,11 +25,13 @@ fn test_required {
     test.eq(r.ok, false)
 }
 
+
 fn test_min {
     m := person_model()
     r := mold.parse(m, "{\"name\":\"x\",\"age\":-1}")
     test.eq(r.ok, false)
 }
+
 
 fn test_json_schema {
     m := person_model()
@@ -41,12 +42,14 @@ fn test_json_schema {
     test.eq(js["properties"]["age"]["type"], "integer")
 }
 
+
 fn test_tool_params {
     m := person_model()
     p := mold.tool_params(m)
     test.eq(p["type"], "object")
     test.eq(p["properties"]["name"]["type"], "string")
 }
+
 
 fn test_tool_spec {
     m := person_model()
@@ -59,6 +62,7 @@ fn test_tool_spec {
     test.eq(ant["input_schema"]["type"], "object")
 }
 
+
 fn test_extract_fences {
     m := person_model()
     raw := "```json\n{\"name\":\"Bob\",\"age\":20,\"tags\":[]}\n```"
@@ -66,21 +70,19 @@ fn test_extract_fences {
     test.eq(r["name"], "Bob")
 }
 
+
 fn test_nested {
-    m := mold.model({
-        "user": mold.object({
-            "id": "str!",
-            "n": "int",
-        }, null)?,
-    })?
+    m := mold.model({"user": mold.object({"id": "str!", "n": "int"}, null)?})?
     r := mold.parse(m, "{\"user\":{\"id\":\"u1\",\"n\":2}}")?
     test.eq(r["user"]["id"], "u1")
     test.eq(r["user"]["n"], 2)
 }
 
+
 fn test_max_list {
-    m := mold.model({"tags": ["str"]})?
-    // build slightly over max_list (10000)
+    m := mold.model({
+        "tags": ["str"],
+    })?
     mut parts := ""
     mut i := 0
     while i < 10001 {
@@ -94,8 +96,8 @@ fn test_max_list {
     test.eq(r.ok, false)
 }
 
+
 fn test_max_depth {
-    // schema depth > 32 forces max_depth on validate
     mut fields := {"v": "int"}
     mut i := 0
     while i < 40 {
@@ -103,7 +105,6 @@ fn test_max_depth {
         i = i + 1
     }
     m := mold.model(fields)?
-    // matching nested data
     mut data := "{\"v\":1}"
     mut j := 0
     while j < 40 {
@@ -113,3 +114,4 @@ fn test_max_depth {
     r := mold.parse(m, data)
     test.eq(r.ok, false)
 }
+

@@ -24,6 +24,27 @@ Small set of commands for day-to-day work. Nothing here replaces a full IDE or p
 | `weft lsp` | Language server: diagnostics, completion, hover, definition, symbols, **format**. |
 | `weft eval [dir]` | Smoke-run scripts that have `fn main`. |
 | `weft train eval` | Score the embedded gold examples (parse/compile). |
+| `weft` / `weft repl` | Interactive REPL (session bindings, multi-line, history). |
+
+## REPL
+
+```bash
+weft          # or: weft repl
+```
+
+| | |
+|--|--|
+| Expressions | `1 + 2`, `map([1,2], fn(x) { x*x })` |
+| Definitions | `fn` / `type` / `const` / `enum` bind into the session (no `main` required) |
+| Multi-line | Continues while braces/parens/brackets or quotes are open; also after trailing ops (`1 +`) |
+| `:cancel` / `:c` | Abort multi-line buffer (`:c` at primary prompt still clears the screen) |
+| `:history` | Last entries; `:history text` filters by substring |
+| `!N` / `:!N` | Re-run history entry **N** (1-based) |
+| `:stdlib [pkg]` | Browse stdlib |
+| History file | `~/.weft/history` |
+| Interactive TTY | **Tab** completes keywords / stdlib / `:commands`; **↑/↓** history; Ctrl-C cancels line |
+
+Pipes and tests still use plain line mode (no raw terminal).
 
 ## Format
 
@@ -48,10 +69,14 @@ weft lsp   # stdio Language Server
 | Feature | Notes |
 |---------|--------|
 | Diagnostics | Parse + gradual type check on open/change |
-| Completion | Keywords, prelude, stdlib packages/members (with signatures), local fns/enums, **enum variants** after `Status.` |
-| Hover | Packages, prelude, **stdlib member docs** (`llm.*`, `web.*`, `yaml.*`, `db.*`, …), enum variants |
+| Completion | Keywords, prelude, stdlib packages/members (with signatures), local fns/enums, **params/lets**, **enum variants** after `Status.` |
+| Hover | Packages, prelude, **stdlib member docs** (`llm.*`, `web.*`, `yaml.*`, `db.*`, …), enum variants, inferred types |
 | Signature help | Broad catalog (llm/http/web/fs/json/yaml/db/cli/table/test/…); active param tracks commas |
-| Definition | Local `fn` / `enum` / `type` |
+| Definition | Same-file `fn` / `enum` / `type` / **params** / **lets** / for-vars |
+| Highlight | `documentHighlight` for the identifier under the cursor |
+| References | Same-file |
+| Rename | Locals: same-file; **top-level** fn/type/enum/const: open buffers + workspace `.weft` |
+| Code actions | **Extract function** on a selection (`refactor.extract.function`) |
 | Symbols | Outline for fn, type, enum |
 | Formatting | Same engine as `weft fmt` |
 

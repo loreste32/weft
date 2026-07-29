@@ -1,0 +1,91 @@
+fn usage {
+    say("ref_agent_ops — agent + ops reference")
+    say("  status              host summary (no network)")
+    say("  hash <file>         sha256 of a file")
+    say("  summarize <file>    word/line counts (+ optional LLM blurb if WEFT_LLM mock/key)")
+    say("  pipeline <file>     pure list pipeline (deterministic)")
+}
+
+
+fn cmd_status -> Result[any] {
+    say("weft_ref_agent_ops")
+    say("platform", platform.os(), platform.arch())
+    say("cwd", fs.cwd())
+    Ok(unit)
+}
+
+
+fn cmd_hash(path) -> Result[any] {
+    data := fs.read(path)?
+    h := crypto.sha256(data)
+    say(h)
+    Ok(unit)
+}
+
+
+fn cmd_summarize(path) -> Result[any] {
+    text := fs.read(path)?
+    lines := str.lines(text)
+    words := str.fields(text)
+    say("path", path)
+    say("bytes", len(text))
+    say("lines", len(lines))
+    say("words", len(words))
+    if env.get("OPENAI_API_KEY", "") != "" || env.get("LLM_API_KEY", "") != "" {
+        blurb := llm.ask("One sentence summary:\n" + str.slice(text, 0, 2000), [])?
+        say("summary", blurb)
+    }
+    Ok(unit)
+}
+
+
+fn cmd_pipeline(path) -> Result[any] {
+    text := fs.read(path)?
+    lines := str.lines(text)
+    lengths := map(lines, fn(line) { len(line) })
+    total := reduce(lengths, 0, fn(acc, n) { acc + n })
+    say("lines", len(lines))
+    say("total_chars", total)
+    Ok(unit)
+}
+
+
+fn main -> Result[any] {
+    av := args
+    if len(av) < 2 {
+        usage()
+        return Ok(unit)
+    }
+    mut i := 1
+    if len(av) > 1 && str.has_suffix(av[0], ".weft") {
+        i = 1
+    }
+    if i >= len(av) {
+        usage()
+        return Ok(unit)
+    }
+    cmd := av[i]
+    match cmd {
+        "status" { cmd_status()? }
+        "hash" {
+            ensure(i + 1 < len(av), "hash needs <file>")?
+            cmd_hash(av[i + 1])?
+        }
+        "summarize" {
+            ensure(i + 1 < len(av), "summarize needs <file>")?
+            cmd_summarize(av[i + 1])?
+        }
+        "pipeline" {
+            ensure(i + 1 < len(av), "pipeline needs <file>")?
+            cmd_pipeline(av[i + 1])?
+        }
+        "help" { usage() }
+        _ {
+            say("unknown command:", cmd)
+            usage()
+            return Err("unknown command")
+        }
+    }
+    Ok(unit)
+}
+

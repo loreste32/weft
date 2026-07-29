@@ -407,9 +407,19 @@ func PrintTestReport(rep *TestReport, quiet bool) int {
 }
 
 // CheckPaths type-checks one or more .weft files (no execution).
+// When strict is true, type warnings fail the check (exit non-zero).
 func CheckPaths(paths []string, showTypes bool) error {
+	return CheckPathsOpts(paths, showTypes, false)
+}
+
+// CheckPathsOpts is CheckPaths with an optional strict mode.
+func CheckPathsOpts(paths []string, showTypes, strict bool) error {
 	if len(paths) == 0 {
 		return fmt.Errorf("no paths")
+	}
+	// WEFT_STRICT=1 promotes type warnings to check failures.
+	if os.Getenv("WEFT_STRICT") == "1" || os.Getenv("LOOM_STRICT") == "1" {
+		strict = true
 	}
 	var files []string
 	for _, p := range paths {
@@ -452,6 +462,19 @@ func CheckPaths(paths []string, showTypes bool) error {
 			continue
 		}
 		n++
+		// Surface type warnings (and fail in strict mode).
+		warnCount := 0
+		for _, d := range info.Diags {
+			fmt.Fprintln(os.Stderr, d.String())
+			warnCount++
+		}
+		if strict && warnCount > 0 {
+			if first == nil {
+				first = fmt.Errorf("%s: %d type warning(s) (--strict)", f, warnCount)
+			}
+			fmt.Fprintf(os.Stderr, "FAIL  %s — %d type warning(s) (--strict)\n", f, warnCount)
+			continue
+		}
 		if showTypes {
 			fmt.Printf("// %s\n", f)
 			for name, t := range info.Bindings {
@@ -464,6 +487,9 @@ func CheckPaths(paths []string, showTypes bool) error {
 					fmt.Printf("  fn %s -> %s\n", name, t.String())
 				}
 			}
+		} else if warnCount > 0 {
+			// Never print bare "ok" when type warnings exist (CI greps ok — keep word but annotate).
+			fmt.Printf("ok    %s (%d warning(s))\n", f, warnCount)
 		} else {
 			fmt.Printf("ok    %s\n", f)
 		}

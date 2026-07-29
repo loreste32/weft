@@ -1,8 +1,4 @@
-// Field builders — long form field maps used by model / validate / emit.
-// Avoid names str/int/bool at package scope — they shadow stdlib packages.
-
-// Return Result (do not unwrap with ?) so callers can use ?.
-fn base(typ, opts) -> Result {
+fn base(typ, opts) -> Result[any] {
     m := {"type": typ, "required": true}
     if opts != null {
         for k in opts {
@@ -15,28 +11,40 @@ fn base(typ, opts) -> Result {
     json.parse(json.stringify(m))
 }
 
-// exported for lib.field
-pub fn base_open(typ, opts) -> Result { base(typ, opts) }
 
-pub fn f_str(opts) -> Result { base("str", opts) }
-pub fn f_int(opts) -> Result { base("int", opts) }
-pub fn f_float(opts) -> Result { base("float", opts) }
-pub fn f_bool(opts) -> Result { base("bool", opts) }
-pub fn f_any(opts) -> Result { base("any", opts) }
+pub fn base_open(typ, opts) -> Result[any] { base(typ, opts) }
 
-pub fn f_list(item, opts) -> Result {
+
+pub fn f_str(opts) -> Result[any] { base("str", opts) }
+
+
+pub fn f_int(opts) -> Result[any] { base("int", opts) }
+
+
+pub fn f_float(opts) -> Result[any] { base("float", opts) }
+
+
+pub fn f_bool(opts) -> Result[any] { base("bool", opts) }
+
+
+pub fn f_any(opts) -> Result[any] { base("any", opts) }
+
+
+pub fn f_list(item, opts) -> Result[any] {
     f := base("list", opts)?
     f["items"] = item
     json.parse(json.stringify(f))
 }
 
-pub fn f_object(fields, opts) -> Result {
+
+pub fn f_object(fields, opts) -> Result[any] {
     f := base("object", opts)?
     f["fields"] = fields
     json.parse(json.stringify(f))
 }
 
-pub fn expand_fields(fields) -> Result {
+
+pub fn expand_fields(fields) -> Result[any] {
     src := json.parse(json.stringify(fields))?
     out := {}
     for k in src {
@@ -45,7 +53,8 @@ pub fn expand_fields(fields) -> Result {
     Ok(out)
 }
 
-fn expand_one(spec) -> Result {
+
+fn expand_one(spec) -> Result[any] {
     s0 := json.stringify(spec)
     if str.starts_with(s0, "[") {
         arr := spec
@@ -53,14 +62,22 @@ fn expand_one(spec) -> Result {
         if len(arr) > 0 {
             item = expand_one(arr[0])?
         }
-        return Ok({"type": "list", "required": true, "items": item})
+        return Ok({
+            "type": "list",
+            "required": true,
+            "items": item,
+        })
     }
     if str.starts_with(s0, "{") {
         if spec["type"] != null {
             return Ok(normalize(spec)?)
         }
         nested := expand_fields(spec)?
-        return Ok({"type": "object", "required": true, "fields": nested})
+        return Ok({
+            "type": "object",
+            "required": true,
+            "fields": nested,
+        })
     }
     if !str.starts_with(s0, "\"") {
         return Ok({"type": "any", "required": true})
@@ -79,7 +96,8 @@ fn expand_one(spec) -> Result {
     Ok({"type": typ, "required": required})
 }
 
-fn normalize(f) -> Result {
+
+fn normalize(f) -> Result[any] {
     m := json.parse(json.stringify(f))?
     if m["required"] == null {
         m["required"] = true
@@ -95,3 +113,4 @@ fn normalize(f) -> Result {
     }
     Ok(m)
 }
+

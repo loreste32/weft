@@ -1,6 +1,3 @@
-// stt.weft — Speech-to-Text integration.
-// Supports HTTP transcription and WebSocket streaming.
-
 pub fn config(opts) {
     cfg := {
         "url": env.get("WEFT_STT_URL", "https://stt.lancethedev.com"),
@@ -14,23 +11,39 @@ pub fn config(opts) {
         "profanity_filter": false,
     }
     if opts != null {
-        if opts.url != null { cfg.url = opts.url }
-        if opts.api_key != null { cfg.api_key = opts.api_key }
-        if opts.language != null { cfg.language = opts.language }
-        if opts.model != null { cfg.model = opts.model }
-        if opts.sample_rate != null { cfg.sample_rate = opts.sample_rate }
-        if opts.encoding != null { cfg.encoding = opts.encoding }
-        if opts.channels != null { cfg.channels = opts.channels }
-        if opts.punctuate != null { cfg.punctuate = opts.punctuate }
-        if opts.profanity_filter != null { cfg.profanity_filter = opts.profanity_filter }
+        if opts.url != null {
+            cfg.url = opts.url
+        }
+        if opts.api_key != null {
+            cfg.api_key = opts.api_key
+        }
+        if opts.language != null {
+            cfg.language = opts.language
+        }
+        if opts.model != null {
+            cfg.model = opts.model
+        }
+        if opts.sample_rate != null {
+            cfg.sample_rate = opts.sample_rate
+        }
+        if opts.encoding != null {
+            cfg.encoding = opts.encoding
+        }
+        if opts.channels != null {
+            cfg.channels = opts.channels
+        }
+        if opts.punctuate != null {
+            cfg.punctuate = opts.punctuate
+        }
+        if opts.profanity_filter != null {
+            cfg.profanity_filter = opts.profanity_filter
+        }
     }
     cfg
 }
 
-// stt.transcribe(audio_url, opts?) -> Result[map]
-// Transcribe an audio file via HTTP.
-// Returns: {text, confidence, language, words, duration_ms}
-pub fn transcribe(audio_url, opts) -> Result {
+
+pub fn transcribe(audio_url, opts) -> Result[any] {
     cfg := config(opts)
     headers := {"Content-Type": "application/json"}
     if cfg.api_key != "" {
@@ -43,10 +56,7 @@ pub fn transcribe(audio_url, opts) -> Result {
         "punctuate": cfg.punctuate,
         "profanity_filter": cfg.profanity_filter,
     })
-    resp := http.post("${cfg.url}/v1/transcribe", body, {
-        "headers": headers,
-        "timeout": 60,
-    })?
+    resp := http.post("${cfg.url}/v1/transcribe", body, {"headers": headers, "timeout": 60})?
     data := json.parse(resp)?
     Ok({
         "text": if data.text != null { data.text } else { "" },
@@ -57,16 +67,14 @@ pub fn transcribe(audio_url, opts) -> Result {
     })
 }
 
-// stt.stream_url(opts?) -> str
-// Get the WebSocket URL for real-time STT streaming.
+
 pub fn stream_url(opts) {
     cfg := config(opts)
     base := str.replace(str.replace(cfg.url, "https://", "wss://"), "http://", "ws://")
     "$base/v1/stream?language=${cfg.language}&model=${cfg.model}&sample_rate=${cfg.sample_rate}&encoding=${cfg.encoding}&channels=${cfg.channels}"
 }
 
-// stt.stream_config(opts?) -> map
-// Get full streaming config for passing to a media forking endpoint.
+
 pub fn stream_config(opts) {
     cfg := config(opts)
     {
@@ -81,10 +89,27 @@ pub fn stream_config(opts) {
     }
 }
 
-// stt.languages() -> [str]
-// Common supported languages.
-pub fn languages() {
-    ["en-US", "en-GB", "es-ES", "es-MX", "fr-FR", "de-DE", "it-IT",
-     "pt-BR", "ja-JP", "ko-KR", "zh-CN", "zh-TW", "ar-SA", "hi-IN",
-     "ru-RU", "nl-NL", "sv-SE", "pl-PL", "tr-TR", "th-TH"]
-}
+
+pub fn languages { [
+    "en-US",
+    "en-GB",
+    "es-ES",
+    "es-MX",
+    "fr-FR",
+    "de-DE",
+    "it-IT",
+    "pt-BR",
+    "ja-JP",
+    "ko-KR",
+    "zh-CN",
+    "zh-TW",
+    "ar-SA",
+    "hi-IN",
+    "ru-RU",
+    "nl-NL",
+    "sv-SE",
+    "pl-PL",
+    "tr-TR",
+    "th-TH",
+] }
+

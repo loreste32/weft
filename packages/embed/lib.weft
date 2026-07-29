@@ -1,33 +1,34 @@
-// embed — embeddings client + vector store for RAG
-//
-//   use embed
-//   store := embed.new()
-//   embed.add(store, "doc1", "The cat sat on the mat", embedding_fn)
-//   results := embed.search(store, "animals sitting", 3, embedding_fn)
-
 use math
+
+
 use json
+
+
 use http
 
-// --- vector store ---
 
-// new() -> empty vector store
-pub fn new() {
-    {"_embed_store": true, "docs": [], "vectors": [], "meta": []}
-}
+pub fn new { {
+    "_embed_store": true,
+    "docs": [],
+    "vectors": [],
+    "meta": [],
+} }
 
-// add(store, id, text, embed_fn) -> store with new doc
-// embed_fn: fn(text) -> [float] (call your embedding API)
+
 pub fn add(store, id, text, embed_fn) {
     vec := embed_fn(text)
     docs := push(store.docs, id)
     vectors := push(store.vectors, vec)
     meta := push(store.meta, {"id": id, "text": text})
-    {"_embed_store": true, "docs": docs, "vectors": vectors, "meta": meta}
+    {
+        "_embed_store": true,
+        "docs": docs,
+        "vectors": vectors,
+        "meta": meta,
+    }
 }
 
-// add_batch(store, items, embed_fn) -> store with batch of docs
-// items: [{id, text}]
+
 pub fn add_batch(store, items, embed_fn) {
     mut s := store
     for item in items {
@@ -36,7 +37,7 @@ pub fn add_batch(store, items, embed_fn) {
     s
 }
 
-// search(store, query, k, embed_fn) -> [{id, text, score}]
+
 pub fn search(store, query, k, embed_fn) {
     q_vec := embed_fn(query)
     mut scored := []
@@ -50,20 +51,19 @@ pub fn search(store, query, k, embed_fn) {
         })
         i = i + 1
     }
-    // sort by score descending
     sorted := sort(scored, fn(a, b) { a.score < b.score })
-    // take top k
     top_k := if k > len(sorted) { len(sorted) } else { k }
     slice(sorted, 0, top_k)
 }
 
-// size(store) -> int
+
 pub fn size(store) { len(store.docs) }
 
-// --- cosine similarity ---
 
 pub fn cosine(a, b) {
-    if len(a) != len(b) { return 0 }
+    if len(a) != len(b) {
+        return 0
+    }
     mut dot := 0.0
     mut na := 0.0
     mut nb := 0.0
@@ -75,42 +75,30 @@ pub fn cosine(a, b) {
         i = i + 1
     }
     denom := math.sqrt(na) * math.sqrt(nb)
-    if denom == 0 { return 0 }
+    if denom == 0 {
+        return 0
+    }
     dot / denom
 }
 
-// --- embedding API clients ---
 
-// openai_embed(text, opts?) -> [float]
-// Uses OpenAI embeddings API. Requires OPENAI_API_KEY.
-pub fn openai_embed(text, opts) -> Result {
-    base := if opts != null && opts["base_url"] != null {
-        opts["base_url"]
-    } else {
-        env.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    }
-    key := if opts != null && opts["api_key"] != null {
-        opts["api_key"]
-    } else {
-        env.get("OPENAI_API_KEY", "")
-    }
-    model := if opts != null && opts["model"] != null {
-        opts["model"]
-    } else {
-        "text-embedding-3-small"
-    }
+pub fn openai_embed(text, opts) -> Result[any] {
+    base := if opts != null && opts["base_url"] != null { opts["base_url"] } else { env.get("OPENAI_BASE_URL", "https://api.openai.com/v1") }
+    key := if opts != null && opts["api_key"] != null { opts["api_key"] } else { env.get("OPENAI_API_KEY", "") }
+    model := if opts != null && opts["model"] != null { opts["model"] } else { "text-embedding-3-small" }
     body := json.stringify({"input": text, "model": model})
     r := http.post(base + "/embeddings", body, {
-        "headers": {"Authorization": "Bearer " + key, "Content-Type": "application/json"},
+        "headers": {
+            "Authorization": "Bearer " + key,
+            "Content-Type": "application/json",
+        },
     })?
     data := json.parse(r.body)?
     data.data[0].embedding
 }
 
-// --- persistence ---
 
-// save(store, path) -> Result  save store to JSON file
-pub fn save(store, path) -> Result {
+pub fn save(store, path) -> Result[any] {
     data := json.stringify({
         "docs": store.docs,
         "vectors": store.vectors,
@@ -119,9 +107,15 @@ pub fn save(store, path) -> Result {
     fs.write(path, data)?
 }
 
-// load(path) -> Result[store]  load store from JSON file
-pub fn load(path) -> Result {
+
+pub fn load(path) -> Result[any] {
     raw := fs.read(path)?
     data := json.parse(raw)?
-    Ok({"_embed_store": true, "docs": data.docs, "vectors": data.vectors, "meta": data.meta})
+    Ok({
+        "_embed_store": true,
+        "docs": data.docs,
+        "vectors": data.vectors,
+        "meta": data.meta,
+    })
 }
+

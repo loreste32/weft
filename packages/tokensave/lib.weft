@@ -1,53 +1,98 @@
-// tokensave — context thrift + memory brain (optional module).
-//
-// Agent stack: docs/ECOSYSTEM.md
-//   llm (stdlib) → mold (shapes) → tokensave / ml (siblings)
-//
-//   weft registry install tokensave && weft install
-//   use tokensave
-//
-// Clarify asks · pick relevant context · remember successes ·
-// export gold for weft train. Works with local and paid models.
-
 use "./est.weft" as est
+
+
 use "./pick.weft" as pickmod
+
+
 use "./pack.weft" as packmod
+
+
 use "./frame.weft" as framemod
+
+
 use "./clarify.weft" as clarmod
+
+
 use "./memory.weft" as memmod
+
+
 use "./train_glue.weft" as trainmod
+
+
 use "./teach.weft" as teachmod
+
+
 use "./brain.weft" as brainmod
 
+
 pub fn estimate(text) { est.estimate(text) }
+
+
 pub fn budget_ok(text, max_tokens) { est.budget_ok(text, max_tokens) }
 
+
 pub fn trim(text, max_tokens) { packmod.trim(text, max_tokens) }
+
+
 pub fn clip_words(text, max_words) { packmod.clip_words(text, max_words) }
+
+
 pub fn history(msgs, keep_last, max_tokens) { packmod.history(msgs, keep_last, max_tokens) }
+
+
 pub fn pack(task, docs, opts) { packmod.pack(task, docs, opts) }
+
+
 pub fn system_for(kind) { packmod.system_for(kind) }
+
+
 pub fn contract(kind) { packmod.contract(kind) }
 
+
 pub fn pick(task, chunks, k) { pickmod.pick(task, chunks, k) }
+
+
 pub fn pick_examples(task, bank, k) { pickmod.pick_examples(task, bank, k) }
 
+
 pub fn frame(task, kind, hints) { framemod.frame(task, kind, hints) }
+
+
 pub fn clarify(ask, opts) { clarmod.clarify(ask, opts) }
+
+
 pub fn detect_kind(ask) { clarmod.detect_kind(ask) }
 
-pub fn remember(path, episode) -> Result { memmod.remember(path, episode) }
-pub fn recall(path, ask, k) -> Result { memmod.recall(path, ask, k) }
-pub fn feedback(path, ask, ok, note) -> Result { memmod.feedback(path, ask, ok, note) }
-pub fn stats(path) -> Result { memmod.stats(path) }
-pub fn load_memory(path) -> Result { memmod.load(path) }
 
-pub fn export_train(memory_path, out_jsonl) -> Result { trainmod.export_train(memory_path, out_jsonl) }
-pub fn append_gold(path, ask, answer, kind) -> Result { trainmod.append_gold(path, ask, answer, kind) }
+pub fn remember(path, episode) -> Result[any] { memmod.remember(path, episode) }
+
+
+pub fn recall(path, ask, k) -> Result[any] { memmod.recall(path, ask, k) }
+
+
+pub fn feedback(path, ask, ok, note) -> Result[any] { memmod.feedback(path, ask, ok, note) }
+
+
+pub fn stats(path) -> Result[any] { memmod.stats(path) }
+
+
+pub fn load_memory(path) -> Result[any] { memmod.load(path) }
+
+
+pub fn export_train(memory_path, out_jsonl) -> Result[any] { trainmod.export_train(memory_path, out_jsonl) }
+
+
+pub fn append_gold(path, ask, answer, kind) -> Result[any] { trainmod.append_gold(path, ask, answer, kind) }
+
+
 pub fn gold_row(ask, answer, kind) { trainmod.gold_row(ask, answer, kind) }
-pub fn teach(memory_path, gold_path, ask, answer, kind) -> Result {
-    teachmod.teach(memory_path, gold_path, ask, answer, kind)
-}
+
+
+pub fn teach(memory_path, gold_path, ask, answer, kind) -> Result[any] { teachmod.teach(memory_path, gold_path, ask, answer, kind) }
+
 
 pub fn brain(task, knowledge, opts) { brainmod.brain(task, knowledge, opts) }
-pub fn ask(task, knowledge, opts) -> Result { brainmod.ask(task, knowledge, opts) }
+
+
+pub fn ask(task, knowledge, opts) -> Result[any] { brainmod.ask(task, knowledge, opts) }
+

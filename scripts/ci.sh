@@ -18,8 +18,37 @@ echo "== go vet =="
 go vet ./...
 echo "== go test =="
 go test ./...
+echo "== race smoke =="
+# Concurrency-sensitive packages only (full -race ./... is too slow for every PR)
+go test ./internal/vm/ -race -count=1 -timeout 120s -run 'Parallel|Concurrent|Stack|NoPanic'
+go test ./internal/runtime/ -race -count=1 -timeout 60s
+echo "== fuzz smoke =="
+# Short budgets — fail the build on any crash/panic found in this window
+go test ./internal/lex/ -fuzz=FuzzLex -fuzztime=8s
+go test ./internal/parse/ -fuzz=FuzzParseFile -fuzztime=8s
+go test ./internal/compile/ -fuzz=FuzzCompileValidate -fuzztime=8s
+echo "== compat corpus =="
+# Pinned language/runtime goldens (testdata/compat) — fail on output drift
+go test ./pkg/weft/ -count=1 -run TestCompatCorpus
+echo "== format roundtrip =="
+go test ./internal/format/ -count=1 -run TestCompatFormatRoundTrip
 echo "== build =="
 go build -o /tmp/weft-ci ./cmd/weft
+echo "== bench pair parity (Weft == Python outputs) =="
+# Ensures comparative workloads stay equivalent; does not gate on wall time
+if command -v python3 >/dev/null 2>&1; then
+  for name in json_roundtrip seq_map str_split_join fib; do
+    /tmp/weft-ci run "testdata/bench/${name}.weft" > "/tmp/weft-bench-${name}-w.out"
+    python3 "testdata/bench/${name}.py" > "/tmp/weft-bench-${name}-p.out"
+    diff -u "/tmp/weft-bench-${name}-w.out" "/tmp/weft-bench-${name}-p.out" || {
+      echo "bench pair mismatch: $name" >&2
+      exit 1
+    }
+  done
+  echo "bench pairs: 4 ok"
+else
+  echo "python3 missing — skip bench pair parity"
+fi
 echo "== version =="
 /tmp/weft-ci version | grep -q "weft 0."
 echo "== doctor =="
@@ -32,6 +61,11 @@ echo "$doc" | grep -Eq "ml|tokensave|catalog_pkgs"
 echo "$doc" | grep -q "packages list"
 echo "== weft test =="
 /tmp/weft-ci test -q examples
+echo "== reference apps =="
+/tmp/weft-ci test -q examples/ref_agent_ops examples/ref_http_glue examples/ref_ops
+/tmp/weft-ci run examples/ref_agent_ops/main.weft -- status | grep -q weft_ref
+/tmp/weft-ci run examples/ref_http_glue/main.weft -- demo | grep -q ref_http_glue
+/tmp/weft-ci run examples/ref_ops/main.weft -- info | grep -q ref_ops
 echo "== examples =="
 out=$(/tmp/weft-ci run examples/hello.weft)
 echo "$out" | grep -q "hello, weft"
@@ -50,8 +84,10 @@ echo "$out" | grep -q "1 2"
 out=$(/tmp/weft-ci run examples/weft_style.weft)
 echo "$out" | grep -q "sum=6"
 echo "$out" | grep -q "42"
-/tmp/weft-ci check examples/fib.weft | grep -q ok
-/tmp/weft-ci check examples/weft_style.weft | grep -q ok
+echo "== type check (strict) =="
+# Type mismatches fail CI (WEFT_STRICT equivalent via --strict)
+/tmp/weft-ci check --strict examples/fib.weft | grep -q ok
+/tmp/weft-ci check --strict examples/weft_style.weft | grep -q ok
 # package manager path dep
 (
   cd examples/pkg_demo
@@ -73,7 +109,7 @@ echo "$out" | grep -q "hello, Ada"
 grep -q "FAIL" /tmp/weft-cookbook-eval.txt && { cat /tmp/weft-cookbook-eval.txt; exit 1; } || true
 tout=$(/tmp/weft-ci test -q examples/cookbook)
 echo "$tout" | grep -q "passed"
-cout=$(/tmp/weft-ci check examples/cookbook)
+cout=$(/tmp/weft-ci check --strict examples/cookbook)
 echo "$cout" | grep -q "ok"
 echo "== llm pack =="
 /tmp/weft-ci train validate
@@ -164,8 +200,8 @@ test -f packages/index.json
   test -f domain-gold.jsonl
 )
 # ONNX sidecar contract (mock HTTP — no native ONNX)
-/tmp/weft-ci check examples/onnx_sidecar/main.weft | grep -q ok
-/tmp/weft-ci check examples/onnx_sidecar/mock_server.weft | grep -q ok
+/tmp/weft-ci check --strict examples/onnx_sidecar/main.weft | grep -q ok
+/tmp/weft-ci check --strict examples/onnx_sidecar/mock_server.weft | grep -q ok
 (
   /tmp/weft-ci run examples/onnx_sidecar/mock_server.weft >/tmp/weft-onnx-mock.log 2>&1 &
   sid=$!
@@ -181,22 +217,22 @@ go test ./internal/stdlib/ -count=1 -run 'HTTP|Circuit' >/dev/null
 go test ./internal/lsp/ -count=1 >/dev/null
 echo "== web stdlib =="
 go test ./internal/stdlib/ -count=1 -run 'Web' >/dev/null
-webchk=$(/tmp/weft-ci check examples/webapp.weft)
+webchk=$(/tmp/weft-ci check --strict examples/webapp.weft)
 echo "$webchk" | grep -q ok
-/tmp/weft-ci check examples/webrtc_call.weft | grep -q ok
+/tmp/weft-ci check --strict examples/webrtc_call.weft | grep -q ok
 echo "== viz =="
 go test ./internal/stdlib/ -count=1 -run 'Viz' >/dev/null
-/tmp/weft-ci check examples/viz_charts.weft | grep -q ok
+/tmp/weft-ci check --strict examples/viz_charts.weft | grep -q ok
 /tmp/weft-ci run examples/viz_charts.weft | grep -q dashboard
 test -f examples/viz_out/dashboard.html
 grep -q '<svg' examples/viz_out/dashboard.html
 echo "== cli / devops =="
 go test ./internal/stdlib/ -count=1 -run 'CLI|Len|SH|FS|CSV|Push|Time' >/dev/null
-/tmp/weft-ci check examples/cli_tool.weft | grep -q ok
-/tmp/weft-ci check examples/sysops_host.weft | grep -q ok
-/tmp/weft-ci check examples/tier_ab.weft | grep -q ok
-/tmp/weft-ci check examples/data_pipeline.weft | grep -q ok
-/tmp/weft-ci check examples/csv_report.weft | grep -q ok
+/tmp/weft-ci check --strict examples/cli_tool.weft | grep -q ok
+/tmp/weft-ci check --strict examples/sysops_host.weft | grep -q ok
+/tmp/weft-ci check --strict examples/tier_ab.weft | grep -q ok
+/tmp/weft-ci check --strict examples/data_pipeline.weft | grep -q ok
+/tmp/weft-ci check --strict examples/csv_report.weft | grep -q ok
 out=$(/tmp/weft-ci run examples/cli_tool.weft -- greet Weft -e prod)
 echo "$out" | grep -q "hello, Weft"
 out=$(/tmp/weft-ci run examples/sysops_host.weft -- info)
@@ -219,15 +255,15 @@ clidir=$(mktemp -d)
 (
   cd "$clidir"
   /tmp/weft-ci new cli democtl
-  /tmp/weft-ci check democtl/main.weft | grep -q ok
+  /tmp/weft-ci check --strict democtl/main.weft | grep -q ok
   out=$(/tmp/weft-ci run democtl/main.weft -- greet CI)
   echo "$out" | grep -q "hello, CI"
 )
 echo "== data / db =="
 go test ./internal/stdlib/ -count=1 -run 'SQLite|GraphQL|DBDrivers|Secret|Transaction|PopKeys|Crypto' >/dev/null
-/tmp/weft-ci check examples/db_sqlite.weft | grep -q ok
-/tmp/weft-ci check examples/data_stack.weft | grep -q ok
-/tmp/weft-ci check examples/prod_worker.weft | grep -q ok
+/tmp/weft-ci check --strict examples/db_sqlite.weft | grep -q ok
+/tmp/weft-ci check --strict examples/data_stack.weft | grep -q ok
+/tmp/weft-ci check --strict examples/prod_worker.weft | grep -q ok
 out=$(/tmp/weft-ci run examples/db_sqlite.weft)
 echo "$out" | grep -q widgets
 echo "$out" | grep -q gadgets
@@ -237,8 +273,8 @@ out=$(/tmp/weft-ci run examples/prod_worker.weft -- once)
 echo "$out" | grep -qE "job|no pending|seeded|process|parsed"
 echo "== pipelines =="
 go test ./internal/stdlib/ -count=1 -run 'MapFilter|TableAndJSONL|PipeBatch|ParMap' >/dev/null
-/tmp/weft-ci check examples/pipeline_etl.weft | grep -q ok
-/tmp/weft-ci check examples/pipeline_parallel.weft | grep -q ok
+/tmp/weft-ci check --strict examples/pipeline_etl.weft | grep -q ok
+/tmp/weft-ci check --strict examples/pipeline_parallel.weft | grep -q ok
 out=$(/tmp/weft-ci run examples/pipeline_etl.weft)
 echo "$out" | grep -q "pipeline done"
 test -f examples/data/out/active_users.jsonl
@@ -260,8 +296,8 @@ echo "$out" | grep LEAKME >/dev/null && exit 1 || true
 rm -f "$sec"
 echo "== ollama/vllm packages =="
 go test ./pkg/weft/ -count=1 -run 'DetectProvider|OllamaOpenAI|VLLMOpenAI|NewLLMClientFromEnv' >/dev/null
-/tmp/weft-ci check examples/ollama_chat.weft | grep -q ok
-/tmp/weft-ci check examples/vllm_chat.weft | grep -q ok
+/tmp/weft-ci check --strict examples/ollama_chat.weft | grep -q ok
+/tmp/weft-ci check --strict examples/vllm_chat.weft | grep -q ok
 # usage exits 2; capture to avoid pipefail/SIGPIPE with grep -q
 ollama_usage=$(/tmp/weft-ci ollama 2>&1 || true)
 echo "$ollama_usage" | grep -q usage

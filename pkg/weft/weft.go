@@ -19,7 +19,7 @@ import (
 )
 
 // Version of the Weft toolchain.
-// Release line: branch 0.3.1, patch through 0.3.35 before any 0.4.x (docs/VERSIONING.md).
+// Release line: 0.4.x (docs/VERSIONING.md). 0.3.x is complete.
 const Version = "0.4.1"
 
 // Options configure a Weft context.
@@ -205,6 +205,7 @@ func CheckSource(filename, src string) error {
 }
 
 // InferSource returns inference info (bindings, fn returns) and any diagnostics.
+// Type mismatches are warnings (info.Diags); only hard errors fail the returned error.
 func InferSource(filename, src string) (types.Info, error) {
 	file, errs := parse.ParseFile(filename, src)
 	if errs.HasErrors() {

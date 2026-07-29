@@ -1,22 +1,27 @@
-// Rough token estimate (~4 chars/token). Good enough for budgets.
-
 pub fn estimate(text) {
-    if text == null { return 0 }
+    if text == null {
+        return 0
+    }
     s := "" + text
     n := len(s)
-    if n == 0 { return 0 }
+    if n == 0 {
+        return 0
+    }
     (n + 3) / 4
 }
 
+
 pub fn estimate_msgs(msgs) {
     mut t := 0
-    if msgs == null { return 0 }
+    if msgs == null {
+        return 0
+    }
     for m in msgs {
         t = t + estimate(m.role) + estimate(m.content) + 4
     }
     t
 }
 
-pub fn budget_ok(text, max_tokens) {
-    estimate(text) <= max_tokens
-}
+
+pub fn budget_ok(text, max_tokens) { estimate(text) <= max_tokens }
+

@@ -1,39 +1,31 @@
-// template — simple string templating with variable substitution and logic.
-//
-//   weft registry install template
-//   use template
-
-// template.render(tmpl, data) -> str
-// Replace {{key}} placeholders with values from data map.
 pub fn render(tmpl, data) {
     mut result := tmpl
     for key in data {
         val := "$key"
-        if data[key] != null { val = "${data[key]}" }
+        if data[key] != null {
+            val = "${data[key]}"
+        }
         result = str.replace(result, "{{$key}}", val)
         result = str.replace(result, "{{ $key }}", val)
     }
     result
 }
 
-// template.render_file(path, data) -> Result[str]
-// Read a template file and render it.
-pub fn render_file(path, data) -> Result {
+
+pub fn render_file(path, data) -> Result[any] {
     tmpl := fs.read(path)?
     Ok(render(tmpl, data))
 }
 
-// template.each(tmpl, items, item_name) -> str
-// Repeat a template for each item in a list.
+
 pub fn each(tmpl, items, item_name) {
     mut parts := []
     for item in items {
         mut rendered := tmpl
         if item != null {
-            // if item is a map, replace {{item_name.key}}
             for key in item {
-                rendered = str.replace(rendered, "{{${item_name}.$key}}", "${item[key]}")
-                rendered = str.replace(rendered, "{{ ${item_name}.$key }}", "${item[key]}")
+                rendered = str.replace(rendered, "{{$item_name.$key}}", "${item[key]}")
+                rendered = str.replace(rendered, "{{ $item_name.$key }}", "${item[key]}")
             }
         }
         rendered = str.replace(rendered, "{{$item_name}}", "$item")
@@ -43,14 +35,14 @@ pub fn each(tmpl, items, item_name) {
     str.join(parts, "")
 }
 
-// template.cond(condition, if_true, if_false?) -> str
-// Conditional rendering.
+
 pub fn cond(condition, if_true, if_false) {
-    if condition { if_true } else { if if_false != null { if_false } else { "" } }
+    if condition { if_true } else {
+        if if_false != null { if_false } else { "" }
+    }
 }
 
-// template.html_escape(s) -> str
-// Escape HTML special characters.
+
 pub fn html_escape(s) {
     mut result := s
     result = str.replace(result, "&", "&amp;")
@@ -61,8 +53,7 @@ pub fn html_escape(s) {
     result
 }
 
-// template.html(tmpl, data) -> str
-// Render with HTML escaping on all values.
+
 pub fn html(tmpl, data) {
     mut safe := {}
     for key in data {
@@ -74,3 +65,4 @@ pub fn html(tmpl, data) {
     }
     render(tmpl, safe)
 }
+

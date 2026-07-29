@@ -1,0 +1,10 @@
+fn main -> Result[any] {
+    s := json.stringify({
+        "a": 1,
+        "b": [2, 3],
+    })
+    o := json.parse(s)?
+    say(json.stringify(o))
+    Ok(unit)
+}
+

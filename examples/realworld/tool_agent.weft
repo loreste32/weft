@@ -1,11 +1,14 @@
-// Real-world agent: tools for arithmetic + string echo
 fn add(a, b) { a + b }
+
+
 fn note(msg) { "note:$msg" }
 
-fn main -> Result {
+
+fn main -> Result[any] {
     reply := llm.ask("What is 2+3? Use tools.", [
         llm.tool("add", add, "add two numbers a and b"),
         llm.tool("note", note, "record a short note"),
     ])?
     say(reply)
 }
+

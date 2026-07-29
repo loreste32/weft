@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Weft Playground (Wasm)</title>
+  <style>
+    :root { font-family: ui-sans-serif, system-ui, sans-serif; color: #e8e8ef; background: #0f1117; }
+    body { max-width: 960px; margin: 1.5rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.25rem; font-weight: 600; }
+    .row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.75rem 0; align-items: center; }
+    button, select {
+      background: #2a2f3d; color: #e8e8ef; border: 1px solid #3d4455;
+      border-radius: 6px; padding: 0.4rem 0.75rem; cursor: pointer;
+    }
+    button.primary { background: #5b6cff; border-color: #5b6cff; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    textarea, pre {
+      width: 100%; box-sizing: border-box; border-radius: 8px;
+      border: 1px solid #3d4455; background: #161922; color: #e8e8ef;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+      padding: 0.75rem;
+    }
+    textarea { min-height: 220px; resize: vertical; }
+    pre { min-height: 120px; white-space: pre-wrap; }
+    .err { color: #ff8a8a; }
+    .muted { color: #8b92a5; font-size: 0.85rem; }
+    #status { font-size: 0.85rem; color: #8b92a5; }
+  </style>
+</head>
+<body>
+  <h1>Weft Playground <span class="muted">(client-side Wasm)</span></h1>
+  <p class="muted">Runs entirely in your browser — no server. Network/fs/db packages are stubs.</p>
+  <div class="row">
+    <select id="example">
+      <option value="hello">Hello</option>
+      <option value="fib">Fibonacci</option>
+      <option value="json">JSON</option>
+      <option value="types">Type annotations</option>
+      <option value="list">Map / filter</option>
+    </select>
+    <button class="primary" id="run" disabled>Run</button>
+    <span id="status">Loading Wasm…</span>
+  </div>
+  <textarea id="code" spellcheck="false"></textarea>
+  <h2 class="muted" style="font-size:0.9rem;margin-top:1rem">Output</h2>
+  <pre id="out"></pre>
+
+  <script src="wasm_exec.js"></script>
+  <script src="weft.js"></script>
+  <script>
+    const examples = {
+      hello: `fn main {
+    say("hello, weft")
+}`,
+      fib: `fn fib(n) {
+    if n < 2 { return n }
+    fib(n - 1) + fib(n - 2)
+}
+fn main {
+    say(fib(10))
+}`,
+      json: `fn main {
+    obj := json.parse("{\\"a\\":1,\\"b\\":[2,3]}")?
+    say(json.stringify(obj, 2))
+}`,
+      types: `fn add(a: int, b: int) -> int {
+    a + b
+}
+fn main {
+    name: str := "weft"
+    say(name, add(2, 40))
+}`,
+      list: `fn main {
+    xs := [1, 2, 3, 4, 5]
+    evens := filter(xs, fn(n) { n % 2 == 0 })
+    sq := map(evens, fn(n) { n * n })
+    say(sq)
+}`,
+    };
+
+    const codeEl = document.getElementById("code");
+    const outEl = document.getElementById("out");
+    const status = document.getElementById("status");
+    const runBtn = document.getElementById("run");
+    const example = document.getElementById("example");
+
+    codeEl.value = examples.hello;
+    example.addEventListener("change", () => {
+      codeEl.value = examples[example.value] || "";
+    });
+
+    let weft = null;
+    Weft.load("weft.wasm")
+      .then((w) => {
+        weft = w;
+        status.textContent = "Ready · " + w.version();
+        runBtn.disabled = false;
+      })
+      .catch((e) => {
+        status.textContent = "Failed to load Wasm";
+        outEl.className = "err";
+        outEl.textContent = String(e);
+      });
+
+    function run() {
+      if (!weft) return;
+      outEl.className = "";
+      outEl.textContent = "…";
+      const t0 = performance.now();
+      const r = weft.run(codeEl.value, { timeoutMs: 5000 });
+      const ms = (performance.now() - t0).toFixed(1);
+      if (r.error) {
+        outEl.className = "err";
+        outEl.textContent = (r.output ? r.output + "\n" : "") + r.error + "\n(" + ms + " ms)";
+      } else {
+        outEl.textContent = (r.output || "(no output)") + "\n(" + ms + " ms)";
+      }
+    }
+    runBtn.addEventListener("click", run);
+  </script>
+</body>
+</html>

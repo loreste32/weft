@@ -36,6 +36,8 @@ func NewRegistryServer(dataDir, token string) *RegistryServer {
 func (s *RegistryServer) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/index.json", s.handleIndex)
+	mux.HandleFunc("/v1/namespaces.json", s.handleNamespaces)
+	mux.HandleFunc("/v1/namespaces/", s.handleNamespaceKeys) // GET list / POST add key
 	mux.HandleFunc("/v1/publish", s.handlePublish)
 	mux.HandleFunc("/v1/packages/", s.handleDownload)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +152,7 @@ func (s *RegistryServer) handlePublish(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Prevent version overwrite — immutable once published
+	// Prevent version overwrite — immutable once published (before key checks so 409 wins)
 	pkgDir := s.packagesDir()
 	os.MkdirAll(pkgDir, 0o755)
 	archiveName := fmt.Sprintf("%s-%s.tar.gz", meta.Name, meta.Version)
@@ -159,6 +161,12 @@ func (s *RegistryServer) handlePublish(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := os.Stat(metaPath); err == nil {
 		http.Error(w, fmt.Sprintf("%s@%s already published — versions are immutable", meta.Name, meta.Version), 409)
+		return
+	}
+
+	// Namespace ownership: first publisher pins the namespace key; later packages must match.
+	if err := s.enforceNamespaceKey(meta.Name, meta.PublicKey); err != nil {
+		http.Error(w, err.Error(), 403)
 		return
 	}
 
@@ -213,6 +221,281 @@ func (s *RegistryServer) handleDownload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	http.ServeFile(w, r, path)
+}
+
+// NamespaceRecord is one owned namespace in /v1/namespaces.json.
+type NamespaceRecord struct {
+	Namespace  string   `json:"namespace"`
+	PublicKeys []string `json:"public_keys"`
+	Packages   []string `json:"packages,omitempty"`
+}
+
+// namespaceFile is the on-disk pin for allowed signing keys (supports rotation).
+type namespaceFile struct {
+	Namespace  string   `json:"namespace"`
+	PublicKeys []string `json:"public_keys"`
+	Updated    string   `json:"updated,omitempty"`
+}
+
+func (s *RegistryServer) namespacesDir() string {
+	return filepath.Join(s.DataDir, "namespaces")
+}
+
+func (s *RegistryServer) loadNamespaceFile(ns string) (*namespaceFile, error) {
+	path := filepath.Join(s.namespacesDir(), ns+".json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var nf namespaceFile
+	if err := json.Unmarshal(b, &nf); err != nil {
+		return nil, err
+	}
+	return &nf, nil
+}
+
+func (s *RegistryServer) saveNamespaceFile(nf *namespaceFile) error {
+	if err := os.MkdirAll(s.namespacesDir(), 0o755); err != nil {
+		return err
+	}
+	nf.Updated = time.Now().UTC().Format(time.RFC3339)
+	b, err := json.MarshalIndent(nf, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(s.namespacesDir(), nf.Namespace+".json"), append(b, '\n'), 0o644)
+}
+
+// handleNamespaces lists namespace → keys (disk pins + packages).
+func (s *RegistryServer) handleNamespaces(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	idx, err := s.loadIndex()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	type acc struct {
+		keys map[string]bool
+		pkgs map[string]bool
+	}
+	m := map[string]*acc{}
+	// disk pins first
+	if ents, err := os.ReadDir(s.namespacesDir()); err == nil {
+		for _, e := range ents {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+				continue
+			}
+			ns := strings.TrimSuffix(e.Name(), ".json")
+			nf, err := s.loadNamespaceFile(ns)
+			if err != nil || nf == nil {
+				continue
+			}
+			a := &acc{keys: map[string]bool{}, pkgs: map[string]bool{}}
+			for _, k := range nf.PublicKeys {
+				a.keys[strings.ToLower(k)] = true
+			}
+			m[ns] = a
+		}
+	}
+	for _, p := range idx.Packages {
+		ns := PackageNamespace(p.Name)
+		a := m[ns]
+		if a == nil {
+			a = &acc{keys: map[string]bool{}, pkgs: map[string]bool{}}
+			m[ns] = a
+		}
+		if p.PublicKey != "" {
+			a.keys[strings.ToLower(p.PublicKey)] = true
+		}
+		a.pkgs[p.Name] = true
+	}
+	out := make([]NamespaceRecord, 0, len(m))
+	for ns, a := range m {
+		rec := NamespaceRecord{Namespace: ns}
+		for k := range a.keys {
+			rec.PublicKeys = append(rec.PublicKeys, k)
+		}
+		for p := range a.pkgs {
+			rec.Packages = append(rec.Packages, p)
+		}
+		out = append(out, rec)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"namespaces": out})
+}
+
+// handleNamespaceKeys: POST /v1/namespaces/<ns>/keys  body {"public_key":"..."}
+// Adds a signing key for rotation (requires registry token).
+func (s *RegistryServer) handleNamespaceKeys(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/v1/namespaces/")
+	path = strings.Trim(path, "/")
+	// expect "<ns>/keys" or "<ns>"
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		http.Error(w, "namespace required", 400)
+		return
+	}
+	ns := parts[0]
+	if strings.Contains(ns, "..") || strings.ContainsAny(ns, `/\`) {
+		http.Error(w, "bad namespace", 400)
+		return
+	}
+
+	if r.Method == "GET" {
+		nf, err := s.loadNamespaceFile(ns)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		if nf == nil {
+			// synthesize from packages
+			idx, _ := s.loadIndex()
+			nf = &namespaceFile{Namespace: ns}
+			seen := map[string]bool{}
+			for _, p := range idx.Packages {
+				if PackageNamespace(p.Name) == ns && p.PublicKey != "" {
+					k := strings.ToLower(p.PublicKey)
+					if !seen[k] {
+						nf.PublicKeys = append(nf.PublicKeys, k)
+						seen[k] = true
+					}
+				}
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(nf)
+		return
+	}
+
+	if r.Method != "POST" {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	if len(parts) < 2 || parts[1] != "keys" {
+		http.Error(w, "use POST /v1/namespaces/<ns>/keys", 400)
+		return
+	}
+	// Auth required for rotation
+	if s.Token == "" {
+		http.Error(w, "registry not configured for publishing (no token set)", 503)
+		return
+	}
+	if r.Header.Get("Authorization") != "Bearer "+s.Token {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+	var body struct {
+		PublicKey string `json:"public_key"`
+		Retire    string `json:"retire,omitempty"` // optional old key to remove
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
+		http.Error(w, "bad json", 400)
+		return
+	}
+	pub := strings.ToLower(strings.TrimSpace(body.PublicKey))
+	if pub == "" {
+		http.Error(w, "public_key required", 400)
+		return
+	}
+	if _, err := decodePubHex(pub); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	nf, err := s.loadNamespaceFile(ns)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if nf == nil {
+		nf = &namespaceFile{Namespace: ns}
+	}
+	// add new key
+	found := false
+	for _, k := range nf.PublicKeys {
+		if strings.EqualFold(k, pub) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		nf.PublicKeys = append(nf.PublicKeys, pub)
+	}
+	// optional retire
+	if body.Retire != "" {
+		retire := strings.ToLower(strings.TrimSpace(body.Retire))
+		var keys []string
+		for _, k := range nf.PublicKeys {
+			if !strings.EqualFold(k, retire) {
+				keys = append(keys, k)
+			}
+		}
+		if len(keys) == 0 {
+			http.Error(w, "cannot retire last remaining key", 400)
+			return
+		}
+		nf.PublicKeys = keys
+	}
+	if err := s.saveNamespaceFile(nf); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.WriteHeader(200)
+	json.NewEncoder(w).Encode(nf)
+}
+
+// enforceNamespaceKey allows any key listed for the namespace (disk pin and/or prior packages).
+// First publish creates the pin. Rotation: POST /v1/namespaces/<ns>/keys then publish with new key.
+func (s *RegistryServer) enforceNamespaceKey(pkgName, pubKey string) error {
+	ns := PackageNamespace(pkgName)
+	pubKey = strings.ToLower(strings.TrimSpace(pubKey))
+
+	nf, err := s.loadNamespaceFile(ns)
+	if err != nil {
+		return err
+	}
+	allowed := map[string]bool{}
+	if nf != nil {
+		for _, k := range nf.PublicKeys {
+			allowed[strings.ToLower(k)] = true
+		}
+	} else {
+		// seed from existing packages
+		idx, err := s.loadIndex()
+		if err != nil {
+			return err
+		}
+		for _, p := range idx.Packages {
+			if PackageNamespace(p.Name) != ns || p.PublicKey == "" {
+				continue
+			}
+			allowed[strings.ToLower(p.PublicKey)] = true
+		}
+	}
+
+	if len(allowed) == 0 {
+		// first key for namespace — pin it
+		nf = &namespaceFile{Namespace: ns, PublicKeys: []string{pubKey}}
+		return s.saveNamespaceFile(nf)
+	}
+	if allowed[pubKey] {
+		// ensure disk pin exists
+		if nf == nil {
+			keys := make([]string, 0, len(allowed))
+			for k := range allowed {
+				keys = append(keys, k)
+			}
+			nf = &namespaceFile{Namespace: ns, PublicKeys: keys}
+			_ = s.saveNamespaceFile(nf)
+		}
+		return nil
+	}
+	return fmt.Errorf("namespace %q does not allow this signing key — rotate with POST /v1/namespaces/%s/keys (Bearer token)", ns, ns)
 }
 
 func (s *RegistryServer) loadIndex() (*RegistryIndex, error) {

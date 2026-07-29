@@ -43,6 +43,7 @@ func TestTypeExprPos(t *testing.T) {
 		&ResultType{Pos_: pos},
 		&OptionalType{Pos_: pos},
 		&StructType{Pos_: pos},
+		&FnType{Pos_: pos},
 	}
 	for _, te := range types {
 		if te.Pos().Line != 3 {

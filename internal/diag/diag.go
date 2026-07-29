@@ -94,3 +94,13 @@ func Errorf(file string, pos token.Pos, format string, args ...any) Diagnostic {
 		File:     file,
 	}
 }
+
+// Warnf creates a warning diagnostic (type mismatches: non-fatal).
+func Warnf(file string, pos token.Pos, format string, args ...any) Diagnostic {
+	return Diagnostic{
+		Severity: Warning,
+		Pos:      pos,
+		Message:  fmt.Sprintf(format, args...),
+		File:     file,
+	}
+}

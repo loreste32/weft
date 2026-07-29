@@ -491,8 +491,103 @@ func TestREPLMultiLine(t *testing.T) {
 	var out bytes.Buffer
 	ctx := New(Options{Stdout: &out})
 	ctx.RunREPL(strings.NewReader(input), &out)
-	if !strings.Contains(out.String(), "42") {
-		t.Fatalf("REPL multiline: %q", out.String())
+	s := out.String()
+	if !strings.Contains(s, "42") {
+		t.Fatalf("REPL multiline: %q", s)
+	}
+	// Defining a top-level fn must not error with "no main function".
+	if strings.Contains(s, "no main function") {
+		t.Fatalf("REPL fn define should not require main: %q", s)
+	}
+}
+
+func TestREPLTrailingOpContinues(t *testing.T) {
+	input := "1 +\n2\n:quit\n"
+	var out bytes.Buffer
+	ctx := New(Options{Stdout: &out})
+	ctx.RunREPL(strings.NewReader(input), &out)
+	if !strings.Contains(out.String(), "3") {
+		t.Fatalf("trailing op multi-line: %q", out.String())
+	}
+}
+
+func TestREPLCancelMulti(t *testing.T) {
+	input := "fn broken(x) {\n:cancel\n1 + 1\n:quit\n"
+	var out bytes.Buffer
+	ctx := New(Options{Stdout: &out})
+	ctx.RunREPL(strings.NewReader(input), &out)
+	s := out.String()
+	if !strings.Contains(s, "cancelled") {
+		t.Fatalf("want cancel notice: %q", s)
+	}
+	if !strings.Contains(s, "2") {
+		t.Fatalf("after cancel, next line should run: %q", s)
+	}
+}
+
+func TestREPLHistoryFilterAndRerun(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	input := "10 + 5\n:history +\n:!1\n:quit\n"
+	var out bytes.Buffer
+	ctx := New(Options{Stdout: &out})
+	ctx.RunREPL(strings.NewReader(input), &out)
+	s := out.String()
+	// first eval 15, history filter shows it, re-run yields 15 again
+	if strings.Count(s, "15") < 2 {
+		t.Fatalf("history re-run: %q", s)
+	}
+	if !strings.Contains(s, "re-run") {
+		t.Fatalf("want re-run marker: %q", s)
+	}
+}
+
+func TestIncompleteLine(t *testing.T) {
+	if !incompleteLine("1 +") {
+		t.Fatal("1 +")
+	}
+	if !incompleteLine("x :=") {
+		t.Fatal(":=")
+	}
+	if incompleteLine("1 + 2") {
+		t.Fatal("complete expr")
+	}
+	if !incompleteLine("for x in") {
+		t.Fatal("for x in")
+	}
+}
+
+func TestReplCompletions(t *testing.T) {
+	c := replCompletions("ma")
+	found := false
+	for _, x := range c {
+		if x == "map" || x == "match" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want map/match in %v", c)
+	}
+	c = replCompletions(":h")
+	if len(c) == 0 || c[0] != ":help" && !strings.Contains(strings.Join(c, ","), ":help") {
+		t.Fatalf(":h completions: %v", c)
+	}
+	// package members
+	c = replCompletions("str.up")
+	ok := false
+	for _, x := range c {
+		if x == "str.upper" {
+			ok = true
+		}
+	}
+	if !ok {
+		t.Fatalf("str.up → %v", c)
+	}
+}
+
+func TestCompletablePrefix(t *testing.T) {
+	p, start := completablePrefix([]rune("say(str.up"), 10)
+	if p != "str.up" || start != 4 {
+		t.Fatalf("got %q start=%d", p, start)
 	}
 }
 

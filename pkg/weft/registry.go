@@ -238,6 +238,79 @@ func RegistryListKeys() error {
 	return nil
 }
 
+// RegistryTrust adds a public key for a package namespace.
+func RegistryTrust(namespace, pubHex, note string) error {
+	if err := pkgman.TrustKey(namespace, pubHex, note); err != nil {
+		return err
+	}
+	fmt.Printf("trusted %s for namespace %q\n", pubHex[:min(16, len(pubHex))]+"…", namespace)
+	return nil
+}
+
+// RegistryTrustLocal imports a local signing key's public half into the trust store.
+func RegistryTrustLocal(namespace, keyName string) error {
+	if err := pkgman.TrustKeyFromLocalKey(namespace, keyName); err != nil {
+		return err
+	}
+	fmt.Printf("trusted local key %q under namespace %q\n", keyName, namespace)
+	return nil
+}
+
+// RegistryUntrust removes a key (or whole namespace if pubHex empty).
+func RegistryUntrust(namespace, pubHex string) error {
+	if err := pkgman.UntrustKey(namespace, pubHex); err != nil {
+		return err
+	}
+	if pubHex == "" {
+		fmt.Printf("untrusted namespace %q\n", namespace)
+	} else {
+		fmt.Printf("removed key from namespace %q\n", namespace)
+	}
+	return nil
+}
+
+// RegistryRotateTrust adds a new key and optionally retires an old one locally.
+func RegistryRotateTrust(namespace, newPub, retirePub string) error {
+	if err := pkgman.RotateTrust(namespace, newPub, retirePub); err != nil {
+		return err
+	}
+	fmt.Printf("rotated trust for %q (added new key", namespace)
+	if retirePub != "" {
+		fmt.Printf(", retired old")
+	}
+	fmt.Println(")")
+	return nil
+}
+
+// RegistryListTrust prints ~/.weft/trust.json contents.
+func RegistryListTrust() error {
+	ts, err := pkgman.LoadTrustStore()
+	if err != nil {
+		return err
+	}
+	if ts.RequireTrust || os.Getenv("WEFT_REQUIRE_TRUST") == "1" {
+		fmt.Println("require_trust: true (installs need trusted namespaces)")
+	}
+	if len(ts.Namespaces) == 0 {
+		fmt.Println("no trusted namespaces — run: weft registry trust <ns> <pubkey>")
+		return nil
+	}
+	for ns, e := range ts.Namespaces {
+		fmt.Printf("%s\n", ns)
+		if e.Note != "" {
+			fmt.Printf("  note: %s\n", e.Note)
+		}
+		for _, k := range e.PublicKeys {
+			short := k
+			if len(short) > 32 {
+				short = short[:32] + "…"
+			}
+			fmt.Printf("  key: %s\n", short)
+		}
+	}
+	return nil
+}
+
 // RegistryExportPublicKey prints a public key for sharing.
 func RegistryExportPublicKey(name string) error {
 	pub, err := pkgman.ExportPublicKey(name)

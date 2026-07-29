@@ -1,0 +1,61 @@
+fn usage {
+    say("ref_http_glue")
+    say("  demo           offline JSON pipeline")
+    say("  get <url>      HTTP GET + print status/body prefix")
+}
+
+
+fn cmd_demo -> Result[any] {
+    payload := {
+        "service": "ref_http_glue",
+        "ok": true,
+        "items": [1, 2, 3],
+    }
+    s := json.stringify(payload)
+    back := json.parse(s)?
+    ensure(back.ok == true, "ok flag")?
+    ensure(len(back.items) == 3, "items")?
+    say(json.stringify(back))
+    Ok(unit)
+}
+
+
+fn cmd_get(url) -> Result[any] {
+    res := http.get(url)?
+    say("url", url)
+    if res.status != null { println("status", res.status) }
+    mut body := json.stringify(res)
+    if res.body != null {
+        body = res.body
+    }
+    say("body_prefix", str.slice(body, 0, 200))
+    Ok(unit)
+}
+
+
+fn main -> Result[any] {
+    av := args
+    mut i := 0
+    if len(av) > 0 && str.has_suffix(av[0], ".weft") {
+        i = 1
+    }
+    if i >= len(av) {
+        usage()
+        return Ok(unit)
+    }
+    cmd := av[i]
+    match cmd {
+        "demo" { cmd_demo()? }
+        "get" {
+            ensure(i + 1 < len(av), "get needs <url>")?
+            cmd_get(av[i + 1])?
+        }
+        "help" { usage() }
+        _ {
+            usage()
+            return Err("unknown command")
+        }
+    }
+    Ok(unit)
+}
+

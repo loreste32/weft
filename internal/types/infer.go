@@ -18,6 +18,8 @@ type Info struct {
 	FnRet map[string]*Type
 	// Binding annotations inferred for lets (debug)
 	Bindings map[string]*Type
+	// Diags are type-check diagnostics (mismatches are warnings; name errors are errors).
+	Diags diag.List
 }
 
 // Infer runs type inference + checking on a file.
@@ -53,8 +55,39 @@ func Infer(file *ast.File) (Info, diag.List) {
 			}
 			inf.globals[d.Name] = tyFn(params, ret)
 		case *ast.TypeDecl:
-			inf.userTypes[d.Name] = tyNamed(d.Name)
-			inf.globals[d.Name] = tyNamed(d.Name) // type as value / TypeInfo
+			nt := tyNamed(d.Name)
+			if d.Alias != nil {
+				nt = FromAST(d.Alias)
+				// keep the declared name for identity when alias is a named type
+				if nt.Kind == TyNamed && nt.Name == "" {
+					nt.Name = d.Name
+				}
+			} else if len(d.Fields) > 0 {
+				fields := make(map[string]*Type, len(d.Fields))
+				defaults := make(map[string]bool)
+				for _, f := range d.Fields {
+					if f == nil || f.Name == "" {
+						continue
+					}
+					ft := FromAST(f.Type)
+					// resolve aliases when already registered (same-file order)
+					if ft.Kind == TyNamed {
+						if ut, ok := inf.userTypes[ft.Name]; ok {
+							ft = ut
+						}
+					}
+					fields[f.Name] = ft
+					if f.Default != nil {
+						defaults[f.Name] = true
+					}
+				}
+				nt.Fields = fields
+				if len(defaults) > 0 {
+					nt.FieldHasDefault = defaults
+				}
+			}
+			inf.userTypes[d.Name] = nt
+			inf.globals[d.Name] = nt // type as value / TypeInfo
 		case *ast.EnumDecl:
 			// enum Name { A, B } → global map; variants with payloads have constructors
 			hasPayloads := false
@@ -77,6 +110,25 @@ func Infer(file *ast.File) (Info, diag.List) {
 		}
 	}
 
+	// Check field defaults after all globals (fns) are registered so call defaults resolve.
+	for _, d := range file.Decls {
+		td, ok := d.(*ast.TypeDecl)
+		if !ok || len(td.Fields) == 0 {
+			continue
+		}
+		ut := inf.userTypes[td.Name]
+		for _, f := range td.Fields {
+			if f == nil || f.Default == nil {
+				continue
+			}
+			ft := ut.Fields[f.Name]
+			dt := inf.inferExpr(f.Default, map[string]*Type{})
+			if !Assignable(ft, dt) {
+				inf.warnf(f.Pos_, "default for field %q: have %s, want %s", f.Name, fmtType(dt), fmtType(ft))
+			}
+		}
+	}
+
 	// Infer each function body (may refine signatures)
 	for _, d := range file.Decls {
 		if fn, ok := d.(*ast.FnDecl); ok {
@@ -90,6 +142,7 @@ func Infer(file *ast.File) (Info, diag.List) {
 		Globals:  inf.globals,
 		FnRet:    inf.fnRet,
 		Bindings: inf.bindings,
+		Diags:    inf.errs,
 	}, inf.errs
 }
 
@@ -113,6 +166,11 @@ func (inf *inferrer) errorf(pos token.Pos, format string, args ...any) {
 	inf.errs = append(inf.errs, diag.Errorf(inf.file, pos, format, args...))
 }
 
+// warnf reports a type mismatch as a warning (annotations never fail the build).
+func (inf *inferrer) warnf(pos token.Pos, format string, args ...any) {
+	inf.errs = append(inf.errs, diag.Warnf(inf.file, pos, format, args...))
+}
+
 func (inf *inferrer) installPrelude() {
 	// builtins
 	inf.globals["println"] = tyFn([]*Type{tyAny()}, tyUnit())
@@ -122,20 +180,20 @@ func (inf *inferrer) installPrelude() {
 	inf.globals["push"] = tyFn([]*Type{tyList(tyAny()), tyAny()}, tyList(tyAny()))
 	inf.globals["pop"] = tyFn([]*Type{tyList(tyAny())}, tyAny())
 	inf.globals["concat"] = tyFn([]*Type{tyList(tyAny()), tyList(tyAny())}, tyList(tyAny()))
-	inf.globals["slice"] = tyFn([]*Type{tyList(tyAny()), tyInt()}, tyList(tyAny()))
-	inf.globals["range"] = tyFn([]*Type{tyInt()}, tyList(tyInt()))
+	inf.globals["slice"] = tyFn([]*Type{tyList(tyAny()), tyInt(), tyAny()}, tyList(tyAny())) // slice(xs, i) | slice(xs, i, j)
 	inf.globals["contains"] = tyFn([]*Type{tyAny(), tyAny()}, tyBool())
 	inf.globals["keys"] = tyFn([]*Type{tyAny()}, tyList(tyStr()))
 	inf.globals["values"] = tyFn([]*Type{tyAny()}, tyList(tyAny()))
 	inf.globals["delete"] = tyFn([]*Type{tyAny(), tyAny()}, tyAny())
-	inf.globals["map"] = tyFn([]*Type{tyList(tyAny()), tyAny()}, tyList(tyAny()))
+	// list/fn builtins: trailing TyAny = optional (workers, etc.)
+	inf.globals["map"] = tyFn([]*Type{tyList(tyAny()), tyAny(), tyAny()}, tyList(tyAny()))
 	inf.globals["seq_map"] = tyFn([]*Type{tyList(tyAny()), tyAny()}, tyList(tyAny()))
-	inf.globals["filter"] = tyFn([]*Type{tyList(tyAny()), tyAny()}, tyList(tyAny()))
+	inf.globals["filter"] = tyFn([]*Type{tyList(tyAny()), tyAny(), tyAny()}, tyList(tyAny()))
 	inf.globals["seq_filter"] = tyFn([]*Type{tyList(tyAny()), tyAny()}, tyList(tyAny()))
 	inf.globals["reduce"] = tyFn([]*Type{tyList(tyAny()), tyAny(), tyAny()}, tyAny())
 	inf.globals["each"] = tyFn([]*Type{tyList(tyAny()), tyAny()}, tyUnit())
 	inf.globals["flat_map"] = tyFn([]*Type{tyList(tyAny()), tyAny()}, tyList(tyAny()))
-	inf.globals["par_map"] = tyFn([]*Type{tyList(tyAny()), tyAny()}, tyList(tyAny()))
+	inf.globals["par_map"] = tyFn([]*Type{tyList(tyAny()), tyAny(), tyAny()}, tyList(tyAny()))
 	inf.globals["find"] = tyFn([]*Type{tyList(tyAny()), tyAny()}, tyAny())
 	inf.globals["any"] = tyFn([]*Type{tyList(tyAny()), tyAny()}, tyBool())
 	inf.globals["all"] = tyFn([]*Type{tyList(tyAny()), tyAny()}, tyBool())
@@ -151,6 +209,8 @@ func (inf *inferrer) installPrelude() {
 	inf.globals["Error"] = tyNamed("package:Error")
 	inf.globals["args"] = tyList(tyStr())
 	inf.globals["os"] = tyNamed("package:os")
+	// range(n) | range(start, end) — trailing any is optional
+	inf.globals["range"] = tyFn([]*Type{tyInt(), tyAny()}, tyList(tyInt()))
 
 	// stdlib packages as opaque named packages (from registry — no hardcoded list)
 	for _, p := range stdlib.Names() {
@@ -163,7 +223,7 @@ func (inf *inferrer) installPrelude() {
 	inf.globals["race"] = tyFn([]*Type{tyList(tyAny())}, tyResult(tyAny()))
 	inf.globals["timeout"] = tyFn([]*Type{tyAny(), tyAny()}, tyResult(tyAny()))
 	inf.globals["group"] = tyFn(nil, tyNamed("group"))
-	inf.globals["channel"] = tyFn([]*Type{tyInt()}, tyChannel())
+	inf.globals["channel"] = tyFn([]*Type{tyAny()}, tyChannel()) // channel() | channel(buf)
 	inf.globals["send"] = tyFn([]*Type{tyChannel(), tyAny()}, tyResult(tyUnit()))
 	inf.globals["recv"] = tyFn([]*Type{tyChannel()}, tyResult(tyAny()))
 	inf.globals["close"] = tyFn([]*Type{tyChannel()}, tyResult(tyUnit()))
@@ -190,18 +250,54 @@ func importName(d *ast.ImportDecl) string {
 	return name
 }
 
+// resolveType expands named user types so field info is available.
+func (inf *inferrer) resolveType(t *Type) *Type {
+	if t == nil {
+		return tyAny()
+	}
+	if t.Kind == TyNamed {
+		if ut, ok := inf.userTypes[t.Name]; ok {
+			return ut
+		}
+	}
+	if t.Kind == TyList && t.Elem != nil {
+		return tyList(inf.resolveType(t.Elem))
+	}
+	if t.Kind == TyOptional && t.Elem != nil {
+		return tyOpt(inf.resolveType(t.Elem))
+	}
+	if t.Kind == TyResult && t.Elem != nil {
+		return tyResult(inf.resolveType(t.Elem))
+	}
+	if t.Kind == TyMap {
+		return tyMap(inf.resolveType(t.Key), inf.resolveType(t.Elem))
+	}
+	if t.Kind == TyFn {
+		ps := make([]*Type, len(t.Params))
+		for i, p := range t.Params {
+			ps[i] = inf.resolveType(p)
+		}
+		return tyFn(ps, inf.resolveType(t.Ret))
+	}
+	return t
+}
+
+func (inf *inferrer) fromAST(te ast.TypeExpr) *Type {
+	return inf.resolveType(FromAST(te))
+}
+
 func (inf *inferrer) inferFn(d *ast.FnDecl) {
 	locals := map[string]*Type{}
 	for _, p := range d.Params {
 		if p.Type != nil {
-			locals[p.Name] = FromAST(p.Type)
+			locals[p.Name] = inf.fromAST(p.Type)
 		} else {
 			locals[p.Name] = tyAny() // will refine from uses if we add constraint pass later
 		}
 	}
 	declaredRet := (*Type)(nil)
 	if d.Ret != nil {
-		declaredRet = FromAST(d.Ret)
+		declaredRet = inf.fromAST(d.Ret)
 	}
 	prevRet := inf.currentRet
 	inf.currentRet = declaredRet
@@ -219,7 +315,7 @@ func (inf *inferrer) inferFn(d *ast.FnDecl) {
 			params[i] = tyAny()
 		}
 		if p.Type != nil {
-			params[i] = FromAST(p.Type)
+			params[i] = inf.fromAST(p.Type)
 		}
 	}
 	finalRet := ret
@@ -228,7 +324,7 @@ func (inf *inferrer) inferFn(d *ast.FnDecl) {
 		if ret != nil && !Assignable(declaredRet, ret) {
 			// allow Result wrap
 			if !(declaredRet.Kind == TyResult && Assignable(declaredRet.Elem, ret)) {
-				inf.errorf(d.Pos(), "function %q returns %s, declared %s", d.Name, fmtType(ret), fmtType(declaredRet))
+				inf.warnf(d.Pos(), "function %q returns %s, declared %s", d.Name, fmtType(ret), fmtType(declaredRet))
 			}
 		}
 	}
@@ -253,17 +349,25 @@ func (inf *inferrer) inferStmt(s ast.Stmt, locals map[string]*Type, expectedRet 
 	case *ast.LetStmt:
 		initT := inf.inferExpr(s.Init, locals)
 		if s.Type != nil {
-			ann := FromAST(s.Type)
+			ann := inf.fromAST(s.Type)
 			if !Assignable(ann, initT) {
-				inf.errorf(s.Pos(), "cannot assign %s to %s (variable %q)", fmtType(initT), fmtType(ann), s.Name)
+				inf.warnf(s.Pos(), "cannot assign %s to %s (variable %q)", fmtType(initT), fmtType(ann), s.Name)
+				// bind actual RHS type so a mismatch does not poison later checks
+				if initT == nil {
+					initT = tyAny()
+				}
+				locals[s.Name] = initT
+				inf.bindings[s.Name] = initT
+			} else {
+				locals[s.Name] = ann
+				inf.bindings[s.Name] = ann
 			}
-			locals[s.Name] = ann
-			inf.bindings[s.Name] = ann
 		} else {
 			// INFERENCE: bind from RHS
 			if initT == nil {
 				initT = tyAny()
 			}
+			initT = inf.resolveType(initT)
 			locals[s.Name] = initT
 			inf.bindings[s.Name] = initT
 		}
@@ -271,11 +375,13 @@ func (inf *inferrer) inferStmt(s ast.Stmt, locals map[string]*Type, expectedRet 
 	case *ast.ConstDecl:
 		t := inf.inferExpr(s.Value, locals)
 		if s.Type != nil {
-			ann := FromAST(s.Type)
+			ann := inf.fromAST(s.Type)
 			if !Assignable(ann, t) {
-				inf.errorf(s.Pos(), "const %q: %s is not %s", s.Name, fmtType(t), fmtType(ann))
+				inf.warnf(s.Pos(), "const %q: %s is not %s", s.Name, fmtType(t), fmtType(ann))
+				// keep actual type (do not poison)
+			} else {
+				t = ann
 			}
-			t = ann
 		}
 		locals[s.Name] = t
 		return tyUnit()
@@ -284,7 +390,7 @@ func (inf *inferrer) inferStmt(s ast.Stmt, locals map[string]*Type, expectedRet 
 		if id, ok := s.Target.(*ast.Ident); ok {
 			if lt, ok := locals[id.Name]; ok {
 				if !Assignable(lt, valT) {
-					inf.errorf(s.Pos(), "cannot assign %s to %s (%q)", fmtType(valT), fmtType(lt), id.Name)
+					inf.warnf(s.Pos(), "cannot assign %s to %s (%q)", fmtType(valT), fmtType(lt), id.Name)
 				}
 			} else if _, ok := inf.globals[id.Name]; !ok {
 				inf.errorf(id.Pos(), "undefined name %q", id.Name)
@@ -300,7 +406,7 @@ func (inf *inferrer) inferStmt(s ast.Stmt, locals map[string]*Type, expectedRet 
 		}
 		if expectedRet != nil && !Assignable(expectedRet, t) {
 			if !(expectedRet.Kind == TyResult && Assignable(expectedRet.Elem, t)) {
-				inf.errorf(s.Pos(), "return has type %s, expected %s", fmtType(t), fmtType(expectedRet))
+				inf.warnf(s.Pos(), "return has type %s, expected %s", fmtType(t), fmtType(expectedRet))
 			}
 		}
 		return t
@@ -444,13 +550,26 @@ func (inf *inferrer) inferExpr(e ast.Expr, locals map[string]*Type) *Type {
 			return inf.inferMethod(fe, argTs)
 		}
 		if ft != nil && ft.Kind == TyFn {
-			// arity soft-check
-			if len(ft.Params) > 0 && len(argTs) != len(ft.Params) && ft.Params[0].Kind != TyAny {
-				// only warn-ish when params were annotated; skip for any
+			// Arity: required = last index of a non-any param + 1 (trailing TyAny = optional).
+			// Over-arity only when every param is concrete (no optional trail).
+			required := 0
+			allConcrete := len(ft.Params) > 0
+			for i, p := range ft.Params {
+				if p != nil && p.Kind != TyAny {
+					required = i + 1
+				} else {
+					allConcrete = false
+				}
+			}
+			if required > 0 && len(argTs) < required {
+				inf.warnf(e.Pos(), "wrong number of arguments: have %d, want at least %d", len(argTs), required)
+			}
+			if allConcrete && len(argTs) > len(ft.Params) {
+				inf.warnf(e.Pos(), "wrong number of arguments: have %d, want %d", len(argTs), len(ft.Params))
 			}
 			for i := 0; i < len(argTs) && i < len(ft.Params); i++ {
 				if !Assignable(ft.Params[i], argTs[i]) && ft.Params[i].Kind != TyAny {
-					inf.errorf(e.Pos(), "argument %d: have %s, want %s", i+1, fmtType(argTs[i]), fmtType(ft.Params[i]))
+					inf.warnf(e.Pos(), "argument %d: have %s, want %s", i+1, fmtType(argTs[i]), fmtType(ft.Params[i]))
 				}
 			}
 			if ft.Ret != nil {
@@ -472,7 +591,24 @@ func (inf *inferrer) inferExpr(e ast.Expr, locals map[string]*Type) *Type {
 		}
 		return tyAny()
 	case *ast.FieldExpr:
-		inf.inferExpr(e.X, locals)
+		base := inf.inferExpr(e.X, locals)
+		// named struct with known fields → field type
+		if base != nil && base.Kind == TyNamed {
+			ut := base
+			if ut.Fields == nil {
+				if declared, ok := inf.userTypes[base.Name]; ok {
+					ut = declared
+				}
+			}
+			if ut.Fields != nil {
+				if ft, ok := ut.Fields[e.Name]; ok {
+					return ft
+				}
+				// unknown field on a declared type — soft warning
+				inf.warnf(e.Pos(), "type %s has no field %q", base.Name, e.Name)
+				return tyAny()
+			}
+		}
 		// package or map field → any
 		return tyAny()
 	case *ast.QuestionExpr:
@@ -508,10 +644,45 @@ func (inf *inferrer) inferExpr(e ast.Expr, locals map[string]*Type) *Type {
 		}
 		return tyMap(tyStr(), vt)
 	case *ast.StructLit:
+		var ut *Type
+		if e.Name != "" {
+			if declared, ok := inf.userTypes[e.Name]; ok {
+				ut = declared
+			}
+		}
+		provided := make(map[string]bool, len(e.Fields))
 		for _, f := range e.Fields {
-			inf.inferExpr(f.Value, locals)
+			provided[f.Name] = true
+			vt := inf.inferExpr(f.Value, locals)
+			if ut != nil && ut.Fields != nil {
+				if ft, ok := ut.Fields[f.Name]; ok {
+					if !Assignable(ft, vt) {
+						inf.warnf(f.Pos_, "field %q: have %s, want %s", f.Name, fmtType(vt), fmtType(ft))
+					}
+				} else {
+					inf.warnf(f.Pos_, "type %s has no field %q", e.Name, f.Name)
+				}
+			}
+		}
+		// Missing required fields: no default and not optional-typed.
+		if ut != nil && ut.Fields != nil {
+			for name, ft := range ut.Fields {
+				if provided[name] {
+					continue
+				}
+				if ut.FieldHasDefault != nil && ut.FieldHasDefault[name] {
+					continue
+				}
+				if ft != nil && ft.Kind == TyOptional {
+					continue
+				}
+				inf.warnf(e.Pos(), "missing field %q on %s", name, e.Name)
+			}
 		}
 		if e.Name != "" {
+			if ut != nil {
+				return ut
+			}
 			return tyNamed(e.Name)
 		}
 		return tyNamed("struct")
@@ -564,14 +735,14 @@ func (inf *inferrer) inferExpr(e ast.Expr, locals map[string]*Type) *Type {
 		for i, p := range e.Params {
 			var pt *Type = tyAny()
 			if p.Type != nil {
-				pt = FromAST(p.Type)
+				pt = inf.fromAST(p.Type)
 			}
 			params[i] = pt
 			bodyLocals[p.Name] = pt
 		}
 		var exp *Type
 		if e.Ret != nil {
-			exp = FromAST(e.Ret)
+			exp = inf.fromAST(e.Ret)
 		}
 		ret := inf.inferBlock(e.Body, bodyLocals, exp)
 		if exp != nil {

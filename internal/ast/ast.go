@@ -172,6 +172,16 @@ type StructType struct {
 func (t *StructType) Pos() token.Pos { return t.Pos_ }
 func (t *StructType) typeNode()      {}
 
+// FnType: fn(T1, T2) -> Ret  (function type in annotations)
+type FnType struct {
+	Pos_   token.Pos
+	Params []TypeExpr
+	Ret    TypeExpr // optional
+}
+
+func (t *FnType) Pos() token.Pos { return t.Pos_ }
+func (t *FnType) typeNode()      {}
+
 // --- Statements ---
 
 // Stmt is a statement.

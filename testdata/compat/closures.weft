@@ -1,0 +1,6 @@
+fn main {
+    x := 10
+    f := fn(n) { n + x }
+    say(f(5))
+}
+

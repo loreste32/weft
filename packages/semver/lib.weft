@@ -1,82 +1,89 @@
-// semver — parse, compare, and check semantic versions.
-//
-//   weft registry install semver
-//   use semver
-//
-// Pure module — no capabilities required.
-
-// semver.parse("1.2.3") -> Result[map]  {major, minor, patch, pre, raw}
-pub fn parse(s) -> Result {
+pub fn parse(s) -> Result[any] {
     ensure(s != null && s != "", "empty version string")?
     raw := s
-    if str.starts_with(s, "v") { s = str.slice(s, 1) }
-
+    if str.starts_with(s, "v") {
+        s = str.slice(s, 1)
+    }
     pre := ""
     if str.contains(s, "-") {
         parts := str.split(s, "-")
         s = parts[0]
         pre = str.join(str.slice(parts, 1), "-")
     }
-
     parts := str.split(s, ".")
     ensure(len(parts) == 3, "version must be major.minor.patch, got: $raw")?
-
     major := int.parse(parts[0]).unwrap_or(-1)
     minor := int.parse(parts[1]).unwrap_or(-1)
     patch := int.parse(parts[2]).unwrap_or(-1)
     ensure(major >= 0 && minor >= 0 && patch >= 0, "invalid version numbers in: $raw")?
-
-    Ok({"major": major, "minor": minor, "patch": patch, "pre": pre, "raw": raw})
+    Ok({
+        "major": major,
+        "minor": minor,
+        "patch": patch,
+        "pre": pre,
+        "raw": raw,
+    })
 }
 
-// semver.compare(a, b) -> int  (-1, 0, 1)
-pub fn compare(a, b) -> Result {
+
+pub fn compare(a, b) -> Result[any] {
     va := parse(a)?
     vb := parse(b)?
-
-    if va.major != vb.major { return Ok(if va.major < vb.major { -1 } else { 1 }) }
-    if va.minor != vb.minor { return Ok(if va.minor < vb.minor { -1 } else { 1 }) }
-    if va.patch != vb.patch { return Ok(if va.patch < vb.patch { -1 } else { 1 }) }
-
-    // pre-release < release
-    if va.pre != "" && vb.pre == "" { return Ok(-1) }
-    if va.pre == "" && vb.pre != "" { return Ok(1) }
-    if va.pre < vb.pre { return Ok(-1) }
-    if va.pre > vb.pre { return Ok(1) }
+    if va.major != vb.major {
+        return Ok(if va.major < vb.major { -1 } else { 1 })
+    }
+    if va.minor != vb.minor {
+        return Ok(if va.minor < vb.minor { -1 } else { 1 })
+    }
+    if va.patch != vb.patch {
+        return Ok(if va.patch < vb.patch { -1 } else { 1 })
+    }
+    if va.pre != "" && vb.pre == "" {
+        return Ok(-1)
+    }
+    if va.pre == "" && vb.pre != "" {
+        return Ok(1)
+    }
+    if va.pre < vb.pre {
+        return Ok(-1)
+    }
+    if va.pre > vb.pre {
+        return Ok(1)
+    }
     Ok(0)
 }
 
-// semver.gt(a, b) -> Result[bool]
-pub fn gt(a, b) -> Result { Ok(compare(a, b)? == 1) }
 
-// semver.gte(a, b) -> Result[bool]
-pub fn gte(a, b) -> Result { Ok(compare(a, b)? >= 0) }
+pub fn gt(a, b) -> Result[any] { Ok(compare(a, b)? == 1) }
 
-// semver.lt(a, b) -> Result[bool]
-pub fn lt(a, b) -> Result { Ok(compare(a, b)? == -1) }
 
-// semver.lte(a, b) -> Result[bool]
-pub fn lte(a, b) -> Result { Ok(compare(a, b)? <= 0) }
+pub fn gte(a, b) -> Result[any] { Ok(compare(a, b)? >= 0) }
 
-// semver.eq(a, b) -> Result[bool]
-pub fn eq(a, b) -> Result { Ok(compare(a, b)? == 0) }
 
-// semver.satisfies(version, constraint) -> Result[bool]
-// Constraints: "^1.2.0", "~1.2.0", ">=1.0.0", "=1.2.3", "1.2.3"
-pub fn satisfies(version, constraint) -> Result {
+pub fn lt(a, b) -> Result[any] { Ok(compare(a, b)? == -1) }
+
+
+pub fn lte(a, b) -> Result[any] { Ok(compare(a, b)? <= 0) }
+
+
+pub fn eq(a, b) -> Result[any] { Ok(compare(a, b)? == 0) }
+
+
+pub fn satisfies(version, constraint) -> Result[any] {
     v := parse(version)?
     c := str.trim(constraint)
-
     if str.starts_with(c, "^") {
-        // ^1.2.3 means >=1.2.3, <2.0.0 (major locked)
         base := parse(str.slice(c, 1))?
-        if v.major != base.major { return Ok(false) }
+        if v.major != base.major {
+            return Ok(false)
+        }
         return gte(version, str.slice(c, 1))
     }
     if str.starts_with(c, "~") {
-        // ~1.2.3 means >=1.2.3, <1.3.0 (minor locked)
         base := parse(str.slice(c, 1))?
-        if v.major != base.major || v.minor != base.minor { return Ok(false) }
+        if v.major != base.major || v.minor != base.minor {
+            return Ok(false)
+        }
         return gte(version, str.slice(c, 1))
     }
     if str.starts_with(c, ">=") {
@@ -97,8 +104,8 @@ pub fn satisfies(version, constraint) -> Result {
     eq(version, c)
 }
 
-// semver.bump(version, part) -> Result[str]  part: "major", "minor", "patch"
-pub fn bump(version, part) -> Result {
+
+pub fn bump(version, part) -> Result[any] {
     v := parse(version)?
     match part {
         "major" { Ok("${v.major + 1}.0.0") }
@@ -108,15 +115,18 @@ pub fn bump(version, part) -> Result {
     }
 }
 
-// semver.format(parsed) -> str
+
 pub fn format(v) {
     s := "${v.major}.${v.minor}.${v.patch}"
-    if v.pre != "" { s = "$s-${v.pre}" }
+    if v.pre != "" {
+        s = "$s-${v.pre}"
+    }
     s
 }
 
-// semver.valid(s) -> bool
+
 pub fn valid(s) {
     r := parse(s)
     r.ok
 }
+

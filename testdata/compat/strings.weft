@@ -1,0 +1,10 @@
+fn main {
+    s := "hello,weft,ops"
+    parts := str.split(s, ",")
+    say(parts)
+    say(str.upper(parts[0]))
+    say(str.join(parts, "|"))
+    say(str.contains(s, "weft"))
+    say(str.slice("abcdef", 1, 4))
+}
+

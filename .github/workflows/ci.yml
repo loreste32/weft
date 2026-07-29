@@ -6,16 +6,20 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # Weekly deep fuzz (fuzz-deep job only)
+    - cron: "0 6 * * 1"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # Primary path: full local CI script (unit, race/fuzz smoke, compat, examples, …)
   ci:
     name: scripts/ci.sh
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,3 +32,89 @@ jobs:
 
       - name: Run CI
         run: bash scripts/ci.sh
+
+  # Explicit reliability slice (visible as its own check; overlaps ci.sh intentionally)
+  reliability:
+    name: reliability
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Unit (core packages)
+        run: |
+          go test ./internal/lex/ ./internal/parse/ ./internal/compile/ ./internal/vm/ \
+            ./internal/types/ ./internal/pkgman/ ./pkg/weft/ -count=1 -timeout 180s
+
+      - name: Race smoke
+        run: make race-smoke
+
+      - name: Fuzz smoke
+        run: make fuzz-smoke
+
+      - name: Compat corpus
+        run: go test ./pkg/weft/ -count=1 -run TestCompatCorpus
+
+      - name: Format roundtrip (compat)
+        run: go test ./internal/format/ -count=1 -run TestCompatFormatRoundTrip -timeout 60s
+
+      - name: Slim build
+        run: |
+          go build -tags slim -o /tmp/weft-slim ./cmd/weft
+          /tmp/weft-slim version
+          /tmp/weft-slim run examples/hello.weft | grep -q hello
+          ls -lah /tmp/weft-slim
+
+      - name: Reference apps (offline tests)
+        run: |
+          go build -o /tmp/weft-ref ./cmd/weft
+          /tmp/weft-ref test -q examples/ref_agent_ops examples/ref_http_glue examples/ref_ops
+          /tmp/weft-ref run examples/ref_agent_ops/main.weft -- status | grep -q weft_ref
+          /tmp/weft-ref run examples/ref_http_glue/main.weft -- demo | grep -q ref_http_glue
+          /tmp/weft-ref run examples/ref_ops/main.weft -- info | grep -q ref_ops
+          /tmp/weft-slim run examples/ref_ops/main.weft -- info | grep -q ref_ops
+
+      - name: Bench pair parity (Weft == Python)
+        run: |
+          for name in json_roundtrip seq_map str_split_join fib; do
+            /tmp/weft-ref run "testdata/bench/${name}.weft" > "/tmp/w-${name}.out"
+            python3 "testdata/bench/${name}.py" > "/tmp/p-${name}.out"
+            diff -u "/tmp/w-${name}.out" "/tmp/p-${name}.out"
+          done
+
+  # Multi-GOOS compile + full/slim sizes (no cross-run)
+  release-smoke:
+    name: release-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Release smoke
+        run: bash scripts/release-smoke.sh
+
+  # Longer fuzz on a schedule / manual only (not every PR)
+  fuzz-deep:
+    name: fuzz-deep
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Deep fuzz (2m each)
+        run: |
+          go test ./internal/lex/ -fuzz=FuzzLex -fuzztime=2m
+          go test ./internal/parse/ -fuzz=FuzzParseFile -fuzztime=2m
+          go test ./internal/compile/ -fuzz=FuzzCompileValidate -fuzztime=2m
+          go test ./internal/vm/ -fuzz=FuzzCompileAndRun -fuzztime=2m

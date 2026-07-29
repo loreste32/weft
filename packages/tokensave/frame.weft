@@ -1,9 +1,8 @@
-// Task framing — Goal / Must / Avoid / Output (accuracy without long CoT).
-
-// frame(task, kind, hints?) -> str
 pub fn frame(task, kind, hints) {
     mut k := "" + kind
-    if k == "" { k = "short" }
+    if k == "" {
+        k = "short"
+    }
     mut must := ""
     mut avoid := "long reasoning, preambles, repeating the question"
     mut fmt := "Final answer first. No long reasoning."
@@ -24,9 +23,15 @@ pub fn frame(task, kind, hints) {
     }
     if hints != null {
         hks := keys(hints)
-        if contains(hks, "must") { must = "" + hints.must }
-        if contains(hks, "avoid") { avoid = "" + hints.avoid }
-        if contains(hks, "format") { fmt = "" + hints.format }
+        if contains(hks, "must") {
+            must = "" + hints.must
+        }
+        if contains(hks, "avoid") {
+            avoid = "" + hints.avoid
+        }
+        if contains(hks, "format") {
+            fmt = "" + hints.format
+        }
     }
     mut out := "Goal: " + task
     if must != "" {
@@ -36,3 +41,4 @@ pub fn frame(task, kind, hints) {
     out = out + "\nOutput: " + fmt
     out
 }
+

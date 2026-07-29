@@ -1,11 +1,8 @@
-// Stream tokens as they arrive (incremental SSE — OpenAI-compat / Anthropic).
-// Events: {kind: "text"|"done"|"error", text?}
-fn main -> Result {
+fn main -> Result[any] {
     events := llm.stream("one word: hi")?
     for e in events {
-        if e.kind == "text" {
-            print(e.text)
-        }
+        if e.kind == "text" { print(e.text) }
     }
     say("")
 }
+

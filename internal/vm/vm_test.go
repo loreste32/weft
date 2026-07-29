@@ -258,6 +258,33 @@ func TestCallNonFunction(t *testing.T) {
 	}
 }
 
+func TestCallUnderArity(t *testing.T) {
+	err := runErr(t, `
+fn foo(a, b) { a + b }
+fn main { say(foo(1)) }
+`)
+	if err == nil {
+		t.Fatal("expected under-arity error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "wrong number of arguments") || !strings.Contains(msg, "foo") {
+		t.Fatalf("want arity message with name, got %q", msg)
+	}
+	if strings.Contains(msg, "numeric op") {
+		t.Fatalf("must not degrade to numeric-op-on-null: %q", msg)
+	}
+}
+
+func TestCallOverArityStillRuns(t *testing.T) {
+	// Extra args are ignored (historical); type checker may warn.
+	if run(t, `
+fn foo(a) { a }
+fn main { say(foo(7, 8, 9)) }
+`) != "7" {
+		t.Fatal("over-arity")
+	}
+}
+
 func TestOpMakeList(t *testing.T) {
 	if run(t, `fn main { say([1, 2, 3]) }`) != "[1, 2, 3]" {
 		t.Fatal("list")

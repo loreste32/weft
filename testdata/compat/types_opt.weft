@@ -1,0 +1,10 @@
+fn add(a: int, b: int) -> int { a + b }
+
+
+fn main {
+    name: str := "weft"
+    n := add(2, 40)
+    say(name)
+    say(n)
+}
+

@@ -2,10 +2,36 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
+## [0.4.1] — unreleased
+
+### Added
+- **Compat corpus expansion** — lock concurrent `map` result order, strings, channels, Result field accessors, list indexing (`testdata/compat/`)
+- **Glue benchmarks vs Python** — paired workloads in `testdata/bench/`; `make bench-glue` (wall time); CI checks Weft==Python output parity
+- **Go microbenches** — JSON round-trip + string split/join loops in `internal/vm`
+- **Reference apps** — `examples/ref_agent_ops`, `ref_http_glue`, `ref_ops` with offline tests in CI
+- **Release smoke** — full/slim sizes + multi-GOOS compile (`scripts/release-smoke.sh`)
+- **STABILITY.md** — positioning, concurrency caveats, golden/ref process, GH Actions matrix
+- **REPL multi-line polish** — continue on trailing operators (`1 +` …); `:cancel` aborts buffer; `:history <text>` filter; `!N` / `:!N` re-run history entry
+- **LSP locals** — go-to-definition for params/lets/for-vars; completion includes local bindings; `documentHighlight` for the identifier under the cursor
+- **LSP multi-file rename** — top-level fn/type/enum/const renames across open buffers and workspace `.weft` files
+- **LSP extract function** — `refactor.extract.function` code action on a selection
+- **REPL tab completion** — interactive TTY: Tab for keywords/stdlib/`:`cmds, ↑/↓ history (via `golang.org/x/term`)
+- **VS Code extension 0.4.2** — `editors/vscode/weft-0.4.2.vsix` (weft-lsp 0.4.2)
+
+### Fixed
+- **Call under-arity** — missing args no longer become null then fail with `numeric op on int and null`; report `wrong number of arguments to name: have N, want M` at the call site
+- **Parse diagnostics** — unterminated strings show as such (not `ILLEGAL`); `use pkg::name` gets a clear path hint; missing `}` before `else` is called out; empty `match x {}` parses (compile still requires arms)
+- **REPL top-level `fn`/`type`/`const`** — no longer errors with `no main function`; definitions bind into the session env
+
 ## [0.4.0] — 2026-07-29
 
 ### Added
 - **Interactive playground** at [weftproject.dev/playground.html](https://weftproject.dev/playground.html) — try Weft in the browser with 8 examples, share links, server-side sandbox
+- **Browser Wasm runtime** — `make wasm` → `wasm/weft.wasm` + `wasm/playground.html` (client-side; network/db/llm packages stubbed)
+- **Registry namespace trust** — `weft registry trust|untrust|trusts`, server pins namespace signing keys, `/v1/namespaces.json`
+- **Telecom SIP REFER / WebRTC bridge** — blind/attended REFER, bridge_and_refer, WebRTC session refer/originate hooks
+- **VS Code extension 0.4.1** — DAP + typed LSP; `editors/vscode/weft-0.4.1.vsix`
+- **Reliability foundation** — bytecode `ValidateChunk`, lex/parse/compile fuzz, VM concurrency stress, `make race-smoke|fuzz-smoke|bench`, docs/STABILITY.md
 - **`weft doc`** — generate API docs from `pub fn` declarations and doc comments
 - **Better error messages** — parse errors now show the source line with a caret pointing at the problem
 - **REPL improvements** — `:stdlib`, `:stdlib <pkg>`, `:history`, `:clear`, `:version` commands

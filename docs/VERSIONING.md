@@ -1,33 +1,43 @@
-# Versioning (0.3.x)
+# Versioning
 
-Version line is **0.3.x** through **0.3.35**. The published git default branch is **`main`** (GitHub: `loreste32/weft`).
+## Current line: **0.4.x**
+
+| | |
+|--|--|
+| Toolchain | **`0.4.1`** (`pkg/weft.Version` / `weft version`) |
+| VS Code extension | **`0.4.1`** (`editors/vscode/package.json`) |
+| Branch | `main` |
+
+0.3.x is **complete** (through the 0.3.30–0.3.35 era of patches). 0.4.x is the current development line: type annotations, DAP, Wasm playground, registry trust, reliability work.
 
 ```text
-0.3.1 → 0.3.2 → … → 0.3.35
+0.3.x (complete) → 0.4.0 → 0.4.1 → …
 ```
-
-Current toolchain string: **0.3.30** (`pkg/weft.Version`, also `weft version`).
-
-No `0.4.x` until that ceiling is intentional. After 0.3.35 we can open a new line if we need breaking changes.
 
 ## Where the number lives
 
-| Place | |
-|-------|--|
-| `pkg/weft/weft.go` → `Version` | source of truth |
+| Place | Role |
+|-------|------|
+| `pkg/weft/weft.go` → `Version` | **source of truth** |
 | `README.md` | people-facing |
 | `editors/vscode/package.json` | extension (keep in step) |
-| `docs/PRODUCTION.md` | short note |
+| `docs/ROADMAP.md` | “where we are” |
 | this file | branch policy |
 
-Bump them together when you cut a patch.
+Bump them together when you cut a release.
 
-## What a patch is for
+## What a 0.4.x patch is for
 
-Bugfixes, stdlib additions, tooling, docs, gold corpus, small language ergonomics. Not for renaming the world or a public package registry product.
+Bugfixes, reliability (fuzz/validate/race), stdlib/tooling, docs, gold corpus, small language ergonomics.
 
-## Before you tag a bump
+Breaking language changes should be rare and called out in [CHANGELOG.md](../CHANGELOG.md). There is **no LTS** yet — pin versions in production.
 
-1. Version `0.3.N` with N ≤ 35 (on `main` unless cutting a release branch)  
-2. `go test ./...` and `scripts/ci.sh` pass  
-3. `weft train eval --quiet` still looks right (100% unless you meant to change gold)  
+## Registry / packages
+
+A public registry protocol and signing are **implemented**. Hosting of `registry.weftproject.dev` may still be partial; path/git and monorepo `packages/` always work. Namespace key trust: `weft registry trust` (see [STABILITY.md](STABILITY.md)).
+
+## Before you tag
+
+1. Align version strings above  
+2. `go test ./...` and `scripts/ci.sh`  
+3. `weft train eval --quiet` still healthy unless gold intentionally changed  

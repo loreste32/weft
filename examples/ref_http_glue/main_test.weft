@@ -1,0 +1,15 @@
+fn test_json_pipeline {
+    s := json.stringify({"ok": true, "n": 1})
+    o := json.parse(s)?
+    ensure(o.ok == true, "ok")?
+    ensure(o.n == 1, "n")?
+    Ok(unit)
+}
+
+
+fn test_stringify_stable_keys {
+    s := json.stringify({"a": 1})
+    ensure(str.contains(s, "\"a\""), "has key")?
+    Ok(unit)
+}
+

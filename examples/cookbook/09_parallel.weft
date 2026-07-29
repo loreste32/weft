@@ -1,5 +1,9 @@
 fn main -> Result[any] {
-    results := parallel([fn() { 1 + 1 }, fn() { 2 * 3 }, fn() { 10 - 1 }])?
+    results := parallel([
+        fn() { 1 + 1 },
+        fn() { 2 * 3 },
+        fn() { 10 - 1 },
+    ])?
     say(results)
     g := group()
     g.go(fn() { 10 })

@@ -186,6 +186,11 @@ func DownloadAndVerify(registryURL string, pkg RegistryPackage, dest string) err
 		return fmt.Errorf("package %s@%s is unsigned — refusing to install (set WEFT_ALLOW_UNSIGNED=1 to override)", pkg.Name, pkg.Version)
 	}
 
+	// Namespace key trust (~/.weft/trust.json / WEFT_REQUIRE_TRUST)
+	if err := CheckPackageTrust(pkg); err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err
 	}

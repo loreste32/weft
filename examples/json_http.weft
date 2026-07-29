@@ -1,10 +1,8 @@
-// Compact stdlib: json + env (no ceremony)
-fn main() -> Result {
-    let raw = `{"city":"Paris","temp":21}`
-    let data = json.parse(raw)?
-    println(data.city, data.temp)
-    let home = env.get("HOME")
-    if home != null {
-        println("home set")
-    }
+fn main -> Result[any] {
+    raw := `{"city":"Paris","temp":21}`
+    data := json.parse(raw)?
+    say(data.city, data.temp)
+    home := env.get("HOME")
+    if home != null { println("home set") }
 }
+

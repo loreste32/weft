@@ -1,4 +1,4 @@
-// Weft VS Code extension — syntax + Language Server (`weft lsp`).
+// Weft VS Code extension — syntax + Language Server (`weft lsp`) + DAP debugger.
 "use strict";
 
 const vscode = require("vscode");
@@ -79,6 +79,23 @@ async function startClient(context) {
 }
 
 /**
+ * Debug adapter: spawn `weft debug --dap` over stdio.
+ * @implements {vscode.DebugAdapterDescriptorFactory}
+ */
+class WeftDebugAdapterFactory {
+  /**
+   * @param {vscode.DebugSession} session
+   * @returns {vscode.ProviderResult<vscode.DebugAdapterDescriptor>}
+   */
+  createDebugAdapterDescriptor(session) {
+    const launchBin = session.configuration && session.configuration.weftPath;
+    const cfg = vscode.workspace.getConfiguration("weft");
+    const bin = (launchBin || cfg.get("lspPath") || "weft").toString().trim() || "weft";
+    return new vscode.DebugAdapterExecutable(bin, ["debug", "--dap"]);
+  }
+}
+
+/**
  * @param {vscode.ExtensionContext} context
  */
 async function activate(context) {
@@ -98,6 +115,11 @@ async function activate(context) {
     vscode.commands.registerCommand("weft.showLspOutput", () => {
       getOutput().show(true);
     })
+  );
+
+  // DAP: weft debug --dap
+  context.subscriptions.push(
+    vscode.debug.registerDebugAdapterDescriptorFactory("weft", new WeftDebugAdapterFactory())
   );
 
   // Restart when config changes

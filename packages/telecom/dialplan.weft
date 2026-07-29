@@ -1,10 +1,5 @@
-// dialplan.weft — dial plan helpers: number normalization, regex matching, caller ID.
-
-// dialplan.normalize(number, country_code?) -> str
-// Normalize a phone number to E.164 format.
 pub fn normalize(number, country_code) {
     cc := if country_code != null { country_code } else { "1" }
-    // strip non-digits except leading +
     mut clean := ""
     mut i := 0
     while i < len(number) {
@@ -16,8 +11,9 @@ pub fn normalize(number, country_code) {
         }
         i = i + 1
     }
-
-    if str.starts_with(clean, "+") { return clean }
+    if str.starts_with(clean, "+") {
+        return clean
+    }
     if str.starts_with(clean, "00") {
         return "+" + str.slice(clean, 2)
     }
@@ -30,80 +26,119 @@ pub fn normalize(number, country_code) {
     "+$cc$clean"
 }
 
-// dialplan.is_e164(number) -> bool
-pub fn is_e164(number) {
-    str.starts_with(number, "+") && len(number) >= 8 && len(number) <= 16
-}
 
-// dialplan.country(number) -> str|null
-// Detect country from E.164 prefix.
+pub fn is_e164(number) { str.starts_with(number, "+") && len(number) >= 8 && len(number) <= 16 }
+
+
 pub fn country(number) {
-    if !str.starts_with(number, "+") { return null }
-    n := str.slice(number, 1)
-    // NANP
-    if str.starts_with(n, "1") { return "US/CA" }
-    // common countries
-    prefixes := {
-        "44": "GB", "33": "FR", "49": "DE", "39": "IT", "34": "ES",
-        "81": "JP", "86": "CN", "91": "IN", "55": "BR", "7": "RU",
-        "61": "AU", "64": "NZ", "52": "MX", "82": "KR", "90": "TR",
-        "31": "NL", "46": "SE", "47": "NO", "45": "DK", "358": "FI",
-        "48": "PL", "43": "AT", "41": "CH", "32": "BE", "351": "PT",
-        "353": "IE", "972": "IL", "971": "AE", "966": "SA", "20": "EG",
-        "27": "ZA", "234": "NG", "254": "KE",
+    if !str.starts_with(number, "+") {
+        return null
     }
-    // try longest prefix first
+    n := str.slice(number, 1)
+    if str.starts_with(n, "1") {
+        return "US/CA"
+    }
+    prefixes := {
+        "44": "GB",
+        "33": "FR",
+        "49": "DE",
+        "39": "IT",
+        "34": "ES",
+        "81": "JP",
+        "86": "CN",
+        "91": "IN",
+        "55": "BR",
+        "7": "RU",
+        "61": "AU",
+        "64": "NZ",
+        "52": "MX",
+        "82": "KR",
+        "90": "TR",
+        "31": "NL",
+        "46": "SE",
+        "47": "NO",
+        "45": "DK",
+        "358": "FI",
+        "48": "PL",
+        "43": "AT",
+        "41": "CH",
+        "32": "BE",
+        "351": "PT",
+        "353": "IE",
+        "972": "IL",
+        "971": "AE",
+        "966": "SA",
+        "20": "EG",
+        "27": "ZA",
+        "234": "NG",
+        "254": "KE",
+    }
     for plen in [3, 2, 1] {
         if len(n) >= plen {
             prefix := str.slice(n, 0, plen)
-            if prefixes[prefix] != null { return prefixes[prefix] }
+            if prefixes[prefix] != null {
+                return prefixes[prefix]
+            }
         }
     }
     null
 }
 
-// dialplan.area_code(number) -> str|null
-// Extract area code from a NANP number.
+
 pub fn area_code(number) {
     n := normalize(number, "1")
-    if !str.starts_with(n, "+1") { return null }
+    if !str.starts_with(n, "+1") {
+        return null
+    }
     digits := str.slice(n, 2)
-    if len(digits) >= 3 { return str.slice(digits, 0, 3) }
+    if len(digits) >= 3 {
+        return str.slice(digits, 0, 3)
+    }
     null
 }
 
-// dialplan.is_tollfree(number) -> bool
-// Check if a NANP number is toll-free.
+
 pub fn is_tollfree(number) {
     ac := area_code(number)
-    if ac == null { return false }
-    tollfree := ["800", "833", "844", "855", "866", "877", "888"]
+    if ac == null {
+        return false
+    }
+    tollfree := [
+        "800",
+        "833",
+        "844",
+        "855",
+        "866",
+        "877",
+        "888",
+    ]
     for tf in tollfree {
-        if ac == tf { return true }
+        if ac == tf {
+            return true
+        }
     }
     false
 }
 
-// dialplan.caller_id(name, number) -> map
-// Build a caller ID object.
-pub fn caller_id(name, number) {
-    {"name": name, "number": normalize(number, null)}
-}
 
-// dialplan.mask(number) -> str
-// Mask a phone number for display: +1234567890 -> +1***567890
+pub fn caller_id(name, number) { {"name": name, "number": normalize(number, null)} }
+
+
 pub fn mask(number) {
-    if len(number) <= 6 { return "****" }
+    if len(number) <= 6 {
+        return "****"
+    }
     prefix := str.slice(number, 0, 2)
     suffix := str.slice(number, len(number) - 6)
     "$prefix***$suffix"
 }
 
-// dialplan.sip_uri(user, domain, opts?) -> str
-// Build a SIP URI.
+
 pub fn sip_uri(user, domain, opts) {
     scheme := "sip"
-    if opts != null && opts.secure == true { scheme = "sips" }
+    if opts != null && opts.secure == true {
+        scheme = "sips"
+    }
     uri := "$scheme:$user@$domain"
     if opts != null && opts.port != null {
         uri = "$scheme:$user@$domain:${opts.port}"
@@ -113,3 +148,4 @@ pub fn sip_uri(user, domain, opts) {
     }
     uri
 }
+

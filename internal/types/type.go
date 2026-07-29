@@ -35,6 +35,9 @@ type Type struct {
 	Key    *Type  // map key
 	Params []*Type
 	Ret    *Type
+	Fields map[string]*Type // struct fields for named types from `type Name { ... }`
+	// FieldHasDefault marks fields with `= expr` in the type decl (optional at construction).
+	FieldHasDefault map[string]bool
 }
 
 func (t *Type) String() string {
@@ -131,6 +134,7 @@ func tyFn(params []*Type, ret *Type) *Type {
 }
 
 // Equal reports structural equality (any matches anything for equality of shape checks).
+// int and float are distinct — use Assignable for numeric widening.
 func (t *Type) Equal(o *Type) bool {
 	if t == nil || o == nil {
 		return true
@@ -139,10 +143,6 @@ func (t *Type) Equal(o *Type) bool {
 		return true
 	}
 	if t.Kind != o.Kind {
-		// int/float soft equal for numbers?
-		if (t.Kind == TyInt && o.Kind == TyFloat) || (t.Kind == TyFloat && o.Kind == TyInt) {
-			return true
-		}
 		return false
 	}
 	switch t.Kind {
@@ -178,15 +178,43 @@ func Assignable(to, from *Type) bool {
 	if from.Kind == TyNull {
 		return to.Kind == TyOptional || to.Kind == TyNull || to.Kind == TyAny
 	}
+	// T? ← U?  and  T? ← U  (null already handled)
+	if to.Kind == TyOptional && from.Kind == TyOptional {
+		return Assignable(to.Elem, from.Elem)
+	}
 	if to.Kind == TyOptional {
 		return Assignable(to.Elem, from) || from.Kind == TyNull
 	}
+	// int widens to float; float does not narrow to int
 	if to.Kind == TyFloat && from.Kind == TyInt {
 		return true
 	}
 	if to.Kind == TyResult && from.Kind != TyResult {
 		// bare T can wrap to Result[T] on return
 		return Assignable(to.Elem, from)
+	}
+	// list/result covariance on element
+	if to.Kind == TyList && from.Kind == TyList {
+		return Assignable(to.Elem, from.Elem)
+	}
+	if to.Kind == TyResult && from.Kind == TyResult {
+		return Assignable(to.Elem, from.Elem)
+	}
+	if to.Kind == TyMap && from.Kind == TyMap {
+		return Assignable(to.Key, from.Key) && Assignable(to.Elem, from.Elem)
+	}
+	// fn: parameter types contravariant-ish (require Equal/Assignable soft), return covariant
+	if to.Kind == TyFn && from.Kind == TyFn {
+		if len(to.Params) != len(from.Params) {
+			return false
+		}
+		for i := range to.Params {
+			// caller provides `from` where `to` is expected: from's params must accept to's args
+			if !Assignable(from.Params[i], to.Params[i]) {
+				return false
+			}
+		}
+		return Assignable(to.Ret, from.Ret)
 	}
 	return to.Equal(from)
 }
@@ -225,19 +253,71 @@ func FromAST(t ast.TypeExpr) *Type {
 	case *ast.OptionalType:
 		return tyOpt(FromAST(t.Element))
 	case *ast.StructType:
-		return tyNamed("struct")
+		fields := make(map[string]*Type, len(t.Fields))
+		for _, f := range t.Fields {
+			if f != nil && f.Name != "" {
+				fields[f.Name] = FromAST(f.Type)
+			}
+		}
+		st := tyNamed("struct")
+		st.Fields = fields
+		return st
+	case *ast.FnType:
+		params := make([]*Type, len(t.Params))
+		for i, p := range t.Params {
+			params[i] = FromAST(p)
+		}
+		var ret *Type
+		if t.Ret != nil {
+			ret = FromAST(t.Ret)
+		}
+		return tyFn(params, ret)
 	default:
 		return tyAny()
 	}
 }
 
 // Unify returns a type that can represent both (lub), or any.
+// null unifies with T as T? (order-independent). any does not erase a prior T?.
 func Unify(a, b *Type) *Type {
 	if a == nil {
 		return b
 	}
 	if b == nil {
 		return a
+	}
+	// null → optional of the other side
+	if a.Kind == TyNull {
+		if b.Kind == TyNull {
+			return tyNull()
+		}
+		if b.Kind == TyOptional {
+			return b
+		}
+		if b.Kind == TyAny {
+			return tyOpt(tyAny())
+		}
+		return tyOpt(b)
+	}
+	if b.Kind == TyNull {
+		if a.Kind == TyOptional {
+			return a
+		}
+		if a.Kind == TyAny {
+			return tyOpt(tyAny())
+		}
+		return tyOpt(a)
+	}
+	// optional joins: T? ∪ U → (T∪U)?, T? ∪ U? → (T∪U)?
+	if a.Kind == TyOptional || b.Kind == TyOptional {
+		ae, be := a, b
+		if a.Kind == TyOptional {
+			ae = a.Elem
+		}
+		if b.Kind == TyOptional {
+			be = b.Elem
+		}
+		return tyOpt(Unify(ae, be))
 	}
 	if a.Kind == TyAny {
 		return b
@@ -256,6 +336,9 @@ func Unify(a, b *Type) *Type {
 	}
 	if a.Kind == TyList && b.Kind == TyList {
 		return tyList(Unify(a.Elem, b.Elem))
+	}
+	if a.Kind == TyResult && b.Kind == TyResult {
+		return tyResult(Unify(a.Elem, b.Elem))
 	}
 	return tyAny()
 }

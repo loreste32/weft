@@ -126,11 +126,11 @@ func cmdRunWatch(args []string) int {
 }
 
 func cmdCheck(path string, showTypes bool) int {
-	return cmdCheckPaths([]string{path}, showTypes)
+	return cmdCheckPaths([]string{path}, showTypes, false)
 }
 
-func cmdCheckPaths(paths []string, showTypes bool) int {
-	if err := weft.CheckPaths(paths, showTypes); err != nil {
+func cmdCheckPaths(paths []string, showTypes bool, strict bool) int {
+	if err := weft.CheckPathsOpts(paths, showTypes, strict); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -374,6 +374,74 @@ func cmdRegistry(args []string) int {
 			return 1
 		}
 		return 0
+	case "trust":
+		// weft registry trust <namespace> <pubkey-hex>
+		// weft registry trust <namespace> --key <local-key-name>
+		if len(args) < 3 {
+			fmt.Fprintln(os.Stderr, "usage: weft registry trust <namespace> <pubkey-hex>")
+			fmt.Fprintln(os.Stderr, "       weft registry trust <namespace> --key <keyname>")
+			return 2
+		}
+		ns := args[1]
+		if args[2] == "--key" || args[2] == "-k" {
+			if len(args) < 4 {
+				fmt.Fprintln(os.Stderr, "usage: weft registry trust <namespace> --key <keyname>")
+				return 2
+			}
+			if err := weft.RegistryTrustLocal(ns, args[3]); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			return 0
+		}
+		note := ""
+		if len(args) > 3 && (args[3] == "--note" || args[3] == "-n") && len(args) > 4 {
+			note = args[4]
+		}
+		if err := weft.RegistryTrust(ns, args[2], note); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	case "untrust":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: weft registry untrust <namespace> [pubkey-hex]")
+			return 2
+		}
+		pub := ""
+		if len(args) > 2 {
+			pub = args[2]
+		}
+		if err := weft.RegistryUntrust(args[1], pub); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	case "trusts":
+		if err := weft.RegistryListTrust(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	case "trust-rotate":
+		// weft registry trust-rotate <ns> <new-pubkey> [--retire <old-pubkey>]
+		if len(args) < 3 {
+			fmt.Fprintln(os.Stderr, "usage: weft registry trust-rotate <namespace> <new-pubkey> [--retire <old-pubkey>]")
+			return 2
+		}
+		ns, newPub := args[1], args[2]
+		retire := ""
+		for i := 3; i < len(args); i++ {
+			if (args[i] == "--retire" || args[i] == "-r") && i+1 < len(args) {
+				i++
+				retire = args[i]
+			}
+		}
+		if err := weft.RegistryRotateTrust(ns, newPub, retire); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
 	case "serve":
 		addr := ":8089"
 		dataDir := "./registry-data"
@@ -398,7 +466,7 @@ func cmdRegistry(args []string) int {
 		}
 		return 0
 	default:
-		fmt.Fprintln(os.Stderr, "usage: weft registry search|info|install|keygen|keys|serve")
+		fmt.Fprintln(os.Stderr, "usage: weft registry search|info|install|keygen|keys|trust|untrust|trusts|trust-rotate|serve")
 		return 2
 	}
 }

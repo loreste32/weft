@@ -112,11 +112,14 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 | All | Run `weft stdlib` to see the full list |
 
 **Tooling:**
-- `weft check [--types]` — type checking
+- `weft check [--types] [--strict]` — type checking (`--strict` fails on type warnings; CI uses this)
 - `weft test [--coverage]` — run `fn test_*` in `*_test.weft` files
 - `weft fmt [--check]` — code formatter (CI-friendly with `--check`)
 - `weft run [--watch]` — run scripts, auto-reload on file changes
-- `weft debug` / `profile` — debugger and profiler
+- `weft debug [--dap]` / `profile` — debugger (CLI or DAP for VS Code) and profiler
+- **Browser Wasm** — `make wasm` builds a client-side runtime (`wasm/playground.html`)
+- **LSP types** — hover/completion use annotations + inference; type warnings as diagnostics
+- **Reliability** — bytecode validation, fuzz/race/compat CI, `make release-smoke`; slim binary (`-tags slim`); see [docs/STABILITY.md](docs/STABILITY.md)
 - `weft notebook` — run `.weft` as cells, output HTML
 - `weft mcp serve <file>` — expose Weft functions as MCP tools
 - `weft update` — self-update to latest version
@@ -140,7 +143,8 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 
 **Packages:**
 - Path and git imports into `vendor/`
-- Public registry with ed25519 signing and version immutability
+- Public registry with ed25519 signing, version immutability, namespace key ownership
+- Local package trust: `weft registry trust|untrust|trusts` (`WEFT_REQUIRE_TRUST=1`)
 - Capability system for third-party package sandboxing
 - `weft registry search|install|keygen|serve`
 
@@ -150,12 +154,12 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 weft                              REPL
 weft run <file.weft> [--watch]    run a script
 weft build [dir] [-o out]        bundle into .weftapp archive
-weft check <file|dir> [--types]   type check
+weft check <file|dir> [--types] [--strict]   type check
 weft test [--race] [--mem] [--timeout N] [--coverage]
 weft fmt [--check] <file|dir>     format
 weft notebook <file> [-o out.html]
 weft bench | stdlib | doctor | version | lsp
-weft debug <file.weft>            debugger
+weft debug [--dap] [file.weft]    debugger (DAP for IDEs)
 weft profile <file.weft>          profiler
 weft mcp serve <file.weft>        MCP tool server
 weft update                       self-update binary

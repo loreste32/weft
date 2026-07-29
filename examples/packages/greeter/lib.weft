@@ -1,8 +1,5 @@
-// Example third-party style package
-pub fn greet(name) {
-    "hello, " + name
-}
+pub fn greet(name) { "hello, " + name }
 
-pub fn shout(name) {
-    greet(name) + "!"
-}
+
+pub fn shout(name) { greet(name) + "!" }
+

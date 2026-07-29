@@ -1,9 +1,3 @@
-// queue.weft — call queue management for contact centers.
-
-// queue.create(name, opts?) -> map
-// Create a call queue.
-// opts: {max_wait_sec, max_size, music_url, announce_position,
-//        announce_interval, priority_levels, overflow_action}
 pub fn create(name, opts) {
     q := {
         "name": name,
@@ -23,36 +17,54 @@ pub fn create(name, opts) {
         },
     }
     if opts != null {
-        if opts.max_wait_sec != null { q.max_wait_sec = opts.max_wait_sec }
-        if opts.max_size != null { q.max_size = opts.max_size }
-        if opts.music_url != null { q.music_url = opts.music_url }
-        if opts.announce_position != null { q.announce_position = opts.announce_position }
-        if opts.announce_interval != null { q.announce_interval = opts.announce_interval }
-        if opts.priority_levels != null { q.priority_levels = opts.priority_levels }
-        if opts.overflow_action != null { q.overflow_action = opts.overflow_action }
+        if opts.max_wait_sec != null {
+            q.max_wait_sec = opts.max_wait_sec
+        }
+        if opts.max_size != null {
+            q.max_size = opts.max_size
+        }
+        if opts.music_url != null {
+            q.music_url = opts.music_url
+        }
+        if opts.announce_position != null {
+            q.announce_position = opts.announce_position
+        }
+        if opts.announce_interval != null {
+            q.announce_interval = opts.announce_interval
+        }
+        if opts.priority_levels != null {
+            q.priority_levels = opts.priority_levels
+        }
+        if opts.overflow_action != null {
+            q.overflow_action = opts.overflow_action
+        }
     }
     q
 }
 
-// queue.add(queue, call_id, opts?) -> map
-// Add a call to the queue. opts: {priority, caller_id, skill_tags, data}
-// Returns: {position, estimated_wait_sec}
+
 pub fn add(q, call_id, opts) {
     if len(q.calls) >= q.max_size {
         return {"overflow": true, "action": q.overflow_action}
     }
-
     priority := 1
     caller_id := ""
     skill_tags := []
     data := {}
     if opts != null {
-        if opts.priority != null { priority = opts.priority }
-        if opts.caller_id != null { caller_id = opts.caller_id }
-        if opts.skill_tags != null { skill_tags = opts.skill_tags }
-        if opts.data != null { data = opts.data }
+        if opts.priority != null {
+            priority = opts.priority
+        }
+        if opts.caller_id != null {
+            caller_id = opts.caller_id
+        }
+        if opts.skill_tags != null {
+            skill_tags = opts.skill_tags
+        }
+        if opts.data != null {
+            data = opts.data
+        }
     }
-
     entry := {
         "call_id": call_id,
         "enqueued_at": time.now(),
@@ -61,13 +73,10 @@ pub fn add(q, call_id, opts) {
         "skill_tags": skill_tags,
         "data": data,
     }
-
-    // insert by priority (higher priority = closer to front)
     mut inserted := false
     mut i := 0
     while i < len(q.calls) {
         if q.calls[i].priority < priority {
-            // insert before this entry
             mut new_calls := []
             mut j := 0
             while j < len(q.calls) {
@@ -80,23 +89,25 @@ pub fn add(q, call_id, opts) {
             }
             q.calls = new_calls
             inserted = true
-            i = len(q.calls) // break
+            i = len(q.calls)
         }
         i = i + 1
     }
-    if !inserted {
-        push(q.calls, entry)
-    }
-
+    if !inserted { push(q.calls, entry) }
     q.stats.total_enqueued = q.stats.total_enqueued + 1
     pos := position(q, call_id)
-    {"position": pos, "estimated_wait_sec": pos * 60, "overflow": false}
+    {
+        "position": pos,
+        "estimated_wait_sec": pos * 60,
+        "overflow": false,
+    }
 }
 
-// queue.next(queue) -> map|null
-// Dequeue the next call (highest priority, longest wait).
+
 pub fn next(q) {
-    if len(q.calls) == 0 { return null }
+    if len(q.calls) == 0 {
+        return null
+    }
     entry := q.calls[0]
     q.calls = slice(q.calls, 1)
     wait := time.now() - entry.enqueued_at
@@ -106,8 +117,7 @@ pub fn next(q) {
     entry
 }
 
-// queue.remove(queue, call_id) -> bool
-// Remove a call from the queue (abandoned/cancelled).
+
 pub fn remove(q, call_id) {
     mut new_calls := []
     mut found := false
@@ -115,26 +125,25 @@ pub fn remove(q, call_id) {
         if c.call_id == call_id {
             found = true
             q.stats.total_abandoned = q.stats.total_abandoned + 1
-        } else {
-            push(new_calls, c)
-        }
+        } else { push(new_calls, c) }
     }
     q.calls = new_calls
     found
 }
 
-// queue.position(queue, call_id) -> int
-// Get position in queue (1-based). 0 if not found.
+
 pub fn position(q, call_id) {
     mut i := 0
     for c in q.calls {
         i = i + 1
-        if c.call_id == call_id { return i }
+        if c.call_id == call_id {
+            return i
+        }
     }
     0
 }
 
-// queue.stats(queue) -> map
+
 pub fn stats(q) {
     avg_wait := 0
     if q.stats.total_dequeued > 0 {
@@ -144,7 +153,9 @@ pub fn stats(q) {
     now := time.now()
     for c in q.calls {
         w := now - c.enqueued_at
-        if w > longest { longest = w }
+        if w > longest {
+            longest = w
+        }
     }
     {
         "name": q.name,
@@ -157,8 +168,7 @@ pub fn stats(q) {
     }
 }
 
-// queue.for_skill(queue, skill) -> [map]
-// Get calls matching a skill tag.
+
 pub fn for_skill(q, skill) {
     mut result := []
     for c in q.calls {
@@ -169,13 +179,19 @@ pub fn for_skill(q, skill) {
     result
 }
 
-// queue.announce(queue, call_id) -> map
-// Generate a position announcement prompt for a caller.
+
 pub fn announce(q, call_id) {
     pos := position(q, call_id)
-    if pos == 0 { return {"text": "You are not currently in the queue."} }
-    if pos == 1 { return {"text": "You are next in line. An agent will be with you shortly."} }
+    if pos == 0 {
+        return {"text": "You are not currently in the queue."}
+    }
+    if pos == 1 {
+        return {
+            "text": "You are next in line. An agent will be with you shortly.",
+        }
+    }
     wait := pos * 60
     mins := int(wait / 60)
     {"text": "You are currently number $pos in the queue. Estimated wait time is approximately $mins minutes. Thank you for your patience."}
 }
+

@@ -665,6 +665,57 @@ fn main { say(Config) }`)
 	}
 }
 
+func TestCompileStructLitAppliesDefaults(t *testing.T) {
+	out := run(t, `
+type Cfg {
+    port: int = 8080
+    host: str = "localhost"
+}
+fn main {
+    c := Cfg{}
+    say(c.port)
+    say(c.host)
+    d := Cfg{port: 9}
+    say(d.port)
+    say(d.host)
+}`)
+	if out != "8080\nlocalhost\n9\nlocalhost" {
+		t.Fatalf("struct defaults = %q", out)
+	}
+}
+
+func TestCompileStructLitNegDefaultAndOptionalNull(t *testing.T) {
+	out := run(t, `
+type Cfg {
+    retries: int = -1
+    name: str
+    age: int?
+}
+fn main {
+    c := Cfg{name: "x"}
+    say(c.retries)
+    say(c.age)
+}`)
+	if out != "-1\nnull" {
+		t.Fatalf("neg default / optional null = %q", out)
+	}
+}
+
+func TestCompileStructLitCallDefault(t *testing.T) {
+	out := run(t, `
+fn def_host() { "localhost" }
+type Cfg {
+    host: str = def_host()
+}
+fn main {
+    c := Cfg{}
+    say(c.host)
+}`)
+	if out != "localhost" {
+		t.Fatalf("call default = %q", out)
+	}
+}
+
 func TestCompileReturnInIfBranch(t *testing.T) {
 	out := run(t, `
 fn f(x) {

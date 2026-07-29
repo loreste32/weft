@@ -1,0 +1,14 @@
+fn parse_num(s) -> Result[any] {
+    if s == "bad" {
+        return Err("nope")
+    }
+    Ok(42)
+}
+
+
+fn main -> Result[any] {
+    n := parse_num("ok")?
+    say(n)
+    Ok(unit)
+}
+

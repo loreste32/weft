@@ -1,88 +1,177 @@
-// webrtc_bridge.weft — WebRTC gateway bridge for browser-to-SIP calls.
-
-// webrtc_bridge.signal_server(port, opts?) -> unit
-// Start a WebRTC signaling server. Bridges browser WebRTC to SIP via FreeSWITCH/Asterisk.
 pub fn signal_server(port, opts) {
     p := if port != null { port } else { 8443 }
     say("WebRTC signaling server on :$p")
-
     http.serve(":$p", fn(req) {
         match req.path {
-            "/ws" {
-                // WebSocket upgrade for signaling
-                web.upgrade_ws(req, fn(ws) {
-                    handle_webrtc_session(ws, opts)
-                })
-            }
-            "/ice" {
-                // ICE candidate exchange
-                http.json(ice_servers(opts))
-            }
-            _ {
-                http.text(404, "not found")
-            }
+            "/ws" { web.upgrade_ws(req, fn(ws) { handle_webrtc_session(ws, opts) }) }
+            "/ice" { http.json(ice_servers(opts)) }
+            "/health" { http.json({"ok": true, "service": "webrtc_bridge"}) }
+            _ { http.text(404, "not found") }
         }
     })
 }
 
+
 fn ice_servers(opts) {
     stun := "stun:stun.l.google.com:19302"
-    if opts != null && opts.stun != null { stun = opts.stun }
-    servers := [{"urls": stun}]
-    if opts != null && opts.turn != null {
-        push(servers, {
-            "urls": opts.turn,
-            "username": if opts.turn_user != null { opts.turn_user } else { "" },
-            "credential": if opts.turn_pass != null { opts.turn_pass } else { "" },
-        })
+    if opts != null && opts.stun != null {
+        stun = opts.stun
     }
+    servers := [
+        {"urls": stun},
+    ]
+    if opts != null && opts.turn != null { push(servers, {
+        "urls": opts.turn,
+        "username": if opts.turn_user != null { opts.turn_user } else { "" },
+        "credential": if opts.turn_pass != null { opts.turn_pass } else { "" },
+    }) }
     {"ice_servers": servers}
 }
 
+
 fn handle_webrtc_session(ws, opts) {
+    mut session := {"uuid": null, "state": "new"}
     while true {
         msg := ws.recv()?
-        if msg == null { break }
+        if msg == null {
+            break
+        }
         data := json.parse(msg)?
-
         match data.kind {
             "offer" {
-                // browser sent SDP offer — forward to SIP gateway
-                ws.send(json.stringify({
+                session.state = "negotiating"
+                if opts != null && opts.esl != null && opts.dial_string != null {
+                    leg := originate_sip_leg(opts.esl, opts.dial_string, opts)?
+                    session.uuid = leg.uuid
+                    session.state = "bridged"
+                    ws.send(json.stringify({
+                        "kind": "answer",
+                        "sdp": data.sdp,
+                        "status": "bridged",
+                        "uuid": leg.uuid,
+                    }))?
+                } else { ws.send(json.stringify({
                     "kind": "answer",
                     "sdp": data.sdp,
                     "status": "connecting",
-                }))?
+                }))? }
             }
-            "ice" {
-                // ICE candidate from browser
+            "ice" { ws.send(json.stringify({"kind": "ice_ack", "candidate": data.candidate}))? }
+            "refer" {
+                ensure(session.uuid != null, "no active SIP leg for REFER")?
+                ensure(opts != null && opts.esl != null, "esl required for REFER")?
+                refer_to := data.refer_to
+                ensure(refer_to != null && refer_to != "", "refer_to required")?
+                sip_refer(fn(cmd) -> Result[any] { esl_api(opts.esl, cmd) }, session.uuid, refer_to, data.opts)?
                 ws.send(json.stringify({
-                    "kind": "ice_ack",
-                    "candidate": data.candidate,
+                    "kind": "refer_ok",
+                    "uuid": session.uuid,
+                    "refer_to": refer_to,
                 }))?
             }
             "hangup" {
+                if session.uuid != null && opts != null && opts.esl != null { esl_api(opts.esl, "uuid_kill ${session.uuid}")? }
                 ws.send(json.stringify({"kind": "bye"}))?
                 break
             }
-            _ { }
+            _ {}
         }
     }
 }
 
-// webrtc_bridge.sip_refer(esl_api_fn, uuid, refer_to, opts?) -> Result
-// Send a SIP REFER. Pass the esl.api function as first arg.
-pub fn sip_refer(api_fn, uuid, refer_to, opts) -> Result {
-    if opts != null && opts.attended == true {
-        api_fn("uuid_att_xfer $uuid $refer_to")
-    } else {
-        api_fn("uuid_deflect $uuid $refer_to")
+
+fn originate_sip_leg(esl, dial_string, opts) -> Result[any] {
+    app := "park"
+    if opts != null && opts.app != null {
+        app = opts.app
     }
+    cmd := "originate $dial_string $app"
+    resp := esl_api(esl, cmd)?
+    uuid := extract_uuid(resp)
+    ensure(uuid != null && uuid != "", "originate failed: $resp")?
+    Ok({"uuid": uuid, "raw": resp})
 }
 
-// webrtc_bridge.click_to_call(originate_fn, from, to, opts?) -> Result[map]
-// Originate a click-to-call. Pass ari originate function.
-pub fn click_to_call(originate_fn, from_ep, to_ep, opts) -> Result {
+
+fn esl_api(esl, cmd) -> Result[any] {
+    if esl != null && esl._conn != null {
+        esl._conn.write("api $cmd\n\n")?
+        Ok(esl._conn.read()?)
+    } else { esl(cmd) }
+}
+
+
+fn extract_uuid(resp) {
+    parts := str.fields(resp)
+    for p in parts {
+        if str.len(p) >= 32 && str.contains(p, "-") {
+            return p
+        }
+    }
+    null
+}
+
+
+pub fn sip_refer(api_fn, uuid, refer_to, opts) -> Result[any] {
+    ensure(uuid != null && uuid != "", "uuid required")?
+    ensure(refer_to != null && refer_to != "", "refer_to required")?
+    attended := false
+    if opts != null && opts.attended == true {
+        attended = true
+    }
+    if opts != null {
+        if opts.referred_by != null { run_api(api_fn, "uuid_setvar $uuid sip_h_Referred-By ${opts.referred_by}")? }
+        if opts.replace != null { run_api(api_fn, "uuid_setvar $uuid sip_refer_replace ${opts.replace}")? }
+        if opts.notify == true { run_api(api_fn, "uuid_setvar $uuid sip_refer_notify true")? }
+    }
+    mut result := null
+    if attended {
+        result = run_api(api_fn, "uuid_att_xfer $uuid $refer_to")?
+    } else if opts != null && opts.absolute == true {
+        result = run_api(api_fn, "uuid_transfer $uuid -both 'sofia/external/$refer_to' inline")?
+    } else {
+        result = run_api(api_fn, "uuid_deflect $uuid $refer_to")?
+    }
+    Ok({
+        "uuid": uuid,
+        "refer_to": refer_to,
+        "attended": attended,
+        "raw": result,
+        "status": "refer_sent",
+    })
+}
+
+
+pub fn sip_refer_blind(esl, uuid, refer_to, opts) -> Result[any] {
+    o := if opts != null { opts } else {
+        {}
+    }
+    o.attended = false
+    sip_refer(esl, uuid, refer_to, o)
+}
+
+
+pub fn sip_refer_attended(esl, uuid, other_uuid, opts) -> Result[any] {
+    o := if opts != null { opts } else {
+        {}
+    }
+    o.attended = true
+    sip_refer(esl, uuid, other_uuid, o)
+}
+
+
+pub fn bridge_and_refer(esl, uuid_a, uuid_b, refer_to, opts) -> Result[any] {
+    run_api(esl, "uuid_bridge $uuid_a $uuid_b")?
+    sip_refer(esl, uuid_a, refer_to, opts)
+}
+
+
+fn run_api(api_fn, cmd) -> Result[any] {
+    if api_fn != null && api_fn._conn != null { esl_api(api_fn, cmd) } else { api_fn(cmd) }
+}
+
+
+pub fn click_to_call(originate_fn, from_ep, to_ep, opts) -> Result[any] {
     chan_a := originate_fn(from_ep, opts)?
     Ok({
         "channel_a": chan_a,
@@ -90,3 +179,4 @@ pub fn click_to_call(originate_fn, from_ep, to_ep, opts) -> Result {
         "status": "originating",
     })
 }
+

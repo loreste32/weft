@@ -1,24 +1,26 @@
-// ari.weft — Asterisk REST Interface client.
-// REST calls for channel/bridge control + WebSocket for real-time events.
-
-// ari.connect(opts?) -> map
-// Create an ARI client.
-// opts: {host, port, username, password, app}
 pub fn connect(opts) {
     host := env.get("ASTERISK_HOST", "127.0.0.1")
     port := env.get("ASTERISK_ARI_PORT", "8088")
     username := env.get("ASTERISK_ARI_USER", "asterisk")
     password := env.get("ASTERISK_ARI_PASSWORD", "asterisk")
     app := "weft"
-
     if opts != null {
-        if opts.host != null { host = opts.host }
-        if opts.port != null { port = opts.port }
-        if opts.username != null { username = opts.username }
-        if opts.password != null { password = opts.password }
-        if opts.app != null { app = opts.app }
+        if opts.host != null {
+            host = opts.host
+        }
+        if opts.port != null {
+            port = opts.port
+        }
+        if opts.username != null {
+            username = opts.username
+        }
+        if opts.password != null {
+            password = opts.password
+        }
+        if opts.app != null {
+            app = opts.app
+        }
     }
-
     {
         "base_url": "http://$host:$port/ari",
         "ws_url": "ws://$host:$port/ari/events?app=$app&api_key=$username:$password",
@@ -28,7 +30,8 @@ pub fn connect(opts) {
     }
 }
 
-fn req(client, method, path, body) -> Result {
+
+fn req(client, method, path, body) -> Result[any] {
     url := "${client.base_url}$path"
     headers := {
         "Authorization": "Basic ${client.auth}",
@@ -42,215 +45,192 @@ fn req(client, method, path, body) -> Result {
     if resp.status >= 400 {
         return Err("ARI $method $path: HTTP ${resp.status} ${resp.body}", "ari")
     }
-    if resp.body != null && resp.body != "" {
-        json.parse(resp.body)
-    } else {
-        Ok({})
-    }
+    if resp.body != null && resp.body != "" { json.parse(resp.body) } else { Ok({}) }
 }
 
-fn get(client, path) -> Result { req(client, "GET", path, null) }
-fn post(client, path, body) -> Result { req(client, "POST", path, body) }
-fn del(client, path) -> Result { req(client, "DELETE", path, null) }
 
-// ─── channels ──────────────────────────────────────────────────────
+fn get(client, path) -> Result[any] { req(client, "GET", path, null) }
 
-// ari.channels(client) -> Result[[map]]
-pub fn channels(client) -> Result { get(client, "/channels") }
 
-// ari.channel(client, id) -> Result[map]
-pub fn channel(client, id) -> Result { get(client, "/channels/$id") }
+fn post(client, path, body) -> Result[any] { req(client, "POST", path, body) }
 
-// ari.originate(client, endpoint, opts?) -> Result[map]
-// Originate a new call. opts: {caller_id, context, extension, priority, variables}
-pub fn originate(client, endpoint, opts) -> Result {
+
+fn del(client, path) -> Result[any] { req(client, "DELETE", path, null) }
+
+
+pub fn channels(client) -> Result[any] { get(client, "/channels") }
+
+
+pub fn channel(client, id) -> Result[any] { get(client, "/channels/$id") }
+
+
+pub fn originate(client, endpoint, opts) -> Result[any] {
     body := {"endpoint": endpoint, "app": client.app}
     if opts != null {
-        if opts.caller_id != null { body.callerId = opts.caller_id }
-        if opts.context != null { body.context = opts.context }
-        if opts.extension != null { body.extension = opts.extension }
-        if opts.variables != null { body.variables = opts.variables }
+        if opts.caller_id != null {
+            body.callerId = opts.caller_id
+        }
+        if opts.context != null {
+            body.context = opts.context
+        }
+        if opts.extension != null {
+            body.extension = opts.extension
+        }
+        if opts.variables != null {
+            body.variables = opts.variables
+        }
     }
     post(client, "/channels", body)
 }
 
-// ari.answer_channel(client, channel_id) -> Result
-pub fn answer_channel(client, id) -> Result {
-    post(client, "/channels/$id/answer", null)
-}
 
-// ari.hangup_channel(client, channel_id, reason?) -> Result
-pub fn hangup_channel(client, id, reason) -> Result {
+pub fn answer_channel(client, id) -> Result[any] { post(client, "/channels/$id/answer", null) }
+
+
+pub fn hangup_channel(client, id, reason) -> Result[any] {
     path := "/channels/$id"
-    if reason != null { path = "$path?reason=$reason" }
+    if reason != null {
+        path = "$path?reason=$reason"
+    }
     del(client, path)
 }
 
-// ari.play_channel(client, channel_id, media, playback_id?) -> Result[map]
-// media: "sound:hello-world", "recording:my-rec", "tone:ring", "number:123", "digits:123"
-pub fn play_channel(client, id, media, playback_id) -> Result {
-    path := "/channels/$id/play?media=$media"
-    if playback_id != null { path = "$path&playbackId=$playback_id" }
-    post(client, path, null)
-}
 
-// ari.record_channel(client, channel_id, name, opts?) -> Result[map]
-// opts: {format, max_duration, max_silence, beep, terminate_on}
-pub fn record_channel(client, id, name, opts) -> Result {
-    path := "/channels/$id/record?name=$name"
-    if opts != null {
-        if opts.format != null { path = "$path&format=${opts.format}" }
-        if opts.max_duration != null { path = "$path&maxDurationSeconds=${opts.max_duration}" }
-        if opts.max_silence != null { path = "$path&maxSilenceSeconds=${opts.max_silence}" }
-        if opts.beep != null { path = "$path&beep=${opts.beep}" }
-        if opts.terminate_on != null { path = "$path&terminateOn=${opts.terminate_on}" }
+pub fn play_channel(client, id, media, playback_id) -> Result[any] {
+    path := "/channels/$id/play?media=$media"
+    if playback_id != null {
+        path = "$path&playbackId=$playback_id"
     }
     post(client, path, null)
 }
 
-// ari.send_dtmf_channel(client, channel_id, digits) -> Result
-pub fn send_dtmf_channel(client, id, digits) -> Result {
-    post(client, "/channels/$id/dtmf?dtmf=$digits", null)
+
+pub fn record_channel(client, id, name, opts) -> Result[any] {
+    path := "/channels/$id/record?name=$name"
+    if opts != null {
+        if opts.format != null {
+            path = "$path&format=${opts.format}"
+        }
+        if opts.max_duration != null {
+            path = "$path&maxDurationSeconds=${opts.max_duration}"
+        }
+        if opts.max_silence != null {
+            path = "$path&maxSilenceSeconds=${opts.max_silence}"
+        }
+        if opts.beep != null {
+            path = "$path&beep=${opts.beep}"
+        }
+        if opts.terminate_on != null {
+            path = "$path&terminateOn=${opts.terminate_on}"
+        }
+    }
+    post(client, path, null)
 }
 
-// ari.hold(client, channel_id) -> Result
-pub fn hold(client, id) -> Result { post(client, "/channels/$id/hold", null) }
 
-// ari.unhold(client, channel_id) -> Result
-pub fn unhold(client, id) -> Result { del(client, "/channels/$id/hold") }
+pub fn send_dtmf_channel(client, id, digits) -> Result[any] { post(client, "/channels/$id/dtmf?dtmf=$digits", null) }
 
-// ari.mute(client, channel_id, direction?) -> Result
-pub fn mute(client, id, direction) -> Result {
+
+pub fn hold(client, id) -> Result[any] { post(client, "/channels/$id/hold", null) }
+
+
+pub fn unhold(client, id) -> Result[any] { del(client, "/channels/$id/hold") }
+
+
+pub fn mute(client, id, direction) -> Result[any] {
     d := if direction != null { direction } else { "both" }
     post(client, "/channels/$id/mute?direction=$d", null)
 }
 
-// ari.unmute(client, channel_id) -> Result
-pub fn unmute(client, id) -> Result { del(client, "/channels/$id/mute") }
 
-// ari.redirect_channel(client, channel_id, endpoint) -> Result
-pub fn redirect_channel(client, id, endpoint) -> Result {
-    post(client, "/channels/$id/redirect?endpoint=$endpoint", null)
-}
+pub fn unmute(client, id) -> Result[any] { del(client, "/channels/$id/mute") }
 
-// ari.set_variable(client, channel_id, name, value) -> Result
-pub fn set_variable(client, id, name, value) -> Result {
-    post(client, "/channels/$id/variable?variable=$name&value=$value", null)
-}
 
-// ari.get_variable(client, channel_id, name) -> Result[str]
-pub fn get_variable(client, id, name) -> Result {
-    get(client, "/channels/$id/variable?variable=$name")
-}
+pub fn redirect_channel(client, id, endpoint) -> Result[any] { post(client, "/channels/$id/redirect?endpoint=$endpoint", null) }
 
-// ari.snoop(client, channel_id, app, opts?) -> Result[map]
-pub fn snoop(client, id, app_name, opts) -> Result {
+
+pub fn set_variable(client, id, name, value) -> Result[any] { post(client, "/channels/$id/variable?variable=$name&value=$value", null) }
+
+
+pub fn get_variable(client, id, name) -> Result[any] { get(client, "/channels/$id/variable?variable=$name") }
+
+
+pub fn snoop(client, id, app_name, opts) -> Result[any] {
     path := "/channels/$id/snoop?app=$app_name&spy=both"
     if opts != null {
-        if opts.whisper != null { path = "$path&whisper=${opts.whisper}" }
+        if opts.whisper != null {
+            path = "$path&whisper=${opts.whisper}"
+        }
     }
     post(client, path, null)
 }
 
-// ─── bridges ───────────────────────────────────────────────────────
 
-// ari.create_bridge(client, bridge_type?) -> Result[map]
-pub fn create_bridge(client, bridge_kind) -> Result {
+pub fn create_bridge(client, bridge_kind) -> Result[any] {
     bk := if bridge_kind != null { bridge_kind } else { "mixing" }
     post(client, "/bridges?type=$bk", null)
 }
 
-// ari.bridges(client) -> Result[[map]]
-pub fn bridges(client) -> Result { get(client, "/bridges") }
 
-// ari.add_to_bridge(client, bridge_id, channel_ids) -> Result
-// channel_ids: "chan1,chan2" or [str]
-pub fn add_to_bridge(client, bridge_id, channel_ids) -> Result {
+pub fn bridges(client) -> Result[any] { get(client, "/bridges") }
+
+
+pub fn add_to_bridge(client, bridge_id, channel_ids) -> Result[any] {
     ids := channel_ids
     if len(channel_ids) > 0 && channel_ids[0] != null {
-        // looks like a list — join it
         ids = str.join(channel_ids, ",")
     }
     post(client, "/bridges/$bridge_id/addChannel?channel=$ids", null)
 }
 
-// ari.remove_from_bridge(client, bridge_id, channel_id) -> Result
-pub fn remove_from_bridge(client, bridge_id, channel_id) -> Result {
-    post(client, "/bridges/$bridge_id/removeChannel?channel=$channel_id", null)
-}
 
-// ari.destroy_bridge(client, bridge_id) -> Result
-pub fn destroy_bridge(client, bridge_id) -> Result {
-    del(client, "/bridges/$bridge_id")
-}
+pub fn remove_from_bridge(client, bridge_id, channel_id) -> Result[any] { post(client, "/bridges/$bridge_id/removeChannel?channel=$channel_id", null) }
 
-// ari.play_bridge(client, bridge_id, media) -> Result[map]
-pub fn play_bridge(client, bridge_id, media) -> Result {
-    post(client, "/bridges/$bridge_id/play?media=$media", null)
-}
 
-// ─── playback control ──────────────────────────────────────────────
+pub fn destroy_bridge(client, bridge_id) -> Result[any] { del(client, "/bridges/$bridge_id") }
 
-// ari.stop_playback(client, playback_id) -> Result
-pub fn stop_playback(client, playback_id) -> Result {
-    del(client, "/playbacks/$playback_id")
-}
 
-// ari.control_playback(client, playback_id, operation) -> Result
-// operation: "pause", "unpause", "restart", "reverse", "forward"
-pub fn control_playback(client, playback_id, operation) -> Result {
-    post(client, "/playbacks/$playback_id/control?operation=$operation", null)
-}
+pub fn play_bridge(client, bridge_id, media) -> Result[any] { post(client, "/bridges/$bridge_id/play?media=$media", null) }
 
-// ─── recordings ────────────────────────────────────────────────────
 
-// ari.recordings(client) -> Result[[map]]
-pub fn recordings(client) -> Result { get(client, "/recordings/stored") }
+pub fn stop_playback(client, playback_id) -> Result[any] { del(client, "/playbacks/$playback_id") }
 
-// ari.stop_recording(client, name) -> Result
-pub fn stop_recording(client, name) -> Result {
-    post(client, "/recordings/live/$name/stop", null)
-}
 
-// ari.delete_recording(client, name) -> Result
-pub fn delete_recording(client, name) -> Result {
-    del(client, "/recordings/stored/$name")
-}
+pub fn control_playback(client, playback_id, operation) -> Result[any] { post(client, "/playbacks/$playback_id/control?operation=$operation", null) }
 
-// ─── endpoints ─────────────────────────────────────────────────────
 
-// ari.endpoints(client) -> Result[[map]]
-pub fn endpoints(client) -> Result { get(client, "/endpoints") }
+pub fn recordings(client) -> Result[any] { get(client, "/recordings/stored") }
 
-// ari.endpoint(client, tech, resource) -> Result[map]
-pub fn endpoint(client, tech, resource) -> Result {
-    get(client, "/endpoints/$tech/$resource")
-}
 
-// ─── sounds ────────────────────────────────────────────────────────
+pub fn stop_recording(client, name) -> Result[any] { post(client, "/recordings/live/$name/stop", null) }
 
-// ari.sounds(client) -> Result[[map]]
-pub fn sounds(client) -> Result { get(client, "/sounds") }
 
-// ─── events (WebSocket) ────────────────────────────────────────────
+pub fn delete_recording(client, name) -> Result[any] { del(client, "/recordings/stored/$name") }
 
-// ari.events_url(client) -> str
-// Get the WebSocket URL for real-time events.
+
+pub fn endpoints(client) -> Result[any] { get(client, "/endpoints") }
+
+
+pub fn endpoint(client, tech, resource) -> Result[any] { get(client, "/endpoints/$tech/$resource") }
+
+
+pub fn sounds(client) -> Result[any] { get(client, "/sounds") }
+
+
 pub fn events_url(client) { client.ws_url }
 
-// ari.listen(client, handler) -> Result
-// Connect to ARI WebSocket and dispatch events to handler.
-// handler(event) is called for each event (StasisStart, ChannelDtmfReceived, etc.)
-pub fn listen(client, handler) -> Result {
+
+pub fn listen(client, handler) -> Result[any] {
     say("ARI connecting to ${client.ws_url}")
-    // The ws stdlib package handles WebSocket connections
-    // This will block and call handler for each message
     ws_conn := ws.connect(client.ws_url)?
     while true {
         msg := ws_conn.read()?
-        if msg == null { break }
+        if msg == null {
+            break
+        }
         event := json.parse(msg)?
         handler(event)
     }
     Ok(unit)
 }
+

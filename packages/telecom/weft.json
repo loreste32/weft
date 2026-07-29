@@ -1,7 +1,7 @@
 {
   "name": "telecom",
-  "version": "0.3.0",
-  "description": "Modern telephony: IVA, STT/TTS, FreeSWITCH ESL, Asterisk ARI, call flows, routing, queues",
+  "version": "0.4.0",
+  "description": "Modern telephony: IVA, STT/TTS, FreeSWITCH ESL, Asterisk ARI, SIP REFER, WebRTC bridge, call flows",
   "type": "module",
   "entry": "lib.weft",
   "exports": [
@@ -28,7 +28,9 @@
     "ari_play", "ari_record", "ari_send_dtmf", "ari_hold", "ari_unhold",
     "ari_create_bridge", "ari_add_to_bridge", "ari_destroy_bridge",
     "ari_channels", "ari_endpoints", "ari_redirect", "ari_snoop",
-    "ari_listen"
+    "ari_listen",
+    "webrtc_signal_server", "sip_refer", "sip_refer_blind", "sip_refer_attended",
+    "bridge_and_refer", "click_to_call"
   ],
   "license": "Apache-2.0",
   "keywords": [

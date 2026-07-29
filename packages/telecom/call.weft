@@ -1,113 +1,202 @@
-// call.weft — call flow action builders.
-// These produce maps that your SIP platform translates to signaling.
-
 pub fn answer(opts) {
     a := {"action": "answer"}
     if opts != null {
-        if opts.headers != null { a.headers = opts.headers }
-        if opts.timeout != null { a.timeout = opts.timeout }
+        if opts.headers != null {
+            a.headers = opts.headers
+        }
+        if opts.timeout != null {
+            a.timeout = opts.timeout
+        }
     }
     a
 }
+
 
 pub fn hangup(opts) {
     a := {"action": "hangup"}
     if opts != null {
-        if opts.reason != null { a.reason = opts.reason }
-        if opts.headers != null { a.headers = opts.headers }
+        if opts.reason != null {
+            a.reason = opts.reason
+        }
+        if opts.headers != null {
+            a.headers = opts.headers
+        }
     }
     a
 }
+
 
 pub fn play(src, opts) {
     a := {"action": "play", "src": src}
     if opts != null {
-        if opts.tts != null { a.tts = opts.tts }
-        if opts.voice != null { a.voice = opts.voice }
-        if opts.language != null { a.language = opts.language }
-        if opts.loop != null { a.loop = opts.loop }
-        if opts.bargin != null { a.bargin = opts.bargin }
+        if opts.tts != null {
+            a.tts = opts.tts
+        }
+        if opts.voice != null {
+            a.voice = opts.voice
+        }
+        if opts.language != null {
+            a.language = opts.language
+        }
+        if opts.loop != null {
+            a.loop = opts.loop
+        }
+        if opts.bargin != null {
+            a.bargin = opts.bargin
+        }
     }
     a
 }
 
+
 pub fn say_text(text, opts) {
-    o := if opts != null { opts } else { {} }
+    o := if opts != null { opts } else {
+        {}
+    }
     o.tts = true
     play(text, o)
 }
 
+
 pub fn gather(opts) {
     a := {"action": "gather"}
-    if opts == null { return a }
-    if opts.kind != null { a.kind = opts.kind }
-    if opts.timeout != null { a.timeout = opts.timeout }
-    if opts.max_digits != null { a.max_digits = opts.max_digits }
-    if opts.finish_on_key != null { a.finish_on_key = opts.finish_on_key }
-    if opts.prompt != null { a.prompt = opts.prompt }
-    if opts.language != null { a.language = opts.language }
-    if opts.speech_timeout != null { a.speech_timeout = opts.speech_timeout }
-    if opts.hints != null { a.hints = opts.hints }
-    if opts.speech_model != null { a.speech_model = opts.speech_model }
-    if opts.bargin != null { a.bargin = opts.bargin }
+    if opts == null {
+        return a
+    }
+    if opts.kind != null {
+        a.kind = opts.kind
+    }
+    if opts.timeout != null {
+        a.timeout = opts.timeout
+    }
+    if opts.max_digits != null {
+        a.max_digits = opts.max_digits
+    }
+    if opts.finish_on_key != null {
+        a.finish_on_key = opts.finish_on_key
+    }
+    if opts.prompt != null {
+        a.prompt = opts.prompt
+    }
+    if opts.language != null {
+        a.language = opts.language
+    }
+    if opts.speech_timeout != null {
+        a.speech_timeout = opts.speech_timeout
+    }
+    if opts.hints != null {
+        a.hints = opts.hints
+    }
+    if opts.speech_model != null {
+        a.speech_model = opts.speech_model
+    }
+    if opts.bargin != null {
+        a.bargin = opts.bargin
+    }
     a
 }
+
 
 pub fn record(opts) {
     a := {"action": "record"}
     if opts != null {
-        if opts.max_duration != null { a.max_duration = opts.max_duration }
-        if opts.beep != null { a.beep = opts.beep }
-        if opts.format != null { a.format = opts.format }
-        if opts.trim_silence != null { a.trim_silence = opts.trim_silence }
-        if opts.channels != null { a.channels = opts.channels }
-        if opts.callback_url != null { a.callback_url = opts.callback_url }
+        if opts.max_duration != null {
+            a.max_duration = opts.max_duration
+        }
+        if opts.beep != null {
+            a.beep = opts.beep
+        }
+        if opts.format != null {
+            a.format = opts.format
+        }
+        if opts.trim_silence != null {
+            a.trim_silence = opts.trim_silence
+        }
+        if opts.channels != null {
+            a.channels = opts.channels
+        }
+        if opts.callback_url != null {
+            a.callback_url = opts.callback_url
+        }
     }
     a
 }
 
-pub fn pause(seconds) {
-    {"action": "pause", "duration": if seconds != null { seconds } else { 1 }}
-}
+
+pub fn pause(seconds) { {
+    "action": "pause",
+    "duration": if seconds != null { seconds } else { 1 },
+} }
+
 
 pub fn transfer(dest, opts) {
     a := {"action": "transfer", "destination": dest}
     if opts != null {
-        if opts.kind != null { a.kind = opts.kind }
-        if opts.headers != null { a.headers = opts.headers }
-        if opts.caller_id != null { a.caller_id = opts.caller_id }
-        if opts.timeout != null { a.timeout = opts.timeout }
-        if opts.music_url != null { a.music_url = opts.music_url }
+        if opts.kind != null {
+            a.kind = opts.kind
+        }
+        if opts.headers != null {
+            a.headers = opts.headers
+        }
+        if opts.caller_id != null {
+            a.caller_id = opts.caller_id
+        }
+        if opts.timeout != null {
+            a.timeout = opts.timeout
+        }
+        if opts.music_url != null {
+            a.music_url = opts.music_url
+        }
     }
     a
 }
+
 
 pub fn bridge(call_id, opts) {
     a := {"action": "bridge", "call_id": call_id}
     if opts != null {
-        if opts.headers != null { a.headers = opts.headers }
-        if opts.record != null { a.record = opts.record }
+        if opts.headers != null {
+            a.headers = opts.headers
+        }
+        if opts.record != null {
+            a.record = opts.record
+        }
     }
     a
 }
+
 
 pub fn conference(room, opts) {
     a := {"action": "conference", "room": room}
     if opts != null {
-        if opts.muted != null { a.muted = opts.muted }
-        if opts.moderator != null { a.moderator = opts.moderator }
-        if opts.beep_on_enter != null { a.beep_on_enter = opts.beep_on_enter }
-        if opts.max_participants != null { a.max_participants = opts.max_participants }
-        if opts.music_url != null { a.music_url = opts.music_url }
-        if opts.record != null { a.record = opts.record }
+        if opts.muted != null {
+            a.muted = opts.muted
+        }
+        if opts.moderator != null {
+            a.moderator = opts.moderator
+        }
+        if opts.beep_on_enter != null {
+            a.beep_on_enter = opts.beep_on_enter
+        }
+        if opts.max_participants != null {
+            a.max_participants = opts.max_participants
+        }
+        if opts.music_url != null {
+            a.music_url = opts.music_url
+        }
+        if opts.record != null {
+            a.record = opts.record
+        }
     }
     a
 }
 
-pub fn redirect(url) {
-    {"action": "redirect", "url": url}
-}
 
-pub fn reject(reason) {
-    {"action": "reject", "reason": if reason != null { reason } else { "rejected" }}
-}
+pub fn redirect(url) { {"action": "redirect", "url": url} }
+
+
+pub fn reject(reason) { {
+    "action": "reject",
+    "reason": if reason != null { reason } else { "rejected" },
+} }
+

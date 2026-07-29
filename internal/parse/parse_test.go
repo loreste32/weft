@@ -421,6 +421,53 @@ func TestParseColonBind(t *testing.T) {
 	}
 }
 
+func TestParseColonBindWithType(t *testing.T) {
+	src := `fn main {
+    name: str := "weft"
+    count: int := 0
+    items: [int] := [1, 2, 3]
+    config: Map[str, any] := {"key": "value"}
+    say(name, count)
+}`
+	f, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+	fn := f.Decls[0].(*ast.FnDecl)
+	// first stmt: name: str := "weft"
+	let0 := fn.Body.Stmts[0].(*ast.LetStmt)
+	if let0.Name != "name" || let0.Type == nil {
+		t.Fatalf("want typed colon-bind name, got %#v", let0)
+	}
+	if nt, ok := let0.Type.(*ast.NamedType); !ok || nt.Name != "str" {
+		t.Fatalf("want str type, got %#v", let0.Type)
+	}
+}
+
+func TestParseFnTypeAnnotation(t *testing.T) {
+	src := `fn main {
+    handler: fn(str) -> Result := lookup
+    say(handler)
+}
+fn lookup(s: str) -> Result { Ok(s) }`
+	f, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+	fn := f.Decls[0].(*ast.FnDecl)
+	let0 := fn.Body.Stmts[0].(*ast.LetStmt)
+	ft, ok := let0.Type.(*ast.FnType)
+	if !ok {
+		t.Fatalf("want FnType, got %#v", let0.Type)
+	}
+	if len(ft.Params) != 1 {
+		t.Fatalf("params: %d", len(ft.Params))
+	}
+	if ft.Ret == nil {
+		t.Fatal("want return type")
+	}
+}
+
 func TestParseFieldDefault(t *testing.T) {
 	src := `type Config {
     port: int = 8080
@@ -601,4 +648,72 @@ fn main {
 	if errs.HasErrors() {
 		t.Fatal(errs)
 	}
+}
+
+func TestParseEmptyMatchArms(t *testing.T) {
+	// `match x {}` must not be misread as match + empty struct lit.
+	src := `fn main {
+    x := 1
+    match x {
+    }
+}`
+	_, errs := ParseFile("t.weft", src)
+	if errs.HasErrors() {
+		t.Fatal(errs)
+	}
+}
+
+func TestParseUnterminatedStringMessage(t *testing.T) {
+	_, errs := ParseFile("t.weft", "fn main {\n  say(\"unterminated\n}\n")
+	if !errs.HasErrors() {
+		t.Fatal("expected errors")
+	}
+	msg := errs.Error()
+	if !stringsContains(msg, "unterminated string") {
+		t.Fatalf("want unterminated string in message, got %q", msg)
+	}
+	if stringsContains(msg, "got ILLEGAL") {
+		t.Fatalf("must not report raw ILLEGAL: %q", msg)
+	}
+}
+
+func TestParseUseDoubleColonHint(t *testing.T) {
+	_, errs := ParseFile("t.weft", "use missing::thing\nfn main {}\n")
+	if !errs.HasErrors() {
+		t.Fatal("expected errors")
+	}
+	msg := errs.Error()
+	if !stringsContains(msg, "invalid use path") || !stringsContains(msg, "pkg::name") {
+		t.Fatalf("want use-path hint, got %q", msg)
+	}
+}
+
+func TestParseMissingBraceBeforeElse(t *testing.T) {
+	_, errs := ParseFile("t.weft", `fn main {
+    if true {
+        say(1)
+    else {
+        say(2)
+    }
+}`)
+	if !errs.HasErrors() {
+		t.Fatal("expected errors")
+	}
+	msg := errs.Error()
+	if !stringsContains(msg, "before else") {
+		t.Fatalf("want else-brace hint, got %q", msg)
+	}
+}
+
+func stringsContains(s, sub string) bool {
+	return len(sub) == 0 || (len(s) >= len(sub) && indexOf(s, sub) >= 0)
+}
+
+func indexOf(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
 }

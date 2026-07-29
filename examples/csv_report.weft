@@ -1,13 +1,17 @@
-// CSV in → table + optional bar chart
-//   weft run examples/csv_report.weft -- -i examples/data/metrics.csv -v
-//   weft run examples/csv_report.weft -- -i examples/data/metrics.csv -c /tmp/metrics.html
-
-fn main -> Result {
+fn main -> Result[any] {
     p := cli.parse({
         "about": "csv_report — summarize a metrics CSV",
         "flags": {
-            "input": {"short": "i", "default": "examples/data/metrics.csv", "help": "CSV path"},
-            "chart": {"short": "c", "default": "", "help": "write HTML chart to path"},
+            "input": {
+                "short": "i",
+                "default": "examples/data/metrics.csv",
+                "help": "CSV path",
+            },
+            "chart": {
+                "short": "c",
+                "default": "",
+                "help": "write HTML chart to path",
+            },
             "verbose": {"short": "v", "bool": true},
         },
     })?
@@ -15,14 +19,12 @@ fn main -> Result {
         say(p.usage)
         cli.exit(0)
     }
-
     data := csv.read(p.input, {"header": true})?
     rows := data.rows
-    if p.verbose {
-        io.eprintln("rows=" + len(rows) + " @ " + time.iso())
-    }
-
-    mut table_rows := [["name", "value", "team"]]
+    if p.verbose { io.eprintln("rows=" + len(rows) + " @ " + time.iso()) }
+    mut table_rows := [
+        ["name", "value", "team"],
+    ]
     mut m := {}
     for row in rows {
         push(table_rows, [row.name, row.value, row.team])
@@ -33,21 +35,16 @@ fn main -> Result {
     }
     t := viz.table(table_rows)
     say(t.text)
-
     chart := viz.bar(m, {"title": "Metrics", "ylabel": "value"})
     if p.chart != "" {
         viz.save(p.chart, viz.page("CSV report", [chart]))?
-        if p.verbose {
-            io.eprintln("chart → " + p.chart)
-        }
+        if p.verbose { io.eprintln("chart → " + p.chart) }
     }
-
     mut ops := []
     for row in rows {
-        if row.team == "ops" {
-            push(ops, row)
-        }
+        if row.team == "ops" { push(ops, row) }
     }
     say("--- ops only ---")
     say(csv.stringify(ops, {"header": data.header}))
 }
+

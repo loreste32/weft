@@ -1,32 +1,43 @@
-// Data processing CLI: read → filter → write (JSONL) using push()
-//   weft run examples/data_pipeline.weft -- -i examples/data/users.jsonl -f ok -v
-//   weft run examples/data_pipeline.weft -- -i examples/data/users.jsonl --field name -o /tmp/names.jsonl
-//   cat examples/data/users.jsonl | weft run examples/data_pipeline.weft -- -f ok
-
-fn main -> Result {
+fn main -> Result[any] {
     p := cli.parse({
         "about": "filter and reshape JSONL for devops/data jobs",
         "flags": {
-            "input": {"short": "i", "default": "", "help": "input file (default: stdin)"},
-            "output": {"short": "o", "default": "", "help": "output file (default: stdout)"},
-            "filter": {"short": "f", "default": "", "help": "keep rows where this field is truthy"},
-            "field": {"default": "", "help": "emit only this field as JSON (default: full row)"},
-            "verbose": {"short": "v", "bool": true, "help": "log counts to stderr"},
+            "input": {
+                "short": "i",
+                "default": "",
+                "help": "input file (default: stdin)",
+            },
+            "output": {
+                "short": "o",
+                "default": "",
+                "help": "output file (default: stdout)",
+            },
+            "filter": {
+                "short": "f",
+                "default": "",
+                "help": "keep rows where this field is truthy",
+            },
+            "field": {
+                "default": "",
+                "help": "emit only this field as JSON (default: full row)",
+            },
+            "verbose": {
+                "short": "v",
+                "bool": true,
+                "help": "log counts to stderr",
+            },
         },
     })?
-
     if p.help {
         say(p.usage)
         cli.exit(0)
     }
-
     mut lines := []
     if p.input != "" {
         lines = fs.lines(p.input)?
     } else {
         lines = io.lines()?
     }
-
     mut out_rows := []
     for line in lines {
         t := str.trim(line)
@@ -43,28 +54,16 @@ fn main -> Result {
                 continue
             }
         }
-        if p.field != "" {
-            push(out_rows, json.stringify(row[p.field]))
-        } else {
-            push(out_rows, t)
-        }
+        if p.field != "" { push(out_rows, json.stringify(row[p.field])) } else { push(out_rows, t) }
     }
-
     mut body := str.join(out_rows, "\n")
     if body != "" {
         body = body + "\n"
     }
-
-    if p.verbose {
-        io.eprintln("kept ${len(out_rows)} rows @ " + time.iso())
-    }
-
+    if p.verbose { io.eprintln("kept ${len(out_rows)} rows @ " + time.iso()) }
     if p.output != "" {
         fs.write(p.output, body)?
-        if p.verbose {
-            io.eprintln("wrote " + p.output)
-        }
-    } else {
-        print(body)
-    }
+        if p.verbose { io.eprintln("wrote " + p.output) }
+    } else { print(body) }
 }
+

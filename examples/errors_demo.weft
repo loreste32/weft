@@ -1,28 +1,18 @@
-// Error management demo — Result + ? (no try/catch)
-//   weft run examples/errors_demo.weft
-
-fn load_cfg(path) -> Result {
+fn load_cfg(path) -> Result[any] {
     ensure(path != "", "path required")?
     raw := fs.read(path).context("read config")?
     Ok(raw)
 }
 
+
 fn main {
-    // default when parse fails
     n := int.parse("nope").unwrap_or(0)
     say("default n=$n")
-
-    // structured failure
     r := load_cfg("")
-    if r.is_err {
-        say("kind=${r.err.kind} msg=${r.err.message}")
-    }
-
-    // bail early
+    if r.is_err { println("kind=${r.err.kind} msg=${r.err.message}") }
     e := bail("stopped", "user")
     say(e.err.message)
-
-    // nest context
     nested := Err("ENOENT", "fs").context("open db").context("boot")
     say(nested.err.message)
 }
+

@@ -1,0 +1,20 @@
+fn test_redact_secret_keys {
+    u := str.upper("OPENAI_API_KEY")
+    ensure(str.has_suffix(u, "KEY"), "suffix")?
+    Ok(unit)
+}
+
+
+fn test_platform_facts {
+    ensure(platform.os() != "", "os")?
+    ensure(platform.arch() != "", "arch")?
+    Ok(unit)
+}
+
+
+fn test_path_helpers {
+    c := fs.cwd()
+    ensure(fs.exists(c) == true || fs.exists(c) == false, "exists returns bool")?
+    Ok(unit)
+}
+

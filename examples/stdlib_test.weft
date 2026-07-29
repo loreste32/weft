@@ -1,10 +1,8 @@
-// Example unit tests — run: weft test examples/stdlib_test.weft
-// Convention: files named *_test.weft | test_*.weft, functions test_*()
-
 fn test_math_sqrt {
     test.eq(math.sqrt(9), 3)
     test.approx(math.mean([2, 4]), 3, 0.001)
 }
+
 
 fn test_strings {
     test.eq(str.upper("hi"), "HI")
@@ -12,10 +10,12 @@ fn test_strings {
     test.is_true(len("ab") == 2)
 }
 
+
 fn test_lists {
     test.eq(count([1, 1, 2], 1), 2)
     test.eq(sort([3, 1, 2]), [1, 2, 3])
 }
+
 
 fn test_match {
     k := "text"
@@ -26,11 +26,12 @@ fn test_match {
     test.eq(msg, "ok")
 }
 
+
 fn test_result_ok {
     r := Ok(42)
     test.ok(r)
 }
 
-fn helper_not_a_test {
-    // not discovered — name must start with test_
-}
+
+fn helper_not_a_test {}
+

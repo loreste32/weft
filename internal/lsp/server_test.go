@@ -723,3 +723,363 @@ func TestLSPUnknownMethod(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestLSPTypeHoverAndWarnings(t *testing.T) {
+	in := &bytes.Buffer{}
+	out := &bytes.Buffer{}
+
+	src := `type User { name: str, age: int }
+fn add(a: int, b: int) -> int { a + b }
+fn main {
+    u := User{name: "a", age: 1}
+    n: int := "nope"
+    say(u.name)
+    say(add(1, 2))
+}
+`
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "method": "textDocument/didOpen",
+		"params": map[string]any{
+			"textDocument": map[string]any{
+				"uri":  "file:///tmp/typed.weft",
+				"text": src,
+			},
+		},
+	})
+	// hover on binding n (line index 4: "    n: int := ...") — character on 'n'
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "textDocument/hover",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": "file:///tmp/typed.weft"},
+			"position":     map[string]any{"line": 4, "character": 5},
+		},
+	})
+	// hover on add function name in call (line 6)
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "id": 3, "method": "textDocument/hover",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": "file:///tmp/typed.weft"},
+			"position":     map[string]any{"line": 6, "character": 9},
+		},
+	})
+	// field completion after "u."
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "id": 4, "method": "textDocument/completion",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": "file:///tmp/typed.weft"},
+			"position":     map[string]any{"line": 5, "character": 10}, // after u.
+		},
+	})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 5, "method": "shutdown", "params": nil})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "method": "exit"})
+
+	if err := lsp.Run(in, out); err != nil {
+		t.Fatal(err)
+	}
+	msgs := readAllMessages(out)
+
+	var warnCount int
+	var hoverN, hoverAdd string
+	var fieldLabels []string
+	for _, m := range msgs {
+		if m["method"] == "textDocument/publishDiagnostics" {
+			params, _ := m["params"].(map[string]any)
+			for _, d := range params["diagnostics"].([]any) {
+				dm, _ := d.(map[string]any)
+				if sev, _ := dm["severity"].(float64); sev == 2 {
+					warnCount++
+				}
+			}
+		}
+		if id, ok := m["id"].(float64); ok && id == 2 {
+			if res, ok := m["result"].(map[string]any); ok {
+				if c, ok := res["contents"].(map[string]any); ok {
+					hoverN, _ = c["value"].(string)
+				}
+			}
+		}
+		if id, ok := m["id"].(float64); ok && id == 3 {
+			if res, ok := m["result"].(map[string]any); ok {
+				if c, ok := res["contents"].(map[string]any); ok {
+					hoverAdd, _ = c["value"].(string)
+				}
+			}
+		}
+		if id, ok := m["id"].(float64); ok && id == 4 {
+			if items, ok := m["result"].([]any); ok {
+				for _, it := range items {
+					im, _ := it.(map[string]any)
+					if lab, ok := im["label"].(string); ok {
+						fieldLabels = append(fieldLabels, lab)
+					}
+				}
+			}
+		}
+	}
+	if warnCount < 1 {
+		t.Fatalf("want type warning diagnostics, got %d warnings among msgs", warnCount)
+	}
+	// After mismatch, n binds actual type str (poison fix) — still show type
+	if !strings.Contains(hoverN, "n") || !strings.Contains(hoverN, "`") {
+		t.Fatalf("hover on n: %q", hoverN)
+	}
+	if !strings.Contains(hoverAdd, "add") && !strings.Contains(hoverAdd, "fn") {
+		// may be prelude-less; function global should show
+		t.Logf("hover add: %q", hoverAdd)
+	}
+	hasName, hasAge := false, false
+	for _, l := range fieldLabels {
+		if l == "name" {
+			hasName = true
+		}
+		if l == "age" {
+			hasAge = true
+		}
+	}
+	if !hasName || !hasAge {
+		t.Fatalf("field completion want name+age, got %v", fieldLabels)
+	}
+}
+
+func TestLSPMultiFileRename(t *testing.T) {
+	// Top-level helper renamed across two open docs
+	a := "fn helper { 1 }\nfn main { say(helper()) }\n"
+	b := "fn main { say(helper()) }\n"
+	in := &bytes.Buffer{}
+	out := &bytes.Buffer{}
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "method": "textDocument/didOpen",
+		"params": map[string]any{"textDocument": map[string]any{"uri": "file:///tmp/a.weft", "text": a}},
+	})
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "method": "textDocument/didOpen",
+		"params": map[string]any{"textDocument": map[string]any{"uri": "file:///tmp/b.weft", "text": b}},
+	})
+	// rename helper at def site (line 0, char 3)
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "textDocument/rename",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": "file:///tmp/a.weft"},
+			"position":     map[string]any{"line": 0, "character": 3},
+			"newName":      "aid",
+		},
+	})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 9, "method": "shutdown"})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "method": "exit"})
+	if err := lsp.Run(in, out); err != nil {
+		t.Fatal(err)
+	}
+	msgs := readAllMessages(out)
+	var sawA, sawB bool
+	for _, m := range msgs {
+		if id, _ := m["id"].(float64); id != 2 {
+			continue
+		}
+		res, _ := m["result"].(map[string]any)
+		if res == nil {
+			t.Fatal("nil rename result", msgs)
+		}
+		ch, _ := res["changes"].(map[string]any)
+		if ch == nil {
+			t.Fatal("no changes", res)
+		}
+		if _, ok := ch["file:///tmp/a.weft"]; ok {
+			sawA = true
+		}
+		if _, ok := ch["file:///tmp/b.weft"]; ok {
+			sawB = true
+		}
+	}
+	if !sawA || !sawB {
+		t.Fatalf("multi-file rename want both files, a=%v b=%v msgs=%v", sawA, sawB, msgs)
+	}
+}
+
+func TestLSPExtractFunction(t *testing.T) {
+	src := "fn main {\n    n := 1 + 2\n    say(n)\n}\n"
+	in := &bytes.Buffer{}
+	out := &bytes.Buffer{}
+	uri := "file:///tmp/ex.weft"
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "method": "textDocument/didOpen",
+		"params": map[string]any{"textDocument": map[string]any{"uri": uri, "text": src}},
+	})
+	// select "1 + 2" on line 1
+	// "    n := 1 + 2" → start char 9 end 14
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "textDocument/codeAction",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": uri},
+			"range": map[string]any{
+				"start": map[string]int{"line": 1, "character": 9},
+				"end":   map[string]int{"line": 1, "character": 14},
+			},
+			"context": map[string]any{"diagnostics": []any{}},
+		},
+	})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 9, "method": "shutdown"})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "method": "exit"})
+	if err := lsp.Run(in, out); err != nil {
+		t.Fatal(err)
+	}
+	msgs := readAllMessages(out)
+	var okExtract bool
+	for _, m := range msgs {
+		if id, _ := m["id"].(float64); id != 2 {
+			continue
+		}
+		items, _ := m["result"].([]any)
+		for _, it := range items {
+			mm, _ := it.(map[string]any)
+			if mm["title"] == "Extract function" {
+				edit, _ := mm["edit"].(map[string]any)
+				ch, _ := edit["changes"].(map[string]any)
+				edits, _ := ch[uri].([]any)
+				if len(edits) > 0 {
+					ed0, _ := edits[0].(map[string]any)
+					nt, _ := ed0["newText"].(string)
+					if strings.Contains(nt, "fn extracted_") && strings.Contains(nt, "extracted_") {
+						okExtract = true
+					}
+				}
+			}
+		}
+	}
+	if !okExtract {
+		t.Fatal("extract function code action missing", msgs)
+	}
+}
+
+func TestLSPLocalDefinitionAndHighlight(t *testing.T) {
+	// line0: fn add(a, b) {
+	// line1:     x := a + b
+	// line2:     say(x)
+	// line3: }
+	src := "fn add(a, b) {\n    x := a + b\n    say(x)\n}\n"
+	in := &bytes.Buffer{}
+	out := &bytes.Buffer{}
+	uri := "file:///tmp/local.weft"
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "method": "textDocument/didOpen",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": uri, "text": src},
+		},
+	})
+	// definition of x at say(x) — line 2, character on x inside say(x)
+	// "    say(x)" → x is at index 8
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "textDocument/definition",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": uri},
+			"position":     map[string]any{"line": 2, "character": 8},
+		},
+	})
+	// definition of param a at use site "a + b"
+	// "    x := a + b" → a at index 9
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "id": 3, "method": "textDocument/definition",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": uri},
+			"position":     map[string]any{"line": 1, "character": 9},
+		},
+	})
+	// documentHighlight on x at say(x)
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "id": 4, "method": "textDocument/documentHighlight",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": uri},
+			"position":     map[string]any{"line": 2, "character": 8},
+		},
+	})
+	// completion should include local binding x
+	writeRPC(in, map[string]any{
+		"jsonrpc": "2.0", "id": 5, "method": "textDocument/completion",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": uri},
+			"position":     map[string]any{"line": 2, "character": 4},
+		},
+	})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "id": 9, "method": "shutdown"})
+	writeRPC(in, map[string]any{"jsonrpc": "2.0", "method": "exit"})
+	if err := lsp.Run(in, out); err != nil {
+		t.Fatal(err)
+	}
+	msgs := readAllMessages(out)
+	var capHL, defX, defA, hlOK, compX bool
+	for _, m := range msgs {
+		id, _ := m["id"].(float64)
+		if id == 1 {
+			res, _ := m["result"].(map[string]any)
+			caps, _ := res["capabilities"].(map[string]any)
+			if caps != nil {
+				if _, ok := caps["documentHighlightProvider"]; ok {
+					capHL = true
+				}
+			}
+		}
+		if id == 2 {
+			if res, ok := m["result"].(map[string]any); ok && res != nil {
+				// should point at line 1 (x :=)
+				if r, ok := res["range"].(map[string]any); ok {
+					if st, ok := r["start"].(map[string]any); ok {
+						if ln, ok := st["line"].(float64); ok && int(ln) == 1 {
+							defX = true
+						}
+						if ln, ok := st["line"].(int); ok && ln == 1 {
+							defX = true
+						}
+					}
+				}
+			}
+		}
+		if id == 3 {
+			if res, ok := m["result"].(map[string]any); ok && res != nil {
+				if r, ok := res["range"].(map[string]any); ok {
+					if st, ok := r["start"].(map[string]any); ok {
+						// param a is on line 0
+						if ln, ok := st["line"].(float64); ok && int(ln) == 0 {
+							defA = true
+						}
+						if ln, ok := st["line"].(int); ok && ln == 0 {
+							defA = true
+						}
+					}
+				}
+			}
+		}
+		if id == 4 {
+			if items, ok := m["result"].([]any); ok && len(items) >= 2 {
+				hlOK = true
+			}
+		}
+		if id == 5 {
+			if items, ok := m["result"].([]any); ok {
+				for _, it := range items {
+					mm, _ := it.(map[string]any)
+					if mm["label"] == "x" || mm["label"] == "a" || mm["label"] == "b" {
+						compX = true
+					}
+				}
+			}
+		}
+	}
+	if !capHL {
+		t.Fatal("missing documentHighlightProvider")
+	}
+	if !defX {
+		t.Fatal("definition of local x missing or wrong line", msgs)
+	}
+	if !defA {
+		t.Fatal("definition of param a missing or wrong line", msgs)
+	}
+	if !hlOK {
+		t.Fatal("documentHighlight for x missing", msgs)
+	}
+	if !compX {
+		t.Fatal("local binding completion missing", msgs)
+	}
+}

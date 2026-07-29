@@ -1,0 +1,7 @@
+fn main {
+    xs := [10, 20, 30, 40]
+    say(xs[0])
+    say(xs[len(xs) - 1])
+    say(len(xs))
+}
+

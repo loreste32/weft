@@ -214,6 +214,19 @@ func (p *printer) typeExpr(t ast.TypeExpr) {
 		p.write(": ")
 		p.typeExpr(t.Value)
 		p.write("}")
+	case *ast.FnType:
+		p.write("fn(")
+		for i, par := range t.Params {
+			if i > 0 {
+				p.write(", ")
+			}
+			p.typeExpr(par)
+		}
+		p.write(")")
+		if t.Ret != nil {
+			p.write(" -> ")
+			p.typeExpr(t.Ret)
+		}
 	case *ast.ResultType:
 		p.write("Result")
 		if t.Ok != nil {

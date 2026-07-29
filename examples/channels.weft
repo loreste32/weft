@@ -1,20 +1,20 @@
-// Channels + spawn — pass args or use by-value closures
 fn producer(ch) {
     send(ch, 1)
     send(ch, 2)
     close(ch)
 }
 
-fn main() -> Result {
-    let ch = channel(2)
-    spawn(producer, ch)
-    let a = recv(ch)?
-    let b = recv(ch)?
-    println(a, b)
 
-    let g = group()
+fn main -> Result[any] {
+    ch := channel(2)
+    spawn(producer, ch)
+    a := recv(ch)?
+    b := recv(ch)?
+    say(a, b)
+    g := group()
     g.go(fn() { 10 })
     g.go(fn() { 20 })
-    let rs = g.wait()?
-    println(rs)
+    rs := g.wait()?
+    say(rs)
 }
+

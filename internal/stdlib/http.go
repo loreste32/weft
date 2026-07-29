@@ -1,3 +1,5 @@
+//go:build !js
+
 package stdlib
 
 import (
@@ -17,10 +19,6 @@ import (
 	"github.com/loreste/weft/internal/netsafe"
 	"github.com/loreste/weft/internal/runtime"
 )
-
-func jsonBytes(v runtime.Value) ([]byte, error) {
-	return json.Marshal(valueToGo(v))
-}
 
 // httpHeaderSafe rejects CR/LF and other CTL that enable response splitting.
 func httpHeaderSafe(s string) bool {
@@ -274,11 +272,6 @@ func fieldOrKey(v runtime.Value, name string) (runtime.Value, bool) {
 	default:
 		return runtime.Null(), false
 	}
-}
-
-func jsonMarshal(v runtime.Value) (string, error) {
-	b, err := jsonBytes(v)
-	return string(b), err
 }
 
 func requestValue(r *http.Request) runtime.Value {

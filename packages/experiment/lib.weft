@@ -1,19 +1,13 @@
-// experiment — track ML runs, parameters, and metrics
-// MLflow-lite: one JSONL file, no server, no database.
-//
-//   use experiment as exp
-//   run := exp.start("train-v1", {"lr": 0.001, "epochs": 10})
-//   exp.log_metric(run, "loss", 0.42)
-//   exp.log_metric(run, "accuracy", 0.95)
-//   exp.end(run)
-//   exp.compare("experiments.jsonl")
-
 use json
+
+
 use time
 
-// start(name, params?, log_file?) -> run handle
+
 pub fn start(name, params, log_file) {
-    p := if params == null { {} } else { params }
+    p := if params == null {
+        {}
+    } else { params }
     f := if log_file == null { "experiments.jsonl" } else { log_file }
     {
         "_run": true,
@@ -26,7 +20,7 @@ pub fn start(name, params, log_file) {
     }
 }
 
-// log_metric(run, key, value) -> run with metric added
+
 pub fn log_metric(run, key, value) {
     mut m := run.metrics
     m[key] = value
@@ -35,7 +29,7 @@ pub fn log_metric(run, key, value) {
     r
 }
 
-// log_metrics(run, map) -> run with multiple metrics
+
 pub fn log_metrics(run, kv) {
     mut r := run
     for k in keys(kv) {
@@ -44,8 +38,8 @@ pub fn log_metrics(run, kv) {
     r
 }
 
-// end(run) -> Result  finalize and append to log file
-pub fn end(run) -> Result {
+
+pub fn end(run) -> Result[any] {
     elapsed := time.now_ms() - run.start_ms
     entry := json.stringify({
         "name": run.name,
@@ -59,8 +53,8 @@ pub fn end(run) -> Result {
     say("logged: " + run.name + " (" + elapsed + "ms)")
 }
 
-// list(log_file?) -> Result[[run]]  load all runs from log
-pub fn list(log_file) -> Result {
+
+pub fn list(log_file) -> Result[any] {
     f := if log_file == null { "experiments.jsonl" } else { log_file }
     raw := fs.read(f)?
     mut runs := []
@@ -73,14 +67,13 @@ pub fn list(log_file) -> Result {
     Ok(runs)
 }
 
-// compare(log_file?) -> print comparison table of all runs
-pub fn compare(log_file) -> Result {
+
+pub fn compare(log_file) -> Result[any] {
     runs := list(log_file)?
     if len(runs) == 0 {
         say("no experiments logged")
         return Ok(unit)
     }
-    // collect all metric keys
     mut all_keys := []
     for r in runs {
         if r.metrics != null {
@@ -91,7 +84,6 @@ pub fn compare(log_file) -> Result {
             }
         }
     }
-    // header
     mut header := "name\t"
     for k in all_keys {
         header = header + k + "\t"
@@ -99,7 +91,6 @@ pub fn compare(log_file) -> Result {
     header = header + "duration"
     say(header)
     say(str.repeat("-", 60))
-    // rows
     for r in runs {
         mut row := r.name + "\t"
         for k in all_keys {
@@ -112,8 +103,8 @@ pub fn compare(log_file) -> Result {
     }
 }
 
-// best(log_file, metric, higher_is_better?) -> Result[run]
-pub fn best(log_file, metric, higher) -> Result {
+
+pub fn best(log_file, metric, higher) -> Result[any] {
     runs := list(log_file)?
     hib := if higher == null { true } else { higher }
     mut best_run := null
@@ -133,9 +124,6 @@ pub fn best(log_file, metric, higher) -> Result {
             }
         }
     }
-    if best_run == null {
-        Err("no runs with metric " + metric)
-    } else {
-        Ok(best_run)
-    }
+    if best_run == null { Err("no runs with metric " + metric) } else { Ok(best_run) }
 }
+

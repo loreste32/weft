@@ -1,24 +1,26 @@
-// ONNX/mock sidecar client — short Weft.
-// t1: weft run examples/onnx_sidecar/mock_server.weft
-// t2: weft run examples/onnx_sidecar/main.weft
-
-fn classify(base, text) -> Result {
-    r := http.post("${base}/v1/classify", json.stringify({"text": text}), {
-        "timeout_ms": 2000, "retries": 2, "circuit": true,
+fn classify(base, text) -> Result[any] {
+    r := http.post("$base/v1/classify", json.stringify({"text": text}), {
+        "timeout_ms": 2000,
+        "retries": 2,
+        "circuit": true,
     })?
-    if !r.ok { return Err("HTTP ${r.status}") }
+    if !r.ok {
+        return Err("HTTP ${r.status}")
+    }
     json.parse(r.body)
 }
 
-fn main -> Result {
+
+fn main -> Result[any] {
     v := env.get("ONNX_SIDECAR_URL")
     base := if v == null || v == "" { "http://127.0.0.1:8091" } else { v }
-
-    h := http.get("${base}/health", {"timeout_ms": 1000})
-    if !(h.ok && h.value.ok) { return Err("sidecar down at $base") }
-
+    h := http.get("$base/health", {"timeout_ms": 1000})
+    if !(h.ok && h.value.ok) {
+        return Err("sidecar down at $base")
+    }
     for t in ["weft is great", "this is bad", "meh"] {
         out := classify(base, t)?
         say("$t → ${out.label} (${out.score})")
     }
 }
+

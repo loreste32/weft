@@ -1,0 +1,17 @@
+fn main {
+    n := 5000
+    mut i := 0
+    mut last := ""
+    while i < n {
+        s := json.stringify({
+            "n": i,
+            "tag": "item",
+            "ok": true,
+        })
+        o := json.parse(s)
+        last = json.stringify(o)
+        i = i + 1
+    }
+    if str.contains(last, "4999") { println("ok") } else { println("bad") }
+}
+

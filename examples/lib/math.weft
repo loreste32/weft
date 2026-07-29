@@ -1,8 +1,5 @@
-// Shared helpers — import as a module
-pub fn add(a, b) {
-    a + b
-}
+pub fn add(a, b) { a + b }
 
-pub fn double(x) {
-    x * 2
-}
+
+pub fn double(x) { x * 2 }
+

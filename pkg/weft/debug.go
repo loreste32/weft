@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/loreste/weft/internal/compile"
+	"github.com/loreste/weft/internal/dap"
 	"github.com/loreste/weft/internal/parse"
 	"github.com/loreste/weft/internal/runtime"
 	"github.com/loreste/weft/internal/stdlib"
@@ -139,9 +140,15 @@ func RunDebug(path string, in io.Reader, out io.Writer) error {
 	return nil
 }
 
-// StartDebug is the CLI entry point.
+// StartDebug is the CLI entry point (interactive REPL debugger).
 func StartDebug(path string) error {
 	return RunDebug(path, os.Stdin, os.Stdout)
+}
+
+// StartDAP runs the Debug Adapter Protocol on stdin/stdout.
+// program may be empty; the DAP launch request can supply it.
+func StartDAP(program string) error {
+	return dap.Run(os.Stdin, os.Stdout, program)
 }
 
 // Profile runs a script and reports function timing.

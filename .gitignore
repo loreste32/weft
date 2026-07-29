@@ -2,6 +2,8 @@
 /loom
 /bin/
 /dist/
+# browser Wasm artifact (rebuild with: make wasm)
+wasm/weft.wasm
 *.exe
 *.test
 *.out
@@ -22,6 +24,7 @@ examples/data/out/
 # editor / local noise
 editors/vscode/node_modules/
 editors/vscode/*.vsix
+editors/vscode/package-lock.json
 # tokensave / local train memory (never publish)
 .memory.json
 **/.memory.json

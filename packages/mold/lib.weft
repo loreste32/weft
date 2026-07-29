@@ -1,81 +1,76 @@
-// mold — pour LLM/API JSON into structured maps (optional module, pure Weft).
-//
-// Agent stack: docs/ECOSYSTEM.md
-//   llm (stdlib) → mold (shapes) → tokensave / ml (optional siblings)
-//
-//   weft registry install mold && weft install
-//   use mold
-
 use "./fields.weft" as F
+
+
 use "./validate.weft" as V
+
+
 use "./emit.weft" as E
 
-// --- field builders (avoid shadowing host str/int packages) -----------------
 
-pub fn field(name, typ, opts) -> Result {
+pub fn field(name, typ, opts) -> Result[any] {
     f := F.base_open(typ, opts)?
     f["name"] = name
     Ok(f)
 }
 
-pub fn string(opts) -> Result { F.f_str(opts) }
-pub fn integer(opts) -> Result { F.f_int(opts) }
-pub fn float(opts) -> Result { F.f_float(opts) }
-pub fn boolean(opts) -> Result { F.f_bool(opts) }
-pub fn any(opts) -> Result { F.f_any(opts) }
-pub fn list(item, opts) -> Result { F.f_list(item, opts) }
-pub fn object(fields, opts) -> Result { F.f_object(fields, opts) }
 
-// short aliases
-pub fn str(opts) -> Result { F.f_str(opts) }
-pub fn int(opts) -> Result { F.f_int(opts) }
-pub fn bool(opts) -> Result { F.f_bool(opts) }
+pub fn string(opts) -> Result[any] { F.f_str(opts) }
 
-// --- model ------------------------------------------------------------------
 
-pub fn model(fields) -> Result {
+pub fn integer(opts) -> Result[any] { F.f_int(opts) }
+
+
+pub fn float(opts) -> Result[any] { F.f_float(opts) }
+
+
+pub fn boolean(opts) -> Result[any] { F.f_bool(opts) }
+
+
+pub fn any(opts) -> Result[any] { F.f_any(opts) }
+
+
+pub fn list(item, opts) -> Result[any] { F.f_list(item, opts) }
+
+
+pub fn object(fields, opts) -> Result[any] { F.f_object(fields, opts) }
+
+
+pub fn str(opts) -> Result[any] { F.f_str(opts) }
+
+
+pub fn int(opts) -> Result[any] { F.f_int(opts) }
+
+
+pub fn bool(opts) -> Result[any] { F.f_bool(opts) }
+
+
+pub fn model(fields) -> Result[any] {
     expanded := F.expand_fields(fields)?
-    Ok({
-        "kind": "mold.model",
-        "fields": expanded,
-    })
+    Ok({"kind": "mold.model", "fields": expanded})
 }
 
-// --- validate / parse / extract ---------------------------------------------
 
-pub fn validate(model, data) -> Result {
-    V.validate_mut(model, data)
-}
+pub fn validate(model, data) -> Result[any] { V.validate_mut(model, data) }
 
-pub fn parse(model, raw) -> Result {
-    V.parse(model, raw)
-}
 
-pub fn extract(model, text) -> Result {
-    V.extract(model, text)
-}
+pub fn parse(model, raw) -> Result[any] { V.parse(model, raw) }
 
-pub fn errors(result) {
-    V.errors(result)
-}
 
-pub fn ok(result) {
-    V.ok(result)
-}
+pub fn extract(model, text) -> Result[any] { V.extract(model, text) }
 
-// --- emit (JSON Schema + provider tool wire formats) ------------------------
 
-pub fn json_schema(model, title) {
-    E.json_schema(model, title)
-}
+pub fn errors(result) { V.errors(result) }
 
-// OpenAI-style parameters object: {type, properties, required, …}
-pub fn tool_params(model) {
-    E.tool_params(model)
-}
 
-// Full tools[] entry for OpenAI-compat / many proxies:
-//   {"type":"function","function":{"name","description","parameters"}}
+pub fn ok(result) { V.ok(result) }
+
+
+pub fn json_schema(model, title) { E.json_schema(model, title) }
+
+
+pub fn tool_params(model) { E.tool_params(model) }
+
+
 pub fn tool_spec(name, model, desc) {
     mut d := ""
     if desc != null {
@@ -91,7 +86,7 @@ pub fn tool_spec(name, model, desc) {
     }
 }
 
-// Anthropic-style tool: {name, description, input_schema}
+
 pub fn input_schema_tool(name, model, desc) {
     mut d := ""
     if desc != null {
@@ -103,3 +98,4 @@ pub fn input_schema_tool(name, model, desc) {
         "input_schema": E.tool_params(model),
     }
 }
+

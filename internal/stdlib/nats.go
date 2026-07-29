@@ -1,3 +1,5 @@
+//go:build !js && !slim
+
 package stdlib
 
 import (

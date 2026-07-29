@@ -1,14 +1,10 @@
-// Concurrent by default — no async/await.
-fn main -> Result {
-    // gather == parallel (concurrent fan-out)
+fn main -> Result[any] {
     rs := gather([
         fn() { 1 + 1 },
         fn() { 2 * 3 },
         fn() { 10 - 1 },
     ])?
     say("gather:", rs)
-
-    // race: first done
     winner := race([
         fn() {
             time.sleep_ms(50)
@@ -17,23 +13,17 @@ fn main -> Result {
         fn() { "fast" },
     ])?
     say("race:", winner)
-
-    // timeout
     ok := timeout(1, fn() { "within" })?
     say("timeout ok:", ok)
-
-    // spawn + await (?)
     h := spawn(fn(x) { x * 2 }, 21)
     v := h.await()?
     say("spawn await:", v)
-
-    // channels still work
     ch := channel(1)
     spawn(fn(c) {
         send(c, 7)
         close(c)
     }, ch)
     say("recv:", recv(ch)?)
-
     say("concurrent default ok")
 }
+

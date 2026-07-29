@@ -15,8 +15,9 @@ func inferSrc(t *testing.T, src string) (Info, string) {
 		t.Fatalf("parse: %v", errs)
 	}
 	info, terrs := Infer(f)
+	// Collect both errors and warnings so mismatch tests still see messages.
 	var b strings.Builder
-	if terrs.HasErrors() {
+	if len(terrs) > 0 {
 		b.WriteString(terrs.Error())
 	}
 	return info, b.String()
@@ -492,6 +493,15 @@ func TestTypeEqual(t *testing.T) {
 }
 
 func TestAssignable(t *testing.T) {
+	if Assignable(tyInt(), tyFloat()) {
+		t.Fatal("float should NOT assign to int")
+	}
+	if !Assignable(tyFloat(), tyInt()) {
+		t.Fatal("int should assign to float")
+	}
+	if !Assignable(tyList(tyOpt(tyInt())), tyList(tyInt())) {
+		t.Fatal("[int] should assign to [int?]")
+	}
 	if !Assignable(tyInt(), tyInt()) {
 		t.Fatal("int := int")
 	}
@@ -684,6 +694,13 @@ func TestUnify(t *testing.T) {
 	if got := Unify(tyAny(), tyStr()); got.Kind != TyStr {
 		t.Errorf("any+str: %s", got)
 	}
+	// null + int = int? (order-independent)
+	if got := Unify(tyInt(), tyNull()); got.Kind != TyOptional || got.Elem.Kind != TyInt {
+		t.Errorf("int+null: %s", got)
+	}
+	if got := Unify(tyNull(), tyInt()); got.Kind != TyOptional || got.Elem.Kind != TyInt {
+		t.Errorf("null+int: %s", got)
+	}
 }
 
 func TestFromAST(t *testing.T) {
@@ -698,6 +715,11 @@ func TestFromAST(t *testing.T) {
 		{&ast.ResultType{Ok: &ast.NamedType{Name: "str"}}, "Result[str]"},
 		{&ast.OptionalType{Element: &ast.NamedType{Name: "int"}}, "int?"},
 		{&ast.ResultType{}, "Result[any]"},
+		{&ast.FnType{
+			Params: []ast.TypeExpr{&ast.NamedType{Name: "str"}},
+			Ret:    &ast.NamedType{Name: "int"},
+		}, "fn(str) -> int"},
+		{&ast.FnType{Params: nil, Ret: &ast.NamedType{Name: "unit"}}, "fn() -> unit"},
 		{nil, "any"},
 	}
 	for _, tc := range cases {
@@ -705,5 +727,226 @@ func TestFromAST(t *testing.T) {
 		if got.String() != tc.want {
 			t.Errorf("FromAST: got %q, want %q", got.String(), tc.want)
 		}
+	}
+}
+
+func TestInferColonBindAnnotation(t *testing.T) {
+	info, err := inferSrc(t, `
+fn main {
+    name: str := "weft"
+    count: int := 0
+    say(name, count)
+}
+`)
+	if err != "" {
+		t.Fatal(err)
+	}
+	if info.Bindings["name"] == nil || info.Bindings["name"].Kind != TyStr {
+		t.Fatalf("name: %v", info.Bindings["name"])
+	}
+	if info.Bindings["count"] == nil || info.Bindings["count"].Kind != TyInt {
+		t.Fatalf("count: %v", info.Bindings["count"])
+	}
+}
+
+func TestInferColonBindMismatchIsWarning(t *testing.T) {
+	info, msg := inferSrc(t, `
+fn main {
+    wrong: int := "nope"
+    say(wrong)
+}
+`)
+	if !strings.Contains(msg, "cannot assign") {
+		t.Fatalf("want assign warning, got %q", msg)
+	}
+	// warnings only — no hard errors
+	if info.Diags.HasErrors() {
+		t.Fatalf("type mismatches must be warnings, got errors: %v", info.Diags)
+	}
+}
+
+func TestInferFnTypeAnnotation(t *testing.T) {
+	info, err := inferSrc(t, `
+fn lookup(s: str) -> Result { Ok(s) }
+fn main {
+    handler: fn(str) -> Result := lookup
+    say(handler)
+}
+`)
+	if err != "" {
+		t.Fatal(err)
+	}
+	ht := info.Bindings["handler"]
+	if ht == nil || ht.Kind != TyFn {
+		t.Fatalf("handler want fn type, got %v", ht)
+	}
+}
+
+func TestInferStructFieldAccess(t *testing.T) {
+	info, msg := inferSrc(t, `
+type User {
+    name: str
+    age: int
+}
+fn main {
+    u := User{name: "alice", age: 30}
+    n := u.name
+    a := u.age
+    say(n, a)
+}
+`)
+	if msg != "" && strings.Contains(msg, "no field") {
+		t.Fatalf("unexpected field warning: %s", msg)
+	}
+	if info.Bindings["n"] == nil || info.Bindings["n"].Kind != TyStr {
+		t.Fatalf("u.name want str, got %v", info.Bindings["n"])
+	}
+	if info.Bindings["a"] == nil || info.Bindings["a"].Kind != TyInt {
+		t.Fatalf("u.age want int, got %v", info.Bindings["a"])
+	}
+}
+
+func TestInferStructFieldMismatch(t *testing.T) {
+	_, msg := inferSrc(t, `
+type Pt { x: int, y: int }
+fn main {
+    p := Pt{x: "nope", y: 2}
+    say(p)
+}
+`)
+	if !strings.Contains(msg, "field") {
+		t.Fatalf("want field type warning, got %q", msg)
+	}
+}
+
+func TestInferUnknownStructField(t *testing.T) {
+	_, msg := inferSrc(t, `
+type Pt { x: int }
+fn main {
+    p := Pt{x: 1}
+    say(p.z)
+}
+`)
+	if !strings.Contains(msg, "no field") {
+		t.Fatalf("want unknown field warning, got %q", msg)
+	}
+}
+
+func TestInferListNullOrderStable(t *testing.T) {
+	info, msg := inferSrc(t, `
+fn main {
+    xs := [1, null, 2]
+    ys := [null, 1, 2]
+    zs: [int?] := xs
+    say(xs, ys, zs)
+}
+`)
+	if msg != "" && strings.Contains(msg, "cannot assign") {
+		t.Fatalf("list with null should be [int?], got warnings: %s", msg)
+	}
+	if xs := info.Bindings["xs"]; xs == nil || xs.String() != "[int?]" {
+		t.Fatalf("xs want [int?], got %v", xs)
+	}
+	if ys := info.Bindings["ys"]; ys == nil || ys.String() != "[int?]" {
+		t.Fatalf("ys want [int?], got %v", ys)
+	}
+}
+
+func TestInferArityWarning(t *testing.T) {
+	_, msg := inferSrc(t, `
+fn two(a: int, b: int) -> int { a + b }
+fn main {
+    say(two(1))
+    say(two(1, 2, 3))
+}
+`)
+	if !strings.Contains(msg, "wrong number of arguments") {
+		t.Fatalf("want arity warning, got %q", msg)
+	}
+}
+
+func TestInferMapOptionalWorkersNoArityWarn(t *testing.T) {
+	_, msg := inferSrc(t, `
+fn square(x) { x * x }
+fn main {
+    say(map([1, 2, 3], square))
+    say(map([1, 2, 3], square, 2))
+    say(range(5))
+    say(range(1, 5))
+}
+`)
+	if strings.Contains(msg, "wrong number of arguments") {
+		t.Fatalf("map/range optional arity should not warn, got %q", msg)
+	}
+}
+
+func TestInferMissingStructField(t *testing.T) {
+	_, msg := inferSrc(t, `
+type Pt { x: int, y: int }
+fn main {
+    p := Pt{x: 1}
+    say(p)
+}
+`)
+	if !strings.Contains(msg, "missing field") {
+		t.Fatalf("want missing field warning, got %q", msg)
+	}
+}
+
+func TestInferMissingFieldWithDefaultOK(t *testing.T) {
+	_, msg := inferSrc(t, `
+type Cfg { port: int = 8080, host: str = "localhost" }
+fn main {
+    c := Cfg{}
+    say(c)
+}
+`)
+	if strings.Contains(msg, "missing field") {
+		t.Fatalf("defaults should not require fields, got %q", msg)
+	}
+}
+
+func TestInferFloatToIntWarns(t *testing.T) {
+	_, msg := inferSrc(t, `
+fn main {
+    i: int := 1.5
+    say(i)
+}
+`)
+	if !strings.Contains(msg, "cannot assign") {
+		t.Fatalf("want float→int warning, got %q", msg)
+	}
+}
+
+func TestInferPoisonedBindingUsesActualType(t *testing.T) {
+	info, msg := inferSrc(t, `
+fn take(n: int) { say(n) }
+fn main {
+    x: int := "admin"
+    take(x)
+}
+`)
+	if !strings.Contains(msg, "cannot assign") {
+		t.Fatalf("want assign warning, got %q", msg)
+	}
+	// x should be str (actual), so take(x) should also warn about arg type
+	if !strings.Contains(msg, "argument") {
+		t.Fatalf("poisoned binding should not silence later checks, got %q", msg)
+	}
+	if info.Bindings["x"] == nil || info.Bindings["x"].Kind != TyStr {
+		t.Fatalf("x should bind actual str, got %v", info.Bindings["x"])
+	}
+}
+
+func TestInferWrongFieldDefault(t *testing.T) {
+	_, msg := inferSrc(t, `
+type Cfg { port: int = "8080" }
+fn main {
+    c := Cfg{}
+    say(c)
+}
+`)
+	if !strings.Contains(msg, "default for field") {
+		t.Fatalf("want default type warning, got %q", msg)
 	}
 }

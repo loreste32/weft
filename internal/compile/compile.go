@@ -44,6 +44,8 @@ type Compiler struct {
 	anonID      int
 	// blockReturned: last expr in block already emitted RETURN
 	blockReturned bool
+	// typeFields: type name → AST fields (for non-literal defaults / optional null fill)
+	typeFields map[string][]*ast.Field
 }
 
 type local struct {
@@ -86,19 +88,27 @@ func compileFile(file *ast.File, env *runtime.Env, requireMain, replMode bool) (
 			if d.Name == "main" {
 				prog.Main = fn
 			}
-			env.Set(d.Name, runtime.Func(fn))
+			if env != nil {
+				env.Set(d.Name, runtime.Func(fn))
+			}
 		case *ast.ImportDecl:
 			c.compileImport(d)
 		case *ast.TypeDecl:
 			ti := c.typeInfoFromDecl(d)
-			env.Types[d.Name] = ti
-			env.Set(d.Name, runtime.TypeInfoValue(ti))
+			if env != nil {
+				env.Types[d.Name] = ti
+				env.Set(d.Name, runtime.TypeInfoValue(ti))
+			}
+			if c.typeFields == nil {
+				c.typeFields = map[string][]*ast.Field{}
+			}
+			c.typeFields[d.Name] = d.Fields
 		case *ast.ConstDecl:
 			if lit, ok := d.Value.(*ast.BasicLit); ok {
 				v, err := litValue(lit)
 				if err != nil {
 					c.errorf(d.Pos(), "%v", err)
-				} else {
+				} else if env != nil {
 					env.Set(d.Name, v)
 				}
 			} else {
@@ -152,13 +162,21 @@ func compileFile(file *ast.File, env *runtime.Env, requireMain, replMode bool) (
 					})
 				}
 			}
-			env.Set(d.Name, m)
+			if env != nil {
+				env.Set(d.Name, m)
+			}
 			prog.Globals = append(prog.Globals, d.Name)
 		}
 	}
 
 	if requireMain && prog.Main == nil {
 		c.errorf(token.Pos{Line: 1, Column: 1}, "no main function")
+	}
+	// Structural bytecode check — catches compiler bugs before the VM panics.
+	if !c.errs.HasErrors() {
+		if err := ValidateProgram(prog); err != nil {
+			c.errorf(token.Pos{Line: 1, Column: 1}, "bytecode validation: %v", err)
+		}
 	}
 	return prog, c.errs
 }
@@ -439,6 +457,7 @@ func (c *Compiler) compileFnWithFree(d *ast.FnDecl, free []string) (*runtime.Fun
 		returnsResult: isResultType(d.Ret),
 		replMode:      repl,
 		anonID:        c.anonID,
+		typeFields:    c.typeFields, // struct defaults / optional null fill
 	}
 	for _, p := range d.Params {
 		sub.locals = append(sub.locals, local{name: p.Name, mut: false})
@@ -530,17 +549,65 @@ func (c *Compiler) typeInfoFromDecl(d *ast.TypeDecl) *runtime.TypeInfo {
 	ti := &runtime.TypeInfo{Name: d.Name, Kind: "struct"}
 	for _, f := range d.Fields {
 		fi := runtime.FieldInfo{Name: f.Name, Type: typeExprInfo(f.Type)}
+		if _, ok := f.Type.(*ast.OptionalType); ok {
+			fi.Optional = true
+		}
 		if f.Default != nil {
-			if lit, ok := f.Default.(*ast.BasicLit); ok {
-				v, err := litValue(lit)
-				if err == nil {
-					fi.Default = &v
-				}
+			if v, ok := constDefaultValue(f.Default); ok {
+				fi.Default = &v
 			}
 		}
 		ti.Fields = append(ti.Fields, fi)
 	}
 	return ti
+}
+
+// constDefaultValue evaluates simple constant default expressions (literals, ±lit).
+func constDefaultValue(e ast.Expr) (runtime.Value, bool) {
+	switch e := e.(type) {
+	case *ast.BasicLit:
+		v, err := litValue(e)
+		return v, err == nil
+	case *ast.UnaryExpr:
+		if e.Op != token.Minus && e.Op != token.Plus {
+			return runtime.Value{}, false
+		}
+		lit, ok := e.X.(*ast.BasicLit)
+		if !ok {
+			return runtime.Value{}, false
+		}
+		v, err := litValue(lit)
+		if err != nil {
+			return runtime.Value{}, false
+		}
+		if e.Op == token.Minus {
+			switch v.Kind {
+			case runtime.KindInt:
+				v = runtime.Int(-v.I)
+			case runtime.KindFloat:
+				v = runtime.Float(-v.F)
+			default:
+				return runtime.Value{}, false
+			}
+		}
+		return v, true
+	case *ast.Ident:
+		if e.Name == "null" {
+			return runtime.Null(), true
+		}
+		if e.Name == "true" {
+			return runtime.Bool(true), true
+		}
+		if e.Name == "false" {
+			return runtime.Bool(false), true
+		}
+	}
+	return runtime.Value{}, false
+}
+
+func isOptionalTypeExpr(t ast.TypeExpr) bool {
+	_, ok := t.(*ast.OptionalType)
+	return ok
 }
 
 func (c *Compiler) emit(op Op, pos token.Pos) {
@@ -1071,14 +1138,64 @@ func (c *Compiler) compileExpr(e ast.Expr) {
 		}
 		c.emitArg(OpMakeMap, uint16(len(e.Keys)), e.Pos())
 	case *ast.StructLit:
+		nFields := 0
+		provided := make(map[string]bool, len(e.Fields))
 		for _, f := range e.Fields {
+			provided[f.Name] = true
 			idx := c.addConst(runtime.Str(f.Name))
 			c.emitArg(OpLoadConst, idx, e.Pos())
 			c.compileExpr(f.Value)
+			nFields++
+		}
+		// Fill missing defaults / optional nulls from the type declaration AST.
+		if e.Name != "" {
+			if fields, ok := c.typeFields[e.Name]; ok {
+				for _, f := range fields {
+					if f == nil || provided[f.Name] {
+						continue
+					}
+					if f.Default != nil {
+						idx := c.addConst(runtime.Str(f.Name))
+						c.emitArg(OpLoadConst, idx, e.Pos())
+						c.compileExpr(f.Default)
+						nFields++
+						continue
+					}
+					if isOptionalTypeExpr(f.Type) {
+						idx := c.addConst(runtime.Str(f.Name))
+						c.emitArg(OpLoadConst, idx, e.Pos())
+						nullIdx := c.addConst(runtime.Null())
+						c.emitArg(OpLoadConst, nullIdx, e.Pos())
+						nFields++
+					}
+				}
+			} else if c.env != nil && c.env.Types != nil {
+				// Fallback: TypeInfo constant defaults only
+				if ti, ok := c.env.Types[e.Name]; ok && ti != nil {
+					for _, fi := range ti.Fields {
+						if provided[fi.Name] {
+							continue
+						}
+						if fi.Default != nil {
+							idx := c.addConst(runtime.Str(fi.Name))
+							c.emitArg(OpLoadConst, idx, e.Pos())
+							defIdx := c.addConst(*fi.Default)
+							c.emitArg(OpLoadConst, defIdx, e.Pos())
+							nFields++
+						} else if fi.Optional {
+							idx := c.addConst(runtime.Str(fi.Name))
+							c.emitArg(OpLoadConst, idx, e.Pos())
+							nullIdx := c.addConst(runtime.Null())
+							c.emitArg(OpLoadConst, nullIdx, e.Pos())
+							nFields++
+						}
+					}
+				}
+			}
 		}
 		nameIdx := c.addConst(runtime.Str(e.Name))
 		c.emitArg(OpLoadConst, nameIdx, e.Pos())
-		c.emitArg(OpMakeStruct, uint16(len(e.Fields)), e.Pos())
+		c.emitArg(OpMakeStruct, uint16(nFields), e.Pos())
 	case *ast.FStringExpr:
 		if len(e.Parts) == 0 {
 			c.emitArg(OpLoadConst, c.addConst(runtime.Str("")), e.Pos())

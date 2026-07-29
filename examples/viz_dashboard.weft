@@ -1,23 +1,46 @@
-// Live dashboard: Weft web + viz charts
 fn main {
     app := web.app()
-
     app.get("/", fn(req) {
-        sales := {"Mon": 12, "Tue": 19, "Wed": 8, "Thu": 15, "Fri": 22}
-        trend := [3, 5, 4, 8, 7, 12, 10, 14]
-        share := {"api": 40, "web": 35, "batch": 25}
-
+        sales := {
+            "Mon": 12,
+            "Tue": 19,
+            "Wed": 8,
+            "Thu": 15,
+            "Fri": 22,
+        }
+        trend := [
+            3,
+            5,
+            4,
+            8,
+            7,
+            12,
+            10,
+            14,
+        ]
+        share := {
+            "api": 40,
+            "web": 35,
+            "batch": 25,
+        }
         bar := viz.bar(sales, {"title": "Orders"})
         line := viz.line(trend, {"title": "Trend", "color": "#06b6d4"})
         pie := viz.pie(share, {"title": "Mix"})
         page := viz.page("Live dashboard", [bar, line, pie])
         web.html(page)
     })
-
-    app.get("/api/spark", fn(req) {
-        web.json({"spark": viz.spark([1, 3, 2, 5, 8, 4, 6])})
-    })
-
-    println("dashboard → http://127.0.0.1:8080")
+    app.get("/api/spark", fn(req) { web.json({
+        "spark": viz.spark([
+            1,
+            3,
+            2,
+            5,
+            8,
+            4,
+            6,
+        ]),
+    }) })
+    say("dashboard → http://127.0.0.1:8080")
     app.listen(":8080")
 }
+

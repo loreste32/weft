@@ -1,30 +1,74 @@
-// Data visualization — SVG charts, sparklines, HTML dashboard
-fn main -> Result {
-    sales := {"Mon": 12, "Tue": 19, "Wed": 8, "Thu": 15, "Fri": 22}
-    trend := [3, 5, 4, 8, 7, 12, 10, 14]
-    pts := [[1, 2], [2, 3], [3, 1], [4, 5], [5, 4]]
-    share := {"api": 40, "web": 35, "batch": 25}
-
+fn main -> Result[any] {
+    sales := {
+        "Mon": 12,
+        "Tue": 19,
+        "Wed": 8,
+        "Thu": 15,
+        "Fri": 22,
+    }
+    trend := [
+        3,
+        5,
+        4,
+        8,
+        7,
+        12,
+        10,
+        14,
+    ]
+    pts := [
+        [1, 2],
+        [2, 3],
+        [3, 1],
+        [4, 5],
+        [5, 4],
+    ]
+    share := {
+        "api": 40,
+        "web": 35,
+        "batch": 25,
+    }
     bar := viz.bar(sales, {"title": "Sales by day", "ylabel": "orders"})
     line := viz.line(trend, {"title": "Weekly trend", "color": "#06b6d4"})
     area := viz.area(trend, {"title": "Trend (area)", "color": "#10b981"})
     pie := viz.pie(share, {"title": "Traffic mix"})
-    sc := viz.scatter(pts, {"title": "Samples", "xlabel": "x", "ylabel": "y"})
-    hist := viz.hist([1, 1, 2, 2, 2, 3, 3, 5, 5, 5, 5, 8], {"title": "Distribution", "bins": 6})
-
+    sc := viz.scatter(pts, {
+        "title": "Samples",
+        "xlabel": "x",
+        "ylabel": "y",
+    })
+    hist := viz.hist([
+        1,
+        1,
+        2,
+        2,
+        2,
+        3,
+        3,
+        5,
+        5,
+        5,
+        5,
+        8,
+    ], {"title": "Distribution", "bins": 6})
     say("sparkline: " + viz.spark(trend))
-
     out := "examples/viz_out"
     viz.save(out + "/sales.svg", bar)?
-    viz.save(out + "/dashboard.html", viz.page("Weft analytics", [bar, line, area, pie, sc, hist]))?
-
+    viz.save(out + "/dashboard.html", viz.page("Weft analytics", [
+        bar,
+        line,
+        area,
+        pie,
+        sc,
+        hist,
+    ]))?
     tbl := viz.table([
         ["metric", "value"],
         ["orders", 76],
         ["spark", viz.spark(trend)],
     ])
     viz.save(out + "/metrics.html", viz.html(tbl))?
-
     say("wrote " + out + "/dashboard.html — open in a browser")
     say("  also: sales.svg, metrics.html")
 }
+

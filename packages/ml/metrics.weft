@@ -1,6 +1,3 @@
-// Lightweight eval metrics — pure Weft.
-
-// accuracy(preds, labels) — equal counts / n
 pub fn accuracy(preds, labels) {
     mut ok := 0
     mut i := 0
@@ -20,7 +17,7 @@ pub fn accuracy(preds, labels) {
     ok * 1.0 / n
 }
 
-// mse(preds, labels) — mean squared error for numeric lists
+
 pub fn mse(preds, labels) {
     mut s := 0.0
     mut i := 0
@@ -39,31 +36,25 @@ pub fn mse(preds, labels) {
     s / n
 }
 
-// split(rows, train_ratio) -> {train, test}
-// train_ratio in 0..1 (e.g. 0.8). Deterministic prefix split (shuffle first if needed).
+
 pub fn split(rows, train_ratio) {
     n := len(rows)
     mut cut := n * train_ratio
-    // cut as int via loop
     mut k := 0
     while k < n && k < cut {
         k = k + 1
     }
-    // if train_ratio is float like 0.8, n*0.8 might be float — use while k < n * train_ratio
     k = 0
-    while k < n && (k * 1.0 / n) < train_ratio {
+    while k < n && k * 1.0 / n < train_ratio {
         k = k + 1
     }
     mut train := []
     mut test := []
     mut i := 0
     while i < n {
-        if i < k {
-            push(train, rows[i])
-        } else {
-            push(test, rows[i])
-        }
+        if i < k { push(train, rows[i]) } else { push(test, rows[i]) }
         i = i + 1
     }
     {"train": train, "test": test}
 }
+

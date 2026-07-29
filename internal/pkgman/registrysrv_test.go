@@ -26,9 +26,19 @@ func testKeypair() (ed25519.PublicKey, ed25519.PrivateKey) {
 	return pub, priv
 }
 
+// sharedTestKey is reused so multi-version publishes keep namespace ownership.
+var (
+	sharedTestPub  ed25519.PublicKey
+	sharedTestPriv ed25519.PrivateKey
+)
+
+func init() {
+	sharedTestPub, sharedTestPriv, _ = ed25519.GenerateKey(rand.Reader)
+}
+
 func publishSignedToServer(t *testing.T, ts *httptest.Server, name, version, token string) {
 	t.Helper()
-	pub, priv := testKeypair()
+	pub, priv := sharedTestPub, sharedTestPriv
 	archiveData := []byte("test archive content for " + name + "@" + version)
 	sig := ed25519.Sign(priv, archiveData)
 	h := sha256.Sum256(archiveData)

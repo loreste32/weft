@@ -1,25 +1,13 @@
-// esl.weft — FreeSWITCH Event Socket Library client.
-// Inbound mode: connect to FreeSWITCH on port 8021.
-// Outbound mode: FreeSWITCH connects to your server.
-
-// esl.connect(host?, port?, password?) -> Result[map]
-// Connect to FreeSWITCH ESL in inbound mode.
-pub fn connect(host, port, password) -> Result {
+pub fn connect(host, port, password) -> Result[any] {
     h := if host != null { host } else { env.get("FREESWITCH_HOST", "127.0.0.1") }
     p := if port != null { port } else { int.parse(env.get("FREESWITCH_ESL_PORT", "8021")).unwrap_or(8021) }
     pw := if password != null { password } else { env.get("FREESWITCH_ESL_PASSWORD", "ClueCon") }
-
     conn := socket.dial("tcp", "$h:$p")?
-
-    // read auth/request
     auth_line := conn.read()?
     ensure(str.contains(auth_line, "auth/request"), "expected auth/request from FreeSWITCH")?
-
-    // send auth
     conn.write("auth $pw\n\n")?
     reply := conn.read()?
     ensure(str.contains(reply, "+OK"), "ESL auth failed: $reply")?
-
     {
         "_conn": conn,
         "_mode": "inbound",
@@ -29,52 +17,42 @@ pub fn connect(host, port, password) -> Result {
     }
 }
 
-// esl.command(esl, cmd) -> Result[str]
-// Send a raw ESL command and return the reply.
-pub fn command(e, cmd) -> Result {
+
+pub fn command(e, cmd) -> Result[any] {
     e._conn.write("$cmd\n\n")?
     resp := e._conn.read()?
     Ok(resp)
 }
 
-// esl.api(esl, cmd) -> Result[str]
-// Send an api command (synchronous).
-pub fn api(e, cmd) -> Result {
-    command(e, "api $cmd")
-}
 
-// esl.bgapi(esl, cmd) -> Result[str]
-// Send a bgapi command (asynchronous, returns Job-UUID).
-pub fn bgapi(e, cmd) -> Result {
+pub fn api(e, cmd) -> Result[any] { command(e, "api $cmd") }
+
+
+pub fn bgapi(e, cmd) -> Result[any] {
     resp := command(e, "bgapi $cmd")?
-    // extract Job-UUID from reply
     Ok(resp)
 }
 
-// esl.subscribe(esl, events) -> Result
-// Subscribe to events. events: "all" or "CHANNEL_ANSWER DTMF CHANNEL_HANGUP"
-pub fn subscribe(e, events) -> Result {
+
+pub fn subscribe(e, events) -> Result[any] {
     command(e, "event json $events")?
     Ok(unit)
 }
 
-// esl.filter(esl, header, value) -> Result
-// Filter events by header value.
-pub fn filter(e, header, value) -> Result {
+
+pub fn filter(e, header, value) -> Result[any] {
     command(e, "filter $header $value")?
     Ok(unit)
 }
 
-// esl.myevents(esl, uuid) -> Result
-// Subscribe to events for a specific channel.
-pub fn myevents(e, uuid) -> Result {
+
+pub fn myevents(e, uuid) -> Result[any] {
     command(e, "myevents json $uuid")?
     Ok(unit)
 }
 
-// esl.execute(esl, uuid, app, arg?) -> Result
-// Execute an application on a channel.
-pub fn execute(e, uuid, app, arg) -> Result {
+
+pub fn execute(e, uuid, app, arg) -> Result[any] {
     mut msg := "sendmsg $uuid\ncall-command: execute\nexecute-app-name: $app"
     if arg != null && arg != "" {
         msg = "$msg\nexecute-app-arg: $arg"
@@ -82,55 +60,47 @@ pub fn execute(e, uuid, app, arg) -> Result {
     command(e, msg)
 }
 
-// esl.answer(esl, uuid) -> Result
-pub fn answer(e, uuid) -> Result {
-    execute(e, uuid, "answer", null)
-}
 
-// esl.hangup(esl, uuid, cause?) -> Result
-pub fn hangup(e, uuid, cause) -> Result {
+pub fn answer(e, uuid) -> Result[any] { execute(e, uuid, "answer", null) }
+
+
+pub fn hangup(e, uuid, cause) -> Result[any] {
     c := if cause != null { cause } else { "NORMAL_CLEARING" }
     execute(e, uuid, "hangup", c)
 }
 
-// esl.playback(esl, uuid, file) -> Result
-pub fn playback(e, uuid, file) -> Result {
-    execute(e, uuid, "playback", file)
-}
 
-// esl.record(esl, uuid, file, max_sec?, silence_thresh?) -> Result
-pub fn record(e, uuid, file, max_sec, silence_thresh) -> Result {
+pub fn playback(e, uuid, file) -> Result[any] { execute(e, uuid, "playback", file) }
+
+
+pub fn record(e, uuid, file, max_sec, silence_thresh) -> Result[any] {
     arg := file
-    if max_sec != null { arg = "$arg $max_sec" }
-    if silence_thresh != null { arg = "$arg $silence_thresh" }
+    if max_sec != null {
+        arg = "$arg $max_sec"
+    }
+    if silence_thresh != null {
+        arg = "$arg $silence_thresh"
+    }
     execute(e, uuid, "record_session", arg)
 }
 
-// esl.bridge(esl, uuid, destination) -> Result
-pub fn bridge(e, uuid, destination) -> Result {
-    execute(e, uuid, "bridge", destination)
-}
 
-// esl.transfer(esl, uuid, extension, context?) -> Result
-pub fn transfer(e, uuid, extension, context) -> Result {
+pub fn bridge(e, uuid, destination) -> Result[any] { execute(e, uuid, "bridge", destination) }
+
+
+pub fn transfer(e, uuid, extension, context) -> Result[any] {
     ctx := if context != null { context } else { "default" }
     api(e, "uuid_transfer $uuid $extension XML $ctx")
 }
 
-// esl.send_dtmf(esl, uuid, digits) -> Result
-pub fn send_dtmf(e, uuid, digits) -> Result {
-    api(e, "uuid_send_dtmf $uuid $digits")
-}
 
-// esl.set_var(esl, uuid, name, value) -> Result
-pub fn set_var(e, uuid, name, value) -> Result {
-    execute(e, uuid, "set", "$name=$value")
-}
+pub fn send_dtmf(e, uuid, digits) -> Result[any] { api(e, "uuid_send_dtmf $uuid $digits") }
 
-// esl.play_and_get_digits(esl, uuid, opts) -> Result
-// IVR digit collection.
-// opts: {min, max, tries, timeout_ms, terminator, file, invalid_file, var_name, regex}
-pub fn play_and_get_digits(e, uuid, opts) -> Result {
+
+pub fn set_var(e, uuid, name, value) -> Result[any] { execute(e, uuid, "set", "$name=$value") }
+
+
+pub fn play_and_get_digits(e, uuid, opts) -> Result[any] {
     min := if opts.min != null { opts.min } else { 1 }
     max := if opts.max != null { opts.max } else { 4 }
     tries := if opts.tries != null { opts.tries } else { 3 }
@@ -144,80 +114,63 @@ pub fn play_and_get_digits(e, uuid, opts) -> Result {
     execute(e, uuid, "play_and_get_digits", arg)
 }
 
-// esl.originate(esl, dest, app?, arg?) -> Result[str]
-// Originate a new call.
-pub fn originate(e, dest, app, arg) -> Result {
+
+pub fn originate(e, dest, app, arg) -> Result[any] {
     a := if app != null { app } else { "&park" }
     full := if arg != null { "$a($arg)" } else { a }
     api(e, "originate $dest $full")
 }
 
-// esl.conference(esl, uuid, room, opts?) -> Result
-pub fn conference(e, uuid, room, opts) -> Result {
+
+pub fn conference(e, uuid, room, opts) -> Result[any] {
     flags := ""
     if opts != null {
-        if opts.muted == true { flags = "$flags+muted" }
-        if opts.deaf == true { flags = "$flags+deaf" }
-        if opts.moderator == true { flags = "$flags+moderator" }
+        if opts.muted == true {
+            flags = "$flags+muted"
+        }
+        if opts.deaf == true {
+            flags = "$flags+deaf"
+        }
+        if opts.moderator == true {
+            flags = "$flags+moderator"
+        }
     }
-    if flags != "" {
-        execute(e, uuid, "conference", "$room$flags")
-    } else {
-        execute(e, uuid, "conference", room)
-    }
+    if flags != "" { execute(e, uuid, "conference", "$room$flags") } else { execute(e, uuid, "conference", room) }
 }
 
-// esl.uuid_bridge(esl, uuid1, uuid2) -> Result
-pub fn uuid_bridge(e, uuid1, uuid2) -> Result {
-    api(e, "uuid_bridge $uuid1 $uuid2")
-}
 
-// esl.show(esl, what) -> Result[str]
-// Show channels, calls, registrations, etc.
-pub fn show(e, what) -> Result {
-    api(e, "show $what as json")
-}
+pub fn uuid_bridge(e, uuid1, uuid2) -> Result[any] { api(e, "uuid_bridge $uuid1 $uuid2") }
 
-// esl.status(esl) -> Result[str]
-pub fn status(e) -> Result {
-    api(e, "status")
-}
 
-// esl.close(esl) -> Result
-pub fn close(e) -> Result {
+pub fn show(e, what) -> Result[any] { api(e, "show $what as json") }
+
+
+pub fn status(e) -> Result[any] { api(e, "status") }
+
+
+pub fn close(e) -> Result[any] {
     e._conn.close()?
     e.connected = false
     Ok(unit)
 }
 
-// esl.outbound_server(port, handler) -> unit
-// Start an outbound ESL server.
-// handler(channel_data, send_fn) is called for each new call.
-// send_fn(command) sends a command to the channel.
+
 pub fn outbound_server(port, handler) {
     p := if port != null { port } else { 9090 }
     ln := socket.listen("tcp", ":$p")?
     say("ESL outbound server listening on :$p")
     while true {
         conn := ln.accept()?
-
-        // read initial channel data
         data := conn.read()?
-
-        // send connect to get full channel info
         conn.write("connect\n\n")?
         channel_info := conn.read()?
-
-        // subscribe to events for this channel
         conn.write("myevents json\n\n")?
         conn.read()?
-
-        // create send function
-        send_fn := fn(cmd) -> Result {
+        send_fn := fn(cmd) -> Result[any] {
             conn.write("$cmd\n\n")?
             Ok(conn.read()?)
         }
-
         handler(channel_info, send_fn)
     }
 }
+

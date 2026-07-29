@@ -3,6 +3,7 @@ package vm
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/loreste/weft/internal/compile"
@@ -15,6 +16,8 @@ type VM struct {
 	stack       []runtime.Value
 	frames      []frame
 	calledFrame bool // last OpCall installed a new frame
+	// fatal is set on stack underflow / bad operands; run() returns it instead of panicking.
+	fatal error
 	// Debug hooks (nil = no debugging)
 	Debug *DebugState
 }
@@ -24,7 +27,11 @@ type DebugState struct {
 	Breakpoints map[string]bool // "file:line" → true
 	StepMode    bool            // pause after every statement
 	Paused      bool
-	OnPause     func(loc FrameLoc, locals map[string]runtime.Value) // callback when paused
+	// SkipBP is a "file:line" key ignored once after continue (avoids re-hit).
+	SkipBP string
+	// LastStack is filled before OnPause (deepest frame first).
+	LastStack []FrameLoc
+	OnPause   func(loc FrameLoc, locals map[string]runtime.Value) // callback when paused
 }
 
 type deferredCall struct {
@@ -52,6 +59,9 @@ func (vm *VM) RunFunc(fn *runtime.FuncObj, args []runtime.Value) (runtime.Value,
 	if !ok || chunk == nil {
 		return runtime.Null(), fmt.Errorf("invalid function chunk")
 	}
+	if err := arityErr(fn, args); err != nil {
+		return runtime.Null(), err
+	}
 	slots := make([]runtime.Value, chunk.NumLocs)
 	for i := 0; i < fn.Arity && i < len(args); i++ {
 		slots[i] = args[i]
@@ -71,16 +81,39 @@ func (vm *VM) RunFunc(fn *runtime.FuncObj, args []runtime.Value) (runtime.Value,
 func (vm *VM) push(v runtime.Value) { vm.stack = append(vm.stack, v) }
 
 func (vm *VM) pop() runtime.Value {
-	n := len(vm.stack) - 1
-	v := vm.stack[n]
-	vm.stack = vm.stack[:n]
+	n := len(vm.stack)
+	if n == 0 {
+		if vm.fatal == nil {
+			vm.fatal = vm.errf("stack underflow")
+		}
+		return runtime.Null()
+	}
+	v := vm.stack[n-1]
+	vm.stack = vm.stack[:n-1]
 	return v
 }
 
-func (vm *VM) peek() runtime.Value { return vm.stack[len(vm.stack)-1] }
+func (vm *VM) peek() runtime.Value {
+	n := len(vm.stack)
+	if n == 0 {
+		if vm.fatal == nil {
+			vm.fatal = vm.errf("stack underflow")
+		}
+		return runtime.Null()
+	}
+	return vm.stack[n-1]
+}
 
 func (vm *VM) readU16(fr *frame) uint16 {
 	ch := fr.chunk
+	if fr.ip+1 >= len(ch.Code) {
+		if vm.fatal == nil {
+			vm.fatal = vm.errf("truncated operand at ip %d", fr.ip)
+		}
+		// advance past end so the run loop exits cleanly
+		fr.ip = len(ch.Code)
+		return 0
+	}
 	hi := ch.Code[fr.ip]
 	lo := ch.Code[fr.ip+1]
 	fr.ip += 2
@@ -89,6 +122,9 @@ func (vm *VM) readU16(fr *frame) uint16 {
 
 func (vm *VM) run() (runtime.Value, error) {
 	for len(vm.frames) > 0 {
+		if vm.fatal != nil {
+			return runtime.Null(), vm.wrapErr(vm.fatal)
+		}
 		fr := &vm.frames[len(vm.frames)-1]
 		ch := fr.chunk
 		if fr.ip >= len(ch.Code) {
@@ -112,12 +148,34 @@ func (vm *VM) run() (runtime.Value, error) {
 		switch op {
 		case compile.OpLoadConst:
 			idx := vm.readU16(fr)
-			vm.push(ch.Consts[idx].(runtime.Value))
+			if vm.fatal != nil {
+				return runtime.Null(), vm.wrapErr(vm.fatal)
+			}
+			if int(idx) >= len(ch.Consts) {
+				return runtime.Null(), vm.errf("const index %d out of range", idx)
+			}
+			v, ok := ch.Consts[idx].(runtime.Value)
+			if !ok {
+				return runtime.Null(), vm.errf("const %d is not a Value", idx)
+			}
+			vm.push(v)
 		case compile.OpLoadLocal:
 			idx := vm.readU16(fr)
+			if vm.fatal != nil {
+				return runtime.Null(), vm.wrapErr(vm.fatal)
+			}
+			if int(idx) >= len(fr.slots) {
+				return runtime.Null(), vm.errf("local index %d out of range", idx)
+			}
 			vm.push(fr.slots[idx])
 		case compile.OpStoreLocal:
 			idx := vm.readU16(fr)
+			if vm.fatal != nil {
+				return runtime.Null(), vm.wrapErr(vm.fatal)
+			}
+			if int(idx) >= len(fr.slots) {
+				return runtime.Null(), vm.errf("local index %d out of range", idx)
+			}
 			fr.slots[idx] = vm.pop()
 		case compile.OpLoadGlobal:
 			name := vm.pop().S
@@ -435,6 +493,12 @@ func (vm *VM) run() (runtime.Value, error) {
 		default:
 			return runtime.Null(), vm.errf("unknown opcode %v at ip %d", op, fr.ip-1)
 		}
+		if vm.fatal != nil {
+			return runtime.Null(), vm.wrapErr(vm.fatal)
+		}
+	}
+	if vm.fatal != nil {
+		return runtime.Null(), vm.wrapErr(vm.fatal)
 	}
 	return runtime.Unit(), nil
 }
@@ -590,6 +654,23 @@ func (vm *VM) wrapErr(err error) error {
 // maxFrames caps call depth to catch infinite recursion before Go stack overflow.
 const maxFrames = 10_000
 
+// arityErr reports under-arity for user functions. Extra args are still ignored
+// (matches historical behavior); missing args used to silently become null and
+// produce misleading errors like "numeric op on int and null".
+func arityErr(fn *runtime.FuncObj, args []runtime.Value) error {
+	if fn == nil || fn.Arity < 0 {
+		return nil
+	}
+	if len(args) >= fn.Arity {
+		return nil
+	}
+	name := fn.Name
+	if name == "" {
+		name = "<fn>"
+	}
+	return fmt.Errorf("wrong number of arguments to %s: have %d, want %d", name, len(args), fn.Arity)
+}
+
 func (vm *VM) call(callee runtime.Value, args []runtime.Value) (runtime.Value, error) {
 	if len(vm.frames) >= maxFrames {
 		return runtime.Null(), vm.errf("stack overflow: call depth exceeds %d frames", maxFrames)
@@ -597,6 +678,8 @@ func (vm *VM) call(callee runtime.Value, args []runtime.Value) (runtime.Value, e
 	switch callee.Kind {
 	case runtime.KindBuiltin:
 		b := callee.Obj.(*runtime.BuiltinObj)
+		// Do not gate on b.Arity here: many builtins treat trailing args as
+		// optional (e.g. map/range workers). Each builtin validates itself.
 		v, err := b.Fn(args)
 		if err != nil {
 			return runtime.Null(), vm.wrapErr(err)
@@ -604,6 +687,9 @@ func (vm *VM) call(callee runtime.Value, args []runtime.Value) (runtime.Value, e
 		return v, nil
 	case runtime.KindFunc:
 		fn := callee.Obj.(*runtime.FuncObj)
+		if err := arityErr(fn, args); err != nil {
+			return runtime.Null(), vm.wrapErr(err)
+		}
 		// Coverage: record function hit
 		if vm.Env.Coverage != nil && fn.Name != "" {
 			key := fn.Name
@@ -655,13 +741,30 @@ func (vm *VM) debugCheck(fr *frame) {
 	}
 	loc := frameLoc(fr)
 	shouldPause := vm.Debug.StepMode
-	if !shouldPause && loc.File != "" && loc.Line > 0 {
+	if loc.File != "" && loc.Line > 0 {
 		key := fmt.Sprintf("%s:%d", loc.File, loc.Line)
-		if vm.Debug.Breakpoints[key] {
-			shouldPause = true
+		bkey := fmt.Sprintf("%s:%d", filepath.Base(loc.File), loc.Line)
+		// After continue, ignore breakpoints until the line changes (multi-op lines).
+		if vm.Debug.SkipBP != "" {
+			if key == vm.Debug.SkipBP || bkey == vm.Debug.SkipBP {
+				if !vm.Debug.StepMode {
+					shouldPause = false
+				}
+			} else {
+				vm.Debug.SkipBP = ""
+			}
+		}
+		if vm.Debug.SkipBP == "" && !shouldPause {
+			if vm.Debug.Breakpoints[key] || vm.Debug.Breakpoints[bkey] {
+				shouldPause = true
+			}
 		}
 	}
 	if shouldPause {
+		if loc.File != "" && loc.Line > 0 {
+			// continue will skip this line until IP moves to another line
+			vm.Debug.SkipBP = fmt.Sprintf("%s:%d", loc.File, loc.Line)
+		}
 		// Collect locals for inspection
 		locals := map[string]runtime.Value{}
 		for i, slot := range fr.slots {
@@ -673,6 +776,7 @@ func (vm *VM) debugCheck(fr *frame) {
 			}
 			locals[name] = slot
 		}
+		vm.Debug.LastStack = vm.stackTrace()
 		vm.Debug.Paused = true
 		vm.Debug.OnPause(loc, locals)
 		vm.Debug.Paused = false

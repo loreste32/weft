@@ -58,9 +58,10 @@ Apps that `use` modules needing models or disk must declare grants on the **modu
 ### Operator checklist
 
 1. Only install packages you trust; review `capabilities`.
-2. Do not set `WEFT_HTTP_ALLOW_PRIVATE=1` on multi-tenant hosts.
-3. Do not register shell tools on untrusted LLM prompts.
-4. Prefer containers for untrusted code isolation.
+2. Pin signing keys: `weft registry trust <namespace> <pubkey>` (or `--key localname`). Set `WEFT_REQUIRE_TRUST=1` so installs fail for untrusted namespaces.
+3. Do not set `WEFT_HTTP_ALLOW_PRIVATE=1` on multi-tenant hosts.
+4. Do not register shell tools on untrusted LLM prompts.
+5. Prefer containers for untrusted code isolation.
 
 ### Recent hardening (security review)
 

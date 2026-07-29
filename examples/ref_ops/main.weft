@@ -1,0 +1,109 @@
+fn usage {
+    say("ref_ops — host facts and safe local checks")
+    say("  info                 os/arch/cwd/pid")
+    say("  env <KEY> [default]  read env (never print secrets if KEY ends with KEY/TOKEN/SECRET)")
+    say("  path-check <path>    exists / is_file / is_dir")
+    say("  tools a,b,c          which(tool) for each (optional; needs sh)")
+}
+
+
+fn redact_key(k) {
+    u := str.upper(k)
+    if str.has_suffix(u, "KEY") || str.has_suffix(u, "TOKEN") || str.has_suffix(u, "SECRET") || str.has_suffix(u, "PASSWORD") {
+        return true
+    }
+    false
+}
+
+
+fn cmd_info -> Result[any] {
+    say(json.stringify({
+        "os": platform.os(),
+        "arch": platform.arch(),
+        "cwd": fs.cwd(),
+        "ref": "ref_ops",
+    }))
+    Ok(unit)
+}
+
+
+fn cmd_env(key, def) -> Result[any] {
+    ensure(key != null && key != "", "env needs KEY")?
+    v := env.get(key, if def != null { def } else { "" })
+    if redact_key(key) {
+        if v == "" { println(key, "(empty)") } else { println(key, "***") }
+    } else { println(key, v) }
+    Ok(unit)
+}
+
+
+fn cmd_path_check(path) -> Result[any] {
+    ensure(path != null && path != "", "path-check needs path")?
+    ex := fs.exists(path)
+    say(json.stringify({
+        "path": path,
+        "exists": ex,
+        "is_file": if ex { fs.is_file(path) } else { false },
+        "is_dir": if ex { fs.is_dir(path) } else { false },
+    }))
+    Ok(unit)
+}
+
+
+fn cmd_tools(list) -> Result[any] {
+    ensure(list != null && list != "", "tools needs comma list")?
+    parts := str.split(list, ",")
+    mut missing := []
+    for p in parts {
+        name := str.trim(p)
+        if name == "" {
+            continue
+        }
+        w := sh.which(name)
+        if w == null {
+            push(missing, name)
+            say(name, "MISSING")
+        } else { println(name, w) }
+    }
+    if len(missing) > 0 {
+        return Err("missing tools: " + str.join(missing, ","))
+    }
+    Ok(unit)
+}
+
+
+fn main -> Result[any] {
+    av := args
+    mut i := 0
+    if len(av) > 0 && str.has_suffix(av[0], ".weft") {
+        i = 1
+    }
+    if i >= len(av) {
+        usage()
+        return Ok(unit)
+    }
+    cmd := av[i]
+    match cmd {
+        "info" { cmd_info()? }
+        "env" {
+            ensure(i + 1 < len(av), "env needs KEY")?
+            def := if i + 2 < len(av) { av[i + 2] } else { "" }
+            cmd_env(av[i + 1], def)?
+        }
+        "path-check" {
+            ensure(i + 1 < len(av), "path-check needs path")?
+            cmd_path_check(av[i + 1])?
+        }
+        "tools" {
+            ensure(i + 1 < len(av), "tools needs list")?
+            cmd_tools(av[i + 1])?
+        }
+        "help" { usage() }
+        _ {
+            usage()
+            return Err("unknown command")
+        }
+    }
+    Ok(unit)
+}
+

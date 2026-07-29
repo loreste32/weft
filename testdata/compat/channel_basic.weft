@@ -1,0 +1,12 @@
+fn main -> Result[any] {
+    ch := channel(2)
+    send(ch, 1)
+    send(ch, 2)
+    close(ch)
+    a := recv(ch)?
+    b := recv(ch)?
+    say(a)
+    say(b)
+    Ok(unit)
+}
+

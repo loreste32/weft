@@ -1,0 +1,24 @@
+fn test_status_runs {
+    ensure(platform.os() != "", "os")?
+    ensure(platform.arch() != "", "arch")?
+    Ok(unit)
+}
+
+
+fn test_pipeline_pure {
+    lines := ["ab", "c", ""]
+    lengths := seq_map(lines, fn(line) { len(line) })
+    total := reduce(lengths, 0, fn(acc, n) { acc + n })
+    ensure(total == 3, "total chars")?
+    Ok(unit)
+}
+
+
+fn test_hash_stable {
+    h1 := crypto.sha256("weft")
+    h2 := crypto.sha256("weft")
+    ensure(h1 == h2, "hash stable")?
+    ensure(len(h1) > 0, "hash non-empty")?
+    Ok(unit)
+}
+

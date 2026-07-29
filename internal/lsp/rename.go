@@ -1,10 +1,13 @@
 package lsp
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/loreste/weft/internal/ast"
 	"github.com/loreste/weft/internal/parse"
+	"github.com/loreste/weft/internal/stdlib"
 )
 
 // prepareRename returns the range of the identifier at the cursor, or null if not renameable.
@@ -37,8 +40,16 @@ func prepareRename(text string, line, character int) any {
 	}
 }
 
-// rename finds all occurrences of the identifier at cursor and returns a WorkspaceEdit.
+// rename finds occurrences of the identifier at cursor and returns a WorkspaceEdit.
+// Top-level fn/type/enum/const renames apply across open buffers and (when rootURI
+// is set) on-disk .weft files under the workspace. Locals stay single-file.
 func rename(text, uri string, line, character int, newName string) any {
+	return renameInDocs(map[string]string{uri: text}, "", uri, line, character, newName)
+}
+
+// renameInDocs is the multi-document rename implementation.
+func renameInDocs(docs map[string]string, rootURI, uri string, line, character int, newName string) any {
+	text := docs[uri]
 	oldName := wordAt(text, line, character)
 	if oldName == "" || isKeyword(oldName) {
 		return nil
@@ -46,55 +57,117 @@ func rename(text, uri string, line, character int, newName string) any {
 	if newName == "" || newName == oldName {
 		return nil
 	}
-
-	// Parse and walk the AST to find all references to oldName
-	file, errs := parse.ParseFile(uri, text)
-	if errs.HasErrors() {
+	// Never rename stdlib package names workspace-wide.
+	if stdlib.IsPackage(oldName) {
 		return nil
 	}
 
-	var edits []map[string]any
-	collectIdents(file, oldName, func(pos int, endPos int, line int) {
-		lines := strings.Split(text, "\n")
-		if line-1 >= len(lines) || line < 1 {
-			return
-		}
-		ln := lines[line-1]
-		col := 0
-		byteCount := 0
-		for i, r := range ln {
-			if byteCount == pos-lineOffset(text, line) {
-				col = i
-				break
-			}
-			_ = r
-			byteCount++
-		}
-		// Find the column by scanning the line
-		col = findColInLine(ln, oldName, pos-lineOffset(text, line))
-		if col < 0 {
-			return
-		}
-		edits = append(edits, map[string]any{
-			"range":   makeRange(line-1, col, line-1, col+len(oldName)),
-			"newText": newName,
-		})
-	})
+	topLevel := isTopLevelBinding(text, oldName)
+	changes := map[string]any{}
 
-	// Simpler approach: just find all word-boundary occurrences in the text
+	// Always rename in the origin file.
+	if edits := renameInText(text, oldName, newName); len(edits) > 0 {
+		changes[uri] = edits
+	}
+
+	if topLevel {
+		// Other open buffers
+		for u, t := range docs {
+			if u == uri {
+				continue
+			}
+			if edits := renameInText(t, oldName, newName); len(edits) > 0 {
+				changes[u] = edits
+			}
+		}
+		// On-disk workspace .weft files (skip already-open URIs)
+		if rootURI != "" {
+			root := uriToPath(rootURI)
+			_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+				if err != nil || d.IsDir() {
+					if d != nil && (d.Name() == ".git" || d.Name() == "vendor" || d.Name() == "node_modules") {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				if !strings.HasSuffix(path, ".weft") && !strings.HasSuffix(path, ".loom") {
+					return nil
+				}
+				u := pathToURI(path)
+				if _, open := docs[u]; open {
+					return nil
+				}
+				// also match without double-slash quirks
+				for ou := range docs {
+					if uriToPath(ou) == path {
+						return nil
+					}
+				}
+				data, err := os.ReadFile(path)
+				if err != nil {
+					return nil
+				}
+				t := string(data)
+				if !strings.Contains(t, oldName) {
+					return nil
+				}
+				if edits := renameInText(t, oldName, newName); len(edits) > 0 {
+					changes[u] = edits
+				}
+				return nil
+			})
+		}
+	}
+
+	if len(changes) == 0 {
+		return nil
+	}
+	return map[string]any{"changes": changes}
+}
+
+func (s *server) rename(uri string, line, character int, newName string) any {
+	return renameInDocs(s.docs, s.rootURI, uri, line, character, newName)
+}
+
+func isTopLevelBinding(text, name string) bool {
+	b, ok := findBindingDefinition(text, name)
+	if !ok {
+		// Fallback: top-level fn/type/enum/const line scans
+		return scanFnLine(text, name) >= 0 || scanEnumLine(text, name) >= 0 ||
+			strings.Contains(text, "type "+name) || strings.Contains(text, "const "+name+" ")
+	}
+	switch b.Kind {
+	case "fn", "type", "enum", "const":
+		return true
+	default:
+		return false
+	}
+}
+
+func renameInText(text, oldName, newName string) []map[string]any {
+	file, errs := parse.ParseFile("<rename>", text)
+	var edits []map[string]any
+	if !errs.HasErrors() && file != nil {
+		collectIdents(file, oldName, func(pos int, endPos int, line int) {
+			lines := strings.Split(text, "\n")
+			if line-1 >= len(lines) || line < 1 {
+				return
+			}
+			ln := lines[line-1]
+			col := findColInLine(ln, oldName, pos-lineOffset(text, line))
+			if col < 0 {
+				return
+			}
+			edits = append(edits, map[string]any{
+				"range":   makeRange(line-1, col, line-1, col+len(oldName)),
+				"newText": newName,
+			})
+		})
+	}
 	if len(edits) == 0 {
 		edits = findAllOccurrences(text, oldName, newName)
 	}
-
-	if len(edits) == 0 {
-		return nil
-	}
-
-	return map[string]any{
-		"changes": map[string]any{
-			uri: edits,
-		},
-	}
+	return edits
 }
 
 // findAllOccurrences does text-level rename of identifier occurrences.

@@ -1,9 +1,7 @@
-// Brain that clarifies, remembers, and can feed weft train.
-//   cd examples/tokensave_demo && weft install && weft run main.weft
-
 use tokensave
 
-fn main -> Result {
+
+fn main -> Result[any] {
     knowledge := [
         "Weft binds with := and prints with say. ",
         "Use Result and ? for fallible I/O in Weft.",
@@ -13,10 +11,7 @@ fn main -> Result {
     ]
     mem := ".memory.json"
     gold := "domain-gold.jsonl"
-
     messy := "yo print hi weft"
-
-    // 1) first call — clarify + pick + remember
     p1 := tokensave.brain(messy, knowledge, {
         "memory_path": mem,
         "k": 2,
@@ -26,11 +21,7 @@ fn main -> Result {
     say("goal:", p1.goal)
     say("kind:", p1.kind)
     say(p1.user)
-
-    // 2) teach — memory + private gold for weft train --from
     tokensave.teach(mem, gold, messy, "fn main {\n    say(\"hi\")\n}", "weft")?
-
-    // 3) second similar ask — memory should help
     p2 := tokensave.brain("print hello in weft please", knowledge, {
         "memory_path": mem,
         "k": 3,
@@ -39,12 +30,11 @@ fn main -> Result {
     say("--- pass 2 (smarter via memory) ---")
     say("recalled:", len(p2.recalled))
     say("tokens≈", p2.tokens, "saved≈", p2.saved)
-
     st := tokensave.stats(mem)?
     say("memory stats:", st)
-
     exp := tokensave.export_train(mem, "from-memory.jsonl")?
     say("export_train rows:", exp.n)
     say("tokensave brain ok — use domain-gold.jsonl with weft train --from")
     Ok(1)
 }
+

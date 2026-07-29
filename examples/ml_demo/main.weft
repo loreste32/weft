@@ -1,53 +1,41 @@
-// Offline ML module demo — no API keys required.
-//   cd examples/ml_demo && weft install && weft run main.weft
-//
-// Live embeddings (optional):
-//   WEFT_PROVIDER=ollama WEFT_EMBED_MODEL=nomic-embed-text weft run main.weft -- embed
-
 use ml
 
-fn main -> Result {
+
+fn main -> Result[any] {
     args := cli.argv()
     if len(args) > 0 && args[0] == "embed" {
         return live_embed()
     }
-
-    // --- vectors (pure Weft, offline) ---
     a := [1.0, 0.0, 0.0]
     b := [0.9, 0.1, 0.0]
     c := [0.0, 1.0, 0.0]
     say("cosine a,b =", ml.cosine(a, b))
     say("cosine a,c =", ml.cosine(a, c))
-
     ix := ml.index()
     ml.index_add(ix, "alpha", a, {"text": "direction x"})
     ml.index_add(ix, "beta", b, {"text": "almost x"})
     ml.index_add(ix, "gamma", c, {"text": "direction y"})
     hits := ml.index_search(ix, a, 2)
     say("topk:", hits)
-    if len(hits) < 1 || hits[0].id != "alpha" {
-        cli.die("expected alpha first")
-    }
-
-    // --- metrics ---
+    if len(hits) < 1 || hits[0].id != "alpha" { cli.die("expected alpha first") }
     acc := ml.accuracy(["yes", "no", "yes"], ["yes", "no", "no"])
     say("accuracy =", acc)
     parts := ml.split([1, 2, 3, 4, 5], 0.6)
     say("split train=", parts.train, "test=", parts.test)
-
     mut path := ".index.json"
     ml.index_save(ix, path)?
     loaded := ml.index_load(path)?
     say("loaded items =", len(loaded.items))
     fs.remove(path)?
-
     say("ml module ok")
     say("hint: weft run main.weft -- embed   # needs embed model")
 }
 
-fn live_embed() -> Result {
+
+fn live_embed -> Result[any] {
     say("provider =", ml.provider())
     v := ml.embed("weft is an LLM-first language")?
     say("dims =", len(v))
     say("embed ok")
 }
+

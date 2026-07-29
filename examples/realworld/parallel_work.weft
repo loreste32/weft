@@ -1,7 +1,7 @@
-// Real-world: fan-out independent work (CPU-light stand-in for I/O)
 fn job(n) { n * n }
 
-fn main -> Result {
+
+fn main -> Result[any] {
     rs := parallel([
         fn() { job(2) },
         fn() { job(3) },
@@ -9,3 +9,4 @@ fn main -> Result {
     ])?
     say("squares:", rs)
 }
+

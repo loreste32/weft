@@ -1,0 +1,14 @@
+enum Color { Red, Green, Blue }
+
+
+fn main {
+    c := Color.Green
+    label := match c {
+        Color.Red { "r" }
+        Color.Green { "g" }
+        Color.Blue { "b" }
+        _ { "?" }
+    }
+    say(label)
+}
+

@@ -1,7 +1,3 @@
-// Export brain memory → training JSONL for weft train --from
-// Teaches models with clarified goals + relevant context only.
-
-// to_example(episode) -> {id, instruction, input, output, tags}
 pub fn to_example(ep) {
     mut instr := "" + ep.ask
     if contains(keys(ep), "goal") && ep.goal != "" {
@@ -15,13 +11,14 @@ pub fn to_example(ep) {
             i = i + 1
         }
     }
-    // gold assistant output: prefer note as corrected answer, else structured clear form
     mut out := ""
     if contains(keys(ep), "note") && ep.note != "" && ep.ok {
         out = "" + ep.note
     } else {
         mut kind := "short"
-        if contains(keys(ep), "kind") { kind = "" + ep.kind }
+        if contains(keys(ep), "kind") {
+            kind = "" + ep.kind
+        }
         out = "Goal: " + ep.goal + "\nKind: " + kind + "\n"
         if ctx != "" {
             out = out + "Context:\n" + ctx
@@ -37,9 +34,8 @@ pub fn to_example(ep) {
     }
 }
 
-// export_train(memory_path, out_jsonl) -> Result[{n}]
-// Only successful episodes by default (ok=true).
-pub fn export_train(memory_path, out_jsonl) -> Result {
+
+pub fn export_train(memory_path, out_jsonl) -> Result[any] {
     raw := fs.read(memory_path)?
     data := json.parse(raw)?
     mut lines := ""
@@ -47,8 +43,12 @@ pub fn export_train(memory_path, out_jsonl) -> Result {
     if contains(keys(data), "episodes") {
         for ep in data.episodes {
             mut okv := true
-            if contains(keys(ep), "ok") { okv = ep.ok }
-            if !okv { continue }
+            if contains(keys(ep), "ok") {
+                okv = ep.ok
+            }
+            if !okv {
+                continue
+            }
             ex := to_example(ep)
             lines = lines + json.stringify(ex) + "\n"
             n = n + 1
@@ -58,10 +58,12 @@ pub fn export_train(memory_path, out_jsonl) -> Result {
     Ok({"n": n, "path": out_jsonl})
 }
 
-// gold_row(ask, answer, kind?) — one-shot private train row from a good reply
+
 pub fn gold_row(ask, answer, kind) {
     mut k := "short"
-    if kind != null && kind != "" { k = "" + kind }
+    if kind != null && kind != "" {
+        k = "" + kind
+    }
     {
         "id": "gold-" + time.now(),
         "instruction": "" + ask,
@@ -71,8 +73,8 @@ pub fn gold_row(ask, answer, kind) {
     }
 }
 
-// append_gold(path, ask, answer, kind?) -> Result  append JSONL line for weft train --from
-pub fn append_gold(path, ask, answer, kind) -> Result {
+
+pub fn append_gold(path, ask, answer, kind) -> Result[any] {
     row := gold_row(ask, answer, kind)
     mut prev := ""
     if fs.exists(path) {

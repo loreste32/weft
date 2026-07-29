@@ -22,7 +22,9 @@ func (c *Context) Eval(src string) (runtime.Value, error) {
 		if errs.HasErrors() {
 			return runtime.Null(), errs
 		}
-		prog, cerrs := compile.CompileFile(file, c.env)
+		// CompileFileREPL: no main required; top-level fn/type/const/enum
+		// bind into the shared env so later lines can call them.
+		prog, cerrs := compile.CompileFileREPL(file, c.env)
 		if cerrs.HasErrors() {
 			return runtime.Null(), cerrs
 		}

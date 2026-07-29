@@ -1,13 +1,11 @@
-// In-memory vector index + JSON persistence (simple RAG store).
-
 use "./vec.weft" as vec
 
-// index() -> empty index map {items: []}
-pub fn index() {
-    {"items": []}
-}
 
-// index_add(idx, id, vector, meta?) -> idx (mutates items list)
+pub fn index { {
+    "items": [],
+} }
+
+
 pub fn index_add(idx, id, vector, meta) {
     mut m := meta
     if m == null {
@@ -21,23 +19,24 @@ pub fn index_add(idx, id, vector, meta) {
     idx
 }
 
-// index_search(idx, query_vec, k) -> [{id, score, meta}]
-pub fn index_search(idx, query, k) {
-    vec.topk(query, idx.items, k)
-}
 
-// index_save(idx, path) -> Result
-pub fn index_save(idx, path) -> Result {
+pub fn index_search(idx, query, k) { vec.topk(query, idx.items, k) }
+
+
+pub fn index_save(idx, path) -> Result[any] {
     fs.write(path, json.stringify(idx))?
     Ok(path)
 }
 
-// index_load(path) -> Result[index]
-pub fn index_load(path) -> Result {
+
+pub fn index_load(path) -> Result[any] {
     raw := fs.read(path)?
     data := json.parse(raw)?
     if data.items == null {
-        return Ok({"items": []})
+        return Ok({
+            "items": [],
+        })
     }
     Ok(data)
 }
+

@@ -1,6 +1,3 @@
-// tts.weft — Text-to-Speech integration.
-// Converts text to audio via HTTP TTS service.
-
 pub fn config(opts) {
     cfg := {
         "url": env.get("WEFT_TTS_URL", "https://tts.lancethedev.com"),
@@ -13,21 +10,36 @@ pub fn config(opts) {
         "pitch": 1.0,
     }
     if opts != null {
-        if opts.url != null { cfg.url = opts.url }
-        if opts.api_key != null { cfg.api_key = opts.api_key }
-        if opts.voice != null { cfg.voice = opts.voice }
-        if opts.language != null { cfg.language = opts.language }
-        if opts.format != null { cfg.format = opts.format }
-        if opts.sample_rate != null { cfg.sample_rate = opts.sample_rate }
-        if opts.speed != null { cfg.speed = opts.speed }
-        if opts.pitch != null { cfg.pitch = opts.pitch }
+        if opts.url != null {
+            cfg.url = opts.url
+        }
+        if opts.api_key != null {
+            cfg.api_key = opts.api_key
+        }
+        if opts.voice != null {
+            cfg.voice = opts.voice
+        }
+        if opts.language != null {
+            cfg.language = opts.language
+        }
+        if opts.format != null {
+            cfg.format = opts.format
+        }
+        if opts.sample_rate != null {
+            cfg.sample_rate = opts.sample_rate
+        }
+        if opts.speed != null {
+            cfg.speed = opts.speed
+        }
+        if opts.pitch != null {
+            cfg.pitch = opts.pitch
+        }
     }
     cfg
 }
 
-// tts.speak(text, opts?) -> Result[map]
-// Convert text to audio. Returns: {audio_url, duration_ms, format, size}
-pub fn speak(text, opts) -> Result {
+
+pub fn speak(text, opts) -> Result[any] {
     cfg := config(opts)
     headers := {"Content-Type": "application/json"}
     if cfg.api_key != "" {
@@ -42,10 +54,7 @@ pub fn speak(text, opts) -> Result {
         "speed": cfg.speed,
         "pitch": cfg.pitch,
     })
-    resp := http.post("${cfg.url}/v1/synthesize", body, {
-        "headers": headers,
-        "timeout": 30,
-    })?
+    resp := http.post("${cfg.url}/v1/synthesize", body, {"headers": headers, "timeout": 30})?
     data := json.parse(resp)?
     Ok({
         "audio_url": if data.audio_url != null { data.audio_url } else { "" },
@@ -55,9 +64,8 @@ pub fn speak(text, opts) -> Result {
     })
 }
 
-// tts.speak_ssml(ssml, opts?) -> Result[map]
-// Synthesize from SSML markup.
-pub fn speak_ssml(ssml_text, opts) -> Result {
+
+pub fn speak_ssml(ssml_text, opts) -> Result[any] {
     cfg := config(opts)
     headers := {"Content-Type": "application/json"}
     if cfg.api_key != "" {
@@ -69,16 +77,12 @@ pub fn speak_ssml(ssml_text, opts) -> Result {
         "format": cfg.format,
         "sample_rate": cfg.sample_rate,
     })
-    resp := http.post("${cfg.url}/v1/synthesize", body, {
-        "headers": headers,
-        "timeout": 30,
-    })?
+    resp := http.post("${cfg.url}/v1/synthesize", body, {"headers": headers, "timeout": 30})?
     json.parse(resp)
 }
 
-// tts.voices(opts?) -> Result[[map]]
-// List available voices. Returns: [{id, name, language, gender}]
-pub fn voices(opts) -> Result {
+
+pub fn voices(opts) -> Result[any] {
     cfg := config(opts)
     headers := {}
     if cfg.api_key != "" {
@@ -89,23 +93,21 @@ pub fn voices(opts) -> Result {
     Ok(if data.voices != null { data.voices } else { data })
 }
 
-// tts.cache_speak(text, cache_dir, opts?) -> Result[str]
-// Speak with local file caching. Returns the file path.
-pub fn cache_speak(text, cache_dir, opts) -> Result {
-    // hash text for cache key
+
+pub fn cache_speak(text, cache_dir, opts) -> Result[any] {
     hash := crypto.sha256(text)
     short := str.slice(hash, 0, 16)
     cfg := config(opts)
-    path := fs.join(cache_dir, "${short}.${cfg.format}")
+    path := fs.join(cache_dir, "$short.${cfg.format}")
     if fs.exists(path) {
         return Ok(path)
     }
     result := speak(text, opts)?
     if result.audio_url != "" {
-        // download audio to cache
         audio := http.get(result.audio_url)?
         fs.mkdir(cache_dir)?
         fs.write_bytes(path, audio)?
     }
     Ok(path)
 }
+

@@ -1,0 +1,15 @@
+fn fail -> Result[any] { Err("boom") }
+
+
+fn okv -> Result[any] { Ok(99) }
+
+
+fn main {
+    r := fail()
+    say(r.is_err)
+    say(r.err.message)
+    o := okv()
+    say(o.is_ok)
+    say(o.val)
+}
+

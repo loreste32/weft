@@ -1,17 +1,16 @@
-// teach — one call for the learn flywheel: memory + private gold for weft train.
-
 use "./memory.weft" as mem
+
+
 use "./train_glue.weft" as tr
 
-// teach(memory_path, gold_path, ask, answer, kind?) -> Result
-// - feedback memory (ok + note=answer) so recall gets smarter
-// - append_gold for weft train prepare --from
-pub fn teach(memory_path, gold_path, ask, answer, kind) -> Result {
+
+pub fn teach(memory_path, gold_path, ask, answer, kind) -> Result[any] {
     mut k := "short"
-    if kind != null && kind != "" { k = "" + kind }
+    if kind != null && kind != "" {
+        k = "" + kind
+    }
     if memory_path != null && memory_path != "" {
         mem.feedback(memory_path, ask, true, answer)?
-        // also store a rich episode with the answer for export_train
         mem.remember(memory_path, {
             "ask": ask,
             "goal": ask,
@@ -25,3 +24,4 @@ pub fn teach(memory_path, gold_path, ask, answer, kind) -> Result {
     row := tr.append_gold(gold_path, ask, answer, k)?
     Ok({"gold": row, "kind": k})
 }
+

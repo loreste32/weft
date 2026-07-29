@@ -1,45 +1,35 @@
-// mold — structured parse + tool wire formats for agents
-// Prefer the full offline stack demo:
-//   cd examples/agent_stack && weft install && weft run main.weft
-//
-//   weft registry install mold
-//   weft run examples/mold_ai.weft
-//   weft run examples/cookbook/14_mold.weft
-
 use mold
 
-fn main -> Result {
+
+fn main -> Result[any] {
     Person := mold.model({
         "name": "str!",
-        "age": mold.integer({"min": 0, "max": 150, "desc": "years"})?,
+        "age": mold.integer({
+            "min": 0,
+            "max": 150,
+            "desc": "years",
+        })?,
         "tags": ["str"],
         "active": mold.boolean({"default": true})?,
     })?
-
     raw := "{\"name\":\"Ada\",\"age\":36,\"tags\":[\"math\",\"cs\"]}"
     p := mold.parse(Person, raw)?
     n := p["name"]
     a := p["age"]
     act := p["active"]
     say("name=$n age=$a active=$act")
-
     bad := mold.parse(Person, "{\"age\":-1}")
-    if !bad.ok {
-        say("rejected:", json.stringify(mold.errors(bad)))
-    }
-
+    if !bad.ok { println("rejected:", json.stringify(mold.errors(bad))) }
     js := mold.json_schema(Person, "Person")
     say("schema type:", js["type"])
-
-    // provider wire formats (OpenAI tools[] / Anthropic input_schema)
     tp := mold.tool_params(Person)
     say("tool props:", json.stringify(tp["properties"]))
     spec := mold.tool_spec("person", Person, "a person record")
     say("tool_spec:", spec["function"]["name"])
     ant := mold.input_schema_tool("person", Person, "a person record")
     say("anthropic tool:", ant["name"])
-
     fenced := "```json\n{\"name\":\"Bob\",\"age\":20,\"tags\":[]}\n```"
     b := mold.extract(Person, fenced)?
     say("extracted:", b["name"])
 }
+

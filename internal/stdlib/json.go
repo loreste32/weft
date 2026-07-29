@@ -9,6 +9,15 @@ import (
 	"github.com/loreste/weft/internal/runtime"
 )
 
+func jsonBytes(v runtime.Value) ([]byte, error) {
+	return json.Marshal(valueToGo(v))
+}
+
+func jsonMarshal(v runtime.Value) (string, error) {
+	b, err := jsonBytes(v)
+	return string(b), err
+}
+
 func packageJSON() runtime.Value {
 	p := pkg()
 	// json.parse(s) -> Result[any]

@@ -1,0 +1,12 @@
+fn main {
+    base := "alpha,beta,gamma,delta,epsilon"
+    mut i := 0
+    mut last := ""
+    while i < 8000 {
+        parts := str.split(base, ",")
+        last = str.join(seq_map(parts, fn(p) { str.upper(p) }), "|")
+        i = i + 1
+    }
+    say(last)
+}
+

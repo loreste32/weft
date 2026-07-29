@@ -1,6 +1,6 @@
 # Weft language reference
 
-End-to-end description of the language as of **0.3.30**. For paste-ready recipes see [COOKBOOK.md](COOKBOOK.md). For a one-page cheatsheet see [SYNTAX.md](SYNTAX.md).
+End-to-end description of the language as of **0.4.x** (`weft version`). For paste-ready recipes see [COOKBOOK.md](COOKBOOK.md). For a one-page cheatsheet see [SYNTAX.md](SYNTAX.md). Positioning and maturity: [STABILITY.md](STABILITY.md).
 
 ---
 
@@ -480,7 +480,9 @@ Tests: [TESTING.md](TESTING.md). Tooling notes: [TOOLING.md](TOOLING.md).
 | Heavy scientific arrays / dataframes | Out of core; stay small |
 | In-process GPU training | Orchestrate outside; optional train kit |
 | Full algebraic enums | String-tagged enums only (for now) |
-| Public package registry | Path/git + monorepo catalog first |
+| Multi-tenant secure sandbox | Host-powered runtime; capabilities + signatures only (see SECURITY.md) |
+| Full sound type system | Gradual annotations + warnings; optional `--strict` |
+| Public registry hosting | Protocol + signing + trust store exist; path/git/monorepo always work |
 
 See [ROADMAP.md](ROADMAP.md) and [PRINCIPLES.md](PRINCIPLES.md).
 

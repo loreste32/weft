@@ -3,11 +3,8 @@ package stdlib
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
-	"time"
 
-	"github.com/loreste/weft/internal/netsafe"
 	"github.com/loreste/weft/internal/runtime"
 )
 
@@ -205,10 +202,4 @@ func goToValue(x any) runtime.Value {
 
 func errRes(msg, kind string) runtime.Value {
 	return runtime.Err(runtime.NewError(msg, kind))
-}
-
-// DefaultHTTPClient is used when host does not inject one (bounded timeout + SSRF guard).
-// Private/link-local/metadata destinations are blocked unless WEFT_HTTP_ALLOW_PRIVATE=1.
-func DefaultHTTPClient() *http.Client {
-	return netsafe.SafeHTTPClient(30 * time.Second)
 }

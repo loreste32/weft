@@ -1,26 +1,16 @@
-// warp — n-dimensional array math for Weft
-// The warp threads of a loom: structured, tensioned, ready for work.
-//
-// Arrays are flat lists + shape metadata. No native deps.
-//
-//   use warp
-//   a := warp.array([1, 2, 3, 4, 5, 6], [2, 3])
-//   b := warp.ones([2, 3])
-//   c := warp.add(a, b)
-//   warp.print_(c)
-
 use math
 
-// --- constructors ---
 
-// array(data, shape?) -> ndarray
-// data: flat list of numbers. shape: list of ints (default: [len(data)])
 pub fn array(data, shape) {
     s := if shape == null { [len(data)] } else { shape }
-    {"_warp": true, "data": data, "shape": s}
+    {
+        "_warp": true,
+        "data": data,
+        "shape": s,
+    }
 }
 
-// zeros(shape) -> ndarray filled with 0
+
 pub fn zeros(shape) {
     n := _prod(shape)
     mut d := []
@@ -32,7 +22,7 @@ pub fn zeros(shape) {
     array(d, shape)
 }
 
-// ones(shape) -> ndarray filled with 1
+
 pub fn ones(shape) {
     n := _prod(shape)
     mut d := []
@@ -44,7 +34,7 @@ pub fn ones(shape) {
     array(d, shape)
 }
 
-// full(shape, value) -> ndarray filled with value
+
 pub fn full(shape, value) {
     n := _prod(shape)
     mut d := []
@@ -56,7 +46,7 @@ pub fn full(shape, value) {
     array(d, shape)
 }
 
-// arange(start, stop?, step?) -> 1d array
+
 pub fn arange(start_or_stop, stop_arg, step_arg) {
     mut s0 := start_or_stop
     mut s1 := stop_arg
@@ -84,7 +74,7 @@ pub fn arange(start_or_stop, stop_arg, step_arg) {
     array(d, [len(d)])
 }
 
-// linspace(start, stop, n) -> 1d array of n evenly spaced values
+
 pub fn linspace(start, stop, n) {
     if n < 2 {
         return array([start + 0.0], [1])
@@ -99,7 +89,7 @@ pub fn linspace(start, stop, n) {
     array(d, [n])
 }
 
-// eye(n) -> n×n identity matrix
+
 pub fn eye(n) {
     mut d := []
     mut r := 0
@@ -118,7 +108,7 @@ pub fn eye(n) {
     array(d, [n, n])
 }
 
-// diag(list) -> diagonal matrix from 1d array
+
 pub fn diag(a) {
     data := _data(a)
     n := len(data)
@@ -139,30 +129,22 @@ pub fn diag(a) {
     array(d, [n, n])
 }
 
-// --- properties ---
 
-// shape(a) -> list of dimension sizes
 pub fn shape(a) { a.shape }
 
-// size(a) -> total element count
+
 pub fn size(a) { len(a.data) }
 
-// ndim(a) -> number of dimensions
+
 pub fn ndim(a) { len(a.shape) }
 
-// --- reshape / transform ---
 
-// reshape(a, new_shape) -> ndarray with same data, new shape
-pub fn reshape(a, new_shape) {
-    array(a.data, new_shape)
-}
+pub fn reshape(a, new_shape) { array(a.data, new_shape) }
 
-// flatten(a) -> 1d array
-pub fn flatten(a) {
-    array(a.data, [len(a.data)])
-}
 
-// T(a) -> transpose (2d only: swap rows/cols)
+pub fn flatten(a) { array(a.data, [len(a.data)]) }
+
+
 pub fn T(a) {
     s := a.shape
     if len(s) != 2 {
@@ -183,26 +165,38 @@ pub fn T(a) {
     array(d, [cols, rows])
 }
 
-// --- element-wise arithmetic ---
 
 pub fn add(a, b) { _binop(a, b, fn(x, y) { x + y }) }
+
+
 pub fn sub(a, b) { _binop(a, b, fn(x, y) { x - y }) }
+
+
 pub fn mul(a, b) { _binop(a, b, fn(x, y) { x * y }) }
+
+
 pub fn div(a, b) { _binop(a, b, fn(x, y) { x / y }) }
 
+
 pub fn neg(a) { _unaryop(a, fn(x) { -x }) }
+
+
 pub fn abs_(a) { _unaryop(a, fn(x) { math.abs(x) }) }
+
+
 pub fn sqrt(a) { _unaryop(a, fn(x) { math.sqrt(x) }) }
+
+
 pub fn exp(a) { _unaryop(a, fn(x) { math.exp(x) }) }
+
+
 pub fn log_(a) { _unaryop(a, fn(x) { math.log(x) }) }
 
+
 pub fn pow_(a, p) {
-    if _is_arr(p) {
-        _binop(a, p, fn(x, y) { math.pow(x, y) })
-    } else {
-        _unaryop(a, fn(x) { math.pow(x, p) })
-    }
+    if _is_arr(p) { _binop(a, p, fn(x, y) { math.pow(x, y) }) } else { _unaryop(a, fn(x) { math.pow(x, p) }) }
 }
+
 
 pub fn round_(a, decimals) {
     dec := if decimals == null { 0 } else { decimals }
@@ -210,17 +204,25 @@ pub fn round_(a, decimals) {
     _unaryop(a, fn(x) { math.round(x * factor) / factor })
 }
 
-pub fn clip(a, lo, hi) {
-    _unaryop(a, fn(x) { math.clamp(x, lo, hi) })
-}
 
-// --- comparisons (return 0/1 arrays) ---
+pub fn clip(a, lo, hi) { _unaryop(a, fn(x) { math.clamp(x, lo, hi) }) }
 
-pub fn equal(a, b) { _binop(a, b, fn(x, y) { if x == y { 1 } else { 0 } }) }
-pub fn less(a, b) { _binop(a, b, fn(x, y) { if x < y { 1 } else { 0 } }) }
-pub fn greater(a, b) { _binop(a, b, fn(x, y) { if x > y { 1 } else { 0 } }) }
 
-// where(cond, x, y) -> element-wise: cond != 0 ? x : y
+pub fn equal(a, b) { _binop(a, b, fn(x, y) {
+    if x == y { 1 } else { 0 }
+}) }
+
+
+pub fn less(a, b) { _binop(a, b, fn(x, y) {
+    if x < y { 1 } else { 0 }
+}) }
+
+
+pub fn greater(a, b) { _binop(a, b, fn(x, y) {
+    if x > y { 1 } else { 0 }
+}) }
+
+
 pub fn where(cond, x, y) {
     cd := _data(cond)
     xd := _data(x)
@@ -238,78 +240,90 @@ pub fn where(cond, x, y) {
     array(d, cond.shape)
 }
 
-// --- reductions ---
 
 pub fn sum(a) {
     data := _data(a)
     mut s := 0.0
-    for x in data { s = s + x }
+    for x in data {
+        s = s + x
+    }
     s
 }
 
-pub fn mean(a) {
-    sum(a) / len(_data(a))
-}
+
+pub fn mean(a) { sum(a) / len(_data(a)) }
+
 
 pub fn var_(a) {
     data := _data(a)
     m := mean(a)
     mut s := 0.0
-    for x in data { s = s + (x - m) * (x - m) }
+    for x in data {
+        s = s + (x - m) * (x - m)
+    }
     s / len(data)
 }
 
-pub fn std_(a) {
-    math.sqrt(var_(a))
-}
+
+pub fn std_(a) { math.sqrt(var_(a)) }
+
 
 pub fn min_(a) {
     data := _data(a)
     mut m := data[0]
     mut i := 1
     while i < len(data) {
-        if data[i] < m { m = data[i] }
+        if data[i] < m {
+            m = data[i]
+        }
         i = i + 1
     }
     m
 }
+
 
 pub fn max_(a) {
     data := _data(a)
     mut m := data[0]
     mut i := 1
     while i < len(data) {
-        if data[i] > m { m = data[i] }
+        if data[i] > m {
+            m = data[i]
+        }
         i = i + 1
     }
     m
 }
+
 
 pub fn argmin(a) {
     data := _data(a)
     mut mi := 0
     mut i := 1
     while i < len(data) {
-        if data[i] < data[mi] { mi = i }
+        if data[i] < data[mi] {
+            mi = i
+        }
         i = i + 1
     }
     mi
 }
+
 
 pub fn argmax(a) {
     data := _data(a)
     mut mi := 0
     mut i := 1
     while i < len(data) {
-        if data[i] > data[mi] { mi = i }
+        if data[i] > data[mi] {
+            mi = i
+        }
         i = i + 1
     }
     mi
 }
 
-// --- linear algebra ---
 
-// dot(a, b) -> scalar dot product of 1d arrays
 pub fn dot(a, b) {
     ad := _data(a)
     bd := _data(b)
@@ -322,7 +336,7 @@ pub fn dot(a, b) {
     s
 }
 
-// matmul(a, b) -> matrix multiply (2d × 2d)
+
 pub fn matmul(a, b) {
     sa := a.shape
     sb := b.shape
@@ -348,17 +362,13 @@ pub fn matmul(a, b) {
     array(d, [m, n])
 }
 
-// --- utility ---
 
-// to_list(a) -> flat data list
 pub fn to_list(a) { a.data }
 
-// print_(a) -> display array
+
 pub fn print_(a) {
     s := a.shape
-    if len(s) == 1 {
-        say(a.data)
-    } else if len(s) == 2 {
+    if len(s) == 1 { println(a.data) } else if len(s) == 2 {
         rows := s[0]
         cols := s[1]
         mut r := 0
@@ -372,26 +382,26 @@ pub fn print_(a) {
             say(row)
             r = r + 1
         }
-    } else {
-        say("warp<shape=" + s + " data=" + a.data + ">")
-    }
+    } else { println("warp<shape=" + s + " data=" + a.data + ">") }
 }
 
-// --- internals ---
 
 fn _data(a) {
     if _is_arr(a) { a.data } else { a }
 }
 
-fn _is_arr(a) {
-    a != null && len(keys(a)) > 0 && contains(keys(a), "_warp")
-}
+
+fn _is_arr(a) { a != null && len(keys(a)) > 0 && contains(keys(a), "_warp") }
+
 
 fn _prod(shape) {
     mut p := 1
-    for s in shape { p = p * s }
+    for s in shape {
+        p = p * s
+    }
     p
 }
+
 
 fn _binop(a, b, op) {
     if _is_arr(a) && _is_arr(b) {
@@ -405,7 +415,6 @@ fn _binop(a, b, op) {
         }
         array(d, a.shape)
     } else if _is_arr(a) {
-        // scalar broadcast
         ad := a.data
         mut d := []
         mut i := 0
@@ -423,10 +432,9 @@ fn _binop(a, b, op) {
             i = i + 1
         }
         array(d, b.shape)
-    } else {
-        op(a, b)
-    }
+    } else { op(a, b) }
 }
+
 
 fn _unaryop(a, op) {
     data := _data(a)
@@ -438,3 +446,4 @@ fn _unaryop(a, op) {
     }
     array(d, a.shape)
 }
+

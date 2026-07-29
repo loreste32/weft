@@ -18,6 +18,10 @@ type Parser struct {
 	peek  token.Token
 	peek2 token.Token
 	errs  diag.List
+	// noEmptyStructLit: when true, `Name{}` is not a struct literal (so
+	// `match x {}` parses empty arms instead of `match` + empty struct).
+	// Nested `(Name{})` still works for an empty struct value as scrutinee.
+	noEmptyStructLit bool
 	// for f-string expression re-parse we use nested parsers
 }
 
@@ -55,10 +59,24 @@ func (p *Parser) errorf(pos token.Pos, format string, args ...any) {
 	p.errs = append(p.errs, diag.Errorf(p.file, pos, format, args...))
 }
 
+// tokDesc describes a token for diagnostics (Illegal uses lexer lit when set).
+func (p *Parser) tokDesc(t token.Token) string {
+	if t.Kind == token.Illegal && t.Lit != "" {
+		return t.Lit
+	}
+	return t.Kind.String()
+}
+
 func (p *Parser) expect(k token.Kind) token.Token {
 	t := p.tok
 	if t.Kind != k {
-		p.errorf(t.Pos, "expected %s, got %s", k, t.Kind)
+		// Common brace mistakes get a short hint.
+		// `if { … else` usually means a missing `}` before else.
+		if t.Kind == token.Else && (k == token.LBrace || k == token.RBrace) {
+			p.errorf(t.Pos, "expected %s before else (missing closing brace?)", k)
+		} else {
+			p.errorf(t.Pos, "expected %s, got %s", k, p.tokDesc(t))
+		}
 	} else {
 		p.next()
 	}
@@ -92,7 +110,7 @@ func (p *Parser) parseDecl() ast.Decl {
 	case token.Const:
 		return p.parseConstDecl()
 	default:
-		p.errorf(p.tok.Pos, "expected declaration, got %s", p.tok.Kind)
+		p.errorf(p.tok.Pos, "expected declaration, got %s", p.tokDesc(p.tok))
 		p.next()
 		return nil
 	}
@@ -107,6 +125,17 @@ func (p *Parser) parseImport() *ast.ImportDecl {
 		d.Path = p.tok.Lit
 		d.IsPath = false
 		p.next()
+		// Catch Rust-style `use foo::bar` early with a clear hint.
+		if p.tok.Kind == token.Colon && p.peek.Kind == token.Colon {
+			p.errorf(p.tok.Pos, "invalid use path: write `use %s` or `use \"path/to/pkg\"` (not pkg::name)", d.Path)
+			p.next() // :
+			if p.tok.Kind == token.Colon {
+				p.next()
+			}
+			if p.tok.Kind == token.Ident {
+				p.next()
+			}
+		}
 	case token.String, token.RawString:
 		d.Path = p.tok.Lit
 		d.IsPath = true
@@ -337,6 +366,26 @@ func (p *Parser) parseTypePrimary() ast.TypeExpr {
 			return &ast.StructType{Pos_: pos, Fields: fields}
 		}
 		return &ast.NamedType{Pos_: pos, Name: name}
+	case token.Fn:
+		// fn(T1, T2) -> Ret  (function type annotation)
+		p.next()
+		p.expect(token.LParen)
+		var params []ast.TypeExpr
+		for p.tok.Kind != token.RParen && p.tok.Kind != token.EOF {
+			params = append(params, p.parseTypeExpr())
+			if p.tok.Kind == token.Comma {
+				p.next()
+			} else {
+				break
+			}
+		}
+		p.expect(token.RParen)
+		var ret ast.TypeExpr
+		if p.tok.Kind == token.Arrow {
+			p.next()
+			ret = p.parseTypeExpr()
+		}
+		return &ast.FnType{Pos_: pos, Params: params, Ret: ret}
 	case token.LBracket:
 		p.next()
 		el := p.parseTypeExpr()
@@ -358,6 +407,12 @@ func (p *Parser) parseBlock() *ast.Block {
 	p.expect(token.LBrace)
 	b := &ast.Block{Pos_: pos}
 	for p.tok.Kind != token.RBrace && p.tok.Kind != token.EOF {
+		// `else` cannot start a statement — almost always a missing `}` before else.
+		// Leave the token for the outer if-parser and recover as if `}` was present.
+		if p.tok.Kind == token.Else {
+			p.errorf(p.tok.Pos, "expected } before else (missing closing brace?)")
+			return b
+		}
 		s := p.parseStmt()
 		if s != nil {
 			b.Stmts = append(b.Stmts, s)
@@ -421,8 +476,8 @@ func (p *Parser) parseStmt() ast.Stmt {
 		}
 		return p.parseBlock()
 	default:
-		// x := expr  (Weft bind)
-		if p.tok.Kind == token.Ident && p.peek.Kind == token.ColonAssign {
+		// x := expr  or  x: Type := expr  (Weft bind with optional type annotation)
+		if p.tok.Kind == token.Ident && (p.peek.Kind == token.ColonAssign || p.peek.Kind == token.Colon) {
 			return p.parseColonBind(false)
 		}
 		// expression or assignment
@@ -566,9 +621,14 @@ func (p *Parser) parseIfExpr() *ast.IfExpr {
 func (p *Parser) parseMatchExpr() *ast.MatchExpr {
 	pos := p.tok.Pos
 	p.next() // match
-	e := &ast.MatchExpr{Pos_: pos, Scrutinee: p.parseExpr()}
+	// Scrutinee must not swallow `{}` as empty struct lit (`match x {}`).
+	prev := p.noEmptyStructLit
+	p.noEmptyStructLit = true
+	scrut := p.parseExpr()
+	p.noEmptyStructLit = prev
+	e := &ast.MatchExpr{Pos_: pos, Scrutinee: scrut}
 	if p.tok.Kind != token.LBrace {
-		p.errorf(p.tok.Pos, "expected { after match expression")
+		p.errorf(p.tok.Pos, "expected { after match expression, got %s", p.tokDesc(p.tok))
 		return e
 	}
 	p.next() // {
@@ -875,7 +935,7 @@ func (p *Parser) parsePrimary() ast.Expr {
 		p.next()
 		return &ast.Ident{Pos_: pos, Name: "say"}
 	default:
-		p.errorf(pos, "expected expression, got %s", p.tok.Kind)
+		p.errorf(pos, "expected expression, got %s", p.tokDesc(p.tok))
 		p.next()
 		return &ast.BasicLit{Pos_: pos, Kind: token.Null, Value: "null"}
 	}
@@ -884,11 +944,12 @@ func (p *Parser) parsePrimary() ast.Expr {
 func (p *Parser) isStructLit() bool {
 	// After Name, tok is `{`. True struct: `Name{}` or `Name{ field: value`.
 	// Not struct: `while x < n {` / `for x in xs {` where `{` starts a block.
+	// Also not struct when noEmptyStructLit (match scrutinee) so `match x {}` works.
 	if p.tok.Kind != token.LBrace {
 		return false
 	}
 	if p.peek.Kind == token.RBrace {
-		return true
+		return !p.noEmptyStructLit
 	}
 	// Require field: value (Ident then Colon) — uses peek2
 	if p.peek.Kind == token.Ident && p.peek2.Kind == token.Colon {

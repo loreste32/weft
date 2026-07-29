@@ -1,12 +1,8 @@
-// Minimal agent: tool + ask — no builders, no classes
-fn weather(city) {
-    "clear, 21C in " + city
+fn weather(city) { "clear, 21C in " + city }
+
+
+fn main -> Result[any] {
+    reply := llm.ask("Weather in Paris?", [llm.tool("weather", weather, "city weather")])?
+    say(reply)
 }
 
-fn main() -> Result {
-    // llm.ask(prompt, tools) — shortest path to tool-using agent
-    let reply = llm.ask("Weather in Paris?", [
-        llm.tool("weather", weather, "city weather"),
-    ])?
-    println(reply)
-}

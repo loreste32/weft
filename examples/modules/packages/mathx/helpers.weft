@@ -1,7 +1,5 @@
-// Package-private helpers (not re-exported by mathx unless pub + re-export).
-pub fn times(a, b) {
-    a * b
-}
+pub fn times(a, b) { a * b }
+
 
 pub fn clamp_impl(x, lo, hi) {
     if x < lo {
@@ -12,3 +10,4 @@ pub fn clamp_impl(x, lo, hi) {
     }
     x
 }
+
