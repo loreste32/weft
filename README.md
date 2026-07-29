@@ -15,7 +15,7 @@ It handles errors with `Result` / `?` instead of exceptions, runs concurrent wor
 
 | | |
 |--|--|
-| Version | 0.3.35 (`main` branch) |
+| Version | 0.4.0 (`main` branch) |
 | Website | [weftproject.dev](https://weftproject.dev) |
 | Install | `curl -fsSL https://weftproject.dev/install.sh \| sh` |
 | Docs | [weftproject.dev/docs.html](https://weftproject.dev/docs.html) |

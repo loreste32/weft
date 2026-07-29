@@ -40,13 +40,26 @@ func (c *Context) RunREPL(in io.Reader, out io.Writer) error {
 
 		if multi.Len() == 0 {
 			trim := strings.TrimSpace(line)
-			switch trim {
-			case ":q", ":quit", ":exit":
+			switch {
+			case trim == ":q" || trim == ":quit" || trim == ":exit":
 				return nil
-			case ":help", ":h":
+			case trim == ":help" || trim == ":h":
 				fmt.Fprint(out, replHelp)
 				continue
-			case "":
+			case trim == ":clear" || trim == ":c":
+				fmt.Fprint(out, "\033[H\033[2J")
+				continue
+			case trim == ":history":
+				showHistory(out)
+				continue
+			case trim == ":version" || trim == ":v":
+				fmt.Fprintf(out, "weft %s\n", Version)
+				continue
+			case strings.HasPrefix(trim, ":stdlib"):
+				pkg := strings.TrimSpace(strings.TrimPrefix(trim, ":stdlib"))
+				showStdlibHelp(out, pkg)
+				continue
+			case trim == "":
 				continue
 			}
 		}
@@ -145,16 +158,26 @@ func unbalancedQuotes(s string) bool {
 }
 
 const replHelp = `commands:
-  :help   this text
-  :quit   exit
+  :help      this text
+  :quit      exit
+  :clear     clear screen
+  :stdlib    list stdlib packages
+  :stdlib fs show members of a package
+  :history   show recent history
+  :version   show version
+
+multi-line: open braces continue on next line
+  fn add(a, b) {
+  ...   a + b
+  ... }
 
 examples:
   1 + 2
-  let mut n = 0
-  n = n + 1
+  x := "hello"
+  say("$x, weft")
   fn double(x) { x * 2 }
   double(21)
-  llm.ask("hi")          // needs API key
+  map([1,2,3], fn(x) { x * x })
 
 history saved to ~/.weft/history
 tip: use rlwrap weft for arrow-key editing
@@ -165,6 +188,44 @@ func StartREPL() error {
 	ctx := New(Options{Stdout: os.Stdout, Stderr: os.Stderr})
 	err := ctx.RunREPL(os.Stdin, os.Stdout)
 	return err
+}
+
+func showHistory(out io.Writer) {
+	p := historyPath()
+	if p == "" {
+		return
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		fmt.Fprintln(out, "(no history)")
+		return
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	start := 0
+	if len(lines) > 20 {
+		start = len(lines) - 20
+	}
+	for i := start; i < len(lines); i++ {
+		fmt.Fprintf(out, "  %d  %s\n", i+1, lines[i])
+	}
+}
+
+func showStdlibHelp(out io.Writer, pkg string) {
+	if pkg == "" {
+		names := StdlibNames()
+		fmt.Fprintf(out, "%d packages: %s\n", len(names), strings.Join(names, ", "))
+		fmt.Fprintln(out, "  :stdlib <name> for members")
+	} else {
+		members := StdlibMembers(pkg)
+		if len(members) == 0 {
+			fmt.Fprintf(out, "unknown package: %s\n", pkg)
+			return
+		}
+		fmt.Fprintf(out, "%s (%d members):\n", pkg, len(members))
+		for _, m := range members {
+			fmt.Fprintf(out, "  %s.%s\n", pkg, m)
+		}
+	}
 }
 
 // historyPath returns ~/.weft/history (created on first write).
