@@ -22,6 +22,7 @@ type Diagnostic struct {
 	Pos      token.Pos
 	Message  string
 	File     string
+	Source   string // source line (set by FormatWithSource)
 }
 
 func (d Diagnostic) String() string {
@@ -36,7 +37,14 @@ func (d Diagnostic) String() string {
 	if d.Pos.Line > 0 {
 		loc += fmt.Sprintf("%d:%d: ", d.Pos.Line, d.Pos.Column)
 	}
-	return fmt.Sprintf("%s%s: %s", loc, sev, d.Message)
+	msg := fmt.Sprintf("%s%s: %s", loc, sev, d.Message)
+	if d.Source != "" {
+		msg += "\n  " + d.Source
+		if d.Pos.Column > 0 && d.Pos.Column <= len(d.Source)+1 {
+			msg += "\n  " + strings.Repeat(" ", d.Pos.Column-1) + "^"
+		}
+	}
+	return msg
 }
 
 // List is a collection of diagnostics.
@@ -63,6 +71,18 @@ func (l List) HasErrors() bool {
 		}
 	}
 	return false
+}
+
+// AttachSource fills in the Source field for each diagnostic using the given source text.
+func (l List) AttachSource(src string) List {
+	lines := strings.Split(src, "\n")
+	for i := range l {
+		line := l[i].Pos.Line
+		if line > 0 && line <= len(lines) {
+			l[i].Source = lines[line-1]
+		}
+	}
+	return l
 }
 
 // Errorf appends an error diagnostic.

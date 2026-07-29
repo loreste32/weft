@@ -42,7 +42,7 @@ func ParseFile(path, src string) (*ast.File, diag.List) {
 			break
 		}
 	}
-	return f, p.errs
+	return f, p.errs.AttachSource(src)
 }
 
 func (p *Parser) next() {
