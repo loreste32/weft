@@ -86,26 +86,28 @@ In one line: **production-usable for agents, telecom, and ops scripts; still mat
 
 ## Where we hope to go
 
-We are not racing to 1.0. The near goal is a boring, dependable **0.3.x** through **0.3.35**: fix sharp edges, deepen what people already touch, keep the binary small.
+The **0.3.x line is complete** (0.3.31–0.3.35). Everything shipped.
 
-**On this line (0.3.x), we hope to**
+**Completed in 0.3.x:** registry modules (`http_router`, `template`, `validate`, `cron` — 14 total), changelog page, `weft doc`, `weft lint`, `weft build`, `weft test --race/--mem/--timeout`, `cluster`/`governor`/`supervisor` stdlib, `deepgram`/`elevenlabs`/`mlinfer`, MCP, telecom with FreeSWITCH/Asterisk, website with 36 doc pages.
 
-- Harden error messages until they feel ordinary  
-- Improve LSP enough that daily editing is not painful (find-all-references, extract function)  
-- Polish type checking: better inference, clearer errors  
-- REPL improvements: multi-line input, tab completion from LSP data  
-- More telecom integrations: SIP REFER, WebRTC gateway bridge  
-- More registry modules: `http_router`, `template`, `validate`, `cron`  
-- Interactive playground (try Weft in the browser)  
-- Changelog page on the website  
-- Community: Discord or forum  
+## 0.4.x — make it solid
 
-**Maybe later (only if they earn their keep)**
+**Language maturity:**
+- Harden error messages: show source context, caret pointing at the problem  
+- Type system: better inference, optional annotations, clearer errors  
+- REPL: multi-line input, tab completion, history search  
 
-- Key trust / package ownership verification (namespace reservation)  
-- Richer editor packaging (VS Code marketplace polish)  
-- `weft doc` — generate API docs from source comments  
-- Wasm target (run Weft in the browser)  
+**IDE & tooling:**
+- LSP: find-all-references, rename across files, extract function  
+- VS Code marketplace: publish extension with syntax highlighting, snippets  
+- DAP (Debug Adapter Protocol) for IDE-integrated debugging  
+
+**Scale & adoption:**
+- Interactive playground: try Weft in the browser  
+- Wasm target: compile Weft to WebAssembly  
+- Performance benchmark suite, VM hot-path optimization  
+- Namespace ownership and key trust in the registry  
+- More telecom: SIP REFER, WebRTC gateway bridge  
 
 **Probably never in core**
 
