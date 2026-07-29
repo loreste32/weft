@@ -251,6 +251,20 @@ func cmdTest(args []string) int {
 			opts.Quiet = true
 		case a == "--coverage" || a == "--cover" || a == "-cover":
 			opts.Coverage = true
+		case a == "--race":
+			opts.Race = true
+		case a == "--memprofile" || a == "--mem":
+			opts.Memprofile = true
+		case a == "--timeout" || a == "-t":
+			if i+1 < len(args) {
+				i++
+				n, _ := fmt.Sscanf(args[i], "%d", &opts.Timeout)
+				if n == 0 {
+					opts.Timeout = 30
+				}
+			}
+		case strings.HasPrefix(a, "--timeout="):
+			fmt.Sscanf(strings.TrimPrefix(a, "--timeout="), "%d", &opts.Timeout)
 		case a == "-run" || a == "--run":
 			if i+1 < len(args) {
 				i++
@@ -262,7 +276,7 @@ func cmdTest(args []string) int {
 			opts.Filter = strings.TrimPrefix(a, "--run=")
 		case strings.HasPrefix(a, "-"):
 			fmt.Fprintf(os.Stderr, "unknown flag %s\n", a)
-			fmt.Fprintln(os.Stderr, "usage: weft test [path…] [-q] [-run filter]")
+			fmt.Fprintln(os.Stderr, "usage: weft test [path…] [-q] [-run filter] [--race] [--mem] [--timeout N]")
 			return 2
 		default:
 			paths = append(paths, a)

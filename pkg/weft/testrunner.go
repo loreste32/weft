@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"sort"
 	"strings"
 	"time"
@@ -23,17 +24,23 @@ type TestCase struct {
 	Reason  string
 	Err     string
 	Ms      int64
+	Allocs  int64 // memory allocations (when --memprofile)
+	Bytes   int64 // bytes allocated (when --memprofile)
+	Races   int   // data races detected (when --race)
 }
 
 // TestReport aggregates weft test results.
 type TestReport struct {
-	Cases    []TestCase
-	Pass     int
-	Fail     int
-	Skip     int
-	Files    int
-	Total    int
-	Coverage *CoverageReport // nil unless --coverage
+	Cases       []TestCase
+	Pass        int
+	Fail        int
+	Skip        int
+	Files       int
+	Total       int
+	Coverage    *CoverageReport // nil unless --coverage
+	TotalRaces  int             // total data races (--race)
+	TotalAllocs int64           // total allocations (--memprofile)
+	TotalBytes  int64           // total bytes (--memprofile)
 }
 
 // CoverageReport tracks which functions were hit during test runs.
@@ -53,6 +60,12 @@ type TestOptions struct {
 	Filter string
 	// Coverage enables function-level coverage tracking.
 	Coverage bool
+	// Race enables data race detection on concurrent operations.
+	Race bool
+	// Memprofile enables memory allocation tracking per test.
+	Memprofile bool
+	// Timeout per test in seconds (0 = no limit).
+	Timeout int
 	// Options for the Weft runtime (LLM mock, env, …).
 	Runtime Options
 }
@@ -110,6 +123,9 @@ func RunTests(opts TestOptions) (*TestReport, error) {
 			default:
 				rep.Fail++
 			}
+			rep.TotalRaces += c.Races
+			rep.TotalAllocs += c.Allocs
+			rep.TotalBytes += c.Bytes
 		}
 	}
 
@@ -245,13 +261,59 @@ func runTestFile(path string, opts TestOptions, covHit map[string]bool) ([]TestC
 		return cases, allFuncs, nil
 	}
 
+	if opts.Race {
+		env.RaceDetect = true
+	}
+
 	machine := vm.New(env)
 	for _, name := range names {
 		fn := prog.Funcs[name]
 		c := TestCase{File: path, Name: name}
+
+		// memory tracking
+		var memBefore goruntime.MemStats
+		if opts.Memprofile {
+			goruntime.ReadMemStats(&memBefore)
+		}
+
+		// race detection reset
+		if opts.Race {
+			env.RaceLog = nil
+		}
+
+		// timeout
 		start := time.Now()
-		_, err := machine.RunFunc(fn, nil)
+		if opts.Timeout > 0 {
+			done := make(chan struct{})
+			var runErr error
+			go func() {
+				_, runErr = machine.RunFunc(fn, nil)
+				close(done)
+			}()
+			select {
+			case <-done:
+				err = runErr
+			case <-time.After(time.Duration(opts.Timeout) * time.Second):
+				err = fmt.Errorf("test timed out after %ds", opts.Timeout)
+			}
+		} else {
+			_, err = machine.RunFunc(fn, nil)
+		}
 		c.Ms = time.Since(start).Milliseconds()
+
+		// memory stats
+		if opts.Memprofile {
+			var memAfter goruntime.MemStats
+			goruntime.ReadMemStats(&memAfter)
+			c.Allocs = int64(memAfter.Mallocs - memBefore.Mallocs)
+			c.Bytes = int64(memAfter.TotalAlloc - memBefore.TotalAlloc)
+		}
+
+		// race results
+		if opts.Race && len(env.RaceLog) > 0 {
+			c.Races = len(env.RaceLog)
+		}
+
 		if err != nil {
 			if msg, ok := stdlib.IsTestSkip(err); ok {
 				c.Skipped = true
@@ -287,7 +349,14 @@ func PrintTestReport(rep *TestReport, quiet bool) int {
 			case c.Skipped:
 				fmt.Printf("SKIP  %s::%s  (%s)\n", rel, c.Name, c.Reason)
 			case c.OK:
-				fmt.Printf("ok    %s::%s  (%dms)\n", rel, c.Name, c.Ms)
+				extra := ""
+				if c.Allocs > 0 {
+					extra += fmt.Sprintf("  allocs=%d bytes=%d", c.Allocs, c.Bytes)
+				}
+				if c.Races > 0 {
+					extra += fmt.Sprintf("  RACES=%d", c.Races)
+				}
+				fmt.Printf("ok    %s::%s  (%dms)%s\n", rel, c.Name, c.Ms, extra)
 			default:
 				fmt.Printf("FAIL  %s::%s  — %s\n", rel, c.Name, c.Err)
 			}
@@ -298,6 +367,13 @@ func PrintTestReport(rep *TestReport, quiet bool) int {
 	}
 	fmt.Printf("weft test  %d passed, %d failed, %d skipped  (%d files, %d cases)\n",
 		rep.Pass, rep.Fail, rep.Skip, rep.Files, rep.Total)
+
+	if rep.TotalRaces > 0 {
+		fmt.Printf("\nWARNING: %d data race(s) detected\n", rep.TotalRaces)
+	}
+	if rep.TotalAllocs > 0 {
+		fmt.Printf("\nmemory:  %d allocs, %d bytes total\n", rep.TotalAllocs, rep.TotalBytes)
+	}
 
 	if rep.Coverage != nil {
 		fmt.Printf("\ncoverage:  %.1f%% of functions (%d/%d)\n", rep.Coverage.Pct, len(rep.Coverage.Hit), len(rep.Coverage.All))

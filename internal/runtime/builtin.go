@@ -55,6 +55,10 @@ type Env struct {
 	// Coverage tracking (weft test --coverage)
 	// When non-nil, VM records "file:func" keys on each call.
 	Coverage map[string]bool
+
+	// Race detection (weft test --race)
+	RaceDetect bool
+	RaceLog    []string // "file:line: concurrent write to X"
 }
 
 // Context returns env.Ctx or background.
