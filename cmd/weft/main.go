@@ -79,6 +79,13 @@ func run(args []string) int {
 			return 1
 		}
 		return weft.PrintLintReport(rep)
+	case "doc":
+		paths := args[1:]
+		if err := weft.Doc(paths); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
 	case "build":
 		entry := "main.weft"
 		output := ""

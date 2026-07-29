@@ -1,0 +1,118 @@
+// validate — data validation for forms, APIs, and config.
+//
+//   weft registry install validate
+//   use validate
+
+// validate.check(data, rules) -> map  {valid, errors}
+// Validate a map against rules.
+pub fn check(data, rules) {
+    mut errors := []
+    for field in rules {
+        rule := rules[field]
+        value := data[field]
+
+        if rule.required == true && (value == null || value == "") {
+            push(errors, {"field": field, "rule": "required", "message": "$field is required"})
+            continue
+        }
+        if value == null || value == "" { continue }
+
+        val := "$value"
+
+        if rule.min_length != null && len(val) < rule.min_length {
+            push(errors, {"field": field, "rule": "min_length", "message": "$field must be at least ${rule.min_length} characters"})
+        }
+        if rule.max_length != null && len(val) > rule.max_length {
+            push(errors, {"field": field, "rule": "max_length", "message": "$field must be at most ${rule.max_length} characters"})
+        }
+        if rule.min != null {
+            n := int.parse(val).unwrap_or(0)
+            if n < rule.min {
+                push(errors, {"field": field, "rule": "min", "message": "$field must be at least ${rule.min}"})
+            }
+        }
+        if rule.max != null {
+            n := int.parse(val).unwrap_or(0)
+            if n > rule.max {
+                push(errors, {"field": field, "rule": "max", "message": "$field must be at most ${rule.max}"})
+            }
+        }
+        if rule.pattern != null {
+            if !re.find(rule.pattern, val) {
+                push(errors, {"field": field, "rule": "pattern", "message": "$field does not match pattern"})
+            }
+        }
+        if rule.one_of != null {
+            mut found := false
+            for opt in rule.one_of {
+                if val == "$opt" { found = true }
+            }
+            if !found {
+                push(errors, {"field": field, "rule": "one_of", "message": "$field must be one of ${rule.one_of}"})
+            }
+        }
+        if rule["format"] != null {
+            match rule["format"] {
+                "email" {
+                    if !str.contains(val, "@") || !str.contains(val, ".") {
+                        push(errors, {"field": field, "rule": "format", "message": "$field must be a valid email"})
+                    }
+                }
+                "url" {
+                    if !str.starts_with(val, "http://") && !str.starts_with(val, "https://") {
+                        push(errors, {"field": field, "rule": "format", "message": "$field must be a valid URL"})
+                    }
+                }
+                "phone" {
+                    cleaned := re.replace_all(val, "[^0-9+]", "")
+                    if len(cleaned) < 7 {
+                        push(errors, {"field": field, "rule": "format", "message": "$field must be a valid phone number"})
+                    }
+                }
+                _ { }
+            }
+        }
+    }
+    {"valid": len(errors) == 0, "errors": errors}
+}
+
+// validate.require(value, message?) -> Result
+// Ensure a value is non-null and non-empty.
+pub fn require(value, message) -> Result {
+    if value == null || value == "" {
+        msg := if message != null { message } else { "value is required" }
+        return Err(msg, "validate")
+    }
+    Ok(value)
+}
+
+// validate.email(s) -> bool
+pub fn email(s) {
+    str.contains(s, "@") && str.contains(s, ".") && len(s) > 4
+}
+
+// validate.url(s) -> bool
+pub fn url(s) {
+    str.starts_with(s, "http://") || str.starts_with(s, "https://")
+}
+
+// validate.phone(s) -> bool
+pub fn phone(s) {
+    cleaned := re.replace_all(s, "[^0-9+]", "")
+    len(cleaned) >= 7
+}
+
+// validate.in_range(n, min, max) -> bool
+pub fn in_range(n, min, max) {
+    n >= min && n <= max
+}
+
+// validate.length(s, min, max) -> bool
+pub fn length(s, min, max) {
+    len(s) >= min && len(s) <= max
+}
+
+// validate.matches(s, pattern) -> bool
+pub fn matches(s, pattern) {
+    re.find(pattern, s)
+}

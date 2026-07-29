@@ -1,0 +1,121 @@
+// cron — schedule recurring tasks with cron expressions or intervals.
+//
+//   weft registry install cron
+//   use cron
+
+// cron.every(interval_sec, fn) -> map
+// Run a function every N seconds.
+pub fn every(interval_sec, f) {
+    job := {
+        "interval": interval_sec,
+        "fn": f,
+        "running": true,
+        "runs": 0,
+        "last_run": null,
+        "errors": 0,
+    }
+    spawn(fn() {
+        while job.running {
+            time.sleep(interval_sec)
+            if !job.running { return unit }
+            job.runs = job.runs + 1
+            job.last_run = time.now()
+            r := f()
+            if r != null && r.is_err {
+                job.errors = job.errors + 1
+                log.warn("cron job error", {"error": r.err.message, "runs": job.runs})
+            }
+        }
+    })
+    job
+}
+
+// cron.at(hour, minute, fn) -> map
+// Run a function daily at a specific time (24h format).
+pub fn at(hour, minute, f) {
+    job := {"running": true, "runs": 0, "last_run": null, "errors": 0, "schedule": "${hour}:${minute}"}
+    spawn(fn() {
+        while job.running {
+            now := time.now()
+            current_h := int(time.format(now, "15"))
+            current_m := int(time.format(now, "04"))
+
+            // calculate seconds until target time
+            mut target_sec := (hour - current_h) * 3600 + (minute - current_m) * 60
+            if target_sec <= 0 { target_sec = target_sec + 86400 }
+
+            time.sleep(target_sec)
+            if !job.running { return unit }
+            job.runs = job.runs + 1
+            job.last_run = time.now()
+            r := f()
+            if r != null && r.is_err {
+                job.errors = job.errors + 1
+            }
+        }
+    })
+    job
+}
+
+// cron.schedule(jobs) -> map
+// Create a scheduler with multiple jobs.
+// jobs: [{"name": "...", "interval": N, "handler": fn}, ...]
+pub fn schedule(jobs) {
+    scheduler := {"jobs": {}, "running": true}
+    for spec in jobs {
+        name := spec.name
+        if spec.interval != null {
+            scheduler.jobs[name] = every(spec.interval, spec["handler"])
+        } else if spec.hour != null {
+            minute := if spec.minute != null { spec.minute } else { 0 }
+            scheduler.jobs[name] = at(spec.hour, minute, spec["handler"])
+        }
+    }
+    scheduler
+}
+
+// cron.stop(job) -> unit
+// Stop a running job.
+pub fn stop(job) {
+    job.running = false
+}
+
+// cron.stop_all(scheduler) -> unit
+// Stop all jobs in a scheduler.
+pub fn stop_all(scheduler) {
+    scheduler.running = false
+    for name in scheduler.jobs {
+        scheduler.jobs[name].running = false
+    }
+}
+
+// cron.stats(job_or_scheduler) -> map
+// Get job or scheduler statistics.
+pub fn stats(j) {
+    if j.jobs != null {
+        // scheduler
+        mut total_runs := 0
+        mut total_errors := 0
+        mut job_stats := []
+        for name in j.jobs {
+            job := j.jobs[name]
+            total_runs = total_runs + job.runs
+            total_errors = total_errors + job.errors
+            push(job_stats, {
+                "name": name,
+                "runs": job.runs,
+                "errors": job.errors,
+                "running": job.running,
+            })
+        }
+        {"total_runs": total_runs, "total_errors": total_errors, "jobs": job_stats}
+    } else {
+        {"runs": j.runs, "errors": j.errors, "running": j.running, "last_run": j.last_run}
+    }
+}
+
+// cron.wait() -> unit
+// Block forever (keep the script alive for cron jobs).
+pub fn wait() {
+    while true { time.sleep(3600) }
+}

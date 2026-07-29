@@ -1,0 +1,14 @@
+{
+  "name": "validate",
+  "version": "0.1.0",
+  "description": "Data validation for forms, APIs, config — required, format, range, pattern",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": [
+    "check", "require", "email", "url", "phone",
+    "in_range", "length", "matches"
+  ],
+  "license": "Apache-2.0",
+  "keywords": ["validate", "validation", "form", "api", "schema", "check"],
+  "deps": {}
+}

@@ -1,0 +1,11 @@
+{
+  "name": "template",
+  "version": "0.1.0",
+  "description": "Simple string templating with {{placeholders}}, loops, conditionals, HTML escaping",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": ["render", "render_file", "each", "cond", "html_escape", "html"],
+  "license": "Apache-2.0",
+  "keywords": ["template", "render", "html", "string", "placeholder"],
+  "deps": {}
+}

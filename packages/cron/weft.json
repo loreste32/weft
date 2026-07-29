@@ -1,0 +1,11 @@
+{
+  "name": "cron",
+  "version": "0.1.0",
+  "description": "Schedule recurring tasks — intervals, daily times, multi-job scheduler",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": ["every", "at", "schedule", "stop", "stop_all", "stats", "wait"],
+  "license": "Apache-2.0",
+  "keywords": ["cron", "schedule", "interval", "timer", "recurring", "jobs"],
+  "deps": {}
+}
