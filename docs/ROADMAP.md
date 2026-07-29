@@ -1,59 +1,88 @@
 # Where we are, and where we hope to go
 
-Weft is for agent scripts, HTTP glue, and ops tooling. It stays small on purpose.
+Weft is for agent scripts, telecom, HTTP glue, and ops tooling. It stays small on purpose.
 
 ## Where we are now (0.3.33)
 
 We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.3.35** — see [VERSIONING.md](VERSIONING.md)). You can build the binary, write real scripts, and run them on a single Go runtime.
 
-**Solid enough to use today**
+**Language**
 
-- Language loop: lex → parse → compile → stack VM  
+- Lex → parse → compile → stack VM  
 - Own syntax (`:=`, `mut`, `use`, `say`, `?`, match, defer, enum)  
-- **Closures capture outer locals by value** (deep-copied at creation — safe under concurrency)  
-- **Enums**: simple tags (`enum Status { Ok, Err }`) and sum types with payloads (`enum Shape { Circle(r), Rect(w,h) }`)  
-- **Match** on literals, consts, field patterns (`Status.Ok`), and destructuring (`Shape.Circle(r)`) plus `_`  
-- Errors via `Result` + `?` (no try/catch)  
-- Concurrency without `async`/`await` (map/filter fan-out, spawn, channels)  
-- Packages: path/git, vendor, lock; monorepo catalog (`ml`, `tokensave`, `mold`); optional `WEFT_CATALOG_URL`  
-- Catalog CLI: `packages list|search|info|get[@constraint]` with suggestions  
-- Stack map for language / stdlib / modules / agents / trust: [ECOSYSTEM.md](ECOSYSTEM.md)  
-- Optional modules: [MOLD.md](MOLD.md) · [ML.md](ML.md) · [packages.md](packages.md)  
-- `web` HTMX surface: partials, OOB, forms/files, cookies, `app.before` ([web.md](web.md))  
-- Security hardening + threat model ([SECURITY.md](../SECURITY.md))  
-- `weft doctor` surfaces catalog + project deps/vendor health (CI smoke)  
-- `say` works as statement and expression (`|> say`)  
-- Module author DX: `mod check` + **`mod check --tests`**; CI runs it on `packages/*`  
-- Scientific floats: `1e-6`, `2.5E+3`  
-- Hex/bin/oct ints + digit separators: `0xff`, `0b1010`, `0o755`, `1_000`  
-- Editor number highlighting + `fmt` preserve advanced literal forms  
-
-- Lite version constraints: `^`, `~`, `>=`, exact (checked against package `weft.json` version)  
-- LLM: OpenAI-compatible, Anthropic tools, Ollama, vLLM; private fine-tune is optional and GPU-side  
-- Stdlib for I/O, HTTP, web, text/math, config (yaml/toml/ini), and common glue packages  
-- Day-to-day tools: `weft check`, `test`, `fmt`, `bench`, `stdlib`, LSP (incl. format)  
-- Sysops surface: `sh`/`fs`/`cli`/`env`/`platform`/`secrets` + host-check example ([SYSOPS.md](SYSOPS.md))  
-- Stdlib Tier A/B complete (ops/agent lite): `shlex`, `signal`, `binstruct`, `difflib`, `copy`, `functools`, `traceback`, CLI subcommands, HTTP `insecure`, path/bytes, secrets tokens, stats, IP network ([STDLIB_GAPS.md](STDLIB_GAPS.md)) · demo `examples/tier_ab.weft`  
-- Docs: tutorial, language reference, cookbook + `examples/cookbook/` (CI smoke)  
-- Gold corpus includes closures, enums, and match (train eval 100%)  
-- Agent/LLM ergonomics: multi-turn `llm.chat`, `ask`+opts, `stream_text` (in gold corpus)  
-- Glue ergonomics: `json.get`/`env.get` defaults, `http.get_json`, `str.starts_with` (in gold)
+- **Closures** capture outer locals by value (deep-copied — safe under concurrency)  
 - **Sum types with payloads**: `enum Shape { Circle(r), Rect(w,h) }` + destructuring in `match`  
-- `weft debug <file>` — interactive source-level debugger  
-- `weft profile <file>` — execution profiler  
-- `weft notebook <file> [-o out.html]` — run `.weft` as cells, output HTML    
+- Errors via `Result` + `?` (no try/catch)  
+- Concurrency without `async`/`await` (map/filter fan-out, spawn, channels, race, timeout)  
+- Scientific floats (`1e-6`), hex/bin/oct ints, digit separators  
+
+**73 stdlib packages** (in the binary)
+
+- LLM: `llm` (OpenAI/Anthropic/Ollama/vLLM), `ollama`, `vllm` — chat, tools, streaming, agents  
+- AI integration: `mcp` (Model Context Protocol client + server), `deepgram` (streaming STT), `elevenlabs` (streaming TTS), `mlinfer` (ONNX/Triton/HuggingFace inference)  
+- Web: `http`, `web` (HTMX, SSE, cookies, `app.before`), `ws`, `webrtc`  
+- DevOps: `sysinfo` (CPU/memory/disk/uptime), `proc` (process list/kill), `netutil` (port scan/DNS/TCP ping), `sh`, `fs`, `signal`, `secrets`, `log`  
+- Data: `db` (SQLite/Postgres/MySQL), `csv`, `json`, `jsonl`, `yaml`, `toml`, `xml`, `ini`, `redis`, `mongo`, `nats`, `amqp`, `graphql`  
+- CLI/ops: `cli` (flags, subcommands), `env`, `platform`, `shlex`, `crypto`, `pcap`, `email`, `socket`  
+- Collections: `str`, `math`, `time`, `re`, `iter`, `collections`, `heap`, `bisect`, `pipe`, `functools`, `copy`, `traceback`  
+- Full list: `weft stdlib`  
+
+**10 registry modules** at [registry.weftproject.dev](https://registry.weftproject.dev)
+
+| Module | What |
+|--------|------|
+| `telecom` | IVA voice agents, FreeSWITCH ESL, Asterisk ARI, STT/TTS, DTMF, routing, queues, CDR |
+| `mold` | Structured LLM JSON, validation, JSON Schema, tool params |
+| `ml` | Embeddings, vectors, RAG index, metrics |
+| `tokensave` | Context thrift, memory, teach → train export |
+| `warp` | N-dimensional array math |
+| `retry` | Exponential backoff for flaky operations |
+| `semver` | Semver parsing, comparison, constraints |
+| `cache` | In-memory key-value cache with TTL |
+| `color` | ANSI terminal colors for CLI tools |
+| `jwt` | JWT token decode and inspection |
+
+**Registry and packages**
+
+- Public registry hosted at **registry.weftproject.dev** with web UI  
+- Mandatory ed25519 signing on all publishes  
+- Version immutability (no overwrites)  
+- Capability sandboxing for third-party packages  
+- `weft registry search|info|install|keygen|keys|serve`  
+- `weft publish --key <name>` with signature verification  
+
+**Tooling**
+
+- `weft check [--types]`, `test [--coverage]`, `fmt [--check]`, `bench`  
+- `weft debug <file>` — debugger · `weft profile <file>` — profiler  
+- `weft notebook <file> [-o out.html]` — cells to HTML  
+- `weft mcp serve <file>` — expose functions as MCP tools  
+- `weft update` — self-update binary · `weft upgrade` — upgrade packages  
+- `weft gen "task" -o out.weft` — LLM generates Weft from English  
+- `weft train prepare|finetune|eval` — private fine-tuning pipeline  
+- LSP: completion, hover, signatures, definition, symbols, diagnostics, format  
+- VS Code and JetBrains editor plugins  
+
+**Distribution**
+
+- Website: [weftproject.dev](https://weftproject.dev) with docs, cookbook, download, registry  
+- One-line install: `curl -fsSL https://weftproject.dev/install.sh | sh`  
+- APT repo (Ubuntu/Debian): `apt install weft`  
+- DNF repo (Fedora/RHEL): `dnf install weft`  
+- Homebrew formula  
+- Dockerfile for containers  
+- GitHub Release with binaries for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64  
+- macOS binaries ad-hoc signed for Gatekeeper  
 
 **Still rough or incomplete**
 
 - Type checking is gradual, not a full sound system  
-- `weft fmt` covers the common style (enums, match arms, closures); still not every edge case  
-- LSP is usable daily (completion, hover, signatures, definition, symbols, diagnostics, format); not IDE-grade refactoring  
+- `weft fmt` covers the common style; still not every edge case  
+- LSP is usable daily; not IDE-grade refactoring  
 - Stdlib is broad-and-shallow: good for glue, not a full OS platform  
-- Public registry and ed25519 package signing are available (`weft registry`, `weft publish`); the default registry endpoint is not yet hosted  
-- Streaming works for common SSE paths; it is not a full product surface  
-- Scientific compute and heavy training stay outside (on purpose)  
+- Streaming works for common paths; not a full product surface  
 
-In one line: **usable for agents and ops scripts; still early as a language ecosystem.**
+In one line: **production-usable for agents, telecom, and ops scripts; still maturing as a language ecosystem.**
 
 ## Where we hope to go
 
@@ -61,19 +90,22 @@ We are not racing to 1.0. The near goal is a boring, dependable **0.3.x** throug
 
 **On this line (0.3.x), we hope to**
 
-- Harden error messages, check/test/fmt/bench until they feel ordinary  
-- Grow stdlib only where agent/ops scripts actually hurt  
-- Make modules and the monorepo catalog easier to live with  
-- Improve LSP enough that daily editing is not painful  
-- Keep gold/train eval honest so models learn real Weft  
-- Document limits as carefully as features  
+- Harden error messages until they feel ordinary  
+- Improve LSP enough that daily editing is not painful (find-all-references, extract function)  
+- Polish type checking: better inference, clearer errors  
+- REPL improvements: multi-line input, tab completion from LSP data  
+- More telecom integrations: SIP REFER, WebRTC gateway bridge  
+- More registry modules: `http_router`, `template`, `validate`, `cron`  
+- Interactive playground (try Weft in the browser)  
+- Changelog page on the website  
+- Community: Discord or forum  
 
 **Maybe later (only if they earn their keep)**
 
-- Host the default public registry endpoint  
-- Key trust / package ownership verification  
-- Richer editor packaging (marketplace polish)  
-- More LLM providers or stream polish — without swallowing every vendor beta  
+- Key trust / package ownership verification (namespace reservation)  
+- Richer editor packaging (VS Code marketplace polish)  
+- `weft doc` — generate API docs from source comments  
+- Wasm target (run Weft in the browser)  
 
 **Probably never in core**
 
@@ -92,18 +124,15 @@ Before adding to the **core binary**, we ask:
 3. Does it force GPU, huge native deps, or a second language on the hot path?  
 4. Does it fight small-language principles?  
 
-Rule of thumb: **HTTP + agents + local LLM → core. Embeddings/RAG → module. GPU train → orchestrate outside.**
+Rule of thumb: **HTTP + agents + local LLM → core. Embeddings/RAG → module. GPU train → orchestrate outside. SIP → module. ML inference → stdlib (HTTP client only).**
 
 ## Related
 
 - [README.md](README.md) — documentation index  
 - [TUTORIAL.md](TUTORIAL.md) · [LANGUAGE.md](LANGUAGE.md) · [COOKBOOK.md](COOKBOOK.md) · [STDLIB.md](STDLIB.md)  
+- [TELECOM.md](TELECOM.md) · [MCP.md](MCP.md) · [ECOSYSTEM.md](ECOSYSTEM.md)  
 - Runnable recipes: [examples/cookbook/](../examples/cookbook/)  
 - [PRINCIPLES.md](PRINCIPLES.md) — product rules  
 - [PRODUCTION.md](PRODUCTION.md) — timeouts, secrets, deploy sketch  
 - [TOOLING.md](TOOLING.md) · [TESTING.md](TESTING.md) · [ERRORS.md](ERRORS.md)  
-- [ML.md](ML.md) · [modules.md](modules.md) · [FINETUNE.md](FINETUNE.md)  
-
-### Stdlib surface (reference)
-
-We added lite packages where scripts need them (`math`, `fs`, `yaml`, `iter`, `collections`, `bisect`, `heap`, …). Run `weft stdlib` for the live list. Full parity with any other language’s stdlib is not a goal.
+- [ML.md](ML.md) · [FINETUNE.md](FINETUNE.md) · [modules.md](modules.md)  
