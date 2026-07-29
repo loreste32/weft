@@ -151,7 +151,7 @@ weft                              REPL
 weft run <file.weft> [--watch]    run a script
 weft build [dir] [-o out]        bundle into .weftapp archive
 weft check <file|dir> [--types]   type check
-weft test [path] [--coverage]     run tests
+weft test [--race] [--mem] [--timeout N] [--coverage]
 weft fmt [--check] <file|dir>     format
 weft notebook <file> [-o out.html]
 weft bench | stdlib | doctor | version | lsp
