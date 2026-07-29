@@ -22,6 +22,7 @@ use "./routing.weft" as routing_mod
 use "./dialplan.weft" as dialplan_mod
 use "./esl.weft" as esl_mod
 use "./ari.weft" as ari_mod
+use "./webrtc_bridge.weft" as webrtc_mod
 
 // ─── call flow actions ─────────────────────────────────────────────
 
@@ -357,3 +358,20 @@ pub fn ari_snoop(c, id, app_name, opts) -> Result { ari_mod.snoop(c, id, app_nam
 // telecom.ari_listen(client, handler) -> Result
 // Connect to ARI WebSocket and handle events in real-time.
 pub fn ari_listen(c, handler) -> Result { ari_mod.listen(c, handler) }
+
+// ─── WebRTC / SIP REFER ────────────────────────────────────────────
+
+// telecom.webrtc_signal_server(port, opts?) -> unit
+pub fn webrtc_signal_server(port, opts) { webrtc_mod.signal_server(port, opts) }
+
+// telecom.sip_refer(esl, uuid, refer_to, opts?) -> Result
+pub fn sip_refer(esl, uuid, refer_to, opts) -> Result {
+    api_fn := fn(cmd) -> Result { esl_mod.api(esl, cmd) }
+    webrtc_mod.sip_refer(api_fn, uuid, refer_to, opts)
+}
+
+// telecom.click_to_call(ari, from, to, opts?) -> Result[map]
+pub fn click_to_call(ari, from_ep, to_ep, opts) -> Result {
+    orig_fn := fn(ep, o) -> Result { ari_mod.originate(ari, ep, o) }
+    webrtc_mod.click_to_call(orig_fn, from_ep, to_ep, opts)
+}

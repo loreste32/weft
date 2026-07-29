@@ -71,9 +71,10 @@ func (s *server) handle(raw []byte) error {
 				"documentSymbolProvider":     true,
 				"documentFormattingProvider": true,
 				"signatureHelpProvider":      map[string]any{"triggerCharacters": []string{"(", ","}},
+				"referencesProvider":         true,
 				"renameProvider":             map[string]any{"prepareProvider": true},
 			},
-			"serverInfo": map[string]any{"name": "weft-lsp", "version": "0.3.31"},
+			"serverInfo": map[string]any{"name": "weft-lsp", "version": "0.4.0"},
 		})
 	case "initialized", "textDocument/didSave":
 		return nil
@@ -211,6 +212,19 @@ func (s *server) handle(raw []byte) error {
 		}
 		_ = json.Unmarshal(envelope.Params, &p)
 		result := prepareRename(s.docs[p.TextDocument.URI], p.Position.Line, p.Position.Character)
+		return s.reply(envelope.ID, result)
+	case "textDocument/references":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+			Position struct {
+				Line      int `json:"line"`
+				Character int `json:"character"`
+			} `json:"position"`
+		}
+		_ = json.Unmarshal(envelope.Params, &p)
+		result := findReferences(s.docs[p.TextDocument.URI], p.TextDocument.URI, p.Position.Line, p.Position.Character)
 		return s.reply(envelope.ID, result)
 	case "textDocument/rename":
 		var p struct {

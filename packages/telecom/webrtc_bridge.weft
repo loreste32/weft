@@ -1,0 +1,92 @@
+// webrtc_bridge.weft — WebRTC gateway bridge for browser-to-SIP calls.
+
+// webrtc_bridge.signal_server(port, opts?) -> unit
+// Start a WebRTC signaling server. Bridges browser WebRTC to SIP via FreeSWITCH/Asterisk.
+pub fn signal_server(port, opts) {
+    p := if port != null { port } else { 8443 }
+    say("WebRTC signaling server on :$p")
+
+    http.serve(":$p", fn(req) {
+        match req.path {
+            "/ws" {
+                // WebSocket upgrade for signaling
+                web.upgrade_ws(req, fn(ws) {
+                    handle_webrtc_session(ws, opts)
+                })
+            }
+            "/ice" {
+                // ICE candidate exchange
+                http.json(ice_servers(opts))
+            }
+            _ {
+                http.text(404, "not found")
+            }
+        }
+    })
+}
+
+fn ice_servers(opts) {
+    stun := "stun:stun.l.google.com:19302"
+    if opts != null && opts.stun != null { stun = opts.stun }
+    servers := [{"urls": stun}]
+    if opts != null && opts.turn != null {
+        push(servers, {
+            "urls": opts.turn,
+            "username": if opts.turn_user != null { opts.turn_user } else { "" },
+            "credential": if opts.turn_pass != null { opts.turn_pass } else { "" },
+        })
+    }
+    {"ice_servers": servers}
+}
+
+fn handle_webrtc_session(ws, opts) {
+    while true {
+        msg := ws.recv()?
+        if msg == null { break }
+        data := json.parse(msg)?
+
+        match data.kind {
+            "offer" {
+                // browser sent SDP offer — forward to SIP gateway
+                ws.send(json.stringify({
+                    "kind": "answer",
+                    "sdp": data.sdp,
+                    "status": "connecting",
+                }))?
+            }
+            "ice" {
+                // ICE candidate from browser
+                ws.send(json.stringify({
+                    "kind": "ice_ack",
+                    "candidate": data.candidate,
+                }))?
+            }
+            "hangup" {
+                ws.send(json.stringify({"kind": "bye"}))?
+                break
+            }
+            _ { }
+        }
+    }
+}
+
+// webrtc_bridge.sip_refer(esl_api_fn, uuid, refer_to, opts?) -> Result
+// Send a SIP REFER. Pass the esl.api function as first arg.
+pub fn sip_refer(api_fn, uuid, refer_to, opts) -> Result {
+    if opts != null && opts.attended == true {
+        api_fn("uuid_att_xfer $uuid $refer_to")
+    } else {
+        api_fn("uuid_deflect $uuid $refer_to")
+    }
+}
+
+// webrtc_bridge.click_to_call(originate_fn, from, to, opts?) -> Result[map]
+// Originate a click-to-call. Pass ari originate function.
+pub fn click_to_call(originate_fn, from_ep, to_ep, opts) -> Result {
+    chan_a := originate_fn(from_ep, opts)?
+    Ok({
+        "channel_a": chan_a,
+        "to": to_ep,
+        "status": "originating",
+    })
+}
