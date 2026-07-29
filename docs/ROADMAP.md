@@ -2,7 +2,7 @@
 
 Weft is for agent scripts, telecom, HTTP glue, and ops tooling. It stays small on purpose.
 
-## Where we are now (0.3.34)
+## Where we are now (0.3.35)
 
 We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.3.35** — see [VERSIONING.md](VERSIONING.md)). You can build the binary, write real scripts, and run them on a single Go runtime.
 
