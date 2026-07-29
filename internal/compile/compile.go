@@ -183,6 +183,16 @@ func compileFile(file *ast.File, env *runtime.Env, requireMain, replMode bool) (
 
 func (c *Compiler) compileImport(d *ast.ImportDecl) {
 	if d.IsPath {
+		// URL import: "weftproject.dev/mold" or "registry.weftproject.dev/telecom"
+		if strings.Contains(d.Path, "/") && !strings.HasPrefix(d.Path, ".") && !strings.HasPrefix(d.Path, "/") && !strings.HasSuffix(d.Path, ".weft") && !strings.HasSuffix(d.Path, ".loom") {
+			parts := strings.Split(d.Path, "/")
+			pkgName := parts[len(parts)-1]
+			if d.Alias == "" {
+				d.Alias = pkgName
+			}
+			c.loadNamedPackage(d, pkgName)
+			return
+		}
 		// string path: "./x.weft" or "pkgname" (package import as string)
 		if !strings.HasPrefix(d.Path, ".") && !strings.HasPrefix(d.Path, "/") && !strings.Contains(d.Path, string(filepath.Separator)) && !strings.HasSuffix(d.Path, ".weft") && !strings.HasSuffix(d.Path, ".loom") {
 			// import "hello" — package manager package

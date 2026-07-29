@@ -23,6 +23,7 @@ type Parser struct {
 	// Nested `(Name{})` still works for an empty struct value as scrutinee.
 	noEmptyStructLit bool
 	// for f-string expression re-parse we use nested parsers
+	pendingImports []*ast.ImportDecl // grouped imports: use { "a"; "b" }
 }
 
 // ParseFile parses source into an AST file.
@@ -84,11 +85,17 @@ func (p *Parser) expect(k token.Kind) token.Token {
 }
 
 func (p *Parser) parseDecl() ast.Decl {
+	// drain any pending grouped imports first
+	if len(p.pendingImports) > 0 {
+		d := p.pendingImports[0]
+		p.pendingImports = p.pendingImports[1:]
+		return d
+	}
 	switch p.tok.Kind {
 	case token.Enum:
 		return p.parseEnum(false)
 	case token.Import, token.Use:
-		return p.parseImport()
+		return p.parseImportOrGroup()
 	case token.Pub:
 		p.next()
 		switch p.tok.Kind {
@@ -116,9 +123,55 @@ func (p *Parser) parseDecl() ast.Decl {
 	}
 }
 
-func (p *Parser) parseImport() *ast.ImportDecl {
+func (p *Parser) parseImportOrGroup() ast.Decl {
 	pos := p.tok.Pos
-	p.next() // import | use
+	p.next() // use | import
+
+	// Grouped import: use { "mold"; "telecom" }
+	if p.tok.Kind == token.LBrace {
+		p.next() // {
+		var imports []*ast.ImportDecl
+		for p.tok.Kind != token.RBrace && p.tok.Kind != token.EOF {
+			d := &ast.ImportDecl{Pos_: pos}
+			switch p.tok.Kind {
+			case token.String, token.RawString:
+				d.Path = p.tok.Lit
+				d.IsPath = true
+				p.next()
+			case token.Ident:
+				d.Path = p.tok.Lit
+				d.IsPath = false
+				p.next()
+			default:
+				p.errorf(p.tok.Pos, "expected package name or path in use block")
+				p.next()
+				continue
+			}
+			if p.tok.Kind == token.As {
+				p.next()
+				if p.tok.Kind == token.Ident {
+					d.Alias = p.tok.Lit
+					p.next()
+				}
+			}
+			imports = append(imports, d)
+		}
+		p.expect(token.RBrace)
+		if len(imports) == 0 {
+			return &ast.ImportDecl{Pos_: pos}
+		}
+		// return first, stash rest
+		if len(imports) > 1 {
+			p.pendingImports = append(p.pendingImports, imports[1:]...)
+		}
+		return imports[0]
+	}
+
+	// single import — delegate to existing parser
+	return p.parseImportSingle(pos)
+}
+
+func (p *Parser) parseImportSingle(pos token.Pos) *ast.ImportDecl {
 	d := &ast.ImportDecl{Pos_: pos}
 	switch p.tok.Kind {
 	case token.Ident:

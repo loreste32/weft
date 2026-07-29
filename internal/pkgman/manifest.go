@@ -347,5 +347,60 @@ func FindInstalledPackage(projectDir, name string) (dir string, entry string, er
 			}
 		}
 	}
-	return "", "", fmt.Errorf("package %q not found (run: weft install)", name)
+	// Auto-fetch from registry if not found locally
+	if os.Getenv("WEFT_NO_AUTO_FETCH") != "1" {
+		if fetched, fetchErr := AutoFetchFromRegistry(projectDir, name); fetchErr == nil && fetched {
+			for _, root := range ResolveSearchPaths(projectDir) {
+				cand := filepath.Join(root, name)
+				if st, err := os.Stat(cand); err == nil && st.IsDir() {
+					entry, err := FindPackageEntry(cand)
+					if err == nil {
+						return cand, entry, nil
+					}
+				}
+			}
+		}
+	}
+	return "", "", fmt.Errorf("package %q not found (run: weft registry install %s)", name, name)
+}
+
+// AutoFetchFromRegistry downloads a package from the registry into vendor/.
+func AutoFetchFromRegistry(projectDir, name string) (bool, error) {
+	pkgName := name
+	if strings.Contains(pkgName, "/") {
+		parts := strings.Split(pkgName, "/")
+		pkgName = parts[len(parts)-1]
+	}
+
+	registryURL := RegistryURL()
+	idx, err := FetchIndex(registryURL)
+	if err != nil {
+		return false, err
+	}
+	pkg, err := FindRegistryPackage(idx, pkgName, "")
+	if err != nil {
+		return false, err
+	}
+
+	cacheDir, err := DefaultCacheDir()
+	if err != nil {
+		return false, err
+	}
+	archivePath := filepath.Join(cacheDir, fmt.Sprintf("%s-%s.tar.gz", pkg.Name, pkg.Version))
+	if err := DownloadAndVerify(registryURL, *pkg, archivePath); err != nil {
+		return false, err
+	}
+
+	vendorDir := filepath.Join(projectDir, "vendor", pkgName)
+	os.RemoveAll(vendorDir)
+	if err := os.MkdirAll(vendorDir, 0o755); err != nil {
+		return false, err
+	}
+	if err := ExtractArchive(archivePath, vendorDir); err != nil {
+		os.RemoveAll(vendorDir)
+		return false, err
+	}
+
+	fmt.Fprintf(os.Stderr, "auto-installed %s@%s\n", pkgName, pkg.Version)
+	return true, nil
 }
