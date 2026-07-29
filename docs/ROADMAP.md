@@ -2,7 +2,7 @@
 
 Weft is for agent scripts, telecom, HTTP glue, and ops tooling. It stays small on purpose.
 
-## Where we are now (0.4.1)
+## Where we are now (0.4.2)
 
 Weft is on the **0.4.x** line (0.3.x complete — see [VERSIONING.md](VERSIONING.md)). Positioning and maturity: [STABILITY.md](STABILITY.md). You can build the binary, write real scripts, and run them on a single Go runtime.
 
@@ -88,13 +88,13 @@ In one line: **useful for agents, telecom, and ops scripts when versions are pin
 
 ## Where we hope to go
 
-The **0.3.x line is complete** (0.3.31–0.4.1). Everything shipped.
+The **0.3.x line is complete** (0.3.31–0.4.2). Everything shipped.
 
 **Completed in 0.3.x:** registry modules (`http_router`, `template`, `validate`, `cron` — 14 total), changelog page, `weft doc`, `weft lint`, `weft build`, `weft test --race/--mem/--timeout`, `cluster`/`governor`/`supervisor` stdlib, `deepgram`/`elevenlabs`/`mlinfer`, MCP, telecom with FreeSWITCH/Asterisk, website with 36 doc pages.
 
 ## 0.4.x — make it solid
 
-**Shipped in 0.4.x so far:** optional type annotations + `--strict`, DAP debugging, browser Wasm playground, registry namespace trust, telecom SIP REFER / WebRTC bridge, VS Code 0.4.1 (LSP types + DAP), bytecode validation, fuzz/race/bench smoke targets.
+**Shipped in 0.4.x so far:** optional type annotations + `--strict`, DAP debugging, browser Wasm playground, registry namespace trust, telecom SIP REFER / WebRTC bridge, VS Code 0.4.2 (LSP types + DAP), bytecode validation, fuzz/race/bench smoke targets.
 
 **Reliability (priority now — prove the core):**
 - Language/VM fuzzing and malformed-input testing (`make fuzz-smoke`) — done (smoke + weekly deep)  
