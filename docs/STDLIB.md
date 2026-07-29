@@ -1,4 +1,4 @@
-# Stdlib overview
+# Stdlib overview (73 packages)
 
 The standard library is **in the binary**. Packages are imported with `use name` (or just called as `name.member` after import — most scripts use `use`).
 
@@ -30,11 +30,11 @@ What we keep vs won’t: **[STDLIB_GAPS.md](STDLIB_GAPS.md)**.
 | Data tables | `csv`, `table`, `db`, `redis`, `mongo` |
 | Messaging | `nats`, `amqp`, `email`, `socket` |
 | LLM | `llm`, `ollama`, `vllm` |
+| AI integration | `mcp` (Model Context Protocol), `deepgram` (streaming STT), `elevenlabs` (streaming TTS), `mlinfer` (ONNX/Triton/HF inference) |
 | Collections helpers | `iter`, `collections`, `heap`, `bisect`, `pipe`, `functools` |
 | System info | `sysinfo` (CPU, memory, disk, uptime, interfaces) |
 | Process mgmt | `proc` (list, find, kill, exists) |
 | Network diag | `netutil` (port check, TCP ping, DNS, port scan) |
-| MCP | `mcp` (connect to MCP servers, expose tools) |
 | Crypto | `crypto` |
 | Errors | `traceback` |
 | Charts | `viz` |
@@ -273,6 +273,73 @@ mcp.serve_stdio([
 
 Client: `connect`, `connect_sse` → `list_tools`, `call_tool`, `list_resources`, `read_resource`, `close`.
 Server: `tool`, `serve_stdio`.
+
+### deepgram
+
+Streaming speech-to-text via Deepgram's WebSocket API. Low-latency, real-time transcription.
+
+```weft
+stream := deepgram.stream({"model": "nova-2", "language": "en", "interim_results": true})?
+stream.send(audio_bytes)?
+result := stream.recv()?
+if result.is_final { say(result.transcript) }
+stream.close()
+
+// or REST for pre-recorded audio
+result := deepgram.transcribe("https://example.com/call.wav")?
+say(result.transcript)
+```
+
+Members: `stream`, `transcribe`. Env: `DEEPGRAM_API_KEY`.
+
+### elevenlabs
+
+Streaming text-to-speech via ElevenLabs WebSocket API. Low-latency audio generation.
+
+```weft
+// one-shot stream
+stream := elevenlabs.stream("Hello, how can I help?", {"voice_id": "...", "output_format": "pcm_16000"})?
+chunk := stream.recv()?  // {audio (base64), is_final}
+
+// bidirectional (lowest latency)
+ws := elevenlabs.stream_ws({"voice_id": "...", "output_format": "pcm_16000"})?
+ws.send("Hello, ")?
+ws.send("how are you?")?
+ws.flush()
+chunk := ws.recv()?
+
+// REST
+result := elevenlabs.speak("Hello", {"voice_id": "..."})?
+voices := elevenlabs.voices()?
+```
+
+Members: `stream`, `stream_ws`, `speak`, `voices`. Env: `ELEVENLABS_API_KEY`.
+
+### mlinfer
+
+ML inference clients for ONNX Runtime, Triton, HuggingFace, and custom endpoints.
+
+```weft
+// generic
+result := mlinfer.predict("http://model:8080/predict", {"text": "hello"})?
+
+// ONNX Runtime Server
+result := mlinfer.onnx("http://localhost:8001", "sentiment", {"text": "great"})?
+healthy := mlinfer.onnx_health("http://localhost:8001")?
+
+// Triton
+result := mlinfer.triton("http://gpu:8000", "bert", {"inputs": [...]})?
+
+// HuggingFace
+result := mlinfer.hf("facebook/bart-large-mnli", {"inputs": "classify this"})?
+
+// shortcuts
+label := mlinfer.classify("http://localhost:8080/classify", "refund my order")?
+vec := mlinfer.embed("http://localhost:8080/embed", "search query")?
+results := mlinfer.batch("http://localhost:8080/classify", ["text1", "text2"])?
+```
+
+Members: `predict`, `onnx`, `onnx_health`, `onnx_models`, `triton`, `triton_health`, `triton_models`, `hf`, `classify`, `embed`, `detect`, `batch`.
 
 ### db / csv / table
 

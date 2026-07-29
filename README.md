@@ -1,6 +1,6 @@
 # Weft
 
-A scripting language for agent tools, HTTP glue, and ops work. One Go binary, no runtime dependencies.
+A scripting language for agent tools, telecom, HTTP glue, and ops work. One binary, no runtime dependencies.
 
 [![CI](https://github.com/loreste32/weft/actions/workflows/ci.yml/badge.svg)](https://github.com/loreste32/weft/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -9,24 +9,47 @@ A scripting language for agent tools, HTTP glue, and ops work. One Go binary, no
 
 ## What it is
 
-Weft is a small language with its own syntax, a stack VM, and a broad stdlib baked into the binary. You write `.weft` files, run them with `weft run`, and ship scripts without setting up environments or installing interpreters.
+Weft is a small language with its own syntax, a stack VM, and 73 stdlib packages baked into the binary. You write `.weft` files, run them with `weft run`, and ship scripts without setting up environments or installing interpreters.
 
-It handles errors with `Result` / `?` instead of exceptions, runs concurrent work without `async`/`await`, and talks to LLMs, databases, and HTTP services out of the box.
+It handles errors with `Result` / `?` instead of exceptions, runs concurrent work without `async`/`await`, and talks to LLMs, databases, SIP servers, and HTTP services out of the box.
 
 | | |
 |--|--|
 | Version | 0.3.33 (`main` branch) |
-| Install | `go build -o weft ./cmd/weft` |
-| Docs | [docs/README.md](docs/README.md) |
+| Website | [weftproject.dev](https://weftproject.dev) |
+| Install | `curl -fsSL https://weftproject.dev/install.sh \| sh` |
+| Docs | [weftproject.dev/docs.html](https://weftproject.dev/docs.html) |
+| Registry | [registry.weftproject.dev](https://registry.weftproject.dev) |
 | Security | [SECURITY.md](SECURITY.md) |
+
+## Install
+
+```bash
+# one-line (macOS / Linux)
+curl -fsSL https://weftproject.dev/install.sh | sh
+
+# Ubuntu / Debian
+curl -fsSL https://weftproject.dev/weft-archive-keyring.gpg | sudo gpg --dearmor -o /usr/share/keyrings/weft.gpg
+echo "deb [signed-by=/usr/share/keyrings/weft.gpg] https://weftproject.dev/apt stable main" | sudo tee /etc/apt/sources.list.d/weft.list
+sudo apt update && sudo apt install weft
+
+# Fedora / RHEL
+sudo dnf config-manager --add-repo https://weftproject.dev/rpm
+sudo dnf install weft
+
+# macOS (Homebrew)
+brew tap loreste32/tap && brew install weft
+
+# from source
+go build -o weft ./cmd/weft
+```
 
 ## Quick start
 
 ```bash
-go build -o weft ./cmd/weft
-./weft doctor
-./weft run examples/hello.weft
-./weft run examples/todoapp/main.weft   # web app with SQLite
+weft doctor
+weft run examples/hello.weft
+weft run examples/todoapp/main.weft   # web app with SQLite
 ```
 
 ## The language
@@ -75,29 +98,32 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 
 ## What's in the box
 
-**Language:** lex, parse, compile, stack VM. Closures (capture by value), sum types with payloads (`enum Shape { Circle(r) }`), `match` with destructuring, `defer`, `Result`/`?`. Concurrent `map`/`filter`, `spawn`, channels — no `async`/`await`.
+**Language:** lex, parse, compile, stack VM. Closures (capture by value), sum types with payloads, `match` with destructuring, `defer`, `Result`/`?`. Concurrent `map`/`filter`, `spawn`, channels — no `async`/`await`.
 
-**Stdlib (in the binary):** `http`, `web`, `json`, `db` (SQLite/Postgres/MySQL with auto JSON/JSONB parsing), `fs`, `sh`, `cli`, `llm` (OpenAI/Anthropic/Ollama/vLLM), `sysinfo` (CPU/memory/disk/uptime), `proc` (process list/kill), `netutil` (port check/DNS/scan), `csv`, `yaml`, `pcap`, `crypto`, `re`, `time`, and [many more](docs/STDLIB.md). Run `weft stdlib` to see them all.
+**73 stdlib packages (in the binary):**
+
+| Area | Packages |
+|------|----------|
+| LLM / AI | `llm` (OpenAI/Anthropic/Ollama/vLLM), `mcp` (Model Context Protocol), `deepgram` (streaming STT), `elevenlabs` (streaming TTS), `mlinfer` (ONNX/Triton/HF inference) |
+| Web | `http`, `web` (HTMX/SSE), `ws`, `webrtc`, `graphql` |
+| DevOps | `sysinfo`, `proc`, `netutil`, `sh`, `fs`, `cli`, `env`, `signal`, `secrets`, `log` |
+| Data | `db` (SQLite/Postgres/MySQL), `csv`, `json`, `yaml`, `toml`, `xml`, `redis`, `mongo`, `nats`, `amqp` |
+| Network | `pcap`, `socket`, `email`, `ip` |
+| All | Run `weft stdlib` to see the full list |
 
 **Tooling:**
 - `weft check [--types]` — type checking
 - `weft test [--coverage]` — run `fn test_*` in `*_test.weft` files
 - `weft fmt [--check]` — code formatter (CI-friendly with `--check`)
 - `weft run [--watch]` — run scripts, auto-reload on file changes
+- `weft debug` / `profile` — debugger and profiler
 - `weft notebook` — run `.weft` as cells, output HTML
-- `weft bench` — microbenchmarks
-- `weft debug <file>` — interactive source-level debugger
-- `weft profile <file>` — execution profiler
-- `weft mcp serve <file>` — run Weft functions as MCP tools for AI assistants
+- `weft mcp serve <file>` — expose Weft functions as MCP tools
+- `weft update` — self-update to latest version
+- `weft upgrade` — upgrade installed packages
 - `weft lsp` — Language Server (completion, hover, rename, diagnostics)
 
-**Packages:**
-- Path and git imports into `vendor/`
-- Package registry with ed25519 signing (`weft publish`, `weft registry install`)
-- Monorepo catalog: `weft packages list`
-- Capability system for third-party package sandboxing
-
-**Optional modules** (install via `weft registry install <name>`):
+**10 registry modules** at [registry.weftproject.dev](https://registry.weftproject.dev):
 
 | Module | What it does |
 |--------|-------------|
@@ -105,43 +131,49 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 | [mold](packages/mold/) | Structured LLM JSON, validation, tool params |
 | [ml](packages/ml/) | Embeddings, vectors, RAG index |
 | [tokensave](packages/tokensave/) | Context thrift, memory, train data |
-| [warp](packages/warp/) | N-dimensional array math (pure Weft) |
+| [warp](packages/warp/) | N-dimensional array math |
 | [retry](packages/retry/) | Exponential backoff for flaky operations |
-| [semver](packages/semver/) | Parse, compare, and check semantic versions |
+| [semver](packages/semver/) | Semver parsing, comparison, constraints |
 | [cache](packages/cache/) | In-memory key-value cache with TTL |
 | [color](packages/color/) | ANSI terminal colors for CLI tools |
-| [jwt](packages/jwt/) | Decode and inspect JWT tokens |
+| [jwt](packages/jwt/) | JWT token decode and inspection |
 
-Browse all: [registry.weftproject.dev](https://registry.weftproject.dev)
+**Packages:**
+- Path and git imports into `vendor/`
+- Public registry with ed25519 signing and version immutability
+- Capability system for third-party package sandboxing
+- `weft registry search|install|keygen|serve`
 
 ## CLI
 
 ```text
-weft                              REPL (history saved to ~/.weft/history)
-weft run <file.weft> [--watch]    run a script (--watch reloads on change)
+weft                              REPL
+weft run <file.weft> [--watch]    run a script
 weft check <file|dir> [--types]   type check
 weft test [path] [--coverage]     run tests
-weft fmt [--check] <file|dir>     format (--check for CI)
+weft fmt [--check] <file|dir>     format
 weft notebook <file> [-o out.html]
 weft bench | stdlib | doctor | version | lsp
 weft debug <file.weft>            debugger
 weft profile <file.weft>          profiler
-weft update                       update weft to latest version
-weft upgrade                      upgrade installed packages
+weft mcp serve <file.weft>        MCP tool server
+weft update                       self-update binary
+weft upgrade                      upgrade packages
 
-weft new module|app|cli <name>    scaffold a project
-weft get <name> <path|git>        add a dependency
+weft new module|app|cli <name>    scaffold
+weft get <name> <path|git>        add dependency
 weft install                      install from weft.json
-weft upgrade                      upgrade packages to latest
-weft publish [--key name]         sign and upload to registry
+weft publish [--key name]         sign and upload
 weft registry search|install|keygen|serve
+weft gen "task" [-o out.weft]     LLM generates Weft
+weft train prepare|finetune|eval  fine-tuning pipeline
 ```
 
 ## Examples
 
 ```bash
 weft run examples/hello.weft
-weft run examples/todoapp/main.weft        # full web app: SQLite + JSON API + HTML
+weft run examples/todoapp/main.weft        # web app: SQLite + JSON API + HTML
 weft run examples/cli_tool.weft -- --help  # CLI with flags
 weft run examples/sysops_host.weft -- info # host checks
 weft run examples/pipeline_etl.weft        # data pipeline
@@ -155,21 +187,20 @@ More in [`examples/`](examples/) and [`examples/cookbook/`](examples/cookbook/).
 
 | | |
 |---|---|
-| [docs/README.md](docs/README.md) | Full docs index |
+| [weftproject.dev/docs.html](https://weftproject.dev/docs.html) | Full docs (on-site, searchable) |
+| [weftproject.dev/cookbook.html](https://weftproject.dev/cookbook.html) | 22 searchable recipes |
+| [weftproject.dev/download.html](https://weftproject.dev/download.html) | Install guides (apt, dnf, brew, Docker) |
 | [docs/TUTORIAL.md](docs/TUTORIAL.md) | Guided first hour |
-| [docs/COOKBOOK.md](docs/COOKBOOK.md) | Paste-ready recipes |
-| [docs/STDLIB.md](docs/STDLIB.md) | Stdlib map |
+| [docs/STDLIB.md](docs/STDLIB.md) | Stdlib reference |
+| [docs/TELECOM.md](docs/TELECOM.md) | Telecom / IVA / FreeSWITCH / Asterisk |
+| [docs/MCP.md](docs/MCP.md) | MCP integration |
 | [docs/ECOSYSTEM.md](docs/ECOSYSTEM.md) | How pieces fit together |
-| [docs/web.md](docs/web.md) | HTTP servers and HTMX |
-| [docs/packages.md](docs/packages.md) | Package manager and registry |
 | [SECURITY.md](SECURITY.md) | Threat model and capabilities |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | What's next |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Where we are and what's next |
 
 ## Why this exists
 
-We wanted a small language for agent tools and ops glue — one binary, explicit error handling, simple packages, and LLM integration without a heavy runtime. Weft is that experiment.
-
-It might work for your scripts. It might not. Try the examples and decide.
+We wanted a small language for agent tools, telecom, and ops glue — one binary, explicit error handling, simple packages, and LLM integration without a heavy runtime.
 
 ## Develop
 

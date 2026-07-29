@@ -47,24 +47,29 @@ Runnable offline recipes: **[`examples/cookbook/`](../examples/cookbook/)** (`01
 
 ---
 
-## Agents & optional modules
+## Agents, telecom & optional modules
 
-All three modules are **optional** — same install path, never built-ins. Catalog: [`packages/`](../packages/).
+10 modules in the [public registry](https://registry.weftproject.dev). Install with `weft registry install <name>`.
 
 | Module | Role | Doc |
 |--------|------|-----|
+| **telecom** | IVA voice agents, FreeSWITCH ESL, Asterisk ARI, STT/TTS, DTMF, routing, queues, CDR | [TELECOM.md](TELECOM.md) |
 | **mold** | Validate / coerce structured JSON; JSON Schema & tool params | [MOLD.md](MOLD.md) |
 | **ml** | Embeddings, vectors, RAG index, metrics | [ML.md](ML.md) |
 | **tokensave** | Context thrift, memory, teach → train | [`packages/tokensave`](../packages/tokensave/) |
+| **retry** · **semver** · **cache** · **color** · **jwt** · **warp** | Ops utilities | [registry](https://registry.weftproject.dev) |
 
 | Stdlib (binary) | Role | Doc |
 |-----------------|------|-----|
 | `llm` · `ollama` · `vllm` | Chat, tools, stream, local hosts | [LLM_PROVIDERS.md](LLM_PROVIDERS.md) · [LLM_LOCAL.md](LLM_LOCAL.md) |
+| `mcp` | MCP client + server for AI assistants | [MCP.md](MCP.md) |
+| `deepgram` · `elevenlabs` | Streaming STT/TTS (WebSocket) | [STDLIB.md](STDLIB.md) |
+| `mlinfer` | ONNX Runtime / Triton / HuggingFace inference | [STDLIB.md](STDLIB.md) |
 | train CLI | Private fine-tune orchestration | [FINETUNE.md](FINETUNE.md) |
 
 ```bash
-weft packages get mold && weft install
-weft run examples/cookbook/14_mold.weft
+weft registry install telecom
+weft registry install mold
 ```
 
 ---

@@ -9,11 +9,11 @@ Detail pages stay short and point back here when you get lost.
 ┌─────────────────────────────────────────────────────────────┐
 │  Your app  (.weft + weft.json + vendor/)                     │
 ├─────────────────────────────────────────────────────────────┤
-│  Optional modules  (packages/* — NOT in the binary)          │
-│    mold · ml · tokensave                                     │
+│  Optional modules  (registry → vendor/ — NOT in the binary)  │
+│    telecom · mold · ml · tokensave · retry · cache · …       │
 ├─────────────────────────────────────────────────────────────┤
-│  Stdlib  (IN the binary — weft stdlib)                       │
-│    llm · web · http · fs · json · secrets · …                │
+│  Stdlib  (IN the binary — 73 packages)                       │
+│    llm · mcp · deepgram · elevenlabs · mlinfer · http · …   │
 ├─────────────────────────────────────────────────────────────┤
 │  Language + VM  (weft binary)                                │
 │    Result/? · concurrency · modules system                   │
@@ -24,7 +24,7 @@ Detail pages stay short and point back here when you get lost.
 |-------|-------------|----------------|
 | Language / VM | `weft` binary | build / install `weft` |
 | Stdlib | same binary | `use http` / `use llm` / … |
-| Optional modules | `packages/` → `vendor/` | `weft get` / `weft packages get` |
+| Optional modules | `packages/` → `vendor/` | `weft registry install` / `weft get` |
 | Your code | project dir | `weft run` |
 
 **Rule:** if it is domain-specific (embeddings, structured tool args, context thrift), it is a **module**. If most agent/ops scripts need it (HTTP, LLM chat, files), it is **stdlib**.
