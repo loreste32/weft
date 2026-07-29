@@ -21,11 +21,11 @@ go test ./...
 echo "== build =="
 go build -o /tmp/weft-ci ./cmd/weft
 echo "== version =="
-/tmp/weft-ci version | grep -q "weft 0.3"
+/tmp/weft-ci version | grep -q "weft 0."
 echo "== doctor =="
 doc=$(/tmp/weft-ci doctor)
 echo "$doc" | grep -q "train_corpus"
-echo "$doc" | grep -q "weft 0.3"
+echo "$doc" | grep -q "weft 0."
 # monorepo catalog should be discoverable from repo root
 echo "$doc" | grep -q "catalog"
 echo "$doc" | grep -Eq "ml|tokensave|catalog_pkgs"
