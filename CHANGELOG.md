@@ -2,7 +2,7 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
-## [0.4.1] — unreleased
+## [0.4.2] — 2026-07-29
 
 ### Added
 - **Compat corpus expansion** — lock concurrent `map` result order, strings, channels, Result field accessors, list indexing (`testdata/compat/`)

@@ -12,7 +12,7 @@ Detail pages stay short and point back here when you get lost.
 │  Optional modules  (registry → vendor/ — NOT in the binary)  │
 │    telecom · mold · ml · tokensave · retry · cache · …       │
 ├─────────────────────────────────────────────────────────────┤
-│  Stdlib  (IN the binary — 73 packages)                       │
+│  Stdlib  (IN the binary — 76 packages)                       │
 │    llm · mcp · deepgram · elevenlabs · mlinfer · http · …   │
 ├─────────────────────────────────────────────────────────────┤
 │  Language + VM  (weft binary)                                │

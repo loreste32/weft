@@ -1,4 +1,4 @@
-# Stdlib overview (73 packages)
+# Stdlib overview (76 packages)
 
 The standard library is **in the binary**. Packages are imported with `use name` (or just called as `name.member` after import — most scripts use `use`).
 

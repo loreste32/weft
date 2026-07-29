@@ -9,7 +9,7 @@ A scripting language for agent tools, telecom, HTTP glue, and ops work. One bina
 
 ## What it is
 
-Weft is a small language with its own syntax, a stack VM, and 73 stdlib packages baked into the binary. You write `.weft` files, run them with `weft run`, and ship scripts without setting up environments or installing interpreters.
+Weft is a small language with its own syntax, a stack VM, and 76 stdlib packages baked into the binary. You write `.weft` files, run them with `weft run`, and ship scripts without setting up environments or installing interpreters.
 
 It handles errors with `Result` / `?` instead of exceptions, runs concurrent work without `async`/`await`, and talks to LLMs, databases, SIP servers, and HTTP services out of the box.
 
@@ -100,7 +100,7 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 
 **Language:** lex, parse, compile, stack VM. Closures (capture by value), sum types with payloads, `match` with destructuring, `defer`, `Result`/`?`. Concurrent `map`/`filter`, `spawn`, channels — no `async`/`await`.
 
-**73 stdlib packages (in the binary):**
+**76 stdlib packages (in the binary):**
 
 | Area | Packages |
 |------|----------|

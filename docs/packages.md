@@ -182,4 +182,4 @@ Auth: set `WEFT_REGISTRY_TOKEN` for publish access.
 ## Not yet
 
 - Binary native extensions (expand via pure `.weft` modules)
-- Hosted default registry endpoint (client is ready, server not yet deployed)
+- Registry hosted at registry.weftproject.dev with namespace ownership and key rotation
