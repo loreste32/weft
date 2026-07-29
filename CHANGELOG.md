@@ -2,6 +2,21 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
+## [0.4.0] — 2026-07-29
+
+### Added
+- **Interactive playground** at [weftproject.dev/playground.html](https://weftproject.dev/playground.html) — try Weft in the browser with 8 examples, share links, server-side sandbox
+- **`weft doc`** — generate API docs from `pub fn` declarations and doc comments
+- **Better error messages** — parse errors now show the source line with a caret pointing at the problem
+- **REPL improvements** — `:stdlib`, `:stdlib <pkg>`, `:history`, `:clear`, `:version` commands
+- **4 new registry modules:** `http_router` (routing with path params, middleware, groups, CORS), `template` (string templating with placeholders, loops, HTML escaping), `validate` (data validation for forms/APIs), `cron` (recurring task scheduler with intervals and daily times)
+- **Playground server** (`cmd/weft-playground`) — sandboxed execution with 5s timeout, 10KB limit
+- 14 registry modules total
+- 0.3.x line complete → entering 0.4.x
+
+### Changed
+- Roadmap updated: 0.3.x marked complete, 0.4.x goals set (LSP refactoring, type system, Wasm, VS Code marketplace)
+
 ## [0.3.35] — 2026-07-29
 
 ### Added
