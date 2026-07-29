@@ -2,9 +2,9 @@
 
 Weft is for agent scripts, telecom, HTTP glue, and ops tooling. It stays small on purpose.
 
-## Where we are now (0.4.0)
+## Where we are now (0.4.1)
 
-We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.4.0** — see [VERSIONING.md](VERSIONING.md)). You can build the binary, write real scripts, and run them on a single Go runtime.
+We are in the middle of a **0.3.x** line (branch `0.3.1`, patches through **0.4.1** — see [VERSIONING.md](VERSIONING.md)). You can build the binary, write real scripts, and run them on a single Go runtime.
 
 **Language**
 
@@ -86,7 +86,7 @@ In one line: **production-usable for agents, telecom, and ops scripts; still mat
 
 ## Where we hope to go
 
-The **0.3.x line is complete** (0.3.31–0.4.0). Everything shipped.
+The **0.3.x line is complete** (0.3.31–0.4.1). Everything shipped.
 
 **Completed in 0.3.x:** registry modules (`http_router`, `template`, `validate`, `cron` — 14 total), changelog page, `weft doc`, `weft lint`, `weft build`, `weft test --race/--mem/--timeout`, `cluster`/`governor`/`supervisor` stdlib, `deepgram`/`elevenlabs`/`mlinfer`, MCP, telecom with FreeSWITCH/Asterisk, website with 36 doc pages.
 
