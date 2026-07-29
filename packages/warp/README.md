@@ -7,9 +7,9 @@ The warp threads of a loom: structured, tensioned, ready for work.
 ## Install
 
 ```bash
-weft get warp ./packages/warp
+weft registry install warp
 # or from git:
-# weft get warp github.com/loreste32/weft/packages/warp
+# weft registry install warp
 ```
 
 ## Quick start

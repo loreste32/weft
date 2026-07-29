@@ -3,7 +3,7 @@
 // Agent stack: docs/ECOSYSTEM.md
 //   llm (stdlib) → mold (shapes) → tokensave / ml (optional siblings)
 //
-//   weft packages get mold && weft install
+//   weft registry install mold && weft install
 //   use mold
 
 use "./fields.weft" as F

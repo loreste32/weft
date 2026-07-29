@@ -63,9 +63,9 @@ weft packages list              # walk up for packages/index.json
 weft packages list embed        # filter by name/summary
 weft packages search rag        # same idea
 weft packages info tokensave    # one entry (path, version, install hints)
-weft packages get ml            # path dep + pin catalog version → install
-weft packages get mold          # structured models for agents
-weft packages get tokensave@^0.5.0   # constraint checked against catalog version
+weft registry install ml
+weft registry install mold
+weft registry install tokensave
 ```
 
 #### Monorepo catalog (`packages/index.json`)

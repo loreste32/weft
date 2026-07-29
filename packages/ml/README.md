@@ -14,11 +14,11 @@ Stack map: [docs/ECOSYSTEM.md](../../docs/ECOSYSTEM.md) · guide: [docs/ML.md](.
 
 ```bash
 # from this monorepo
-weft get ml ./packages/ml
+weft registry install ml
 weft install
 
 # or path relative to your app
-weft get ml ../packages/ml
+weft registry install ml
 ```
 
 ```weft

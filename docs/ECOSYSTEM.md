@@ -62,13 +62,13 @@ Typical agent work uses **core `llm`** plus optional modules as needed:
 ```bash
 # monorepo
 weft packages list
-weft packages get mold
-weft packages get ml
-weft packages get tokensave
+weft registry install mold
+weft registry install ml
+weft registry install tokensave
 weft install
 
 # or path form
-weft get mold ./packages/mold
+weft registry install mold
 ```
 
 ```weft

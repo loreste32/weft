@@ -258,7 +258,7 @@ Not in the binary — same install path for all. Full map: [ECOSYSTEM.md](ECOSYS
 
 ```bash
 weft packages list
-weft packages get mold && weft install
+weft registry install mold
 ./weft run examples/cookbook/14_mold.weft   # structured models for agents
 ```
 

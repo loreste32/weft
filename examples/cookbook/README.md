@@ -57,6 +57,6 @@ Live HTTP and long-running `http.serve` live under `examples/` root (`server.wef
 `14_mold.weft` needs the optional module:
 
 ```bash
-weft get mold ./packages/mold && weft install
+weft registry install mold && weft install
 ./weft run examples/cookbook/14_mold.weft
 ```

@@ -2,7 +2,7 @@
 // Prefer the full offline stack demo:
 //   cd examples/agent_stack && weft install && weft run main.weft
 //
-//   weft get mold ./packages/mold && weft install
+//   weft registry install mold
 //   weft run examples/mold_ai.weft
 //   weft run examples/cookbook/14_mold.weft
 

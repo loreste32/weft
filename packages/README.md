@@ -25,13 +25,13 @@ Index file (not a public registry): [`index.json`](index.json).
 
 ```bash
 weft packages list
-weft packages get mold      # or ml / tokensave
+weft registry install mold      # or ml / tokensave
 weft install
 
 # equivalent path form
-weft get mold ./packages/mold
-weft get ml ./packages/ml
-weft get tokensave ./packages/tokensave
+weft registry install mold
+weft registry install ml
+weft registry install tokensave
 ```
 
 ```weft
@@ -61,7 +61,7 @@ Full picture: [docs/ECOSYSTEM.md](../docs/ECOSYSTEM.md).
 weft new module mykit
 # edit lib.weft — pub fn …
 weft mod check
-# consumers: weft get mykit ./path-or-git@tag
+# consumers: weft registry install mykit
 ```
 
 Capabilities: [docs/modules.md](../docs/modules.md).  

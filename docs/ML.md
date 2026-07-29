@@ -21,8 +21,8 @@ How this fits with `llm`, `mold`, and `tokensave`: **[ECOSYSTEM.md](ECOSYSTEM.md
 ## Install
 
 ```bash
-weft get ml ./packages/ml          # monorepo
-# weft get ml github.com/you/weft-ml@v0.1.0
+weft registry install ml          # monorepo
+# or: weft registry install ml
 weft install
 ```
 

@@ -22,7 +22,7 @@ Language + VM      Result/? · concurrency
 | Learn the language in an hour | [TUTORIAL.md](TUTORIAL.md) |
 | Paste a recipe | [COOKBOOK.md](COOKBOOK.md) · [`examples/cookbook/`](../examples/cookbook/) |
 | Build an agent | [ECOSYSTEM.md](ECOSYSTEM.md#agent-path-cohesive-recipe) → [LLM_PROVIDERS.md](LLM_PROVIDERS.md) → [MOLD.md](MOLD.md) |
-| Structure LLM JSON / tool params | [MOLD.md](MOLD.md) · `weft packages get mold` |
+| Structure LLM JSON / tool params | [MOLD.md](MOLD.md) · `weft registry install mold` |
 | Embeddings / RAG | [ML.md](ML.md) |
 | HTTP + HTMX UI | [web.md](web.md) |
 | Install / publish modules | [packages.md](packages.md) · [modules.md](modules.md) |

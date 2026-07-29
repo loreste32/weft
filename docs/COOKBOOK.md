@@ -688,7 +688,7 @@ Examples: `examples/realworld/tool_agent.weft`, `examples/ollama_chat.weft`.
 Optional module in the agent stack (with `llm` / `tokensave` / `ml`): [ECOSYSTEM.md](ECOSYSTEM.md) · full guide [MOLD.md](MOLD.md).
 
 ```bash
-weft packages get mold && weft install
+weft registry install mold
 ```
 
 ```weft
@@ -771,7 +771,7 @@ weft mod check
 
 ```bash
 weft packages list
-weft packages get ml
+weft registry install ml
 ```
 
 Optional remote discovery: `WEFT_CATALOG_URL=https://…/index.json`.

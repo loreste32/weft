@@ -7,7 +7,7 @@ Fits the agent stack (`llm` → mold → tokensave / ml): **[ECOSYSTEM.md](ECOSY
 | | |
 |--|--|
 | **Location** | [`packages/mold`](../packages/mold/) |
-| **Install** | `weft get mold ./packages/mold` · `weft packages get mold` |
+| **Install** | `weft registry install mold` · `weft registry install mold` |
 | **Capabilities** | none (pure `.weft` + `json`) |
 | **Cookbook** | [`examples/cookbook/14_mold.weft`](../examples/cookbook/14_mold.weft) |
 
@@ -17,9 +17,9 @@ Why a module, not core: structured validation is useful for agents, but not ever
 
 ```bash
 # monorepo
-weft get mold ./packages/mold
+weft registry install mold
 # or catalog
-weft packages get mold
+weft registry install mold
 weft install
 ```
 

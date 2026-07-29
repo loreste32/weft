@@ -3,7 +3,7 @@
 // Agent stack: docs/ECOSYSTEM.md
 //   llm (stdlib) → mold (shapes) → tokensave / ml (siblings)
 //
-//   weft packages get ml && weft install
+//   weft registry install ml && weft install
 //   use ml
 //
 // Scope: embeddings + vectors + RAG index + metrics.

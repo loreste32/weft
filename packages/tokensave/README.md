@@ -15,7 +15,7 @@ A thrift **brain** for **local and paid** models:
 | **Train** | Export memory → `weft train --from` gold JSONL |
 
 ```bash
-weft get tokensave ./packages/tokensave
+weft registry install tokensave
 weft install
 ```
 
