@@ -149,6 +149,7 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 ```text
 weft                              REPL
 weft run <file.weft> [--watch]    run a script
+weft build [dir] [-o out]        bundle into .weftapp archive
 weft check <file|dir> [--types]   type check
 weft test [path] [--coverage]     run tests
 weft fmt [--check] <file|dir>     format

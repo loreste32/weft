@@ -64,6 +64,28 @@ func run(args []string) int {
 		return cmdFmt(args[1:])
 	case "bench":
 		return cmdBench(args[1:])
+	case "build":
+		entry := "main.weft"
+		output := ""
+		dir := "."
+		for i := 1; i < len(args); i++ {
+			switch {
+			case args[i] == "-o" && i+1 < len(args):
+				i++
+				output = args[i]
+			case !strings.HasPrefix(args[i], "-"):
+				if strings.HasSuffix(args[i], ".weft") {
+					entry = args[i]
+				} else {
+					dir = args[i]
+				}
+			}
+		}
+		if err := weft.Build(dir, entry, output); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
 	case "repl":
 		if err := weft.StartREPL(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -218,7 +240,8 @@ func run(args []string) int {
 
 Language:
   weft                      REPL
-  weft run <file.weft> [--watch]
+  weft run <file.weft> [--watch]    run a script
+  weft build [dir] [entry] [-o out] bundle into .weftapp archive
   weft check <file|dir>… [--types]
   weft test [path…] [-q] [-run filter]   # run fn test_* in *_test.weft
   weft stdlib [pkg]           # list stdlib packages (or members of pkg)

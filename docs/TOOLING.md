@@ -14,6 +14,7 @@ Small set of commands for day-to-day work. Nothing here replaces a full IDE or p
 | `weft notebook <file> [-o out.html]` | Run `.weft` as cells, output HTML. |
 | `weft debug <file>` | Interactive source-level debugger. |
 | `weft profile <file>` | Execution profiler. |
+| `weft build [dir] [-o out]` | Bundle script + vendor/ into a distributable `.weftapp` archive. |
 | `weft mcp serve <file>` | Run Weft functions as MCP tools (for AI assistants). |
 | `weft update` | Self-update weft binary to latest version. |
 | `weft upgrade` | Upgrade installed packages to latest registry versions. |
