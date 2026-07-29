@@ -12,6 +12,228 @@ use telecom
 
 Capabilities required: `http`, `ws`, `fs`, `env`, `socket`.
 
+> **Requires a SIP server.** The telecom module handles the application layer — your Weft scripts control what happens on calls. The actual SIP signaling and media is handled by FreeSWITCH or Asterisk. See [SIP server setup](#sip-server-setup) below to get one running.
+
+---
+
+## SIP server setup
+
+You need a running SIP server before any telecom code works. Pick one:
+
+### FreeSWITCH (recommended for IVA)
+
+```bash
+# Ubuntu/Debian
+sudo apt install -y gnupg2 wget lsb-release
+wget -O - https://files.freeswitch.org/repo/deb/debian-release/fscomm.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/freeswitch.gpg
+echo "deb [signed-by=/usr/share/keyrings/freeswitch.gpg] https://files.freeswitch.org/repo/deb/debian-release/ $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/freeswitch.list
+sudo apt update && sudo apt install -y freeswitch-meta-all
+
+# start
+sudo systemctl enable freeswitch
+sudo systemctl start freeswitch
+```
+
+Enable the Event Socket for Weft:
+
+```bash
+# /etc/freeswitch/autoload_configs/event_socket.conf.xml
+# (usually enabled by default)
+```
+
+```xml
+<configuration name="event_socket.conf" description="Socket Client">
+  <settings>
+    <param name="nat-map" value="false"/>
+    <param name="listen-ip" value="127.0.0.1"/>
+    <param name="listen-port" value="8021"/>
+    <param name="password" value="ClueCon"/>
+    <param name="apply-inbound-acl" value="loopback.auto"/>
+  </settings>
+</configuration>
+```
+
+Verify it works:
+
+```bash
+# test ESL connection
+weft run -e 'esl := telecom.esl_connect(null, null, null)?; say(telecom.esl_status(esl)?); telecom.esl_close(esl)?'
+```
+
+#### Route calls to your Weft app (outbound mode)
+
+Add to the FreeSWITCH dialplan so incoming calls hit your Weft script:
+
+```xml
+<!-- /etc/freeswitch/dialplan/default.xml -->
+<extension name="weft-app">
+  <condition field="destination_number" expression="^(10[0-9]{2})$">
+    <action application="socket" data="127.0.0.1:9090 async full"/>
+  </condition>
+</extension>
+```
+
+Then run your Weft outbound server:
+
+```weft
+use telecom
+
+fn main {
+    telecom.esl_outbound_server(9090, fn(channel_data, send) {
+        send("sendmsg\ncall-command: execute\nexecute-app-name: answer\n")?
+        send("sendmsg\ncall-command: execute\nexecute-app-name: playback\nexecute-app-arg: /usr/share/freeswitch/sounds/en/us/callie/ivr/ivr-welcome.wav\n")?
+    })
+}
+```
+
+#### Route calls to your Weft webhook (HTTP mode)
+
+Use `mod_httapi` or `mod_xml_curl` to send call events to your HTTP server:
+
+```weft
+use telecom
+
+fn main -> Result {
+    agent := telecom.iva({
+        "system": "You are a helpful assistant.",
+        "greeting": "Hello, how can I help?",
+    })
+    telecom.webhook_server(8080, fn(event) {
+        telecom.iva_handle_event(agent, event)?
+    })
+}
+```
+
+### Asterisk
+
+```bash
+# Ubuntu/Debian
+sudo apt install -y asterisk
+
+# or from source for latest
+cd /usr/src
+wget https://downloads.asterisk.org/pub/telephony/asterisk/asterisk-21-current.tar.gz
+tar xf asterisk-21-current.tar.gz && cd asterisk-21.*
+./configure && make && sudo make install && sudo make samples
+```
+
+Enable ARI:
+
+```ini
+; /etc/asterisk/http.conf
+[general]
+enabled=yes
+bindaddr=127.0.0.1
+bindport=8088
+
+; /etc/asterisk/ari.conf
+[general]
+enabled=yes
+
+[weft]
+type=user
+password=weft123
+read_only=no
+```
+
+Create a Stasis dialplan so calls enter your Weft app:
+
+```ini
+; /etc/asterisk/extensions.conf
+[default]
+exten => _X.,1,NoOp(Sending to Weft)
+ same => n,Stasis(weft)
+ same => n,Hangup()
+```
+
+Reload Asterisk:
+
+```bash
+sudo asterisk -rx "core reload"
+```
+
+Verify:
+
+```bash
+weft run -e 'ari := telecom.ari_connect({"password": "weft123", "app": "weft"}); say(telecom.ari_endpoints(ari)?)'
+```
+
+### Cloud SIP (no server to manage)
+
+If you don't want to run your own SIP server, use a cloud provider that sends webhooks:
+
+| Provider | How Weft connects |
+|----------|------------------|
+| Twilio | Webhook HTTP — `telecom.webhook_server` receives TwiML-style events |
+| Vonage (Nexmo) | Webhook HTTP — NCCO-style actions |
+| Telnyx | Webhook HTTP — similar event format |
+| SignalWire | FreeSWITCH-based — ESL or webhook |
+
+For cloud providers, your Weft webhook server receives call events and returns action instructions. No ESL/ARI needed — just HTTP:
+
+```weft
+use telecom
+
+fn main -> Result {
+    agent := telecom.iva({
+        "system": "Customer support agent.",
+        "greeting": "Thanks for calling. How can I help?",
+        "tools": [llm.tool("lookup_order", lookup_order)],
+    })
+
+    // expose on public URL (use ngrok for dev)
+    telecom.webhook_server(8080, fn(event) {
+        telecom.iva_handle_event(agent, event)?
+    })
+}
+```
+
+### SIP softphones for testing
+
+You don't need real phones to test. Use a SIP softphone:
+
+| App | Platform | Free |
+|-----|----------|------|
+| Otel | Desktop (all) | Yes |
+| Otel | Web browser | Yes |
+| Otel | macOS/Windows | Yes |
+| Otel | Android/iOS | Yes |
+
+Register the softphone against your FreeSWITCH or Asterisk at `127.0.0.1`, extension `1001`, password `1234` (default).
+
+### Minimal test stack
+
+Fastest way to test telecom code:
+
+```bash
+# 1. install FreeSWITCH
+sudo apt install -y freeswitch-meta-all
+
+# 2. install weft + telecom module
+curl -fsSL https://weftproject.dev/install.sh | sh
+weft registry install telecom
+
+# 3. write your IVA
+cat > iva.weft << 'WEFT'
+use telecom
+
+fn main -> Result {
+    agent := telecom.iva({
+        "system": "You are a test assistant.",
+        "greeting": "Hello! This is a test. Say something.",
+    })
+    telecom.webhook_server(8080, fn(event) {
+        telecom.iva_handle_event(agent, event)?
+    })
+}
+WEFT
+
+# 4. run it
+weft run iva.weft
+
+# 5. call extension 1001 from a softphone → hear greeting
+```
+
 ---
 
 ## IVA — Interactive Voice Agent
