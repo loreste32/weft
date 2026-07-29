@@ -92,6 +92,8 @@ var packages = []struct {
 	{"llm", packageLLM},
 	{"ollama", packageOllama},
 	{"vllm", packageVLLM},
+	{"governor", packageGovernor},
+	{"supervisor", packageSupervisor},
 	{"mcp", packageMCP},
 	{"deepgram", packageDeepgram},
 	{"mlinfer", packageMLInfer},
