@@ -37,6 +37,7 @@ var RestrictedByDefault = []string{
 	"mcp",        // MCP client/server (process spawn, network)
 	"deepgram",   // Deepgram STT (API keys, network)
 	"elevenlabs", // ElevenLabs TTS (API keys, network)
+	"mlinfer",    // ML inference (network, API keys)
 }
 
 // CapsAll is the grant-everything token.
