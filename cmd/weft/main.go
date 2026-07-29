@@ -71,6 +71,14 @@ func run(args []string) int {
 		return cmdFmt(args[1:])
 	case "bench":
 		return cmdBench(args[1:])
+	case "lint":
+		paths := args[1:]
+		rep, err := weft.Lint(paths)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return weft.PrintLintReport(rep)
 	case "build":
 		entry := "main.weft"
 		output := ""

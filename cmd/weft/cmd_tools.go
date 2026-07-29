@@ -13,7 +13,7 @@ import (
 
 func isCommand(s string) bool {
 	switch s {
-	case "run", "build", "version", "--version", "-v", "help", "-h", "--help",
+	case "run", "build", "lint", "version", "--version", "-v", "help", "-h", "--help",
 		"repl", "check", "test", "stdlib", "fmt", "bench", "init", "new", "mod", "get", "install", "list", "deps",
 		"packages", "pkgs", "catalog",
 		"publish", "registry", "notebook", "nb", "debug", "profile",

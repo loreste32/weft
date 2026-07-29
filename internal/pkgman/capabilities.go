@@ -38,6 +38,7 @@ var RestrictedByDefault = []string{
 	"deepgram",   // Deepgram STT (API keys, network)
 	"elevenlabs", // ElevenLabs TTS (API keys, network)
 	"mlinfer",    // ML inference (network, API keys)
+	"cluster",    // distributed state (Redis, locks)
 }
 
 // CapsAll is the grant-everything token.

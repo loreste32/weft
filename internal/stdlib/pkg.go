@@ -93,6 +93,7 @@ var packages = []struct {
 	{"ollama", packageOllama},
 	{"vllm", packageVLLM},
 	{"governor", packageGovernor},
+	{"cluster", packageCluster},
 	{"supervisor", packageSupervisor},
 	{"mcp", packageMCP},
 	{"deepgram", packageDeepgram},
