@@ -15,6 +15,13 @@ func main() {
 }
 
 func run(args []string) int {
+	// check if this binary has an embedded weft app
+	if dir, entry, ok := weft.CheckEmbeddedApp(); ok {
+		defer os.RemoveAll(dir)
+		entryPath := dir + "/" + entry
+		return cmdRun(append([]string{entryPath}, args...))
+	}
+
 	if len(args) == 0 {
 		if err := weft.StartREPL(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
