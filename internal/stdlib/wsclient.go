@@ -224,6 +224,126 @@ func wsClientRead(wsc *wsClientConn) ([]byte, error) {
 	return payload, nil
 }
 
+// wsClientDialWithHeaders dials a WebSocket with extra HTTP headers (for API keys).
+func wsClientDialWithHeaders(rawURL string, headers map[string]string) (*wsClientConn, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	host := u.Host
+	if !strings.Contains(host, ":") {
+		if u.Scheme == "wss" {
+			host += ":443"
+		} else {
+			host += ":80"
+		}
+	}
+	if err := netsafe.CheckHost(u.Hostname()); err != nil {
+		return nil, fmt.Errorf("ws.connect rejected: %w", err)
+	}
+	conn, err := net.DialTimeout("tcp", host, 10*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	keyBytes := make([]byte, 16)
+	rand.Read(keyBytes)
+	key := base64.StdEncoding.EncodeToString(keyBytes)
+
+	path := u.Path
+	if path == "" {
+		path = "/"
+	}
+	if u.RawQuery != "" {
+		path += "?" + u.RawQuery
+	}
+
+	req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n",
+		path, u.Host, key)
+	for k, v := range headers {
+		req += fmt.Sprintf("%s: %s\r\n", k, v)
+	}
+	req += "\r\n"
+
+	if _, err := conn.Write([]byte(req)); err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	br := bufio.NewReader(conn)
+	statusLine, err := br.ReadString('\n')
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if !strings.Contains(statusLine, "101") {
+		conn.Close()
+		return nil, fmt.Errorf("websocket upgrade failed: %s", strings.TrimSpace(statusLine))
+	}
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil {
+			conn.Close()
+			return nil, err
+		}
+		if strings.TrimSpace(line) == "" {
+			break
+		}
+	}
+	return &wsClientConn{conn: conn, br: br}, nil
+}
+
+// Send sends a text frame.
+func (wsc *wsClientConn) Send(msg string) error {
+	return wsClientWrite(wsc, []byte(msg))
+}
+
+// SendBinary sends a binary frame (opcode 0x02).
+func (wsc *wsClientConn) SendBinary(payload []byte) error {
+	wsc.mu.Lock()
+	defer wsc.mu.Unlock()
+
+	maskKey := make([]byte, 4)
+	rand.Read(maskKey)
+	n := len(payload)
+	var frame []byte
+	frame = append(frame, 0x82) // FIN + binary opcode
+	if n < 126 {
+		frame = append(frame, byte(n)|0x80)
+	} else if n < 65536 {
+		frame = append(frame, 126|0x80)
+		frame = append(frame, byte(n>>8), byte(n))
+	} else {
+		frame = append(frame, 127|0x80)
+		b := make([]byte, 8)
+		binary.BigEndian.PutUint64(b, uint64(n))
+		frame = append(frame, b...)
+	}
+	frame = append(frame, maskKey...)
+	masked := make([]byte, n)
+	for i, b := range payload {
+		masked[i] = b ^ maskKey[i%4]
+	}
+	frame = append(frame, masked...)
+	_, err := wsc.conn.Write(frame)
+	return err
+}
+
+// Recv reads a text or binary frame.
+func (wsc *wsClientConn) Recv() (string, error) {
+	data, err := wsClientRead(wsc)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// Close closes the connection.
+func (wsc *wsClientConn) Close() {
+	wsc.mu.Lock()
+	defer wsc.mu.Unlock()
+	wsc.conn.Close()
+}
+
 // wsAcceptKey computes the Sec-WebSocket-Accept header value.
 func wsAcceptKey(key string) string {
 	h := sha1.New()
