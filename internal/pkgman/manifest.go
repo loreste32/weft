@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -347,8 +348,23 @@ func FindInstalledPackage(projectDir, name string) (dir string, entry string, er
 			}
 		}
 	}
-	// Auto-fetch from registry if not found locally
+	// Auto-fetch: registry first, then git for URL paths
 	if os.Getenv("WEFT_NO_AUTO_FETCH") != "1" {
+		// try git clone for URL-like paths (github.com/user/repo)
+		if strings.Contains(name, "/") && strings.Contains(name, ".") {
+			if fetched, _ := AutoFetchFromGit(projectDir, name); fetched {
+				pkgName := name[strings.LastIndex(name, "/")+1:]
+				for _, root := range ResolveSearchPaths(projectDir) {
+					cand := filepath.Join(root, pkgName)
+					if st, err := os.Stat(cand); err == nil && st.IsDir() {
+						entry, err := FindPackageEntry(cand)
+						if err == nil {
+							return cand, entry, nil
+						}
+					}
+				}
+			}
+		}
 		if fetched, fetchErr := AutoFetchFromRegistry(projectDir, name); fetchErr == nil && fetched {
 			for _, root := range ResolveSearchPaths(projectDir) {
 				cand := filepath.Join(root, name)
@@ -402,5 +418,93 @@ func AutoFetchFromRegistry(projectDir, name string) (bool, error) {
 	}
 
 	fmt.Fprintf(os.Stderr, "auto-installed %s@%s\n", pkgName, pkg.Version)
+	return true, nil
+}
+
+// AutoFetchFromGit clones a git URL into vendor/.
+// Supports: "github.com/user/repo", "github.com/user/repo/subdir"
+func AutoFetchFromGit(projectDir, importPath string) (bool, error) {
+	parts := strings.Split(importPath, "/")
+	if len(parts) < 3 {
+		return false, fmt.Errorf("invalid git import path: %s", importPath)
+	}
+
+	// extract repo URL and subdir
+	host := parts[0]
+	user := parts[1]
+	repo := parts[2]
+	repoURL := fmt.Sprintf("https://%s/%s/%s.git", host, user, repo)
+
+	// package name is the last part of the path
+	pkgName := parts[len(parts)-1]
+
+	// version tag
+	version := ""
+	if at := strings.Index(repo, "@"); at > 0 {
+		version = repo[at+1:]
+		repo = repo[:at]
+		repoURL = fmt.Sprintf("https://%s/%s/%s.git", host, user, repo)
+	}
+
+	vendorDir := filepath.Join(projectDir, "vendor", pkgName)
+	if _, err := os.Stat(vendorDir); err == nil {
+		return true, nil // already present
+	}
+
+	// clone to cache first
+	cacheDir, err := DefaultCacheDir()
+	if err != nil {
+		return false, err
+	}
+	cloneDir := filepath.Join(cacheDir, "git", fmt.Sprintf("%s_%s_%s", host, user, repo))
+
+	if _, err := os.Stat(cloneDir); err != nil {
+		args := []string{"clone", "--depth=1"}
+		if version != "" {
+			args = append(args, "--branch", version)
+		}
+		args = append(args, repoURL, cloneDir)
+		cmd := exec.Command("git", args...)
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return false, fmt.Errorf("git clone %s: %w", repoURL, err)
+		}
+	}
+
+	// copy the subdir (or root) to vendor/
+	srcDir := cloneDir
+	if len(parts) > 3 {
+		srcDir = filepath.Join(cloneDir, strings.Join(parts[3:], "/"))
+	}
+
+	if err := os.MkdirAll(vendorDir, 0o755); err != nil {
+		return false, err
+	}
+
+	// simple recursive copy
+	err = filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			if filepath.Base(path) == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, _ := filepath.Rel(srcDir, path)
+		dst := filepath.Join(vendorDir, rel)
+		os.MkdirAll(filepath.Dir(dst), 0o755)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(dst, data, 0o644)
+	})
+	if err != nil {
+		return false, err
+	}
+
+	fmt.Fprintf(os.Stderr, "auto-installed %s from %s\n", pkgName, repoURL)
 	return true, nil
 }

@@ -306,6 +306,14 @@ func (s *server) handle(raw []byte) error {
 		}
 		_ = json.Unmarshal(envelope.Params, &p)
 		result := s.codeActions(p.TextDocument.URI, p.Range.Start.Line, p.Range.Start.Character, p.Range.End.Line, p.Range.End.Character)
+		// merge auto-import actions
+		if imports := s.autoImportActions(p.TextDocument.URI, s.docs[p.TextDocument.URI], p.Range.Start.Line); len(imports) > 0 {
+			if arr, ok := result.([]map[string]any); ok {
+				result = append(arr, imports...)
+			} else {
+				result = imports
+			}
+		}
 		return s.reply(envelope.ID, result)
 	default:
 		if len(envelope.ID) > 0 && string(envelope.ID) != "null" {
