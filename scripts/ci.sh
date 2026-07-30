@@ -318,7 +318,7 @@ echo "$doc_ollama" | grep -q ollama
 echo "== private train =="
 presets=$(/tmp/weft-ci train presets)
 echo "$presets" | grep -q qwen-7b
-/tmp/weft-ci train offline -o /tmp/ci-weft-airgap >/dev/null
+/tmp/weft-ci train offline -o /tmp/ci-weft-airgap
 test -f /tmp/ci-weft-airgap/PRIVACY.md
 test -f /tmp/ci-weft-airgap/train_private.sh
 # cloud without --allow-upload must refuse
