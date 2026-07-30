@@ -1,0 +1,26 @@
+use "./lib.weft" as exp
+
+fn test_end_returns_logged_result {
+    path := ".experiment_ml_test.jsonl"
+    fs.remove(path)
+    mut run := exp.start("contract", {"model": "test"}, path)
+    run = exp.log_metric(run, "accuracy", 0.9)
+    result := exp.end(run)
+    test.eq(result.ok, true)
+    runs := exp.list(path)?
+    test.eq(len(runs), 1)
+    fs.remove(path)
+}
+
+fn test_best_requires_metric_and_compare_returns_result {
+    path := ".experiment_ml_test.jsonl"
+    fs.remove(path)
+    mut run := exp.start("best", {}, path)
+    run = exp.log_metric(run, "loss", 0.2)
+    exp.end(run)?
+    best := exp.best(path, "loss", false)?
+    test.eq(best.name, "best")
+    comparison := exp.compare(path)
+    test.eq(comparison.ok, true)
+    fs.remove(path)
+}

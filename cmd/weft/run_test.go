@@ -42,6 +42,18 @@ func TestRunStdlibPkg(t *testing.T) {
 	}
 }
 
+func TestRunStdlibUnknownMember(t *testing.T) {
+	if code := run([]string{"stdlib", "sysinfo.uptim"}); code == 0 {
+		t.Fatal("misspelled stdlib member should exit non-zero")
+	}
+}
+
+func TestStdlibMemberRequiresArguments(t *testing.T) {
+	if code := stdlibMemberInfo("proc", "find"); code != 0 {
+		t.Fatal("member help should not probe required arguments")
+	}
+}
+
 func TestRunUnknown(t *testing.T) {
 	if code := run([]string{"nonexistent_command"}); code == 0 {
 		t.Fatal("unknown should exit non-zero")

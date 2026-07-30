@@ -330,20 +330,20 @@ func LookupMemberHelp(key string) (string, string) {
 
 func init() {
 	// sysinfo
-	memberCatalog["sysinfo.memory"] = memberHelp{"sysinfo.memory() -> Result[map]", "system memory: total, used, available, percent"}
-	memberCatalog["sysinfo.disk"] = memberHelp{"sysinfo.disk(path?) -> Result[map]", "disk usage: total, free, used, percent"}
-	memberCatalog["sysinfo.uptime"] = memberHelp{"sysinfo.uptime() -> Result[map]", "system uptime: seconds, human"}
-	memberCatalog["sysinfo.loadavg"] = memberHelp{"sysinfo.loadavg() -> Result[[float]]", "load averages: [1m, 5m, 15m]"}
-	memberCatalog["sysinfo.cpu_count"] = memberHelp{"sysinfo.cpu_count() -> int", "number of CPUs"}
+	memberCatalog["sysinfo.memory"] = memberHelp{"sysinfo.memory() -> Result[map]", "memory byte counts plus human-readable sizes; percent is used memory"}
+	memberCatalog["sysinfo.disk"] = memberHelp{"sysinfo.disk(path?) -> Result[map]", "filesystem byte counts; free is available to the current user"}
+	memberCatalog["sysinfo.uptime"] = memberHelp{"sysinfo.uptime() -> Result[map]", "host uptime where supported: seconds and rounded human duration"}
+	memberCatalog["sysinfo.loadavg"] = memberHelp{"sysinfo.loadavg() -> Result[[float]]", "load averages in order: 1 minute, 5 minutes, 15 minutes"}
+	memberCatalog["sysinfo.cpu_count"] = memberHelp{"sysinfo.cpu_count() -> int", "logical CPUs visible to the current process"}
 	memberCatalog["sysinfo.net_interfaces"] = memberHelp{"sysinfo.net_interfaces() -> Result[[map]]", "network interfaces: name, mac, mtu, addrs, up"}
 	memberCatalog["sysinfo.env_summary"] = memberHelp{"sysinfo.env_summary() -> map", "os, arch, cpus, hostname, user, home, pid"}
 
 	// proc
-	memberCatalog["proc.self"] = memberHelp{"proc.self() -> map", "current process: pid, ppid, uid, gid"}
-	memberCatalog["proc.list"] = memberHelp{"proc.list() -> Result[[map]]", "all processes: pid, name, cmd"}
-	memberCatalog["proc.find"] = memberHelp{"proc.find(name) -> Result[[map]]", "find processes by name"}
-	memberCatalog["proc.kill"] = memberHelp{"proc.kill(pid, signal?) -> Result", "send signal to process (default SIGTERM)"}
-	memberCatalog["proc.exists"] = memberHelp{"proc.exists(pid) -> bool", "check if process exists"}
+	memberCatalog["proc.self"] = memberHelp{"proc.self() -> map", "current process IDs plus user/group names when available"}
+	memberCatalog["proc.list"] = memberHelp{"proc.list() -> Result[[map]]", "processes: pid, executable name, command where visible"}
+	memberCatalog["proc.find"] = memberHelp{"proc.find(name) -> Result[[map]]", "case-insensitive substring search in process name or command"}
+	memberCatalog["proc.kill"] = memberHelp{"proc.kill(pid, signal?) -> Result", "send a signal to a positive process ID (default SIGTERM)"}
+	memberCatalog["proc.exists"] = memberHelp{"proc.exists(pid) -> bool", "best-effort signal-0 check for a positive process ID"}
 
 	// netutil
 	memberCatalog["netutil.port_open"] = memberHelp{"netutil.port_open(host, port, timeout?) -> Result[bool]", "check if TCP port is open"}
@@ -372,16 +372,16 @@ func init() {
 	memberCatalog["elevenlabs.voices"] = memberHelp{"elevenlabs.voices() -> Result[[map]]", "list available voices"}
 
 	// mlinfer
-	memberCatalog["mlinfer.predict"] = memberHelp{"mlinfer.predict(url, input, opts?) -> Result", "generic inference call"}
-	memberCatalog["mlinfer.onnx"] = memberHelp{"mlinfer.onnx(base, model, input) -> Result", "ONNX Runtime Server"}
-	memberCatalog["mlinfer.triton"] = memberHelp{"mlinfer.triton(base, model, input) -> Result", "NVIDIA Triton"}
-	memberCatalog["mlinfer.hf"] = memberHelp{"mlinfer.hf(model, input, opts?) -> Result", "HuggingFace Inference API"}
-	memberCatalog["mlinfer.classify"] = memberHelp{"mlinfer.classify(url, text) -> Result", "text classification shortcut"}
-	memberCatalog["mlinfer.embed"] = memberHelp{"mlinfer.embed(url, text) -> Result", "embedding shortcut"}
-	memberCatalog["mlinfer.detect"] = memberHelp{"mlinfer.detect(url, image_url) -> Result", "object detection shortcut"}
-	memberCatalog["mlinfer.batch"] = memberHelp{"mlinfer.batch(url, [inputs]) -> Result", "batched inference"}
-	memberCatalog["mlinfer.onnx_health"] = memberHelp{"mlinfer.onnx_health(base) -> Result[bool]", "ONNX health check"}
-	memberCatalog["mlinfer.triton_health"] = memberHelp{"mlinfer.triton_health(base) -> Result[bool]", "Triton health check"}
+	memberCatalog["mlinfer.predict"] = memberHelp{"mlinfer.predict(url, input, opts?) -> Result[any]", "POST JSON to an HTTP(S) endpoint; opts supports timeout, headers, api_key"}
+	memberCatalog["mlinfer.onnx"] = memberHelp{"mlinfer.onnx(base, model, input) -> Result[any]", "ONNX Runtime Server v1 inference; input must be a map"}
+	memberCatalog["mlinfer.triton"] = memberHelp{"mlinfer.triton(base, model, input) -> Result[any]", "NVIDIA Triton v2 inference; input must be a map"}
+	memberCatalog["mlinfer.hf"] = memberHelp{"mlinfer.hf(model, input, opts?) -> Result[any]", "HuggingFace Inference API; opts may provide api_key"}
+	memberCatalog["mlinfer.classify"] = memberHelp{"mlinfer.classify(url, text, opts?) -> Result[any]", "POST text to a classification endpoint"}
+	memberCatalog["mlinfer.embed"] = memberHelp{"mlinfer.embed(url, text, opts?) -> Result[any]", "POST text to an embedding endpoint"}
+	memberCatalog["mlinfer.detect"] = memberHelp{"mlinfer.detect(url, image_url) -> Result[any]", "POST an image URL to an object-detection endpoint"}
+	memberCatalog["mlinfer.batch"] = memberHelp{"mlinfer.batch(url, [inputs]) -> Result[any]", "POST a JSON array of inputs"}
+	memberCatalog["mlinfer.onnx_health"] = memberHelp{"mlinfer.onnx_health(base) -> Result[bool]", "ONNX health: true only for HTTP 200"}
+	memberCatalog["mlinfer.triton_health"] = memberHelp{"mlinfer.triton_health(base) -> Result[bool]", "Triton readiness: true only for HTTP 200"}
 
 	// governor
 	memberCatalog["governor.new"] = memberHelp{"governor.new(opts) -> map", "create execution governor (token/time/cost budgets)"}

@@ -30,6 +30,19 @@ type ChatMessage struct {
 	Content string `json:"content"`
 }
 
+const maxLLMResponseBytes = 32 << 20
+
+func readLLMResponse(r io.Reader) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, maxLLMResponseBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > maxLLMResponseBytes {
+		return nil, fmt.Errorf("LLM response too large (max %d bytes)", maxLLMResponseBytes)
+	}
+	return b, nil
+}
+
 // Chat sends a chat completion and returns assistant text.
 func (c *LLMClient) Chat(messages []ChatMessage) (string, error) {
 	if c.HTTP == nil {
@@ -58,7 +71,10 @@ func (c *LLMClient) chatOpenAICompat(messages []ChatMessage) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, err := readLLMResponse(resp.Body)
+	if err != nil {
+		return "", err
+	}
 	if resp.StatusCode >= 300 {
 		return "", fmt.Errorf("chat HTTP %d: %s", resp.StatusCode, truncate(string(raw), 400))
 	}
@@ -119,7 +135,10 @@ func (c *LLMClient) chatAnthropic(messages []ChatMessage) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
-	rawResp, _ := io.ReadAll(resp.Body)
+	rawResp, err := readLLMResponse(resp.Body)
+	if err != nil {
+		return "", err
+	}
 	if resp.StatusCode >= 300 {
 		return "", fmt.Errorf("anthropic HTTP %d: %s", resp.StatusCode, truncate(string(rawResp), 400))
 	}

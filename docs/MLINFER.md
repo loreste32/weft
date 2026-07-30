@@ -2,6 +2,11 @@
 
 Call ML models running on inference servers. Weft never loads models in-process — this package talks to ONNX Runtime, NVIDIA Triton, HuggingFace Inference API, or any custom HTTP endpoint.
 
+Inference URLs must be absolute `http://` or `https://` URLs. Successful
+responses must be JSON and use a 2xx status; transport errors, non-2xx status,
+invalid JSON, and responses larger than 32 MiB return `Err`. `predict` preserves
+JSON scalars, arrays, and objects in its request body.
+
 ```weft
 use mlinfer
 ```

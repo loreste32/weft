@@ -146,3 +146,44 @@ func TestAtomicInstallLeavesOldVendorOnFailure(t *testing.T) {
 		t.Fatal("stage dir leaked")
 	}
 }
+
+func TestVerifyLockRejectsPathEscape(t *testing.T) {
+	root := t.TempDir()
+	if err := SaveLock(root, &Lockfile{Packages: []LockedPkg{{
+		Name: "safe",
+		Dir:  "../../outside",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyLock(root); err == nil {
+		t.Fatal("expected lockfile path escape to be rejected")
+	}
+}
+
+func TestInstallAllRejectsPathLikeDependencyName(t *testing.T) {
+	root := t.TempDir()
+	if err := SaveManifest(root, &Manifest{
+		Name: "app",
+		Deps: map[string]DepSpec{"../escape": {Path: "."}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := InstallAll(root); err == nil {
+		t.Fatal("expected path-like dependency name to be rejected")
+	}
+}
+
+func TestZipDirRejectsSymlink(t *testing.T) {
+	root := t.TempDir()
+	secret := filepath.Join(root, "secret.txt")
+	if err := os.WriteFile(secret, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link.txt")
+	if err := os.Symlink(secret, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := zipDir(root, filepath.Join(t.TempDir(), "pkg.zip"), nil); err == nil {
+		t.Fatal("expected package archive to reject symlink")
+	}
+}

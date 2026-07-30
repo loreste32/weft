@@ -1,3 +1,6 @@
+use str
+
+
 fn env_get(k, def) {
     v := env.get(k)
     if v == null { def } else { v }
@@ -32,10 +35,10 @@ fn join_url(base, path) {
 
 fn embeddings_url(base) {
     b := trim_slash(base)
-    if contains(b, "/embeddings") {
+    if str.ends_with(b, "/embeddings") {
         return b
     }
-    if contains(b, "/v1") {
+    if str.ends_with(b, "/v1") {
         return b + "/embeddings"
     }
     b + "/v1/embeddings"
@@ -45,7 +48,7 @@ fn embeddings_url(base) {
 pub fn provider {
     p := env_get("WEFT_PROVIDER", env_get("LLM_PROVIDER", ""))
     if p != "" {
-        return p
+        return str.lower(p)
     }
     if env_get("OLLAMA_HOST", "") != "" || env_get("OLLAMA_BASE_URL", "") != "" {
         return "ollama"
@@ -61,8 +64,7 @@ fn embed_model { env_get("WEFT_EMBED_MODEL", env_get("OLLAMA_EMBED_MODEL", env_g
 
 
 fn embed_key {
-    k := env_get("OPENAI_API_KEY", env_get("WEFT_API_KEY", env_get("OLLAMA_API_KEY", "")))
-    if k == "" { "ollama" } else { k }
+    env_get("OPENAI_API_KEY", env_get("WEFT_API_KEY", env_get("OLLAMA_API_KEY", "")))
 }
 
 
@@ -114,7 +116,7 @@ pub fn embed(text, opts) -> Result[any] {
             extra = opts.headers
         }
     }
-    if text == "" {
+    if text == null || text == "" {
         return Err("ml.embed needs text")
     }
     p := provider()
@@ -137,7 +139,7 @@ fn embed_ollama(text, model) -> Result[any] {
             return Ok(data.embedding)
         }
     }
-    embed_openai_compat(text, model, host + "/v1", "ollama", null)
+    embed_openai_compat(text, model, host + "/v1", "", null)
 }
 
 
@@ -146,14 +148,10 @@ fn embed_openai_compat(text, model, base, key, extra_headers) -> Result[any] {
     body := json.stringify({"model": model, "input": text})
     mut headers := {
         "Content-Type": "application/json",
-        "Authorization": "Bearer $key",
     }
-    if key != "" && key != "ollama" && key != "EMPTY" {
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer $key",
-            "api-key": key,
-        }
+    if key != "" {
+        headers["Authorization"] = "Bearer $key"
+        headers["api-key"] = key
     }
     if extra_headers != null {
         for k in keys(extra_headers) {
@@ -186,10 +184,12 @@ pub fn embed_many(texts) -> Result[any] {
     base := openai_base()
     url := embeddings_url(base)
     body := json.stringify({"model": model, "input": texts})
-    headers := {
+    mut headers := {
         "Content-Type": "application/json",
-        "Authorization": "Bearer $key",
-        "api-key": key,
+    }
+    if key != "" {
+        headers["Authorization"] = "Bearer $key"
+        headers["api-key"] = key
     }
     resp := http.post(url, body, {
         "headers": headers,
@@ -218,4 +218,3 @@ fn embed_many_loop(texts) -> Result[any] {
     for t in texts { push(out, embed(t, null)?) }
     Ok(out)
 }
-

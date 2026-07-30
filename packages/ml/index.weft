@@ -7,6 +7,12 @@ pub fn index { {
 
 
 pub fn index_add(idx, id, vector, meta) {
+    if idx == null || idx.items == null {
+        return Err("ml.index_add expects an index")
+    }
+    if vector == null {
+        return Err("ml.index_add expects a vector")
+    }
     mut m := meta
     if m == null {
         m = {}
@@ -24,6 +30,12 @@ pub fn index_search(idx, query, k) { vec.topk(query, idx.items, k) }
 
 
 pub fn index_save(idx, path) -> Result[any] {
+    if idx == null || idx.items == null {
+        return Err("ml.index_save expects an index")
+    }
+    if path == null || path == "" {
+        return Err("ml.index_save expects a path")
+    }
     fs.write(path, json.stringify(idx))?
     Ok(path)
 }
@@ -33,10 +45,7 @@ pub fn index_load(path) -> Result[any] {
     raw := fs.read(path)?
     data := json.parse(raw)?
     if data.items == null {
-        return Ok({
-            "items": [],
-        })
+        return Err("ml.index_load: file is not a vector index")
     }
     Ok(data)
 }
-

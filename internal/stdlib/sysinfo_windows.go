@@ -4,11 +4,17 @@ package stdlib
 
 import (
 	"fmt"
-	"time"
+	"syscall"
 )
 
+var getTickCount64 = syscall.NewLazyDLL("kernel32.dll").NewProc("GetTickCount64")
+
 func sysUptime() (float64, error) {
-	return time.Since(bootTime).Seconds(), nil
+	millis, _, _ := getTickCount64.Call()
+	if millis == 0 {
+		return 0, fmt.Errorf("GetTickCount64 returned no uptime")
+	}
+	return float64(millis) / 1000, nil
 }
 
 func sysLoadAvg() ([]float64, error) {

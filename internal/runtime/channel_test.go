@@ -1,11 +1,29 @@
 package runtime_test
 
 import (
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/loreste/weft/internal/runtime"
 )
+
+func TestChannelSendCloseRaceIsReportedAsError(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		ch := runtime.MakeChannel(0)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_ = runtime.ChannelSend(ch, runtime.Int(1))
+		}()
+		go func() {
+			defer wg.Done()
+			_ = runtime.ChannelClose(ch)
+		}()
+		wg.Wait()
+	}
+}
 
 func TestChannelSendRecv(t *testing.T) {
 	ch := runtime.MakeChannel(1)
@@ -121,6 +139,31 @@ func TestSelectRecvEmpty(t *testing.T) {
 	_, _, err := runtime.SelectRecv(nil, 0)
 	if err == nil {
 		t.Fatal("empty should error")
+	}
+}
+
+func TestSelectRecvAllClosed(t *testing.T) {
+	first := runtime.MakeChannel(0)
+	second := runtime.MakeChannel(0)
+	if err := runtime.ChannelClose(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.ChannelClose(second); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := runtime.SelectRecv([]runtime.Value{first, second}, 0)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("all-closed select should return an error")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("select_recv hung with only closed channels")
 	}
 }
 

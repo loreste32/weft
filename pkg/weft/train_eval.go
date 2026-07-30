@@ -21,7 +21,7 @@ type TrainEvalOptions struct {
 	Limit int
 	// Run executes gold (and live output) when fn main is present.
 	Run bool
-	// Live asks the configured LLM and scores generated Weft (needs API).
+	// Live asks the configured LLM and measures generated Weft validity (needs API).
 	Live bool
 	// Quiet less per-case lines.
 	Quiet bool
@@ -31,12 +31,12 @@ type TrainEvalOptions struct {
 type TrainEvalCase struct {
 	ID      string
 	GoldOK  bool
-	LiveOK  bool // only when Live
+	LiveOK  bool // generated output is valid when Live
 	Err     string
 	LiveErr string
 }
 
-// TrainEvalReport is accuracy on gold (and optional live model).
+// TrainEvalReport is validity on gold (and optional live model output).
 type TrainEvalReport struct {
 	Total   int
 	GoldOK  int
@@ -48,7 +48,7 @@ type TrainEvalReport struct {
 }
 
 // TrainEval scores gold Weft: parse + compile (+ optional run).
-// With Live, also generates from the instruction and scores that output.
+// With Live, also generates output and measures Weft validity.
 func TrainEval(opts TrainEvalOptions) (*TrainEvalReport, error) {
 	exs, err := loadGold(opts.From)
 	if err != nil {
@@ -139,11 +139,6 @@ func scoreWeft(src string, run bool) error {
 	if err == nil {
 		return nil
 	}
-	es := err.Error()
-	if strings.Contains(es, "connection") || strings.Contains(es, "dial") ||
-		strings.Contains(es, "no such host") || strings.Contains(es, "timeout") {
-		return nil
-	}
 	return fmt.Errorf("run: %v", err)
 }
 
@@ -194,9 +189,9 @@ func PrintTrainEval(rep *TrainEvalReport) int {
 	if rep == nil {
 		return 1
 	}
-	fmt.Printf("\ngold accuracy  %d/%d  (%.1f%%)\n", rep.GoldOK, rep.Total, rep.GoldAcc*100)
+	fmt.Printf("\ngold validity %d/%d (%.1f%%)\n", rep.GoldOK, rep.Total, rep.GoldAcc*100)
 	if rep.LiveN > 0 {
-		fmt.Printf("live accuracy  %d/%d  (%.1f%%)\n", rep.LiveOK, rep.LiveN, rep.LiveAcc*100)
+		fmt.Printf("live validity %d/%d (%.1f%%)\n", rep.LiveOK, rep.LiveN, rep.LiveAcc*100)
 	}
 	if rep.GoldOK < rep.Total {
 		return 1

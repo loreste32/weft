@@ -74,3 +74,33 @@ func TestProcList(t *testing.T) {
 		t.Fatalf("list should return Result, got %v", r.Kind)
 	}
 }
+
+func TestProcRejectsDangerousOrEmptyInputs(t *testing.T) {
+	p := packageProc()
+	mo := p.Obj.(*runtime.MapObj)
+
+	kill := mo.Vals["kill"].Obj.(*runtime.BuiltinObj)
+	result, err := kill.Fn([]runtime.Value{runtime.Int(0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Kind != runtime.KindResult {
+		t.Fatalf("proc.kill should return Result, got %v", result.Kind)
+	}
+	result, err = kill.Fn([]runtime.Value{runtime.Int(1), runtime.Str("-1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Kind != runtime.KindResult {
+		t.Fatalf("proc.kill should reject negative signals with Result, got %v", result.Kind)
+	}
+
+	find := mo.Vals["find"].Obj.(*runtime.BuiltinObj)
+	result, err = find.Fn([]runtime.Value{runtime.Str("   ")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Kind != runtime.KindResult {
+		t.Fatalf("proc.find should return Result, got %v", result.Kind)
+	}
+}

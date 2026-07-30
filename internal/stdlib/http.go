@@ -20,11 +20,11 @@ import (
 	"github.com/loreste/weft/internal/runtime"
 )
 
-// httpHeaderSafe rejects CR/LF and other CTL that enable response splitting.
+// httpHeaderSafe rejects control characters that can corrupt HTTP headers.
 func httpHeaderSafe(s string) bool {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if c == '\r' || c == '\n' || c == '\x00' {
+		if c < 0x20 || c == 0x7f {
 			return false
 		}
 	}
@@ -350,10 +350,18 @@ func writeWeftResponse(w http.ResponseWriter, ret runtime.Value) {
 	} else if ret.Kind == runtime.KindStr {
 		body = ret.S
 	}
+	// net/http panics for status codes outside [100, 999]. A script controls
+	// this value, so turn malformed responses into a regular server error.
+	if status < 100 || status > 999 {
+		status = http.StatusInternalServerError
+		body = "invalid HTTP response status"
+		ctype = "text/plain; charset=utf-8"
+		hasStream = false
+	}
 
 	// Streaming path: flush each chunk (agent token fan-out to HTTP callers).
 	if hasStream {
-		if ctype != "" {
+		if ctype != "" && httpHeaderSafe(ctype) {
 			w.Header().Set("Content-Type", ctype)
 		}
 		if sse {
@@ -390,7 +398,7 @@ func writeWeftResponse(w http.ResponseWriter, ret runtime.Value) {
 		return
 	}
 
-	if ctype != "" && w.Header().Get("Content-Type") == "" {
+	if ctype != "" && httpHeaderSafe(ctype) && w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", ctype)
 	}
 	w.WriteHeader(status)

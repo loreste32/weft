@@ -1,0 +1,16 @@
+use "./lib.weft" as emb
+
+fn test_rejects_dimension_mismatch {
+    result := emb.cosine([1.0, 0.0], [1.0])
+    test.eq(result.ok, false)
+}
+
+fn test_save_returns_result {
+    path := ".embed_ml_test.json"
+    fs.remove(path)
+    result := emb.save(emb.new(), path)
+    test.eq(result.ok, true)
+    loaded := emb.load(path)?
+    test.eq(len(loaded.docs), 0)
+    fs.remove(path)
+}

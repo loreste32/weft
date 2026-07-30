@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	goruntime "runtime"
 	"strconv"
 	"strings"
@@ -20,7 +21,7 @@ import (
 func packageProc() runtime.Value {
 	p := pkg()
 
-	// proc.self() -> map  {pid, ppid, uid, gid}
+	// proc.self() -> map  process IDs plus identity and location when available.
 	set(p, "self", func(args []runtime.Value) (runtime.Value, error) {
 		m := runtime.NewMap()
 		mo := m.Obj.(*runtime.MapObj)
@@ -30,8 +31,25 @@ func packageProc() runtime.Value {
 		}
 		put("pid", runtime.Int(int64(os.Getpid())))
 		put("ppid", runtime.Int(int64(os.Getppid())))
-		put("uid", runtime.Int(int64(os.Getuid())))
-		put("gid", runtime.Int(int64(os.Getgid())))
+		identity := currentProcessIdentity()
+		if identity.uidOK {
+			put("uid", runtime.Int(identity.uid))
+		}
+		if identity.gidOK {
+			put("gid", runtime.Int(identity.gid))
+		}
+		if identity.user != "" {
+			put("user", runtime.Str(identity.user))
+		}
+		if identity.group != "" {
+			put("group", runtime.Str(identity.group))
+		}
+		if executable, err := os.Executable(); err == nil {
+			put("executable", runtime.Str(executable))
+		}
+		if cwd, err := os.Getwd(); err == nil {
+			put("cwd", runtime.Str(cwd))
+		}
 		return m, nil
 	}, 0)
 
@@ -44,9 +62,15 @@ func packageProc() runtime.Value {
 		if err != nil {
 			return errRes("pid must be int", "proc"), nil
 		}
+		if pid <= 0 {
+			return errRes("pid must be a positive process id", "proc"), nil
+		}
 		sig := syscall.SIGTERM
 		if len(args) >= 2 {
 			sig = parseSignal(args[1].String())
+		}
+		if sig < 0 {
+			return errRes("signal must be non-negative", "proc"), nil
 		}
 		proc, err := os.FindProcess(int(pid))
 		if err != nil {
@@ -67,6 +91,9 @@ func packageProc() runtime.Value {
 		if err != nil {
 			return runtime.Bool(false), nil
 		}
+		if pid <= 0 {
+			return runtime.Bool(false), nil
+		}
 		proc, err := os.FindProcess(int(pid))
 		if err != nil {
 			return runtime.Bool(false), nil
@@ -75,7 +102,7 @@ func packageProc() runtime.Value {
 		return runtime.Bool(err == nil), nil
 	}, 1)
 
-	// proc.list() -> Result[[map]]  list processes {pid, name, cmd}
+	// proc.list() -> Result[[map]]  list processes {pid, name, cmd}.
 	set(p, "list", func(args []runtime.Value) (runtime.Value, error) {
 		procs, err := listProcesses()
 		if err != nil {
@@ -102,7 +129,11 @@ func packageProc() runtime.Value {
 		if len(args) < 1 {
 			return errRes("proc.find(name)", "proc"), nil
 		}
-		name := strings.ToLower(args[0].String())
+		name := strings.TrimSpace(args[0].String())
+		if name == "" {
+			return errRes("proc.find(name): name cannot be empty", "proc"), nil
+		}
+		name = strings.ToLower(name)
 		procs, err := listProcesses()
 		if err != nil {
 			return errRes(err.Error(), "proc"), nil
@@ -177,7 +208,7 @@ func listProcessesLinux() ([]procInfo, error) {
 
 // listProcessesPSCommand uses ps for macOS and other unix.
 func listProcessesPSCommand() ([]procInfo, error) {
-	out, err := exec.Command("ps", "-eo", "pid,comm").Output()
+	out, err := exec.Command("ps", "-eo", "pid=,command=").Output()
 	if err != nil {
 		return nil, fmt.Errorf("ps: %w", err)
 	}
@@ -195,8 +226,12 @@ func listProcessesPSCommand() ([]procInfo, error) {
 		if err != nil {
 			continue
 		}
-		name := strings.Join(parts[1:], " ")
-		procs = append(procs, procInfo{pid: pid, name: name, cmd: name})
+		cmd := strings.TrimSpace(strings.TrimPrefix(line, parts[0]))
+		if cmd == "" {
+			continue
+		}
+		name := filepath.Base(strings.Fields(cmd)[0])
+		procs = append(procs, procInfo{pid: pid, name: name, cmd: cmd})
 	}
 	return procs, nil
 }

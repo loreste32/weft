@@ -1,27 +1,16 @@
-pub fn sqrt(x) {
-    if x <= 0 {
-        return 0.0
-    }
-    mut g := x
-    if g < 1.0 {
-        g = 1.0
-    }
-    mut i := 0
-    while i < 16 {
-        g = (g + x / g) / 2.0
-        i = i + 1
-    }
-    g
-}
+use math
 
 
 pub fn dot(a, b) {
+    if a == null || b == null {
+        return Err("ml.dot expects two vectors")
+    }
+    if len(a) != len(b) {
+        return Err("ml.dot requires vectors with equal dimensions")
+    }
     mut s := 0.0
     mut i := 0
     mut n := len(a)
-    if len(b) < n {
-        n = len(b)
-    }
     while i < n {
         s = s + a[i] * b[i]
         i = i + 1
@@ -30,10 +19,16 @@ pub fn dot(a, b) {
 }
 
 
-pub fn norm(a) { sqrt(dot(a, a)) }
+pub fn norm(a) { math.sqrt(dot(a, a)) }
 
 
 pub fn cosine(a, b) {
+    if a == null || b == null {
+        return Err("ml.cosine expects two vectors")
+    }
+    if len(a) != len(b) {
+        return Err("ml.cosine requires vectors with equal dimensions")
+    }
     na := norm(a)
     nb := norm(b)
     if na == 0.0 || nb == 0.0 { 0.0 } else { dot(a, b) / (na * nb) }
@@ -41,10 +36,22 @@ pub fn cosine(a, b) {
 
 
 pub fn topk(query, items, k) {
+    if query == null || items == null {
+        return Err("ml.topk expects a query vector and items")
+    }
+    if k < 0 {
+        return Err("ml.topk requires a non-negative k")
+    }
     mut scored := []
     mut i := 0
     while i < len(items) {
         it := items[i]
+        if it == null || it.vec == null {
+            return Err("ml.topk items must contain a vec field")
+        }
+        if len(query) != len(it.vec) {
+            return Err("ml.topk requires every item vector to match the query dimension")
+        }
         sc := cosine(query, it.vec)
         push(scored, {
             "id": it.id,
@@ -88,4 +95,3 @@ pub fn topk(query, items, k) {
     }
     out
 }
-

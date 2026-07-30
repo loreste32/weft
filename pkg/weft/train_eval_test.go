@@ -56,3 +56,19 @@ func TestTrainEvalRun(t *testing.T) {
 		t.Fatalf("%+v", rep)
 	}
 }
+
+func TestTrainEvalRunDoesNotHideRuntimeFailure(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runtime-error.jsonl")
+	row := `{"id":"runtime-error","instruction":"fail","output":"fn main -> Result { fs.read(\"/definitely/missing/weft-eval-file\")? }"}` + "\n"
+	if err := os.WriteFile(path, []byte(row), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := weft.TrainEval(weft.TrainEvalOptions{From: path, Run: true, Quiet: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.GoldOK != 0 || len(rep.Cases) != 1 || rep.Cases[0].Err == "" {
+		t.Fatalf("runtime failure was not reported: %+v", rep)
+	}
+}

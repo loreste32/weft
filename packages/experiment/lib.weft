@@ -40,7 +40,10 @@ pub fn log_metrics(run, kv) {
 
 
 pub fn end(run) -> Result[any] {
-    elapsed := time.now_ms() - run.start_ms
+	if run == null || run.start_ms == null {
+		return Err("experiment.end expects a run from experiment.start")
+	}
+	elapsed := time.now_ms() - run.start_ms
     entry := json.stringify({
         "name": run.name,
         "params": run.params,
@@ -49,8 +52,15 @@ pub fn end(run) -> Result[any] {
         "status": "done",
         "timestamp": time.iso(time.now()),
     })
-    fs.append(run.log_file, entry + "\n")?
-    say("logged: " + run.name + " (" + elapsed + "ms)")
+	fs.append(run.log_file, entry + "\n")?
+	say("logged: " + run.name + " (" + elapsed + "ms)")
+	Ok({
+		"name": run.name,
+		"params": run.params,
+		"metrics": run.metrics,
+		"duration_ms": elapsed,
+		"status": "done",
+	})
 }
 
 
@@ -98,9 +108,10 @@ pub fn compare(log_file) -> Result[any] {
             row = row + v + "\t"
         }
         dur := if r.duration_ms != null { "" + r.duration_ms + "ms" } else { "-" }
-        row = row + dur
-        say(row)
-    }
+		row = row + dur
+		say(row)
+	}
+	Ok(unit)
 }
 
 
@@ -126,4 +137,3 @@ pub fn best(log_file, metric, higher) -> Result[any] {
     }
     if best_run == null { Err("no runs with metric " + metric) } else { Ok(best_run) }
 }
-

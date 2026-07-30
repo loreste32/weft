@@ -1,4 +1,5 @@
 use math
+use str
 
 
 use json
@@ -16,7 +17,10 @@ pub fn new { {
 
 
 pub fn add(store, id, text, embed_fn) {
-    vec := embed_fn(text)
+	if store == null || store.docs == null || store.vectors == null || store.meta == null {
+		return Err("embed.add expects an embedding store")
+	}
+	vec := embed_fn(text)
     docs := push(store.docs, id)
     vectors := push(store.vectors, vec)
     meta := push(store.meta, {"id": id, "text": text})
@@ -39,11 +43,20 @@ pub fn add_batch(store, items, embed_fn) {
 
 
 pub fn search(store, query, k, embed_fn) {
-    q_vec := embed_fn(query)
+	if store == null || store.vectors == null {
+		return Err("embed.search expects a store")
+	}
+	if k < 0 {
+		return Err("embed.search requires a non-negative k")
+	}
+	q_vec := embed_fn(query)
     mut scored := []
     mut i := 0
-    while i < len(store.vectors) {
-        score := cosine(q_vec, store.vectors[i])
+	while i < len(store.vectors) {
+		if len(q_vec) != len(store.vectors[i]) {
+			return Err("embed.search requires vectors with equal dimensions")
+		}
+		score := cosine(q_vec, store.vectors[i])
         scored = push(scored, {
             "id": store.docs[i],
             "text": store.meta[i].text,
@@ -51,9 +64,26 @@ pub fn search(store, query, k, embed_fn) {
         })
         i = i + 1
     }
-    sorted := sort(scored, fn(a, b) { a.score < b.score })
-    top_k := if k > len(sorted) { len(sorted) } else { k }
-    slice(sorted, 0, top_k)
+	mut sorted := scored
+	mut i := 0
+	while i < len(sorted) {
+		mut best := i
+		mut j := i + 1
+		while j < len(sorted) {
+			if sorted[j].score > sorted[best].score {
+				best = j
+			}
+			j = j + 1
+		}
+		if best != i {
+			tmp := sorted[i]
+			sorted[i] = sorted[best]
+			sorted[best] = tmp
+		}
+		i = i + 1
+	}
+	top_k := if k > len(sorted) { len(sorted) } else { k }
+	slice(sorted, 0, top_k)
 }
 
 
@@ -61,8 +91,11 @@ pub fn size(store) { len(store.docs) }
 
 
 pub fn cosine(a, b) {
-    if len(a) != len(b) {
-        return 0
+	if a == null || b == null {
+		return Err("embed.cosine expects two vectors")
+	}
+	if len(a) != len(b) {
+		return Err("embed.cosine requires vectors with equal dimensions")
     }
     mut dot := 0.0
     mut na := 0.0
@@ -87,35 +120,57 @@ pub fn openai_embed(text, opts) -> Result[any] {
     key := if opts != null && opts["api_key"] != null { opts["api_key"] } else { env.get("OPENAI_API_KEY", "") }
     model := if opts != null && opts["model"] != null { opts["model"] } else { "text-embedding-3-small" }
     body := json.stringify({"input": text, "model": model})
-    r := http.post(base + "/embeddings", body, {
+	mut endpoint := base
+	if str.ends_with(endpoint, "/") {
+		endpoint = str.slice(endpoint, 0, len(endpoint) - 1)
+	}
+	if !str.ends_with(endpoint, "/embeddings") {
+		endpoint = endpoint + "/embeddings"
+	}
+	r := http.post(endpoint, body, {
         "headers": {
             "Authorization": "Bearer " + key,
             "Content-Type": "application/json",
         },
-    })?
-    data := json.parse(r.body)?
-    data.data[0].embedding
+	})?
+	data := json.parse(r.body)?
+	if data.data == null || len(data.data) == 0 || data.data[0].embedding == null {
+		return Err("embed.openai_embed: response did not contain an embedding")
+	}
+	Ok(data.data[0].embedding)
 }
 
 
 pub fn save(store, path) -> Result[any] {
-    data := json.stringify({
+	if store == null || store.docs == null || store.vectors == null || store.meta == null {
+		return Err("embed.save expects an embedding store")
+	}
+	if path == null || path == "" {
+		return Err("embed.save expects a path")
+	}
+	data := json.stringify({
         "docs": store.docs,
         "vectors": store.vectors,
         "meta": store.meta,
-    })
-    fs.write(path, data)?
+	})
+	fs.write(path, data)?
+	Ok(path)
 }
 
 
 pub fn load(path) -> Result[any] {
-    raw := fs.read(path)?
-    data := json.parse(raw)?
-    Ok({
+	raw := fs.read(path)?
+	data := json.parse(raw)?
+	if data.docs == null || data.vectors == null || data.meta == null {
+		return Err("embed.load: file is not an embedding store")
+	}
+	if len(data.docs) != len(data.vectors) || len(data.vectors) != len(data.meta) {
+		return Err("embed.load: store fields have different lengths")
+	}
+	Ok({
         "_embed_store": true,
         "docs": data.docs,
         "vectors": data.vectors,
         "meta": data.meta,
     })
 }
-

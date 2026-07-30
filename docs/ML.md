@@ -46,7 +46,21 @@ cd examples/ml_demo && weft install && weft run main.weft
 - **Vectors:** `cosine` `dot` `norm` `topk`  
 - **Embeddings:** `embed` / `embed_with` / `embed_many` (HTTP → Ollama or OpenAI-compat)  
 - **Index:** in-memory + `index_save` / `index_load` JSON  
-- **Metrics:** `accuracy` `mse` `split`  
+- **Metrics:** `accuracy` `mse` `split`
+
+## Contracts and limits
+
+Vector operations require equal dimensions. `topk` requires every item to
+have a `vec` with the same dimension as the query. `accuracy` and `mse` require
+prediction and label arrays of equal length; invalid inputs return `Err` rather
+than being silently truncated. `split` is deterministic, preserves input
+order, and accepts ratios from `0` through `1`.
+
+Embedding responses must contain a vector field recognized by the provider
+adapter. `embed_many` uses one batch request for OpenAI-compatible
+providers when the response shape is valid, then falls back to individual
+requests when the provider cannot handle batching. No model weights are loaded
+inside Weft.
 
 Training **weights** remains:
 

@@ -18,3 +18,22 @@ fn test_cosine_self {
 
 fn test_accuracy { test.approx(ml.accuracy([1, 1, 0], [1, 0, 0]), 2.0 / 3.0, 1e-9) }
 
+fn test_rejects_vector_dimension_mismatch {
+    r := ml.cosine([1.0, 0.0], [1.0])
+    test.eq(r.ok, false)
+}
+
+fn test_rejects_metric_length_mismatch {
+    r := ml.mse([1.0, 2.0], [1.0])
+    test.eq(r.ok, false)
+}
+
+fn test_rejects_invalid_split_ratio {
+    r := ml.split([1, 2], 1.5)
+    test.eq(r.ok, false)
+}
+
+fn test_rejects_topk_dimension_mismatch {
+    r := ml.topk([1.0, 0.0], [{"id": "bad", "vec": [1.0], "meta": {}}], 1)
+    test.eq(r.ok, false)
+}

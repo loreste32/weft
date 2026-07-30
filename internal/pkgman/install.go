@@ -52,8 +52,8 @@ func InstallAll(projectDir string) (*Lockfile, error) {
 	seen := map[string]string{} // name -> depIdentity
 	var walk func(name string, spec DepSpec, baseDir string) error
 	walk = func(name string, spec DepSpec, baseDir string) error {
-		if name == "" {
-			return fmt.Errorf("empty dependency name")
+		if !validPackageName(name) {
+			return fmt.Errorf("invalid dependency name %q", name)
 		}
 		if isReservedPackageName(name) {
 			return fmt.Errorf("%q is reserved (stdlib or prelude) — choose another import name", name)
@@ -115,12 +115,18 @@ func InstallAll(projectDir string) (*Lockfile, error) {
 		}
 		return nil, fmt.Errorf("vendor swap: %w", err)
 	}
-	committed = true
-	_ = os.RemoveAll(bakVendor)
 
 	if err := SaveLock(projectDir, lock); err != nil {
+		// Keep vendor and lockfile consistent if persistence fails. The old
+		// vendor tree is still available until the lock has been saved.
+		_ = os.RemoveAll(finalVendor)
+		if _, backupErr := os.Stat(bakVendor); backupErr == nil {
+			_ = os.Rename(bakVendor, finalVendor)
+		}
 		return nil, err
 	}
+	committed = true
+	_ = os.RemoveAll(bakVendor)
 	return lock, nil
 }
 
@@ -166,6 +172,14 @@ func isReservedPackageName(name string) bool {
 	return false
 }
 
+// validPackageName keeps dependency names as single path components. Manifest
+// keys are user-controlled, and they are later used in vendor/<name> paths.
+func validPackageName(name string) bool {
+	return name != "" && name != "." && name != ".." &&
+		!filepath.IsAbs(name) && filepath.Base(name) == name &&
+		!strings.ContainsAny(name, `/\`+"\x00")
+}
+
 // VerifyLock checks weft.lock sums against vendor/ on disk (tamper detection).
 // No-op if weft.lock is missing. Call before run when integrity matters.
 func VerifyLock(projectDir string) error {
@@ -180,9 +194,19 @@ func VerifyLock(projectDir string) error {
 		}
 	}
 	for _, p := range lock.Packages {
-		dir := filepath.Join(projectDir, filepath.FromSlash(p.Dir))
-		if p.Dir == "" {
-			dir = filepath.Join(VendorDir(projectDir), p.Name)
+		if !validPackageName(p.Name) {
+			return fmt.Errorf("vendor integrity: invalid package name %q", p.Name)
+		}
+		dir := filepath.Join(VendorDir(projectDir), p.Name)
+		if p.Dir != "" {
+			candidate, err := safeJoin(projectDir, p.Dir)
+			if err != nil {
+				return fmt.Errorf("vendor integrity: invalid path for %s: %w", p.Name, err)
+			}
+			if filepath.Clean(candidate) != filepath.Clean(dir) {
+				return fmt.Errorf("vendor integrity: package %s points outside vendor/%s", p.Name, p.Name)
+			}
+			dir = candidate
 		}
 		sum, err := HashDir(dir)
 		if err != nil {
@@ -236,6 +260,9 @@ func AddDep(projectDir, name, specStr string) error {
 	if name == "" {
 		return fmt.Errorf("dependency name required")
 	}
+	if !validPackageName(name) {
+		return fmt.Errorf("invalid dependency name %q", name)
+	}
 	spec := ParseDepString(specStr)
 	if m.Deps == nil {
 		m.Deps = map[string]DepSpec{}
@@ -264,6 +291,9 @@ func AddDepPathVersion(projectDir, name, pathSpec, version string) error {
 	if name == "" {
 		return fmt.Errorf("dependency name required")
 	}
+	if !validPackageName(name) {
+		return fmt.Errorf("invalid dependency name %q", name)
+	}
 	spec := ParseDepString(pathSpec)
 	if version != "" {
 		spec.Version = version
@@ -281,6 +311,9 @@ func AddDepPathVersion(projectDir, name, pathSpec, version string) error {
 
 // installOneInto materializes a package under vendorRoot/<name>.
 func installOneInto(projectDir, vendorRoot, name string, spec DepSpec) (*LockedPkg, error) {
+	if !validPackageName(name) {
+		return nil, fmt.Errorf("invalid dependency name %q", name)
+	}
 	if err := os.MkdirAll(vendorRoot, 0o755); err != nil {
 		return nil, err
 	}
@@ -488,19 +521,30 @@ func download(rawURL, dest string) error {
 	if resp.ContentLength > MaxArchiveBytes {
 		return fmt.Errorf("download too large: %d bytes (max %d)", resp.ContentLength, MaxArchiveBytes)
 	}
-	f, err := os.Create(dest)
+	tmp, err := os.CreateTemp(filepath.Dir(dest), ".weft-download-*")
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	// Cap actual bytes even if Content-Length is missing/wrong.
-	n, err := io.Copy(f, io.LimitReader(resp.Body, MaxArchiveBytes+1))
+	tmpPath := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+	}()
+
+	// Cap actual bytes even when Content-Length is missing or wrong. Write to a
+	// temporary file so a failed transfer can never be reused as a cache hit.
+	n, err := io.Copy(tmp, io.LimitReader(resp.Body, MaxArchiveBytes+1))
 	if err != nil {
 		return err
 	}
 	if n > MaxArchiveBytes {
-		_ = os.Remove(dest)
 		return fmt.Errorf("download exceeded %d bytes", MaxArchiveBytes)
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, dest); err != nil {
+		return err
 	}
 	return nil
 }
@@ -767,8 +811,8 @@ func copyDir(src, dst string) error {
 
 // zipDir writes a zip of dir, skipping top-level names in skip.
 func zipDir(dir, outPath string, skip map[string]bool) error {
-	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil && filepath.Dir(outPath) != "." {
-		// ok if dir is .
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+		return err
 	}
 	f, err := os.Create(outPath)
 	if err != nil {
@@ -776,10 +820,13 @@ func zipDir(dir, outPath string, skip map[string]bool) error {
 	}
 	defer f.Close()
 	zw := zip.NewWriter(f)
-	defer zw.Close()
-	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	if err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			rel, _ := filepath.Rel(dir, path)
+			return fmt.Errorf("refusing symlink in package archive: %s", rel)
 		}
 		rel, err := filepath.Rel(dir, path)
 		if err != nil {
@@ -808,7 +855,14 @@ func zipDir(dir, outPath string, skip map[string]bool) error {
 			return err
 		}
 		_, err = io.Copy(w, in)
-		in.Close()
+		closeErr := in.Close()
+		if err != nil {
+			return err
+		}
+		return closeErr
+	}); err != nil {
+		_ = zw.Close()
 		return err
-	})
+	}
+	return zw.Close()
 }

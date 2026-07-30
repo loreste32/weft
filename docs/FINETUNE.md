@@ -25,7 +25,7 @@ weft train prepare -o weft-sft --expand \
   --from /secure/my-domain.jsonl
 # --from examples/tokensave_demo/domain-gold.jsonl
 
-# 1b) Score gold — parse/compile accuracy (offline; add --run to execute)
+# 1b) Score gold — parse/compile validity (offline; add --run to execute)
 weft train eval
 weft train eval --run --limit 20
 weft train eval --from /secure/my-domain.jsonl
@@ -39,7 +39,7 @@ export WEFT_API_BASE=http://127.0.0.1:8000/v1
 export WEFT_API_KEY=local
 export WEFT_MODEL=weft-writer
 weft train chat "Write a Weft script that prints hello, weft"
-weft train eval --live --limit 10   # model accuracy vs gold prompts
+weft train eval --live --limit 10   # generated Weft validity, not semantic task accuracy
 weft gen "agent with a weather tool" -o weather.weft --run
 ```
 
@@ -63,8 +63,8 @@ weft train eval --from domain-gold.jsonl
 
 | Command | What it measures |
 |---------|------------------|
-| `weft train eval` | **Gold accuracy** — each training `output` parses/compiles (optional `--run`) |
-| `weft train eval --live` | **Model accuracy** — generate from each `instruction`, score Weft |
+| `weft train eval` | **Gold validity** — each training `output` parses/compiles (optional `--run`) |
+| `weft train eval --live` | **Generated Weft validity** — each instruction produces output that parses/compiles (optional `--run`); this is not semantic task accuracy |
 | `weft eval [dir]` | **Script smoke** — run example `.weft` files (CI) |
 
 ### Presets (open frontier)

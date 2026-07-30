@@ -43,8 +43,8 @@ fn main -> Result {
 
 | Call | Role |
 |------|------|
-| `ml.cosine(a,b)` `ml.dot` `ml.norm` | vector math |
-| `ml.topk(q, items, k)` | similarity ranking |
+| `ml.cosine(a,b)` `ml.dot` `ml.norm` | vector math; mismatched dimensions return `Err` |
+| `ml.topk(q, items, k)` | similarity ranking; every item must contain a same-size `vec` |
 | `ml.embed(text)?` | embedding (`WEFT_PROVIDER` / Ollama / OpenAI-compat) |
 | `ml.embed_with(text, {model, base_url, api_key, headers})?` | override host |
 | `ml.embed_many([…])?` | batch (one OpenAI-compat call when possible) |
@@ -62,6 +62,11 @@ Env (embeddings):
 | `OPENAI_BASE_URL` / `WEFT_API_BASE` | host or `…/v1` — `/embeddings` path is normalized |
 | `OPENAI_API_KEY` / `WEFT_API_KEY` | Bearer + Azure-style `api-key` header |
 | `OPENAI_API_KEY` / `WEFT_API_KEY` | cloud embeddings |
+
+Vector metrics require equal-length inputs. `accuracy` and `mse` reject
+different-length prediction/label arrays instead of silently scoring only the
+shared prefix. `split` is deterministic and preserves input order; its ratio
+must be between `0` and `1`.
 
 ## Training
 

@@ -32,6 +32,34 @@ func TestIsCloudOpenAI(t *testing.T) {
 	if isCloudOpenAI("http://127.0.0.1:8000/v1") {
 		t.Fatal("localhost should not be cloud")
 	}
+	if isCloudOpenAI("https://api.openai.com.attacker.example/v1") {
+		t.Fatal("lookalike host classified as public OpenAI")
+	}
+}
+
+func TestPrepareRejectsInvalidPrivateOutput(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "invalid.jsonl")
+	if err := os.WriteFile(input, []byte(`{"instruction":"bad","output":"this is not Weft"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := PrepareTrainBundle(PrepareOptions{OutDir: filepath.Join(dir, "out"), From: input})
+	if err == nil || !strings.Contains(err.Error(), "private data") {
+		t.Fatalf("expected invalid private output error, got %v", err)
+	}
+}
+
+func TestFineTuneEndpointAndResponseBounds(t *testing.T) {
+	endpoint, err := fineTuneEndpoint("https://ft.internal.example/v1/", "/files")
+	if err != nil || endpoint != "https://ft.internal.example/v1/files" {
+		t.Fatalf("endpoint=%q err=%v", endpoint, err)
+	}
+	if _, err := fineTuneEndpoint("https://ft.internal.example/v1?redirect=elsewhere", "/files"); err == nil {
+		t.Fatal("query-bearing API base should be rejected")
+	}
+	if _, err := readFineTuneResponse(strings.NewReader(strings.Repeat("x", maxFineTuneResponse+1))); err == nil {
+		t.Fatal("oversized response should be rejected")
+	}
 }
 
 func TestRefuseCloudUploadWithoutAllow(t *testing.T) {

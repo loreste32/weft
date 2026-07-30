@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -199,8 +200,12 @@ func finetuneTRL(opts FinetuneOptions) error {
 	if err := os.WriteFile(script, []byte(trlScriptV2()), 0o755); err != nil {
 		return err
 	}
-	_ = os.WriteFile(filepath.Join(opts.DataDir, "requirements-train.txt"), []byte(trainReqs()), 0o644)
-	_ = os.WriteFile(filepath.Join(opts.DataDir, "PRIVACY.md"), []byte(localPrivacyNote()), 0o644)
+	if err := os.WriteFile(filepath.Join(opts.DataDir, "requirements-train.txt"), []byte(trainReqs()), 0o644); err != nil {
+		return fmt.Errorf("write training requirements: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(opts.DataDir, "PRIVACY.md"), []byte(localPrivacyNote()), 0o644); err != nil {
+		return fmt.Errorf("write privacy note: %w", err)
+	}
 
 	args := []string{
 		"--data", "chat.jsonl",
@@ -330,10 +335,16 @@ func finetuneOpenAI(opts FinetuneOptions) error {
 // FinetuneStatus polls an OpenAI fine-tune job.
 func FinetuneStatus(baseURL, apiKey, jobID string) error {
 	if baseURL == "" {
+		baseURL = firstEnv("OPENAI_BASE_URL", "WEFT_API_BASE")
+	}
+	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
 	if apiKey == "" {
-		apiKey = os.Getenv("OPENAI_API_KEY")
+		apiKey = firstEnv("OPENAI_API_KEY", "WEFT_API_KEY")
+	}
+	if strings.TrimSpace(jobID) == "" {
+		return fmt.Errorf("fine-tune job id required")
 	}
 	if apiKey == "" {
 		return fmt.Errorf("OPENAI_API_KEY required")
@@ -358,7 +369,9 @@ func openaiUploadFile(base, key, path string) (string, error) {
 
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
-	_ = w.WriteField("purpose", "fine-tune")
+	if err := w.WriteField("purpose", "fine-tune"); err != nil {
+		return "", err
+	}
 	part, err := w.CreateFormFile("file", filepath.Base(path))
 	if err != nil {
 		return "", err
@@ -366,21 +379,30 @@ func openaiUploadFile(base, key, path string) (string, error) {
 	if _, err := io.Copy(part, f); err != nil {
 		return "", err
 	}
-	_ = w.Close()
+	if err := w.Close(); err != nil {
+		return "", err
+	}
 
-	req, err := http.NewRequest("POST", strings.TrimRight(base, "/")+"/files", &body)
+	endpoint, err := fineTuneEndpoint(base, "/files")
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequest("POST", endpoint, &body)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", w.FormDataContentType())
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := fineTuneHTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
+	b, err := readFineTuneResponse(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("upload failed %d: %s", resp.StatusCode, truncate(string(b), 400))
 	}
 	var out struct {
@@ -400,20 +422,30 @@ func openaiCreateJob(base, key, model, fileID string) (string, error) {
 		"training_file": fileID,
 		"model":         model,
 	}
-	raw, _ := json.Marshal(payload)
-	req, err := http.NewRequest("POST", strings.TrimRight(base, "/")+"/fine_tuning/jobs", bytes.NewReader(raw))
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	endpoint, err := fineTuneEndpoint(base, "/fine_tuning/jobs")
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(raw))
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := fineTuneHTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
+	b, err := readFineTuneResponse(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("create job failed %d: %s", resp.StatusCode, truncate(string(b), 400))
 	}
 	var out struct {
@@ -422,22 +454,32 @@ func openaiCreateJob(base, key, model, fileID string) (string, error) {
 	if err := json.Unmarshal(b, &out); err != nil {
 		return "", err
 	}
+	if out.ID == "" {
+		return "", fmt.Errorf("create job response missing id: %s", truncate(string(b), 200))
+	}
 	return out.ID, nil
 }
 
 func openaiGetJob(base, key, jobID string) (status, fineTunedModel string, err error) {
-	req, err := http.NewRequest("GET", strings.TrimRight(base, "/")+"/fine_tuning/jobs/"+jobID, nil)
+	endpoint, err := fineTuneEndpoint(base, "/fine_tuning/jobs/"+url.PathEscape(jobID))
+	if err != nil {
+		return "", "", err
+	}
+	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return "", "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := fineTuneHTTPClient.Do(req)
 	if err != nil {
 		return "", "", err
 	}
 	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
+	b, err := readFineTuneResponse(resp.Body)
+	if err != nil {
+		return "", "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", "", fmt.Errorf("job status %d: %s", resp.StatusCode, truncate(string(b), 300))
 	}
 	var out struct {
@@ -447,7 +489,39 @@ func openaiGetJob(base, key, jobID string) (status, fineTunedModel string, err e
 	if err := json.Unmarshal(b, &out); err != nil {
 		return "", "", err
 	}
+	if out.Status == "" {
+		return "", "", fmt.Errorf("job status response missing status: %s", truncate(string(b), 200))
+	}
 	return out.Status, out.FineTunedModel, nil
+}
+
+const maxFineTuneResponse = 8 << 20
+
+var fineTuneHTTPClient = &http.Client{
+	Timeout: 15 * time.Minute,
+	CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
+
+func fineTuneEndpoint(base, suffix string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(base))
+	if err != nil || u.Host == "" || u.RawQuery != "" || u.Fragment != "" ||
+		(u.Scheme != "http" && u.Scheme != "https") {
+		return "", fmt.Errorf("invalid fine-tune API URL %q", base)
+	}
+	return strings.TrimRight(u.String(), "/") + suffix, nil
+}
+
+func readFineTuneResponse(r io.Reader) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, maxFineTuneResponse+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > maxFineTuneResponse {
+		return nil, fmt.Errorf("fine-tune API response exceeds %d bytes", maxFineTuneResponse)
+	}
+	return b, nil
 }
 
 func openaiWaitJob(base, key, jobID string) error {

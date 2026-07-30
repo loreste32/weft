@@ -2,13 +2,18 @@ package runtime
 
 import (
 	"fmt"
+	"reflect"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
 // ChanObj is a typed Weft channel (carries Values; send deep-copies).
 type ChanObj struct {
 	ch     chan Value
-	closed bool
+	mu     sync.RWMutex
+	closed atomic.Bool
+	done   chan struct{}
 }
 
 // MakeChannel creates a buffered channel (cap 0 = unbuffered).
@@ -19,7 +24,10 @@ func MakeChannel(buffer int) Value {
 	return Value{Kind: KindStruct, Obj: &StructObj{
 		TypeName: "channel",
 		Fields: map[string]Value{
-			"__ch": {Kind: KindIter, Obj: &ChanObj{ch: make(chan Value, buffer)}},
+			"__ch": {Kind: KindIter, Obj: &ChanObj{
+				ch:   make(chan Value, buffer),
+				done: make(chan struct{}),
+			}},
 		},
 		Order: []string{"__ch"},
 	}}
@@ -49,11 +57,22 @@ func ChannelSend(ch Value, v Value) error {
 	if err != nil {
 		return err
 	}
-	if c.closed {
+	copyValue := DeepCopy(v)
+	if c.closed.Load() {
 		return fmt.Errorf("send on closed channel")
 	}
-	c.ch <- DeepCopy(v)
-	return nil
+	c.mu.RLock()
+	if c.closed.Load() {
+		c.mu.RUnlock()
+		return fmt.Errorf("send on closed channel")
+	}
+	defer c.mu.RUnlock()
+	select {
+	case c.ch <- copyValue:
+		return nil
+	case <-c.done:
+		return fmt.Errorf("send on closed channel")
+	}
 }
 
 // ChannelRecv receives a value (blocks).
@@ -75,10 +94,16 @@ func ChannelClose(ch Value) error {
 	if err != nil {
 		return err
 	}
-	if !c.closed {
-		c.closed = true
-		close(c.ch)
+	if !c.closed.CompareAndSwap(false, true) {
+		return nil
 	}
+	close(c.done)
+
+	// Wait for any in-flight senders (which observe done and release their
+	// read lock), then close the data channel without racing a send.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	close(c.ch)
 	return nil
 }
 
@@ -104,47 +129,52 @@ func SelectRecv(chs []Value, timeoutMs int64) (int, Value, error) {
 	if len(chs) == 0 {
 		return -1, Null(), fmt.Errorf("select_recv: empty")
 	}
-	type result struct {
-		i int
-		v Value
+	type activeChannel struct {
+		index int
+		ch    <-chan Value
 	}
-	cases := make([]<-chan Value, len(chs))
+	active := make([]activeChannel, 0, len(chs))
 	for i, ch := range chs {
 		c, err := asChan(ch)
 		if err != nil {
 			return -1, Null(), err
 		}
-		cases[i] = c.ch
+		active = append(active, activeChannel{index: i, ch: c.ch})
 	}
-	// dynamic select via goroutines + done
-	out := make(chan result, 1)
-	done := make(chan struct{})
-	for i, ch := range cases {
-		go func(i int, ch <-chan Value) {
-			select {
-			case v, ok := <-ch:
-				if !ok {
-					return
-				}
-				select {
-				case out <- result{i: i, v: v}:
-				case <-done:
-				}
-			case <-done:
-			}
-		}(i, ch)
-	}
+
+	var timer *time.Timer
 	if timeoutMs > 0 {
-		select {
-		case r := <-out:
-			close(done)
-			return r.i, r.v, nil
-		case <-time.After(time.Duration(timeoutMs) * time.Millisecond):
-			close(done)
+		timer = time.NewTimer(time.Duration(timeoutMs) * time.Millisecond)
+		defer timer.Stop()
+	}
+
+	// reflect.Select is the safe dynamic equivalent of a Go select over a
+	// runtime-sized channel list. Closed channels are removed and, when all
+	// channels are closed, the operation returns instead of waiting forever.
+	for len(active) > 0 {
+		cases := make([]reflect.SelectCase, 0, len(active)+1)
+		for _, candidate := range active {
+			cases = append(cases, reflect.SelectCase{
+				Dir:  reflect.SelectRecv,
+				Chan: reflect.ValueOf(candidate.ch),
+			})
+		}
+		if timer != nil {
+			cases = append(cases, reflect.SelectCase{
+				Dir:  reflect.SelectRecv,
+				Chan: reflect.ValueOf(timer.C),
+			})
+		}
+
+		chosen, value, ok := reflect.Select(cases)
+		if timer != nil && chosen == len(cases)-1 {
 			return -1, Null(), fmt.Errorf("select_recv: timeout")
 		}
+		if !ok {
+			active = append(active[:chosen], active[chosen+1:]...)
+			continue
+		}
+		return active[chosen].index, value.Interface().(Value), nil
 	}
-	r := <-out
-	close(done)
-	return r.i, r.v, nil
+	return -1, Null(), fmt.Errorf("select_recv: all channels closed")
 }

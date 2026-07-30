@@ -3,10 +3,12 @@
 package stdlib
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -27,10 +29,7 @@ func packageMLInfer(env *runtime.Env) runtime.Value {
 			return errRes("mlinfer.predict(url, input, opts?)", "mlinfer"), nil
 		}
 		url := args[0].String()
-		input, err := asMap(args[1])
-		if err != nil {
-			input = map[string]any{"input": args[1].String()}
-		}
+		input := valueToGo(args[1])
 
 		timeout := 30 * time.Second
 		headers := map[string]string{"Content-Type": "application/json"}
@@ -38,6 +37,9 @@ func packageMLInfer(env *runtime.Env) runtime.Value {
 			mo := args[2].Obj.(*runtime.MapObj)
 			if v, ok := mo.Vals["timeout"]; ok {
 				if n, e := runtime.AsInt(v); e == nil {
+					if n <= 0 || n > 3600 {
+						return errRes("timeout must be between 1 and 3600 seconds", "mlinfer"), nil
+					}
 					timeout = time.Duration(n) * time.Second
 				}
 			}
@@ -65,8 +67,14 @@ func packageMLInfer(env *runtime.Env) runtime.Value {
 		}
 		base := strings.TrimRight(args[0].String(), "/")
 		model := args[1].String()
-		input, _ := asMap(args[2])
-		url := fmt.Sprintf("%s/v1/models/%s/infer", base, model)
+		if model == "" {
+			return errRes("mlinfer.onnx requires a model", "mlinfer"), nil
+		}
+		input, err := asMap(args[2])
+		if err != nil {
+			return errRes("mlinfer.onnx input must be a map", "mlinfer"), nil
+		}
+		url := fmt.Sprintf("%s/v1/models/%s/infer", base, url.PathEscape(model))
 		return doInferenceRequest(url, input, map[string]string{"Content-Type": "application/json"}, 30*time.Second)
 	}, 4)
 
@@ -98,7 +106,13 @@ func packageMLInfer(env *runtime.Env) runtime.Value {
 		}
 		base := strings.TrimRight(args[0].String(), "/")
 		model := args[1].String()
-		input, _ := asMap(args[2])
+		if model == "" {
+			return errRes("mlinfer.triton requires a model", "mlinfer"), nil
+		}
+		input, err := asMap(args[2])
+		if err != nil {
+			return errRes("mlinfer.triton input must be a map", "mlinfer"), nil
+		}
 
 		// Triton expects {inputs: [{name, shape, datatype, data}]}
 		body := input
@@ -138,6 +152,9 @@ func packageMLInfer(env *runtime.Env) runtime.Value {
 			return errRes("mlinfer.hf(model, input, opts?)", "mlinfer"), nil
 		}
 		model := args[0].String()
+		if model == "" {
+			return errRes("mlinfer.hf requires a model", "mlinfer"), nil
+		}
 		apiKey := ""
 		if k, ok := getenv(env, "HF_API_KEY"); ok {
 			apiKey = k
@@ -236,11 +253,7 @@ func packageMLInfer(env *runtime.Env) runtime.Value {
 		lo := args[1].Obj.(*runtime.ListObj)
 		inputs := make([]any, len(lo.Items))
 		for i, item := range lo.Items {
-			if m, err := asMap(item); err == nil {
-				inputs[i] = m
-			} else {
-				inputs[i] = item.String()
-			}
+			inputs[i] = valueToGo(item)
 		}
 
 		body := map[string]any{"inputs": inputs}
@@ -251,9 +264,18 @@ func packageMLInfer(env *runtime.Env) runtime.Value {
 	return p
 }
 
-func doInferenceRequest(url string, body map[string]any, headers map[string]string, timeout time.Duration) (runtime.Value, error) {
-	bodyJSON, _ := json.Marshal(body)
-	req, _ := http.NewRequest("POST", url, strings.NewReader(string(bodyJSON)))
+func doInferenceRequest(rawURL string, body any, headers map[string]string, timeout time.Duration) (runtime.Value, error) {
+	if err := validateInferenceURL(rawURL); err != nil {
+		return errRes(err.Error(), "mlinfer"), nil
+	}
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return errRes("inference request JSON: "+err.Error(), "mlinfer"), nil
+	}
+	req, err := http.NewRequest(http.MethodPost, rawURL, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return errRes("inference request: "+err.Error(), "mlinfer"), nil
+	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
@@ -264,19 +286,57 @@ func doInferenceRequest(url string, body map[string]any, headers map[string]stri
 		return errRes("inference request: "+err.Error(), "mlinfer"), nil
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 400 {
-		return errRes(fmt.Sprintf("inference HTTP %d: %s", resp.StatusCode, string(respBody)), "mlinfer"), nil
+	respBody, err := readInferenceBody(resp.Body)
+	if err != nil {
+		return errRes("inference response: "+err.Error(), "mlinfer"), nil
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return errRes(fmt.Sprintf("inference HTTP %d: %s", resp.StatusCode, responsePreview(respBody)), "mlinfer"), nil
 	}
 
 	var result any
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return runtime.Ok(runtime.Str(string(respBody))), nil
+		return errRes("inference response was not valid JSON: "+err.Error(), "mlinfer"), nil
 	}
 	return runtime.Ok(goToValue(result)), nil
 }
 
+const maxInferenceBody = 32 << 20
+
+func validateInferenceURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("inference URL must be an absolute HTTP(S) URL")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("inference URL must use http or https")
+	}
+	return nil
+}
+
+func readInferenceBody(r io.Reader) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, maxInferenceBody+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxInferenceBody {
+		return nil, fmt.Errorf("response exceeds %d MiB", maxInferenceBody/(1<<20))
+	}
+	return body, nil
+}
+
+func responsePreview(body []byte) string {
+	const maxPreview = 4096
+	if len(body) <= maxPreview {
+		return string(body)
+	}
+	return string(body[:maxPreview]) + "…"
+}
+
 func checkHealth(url string) (runtime.Value, error) {
+	if err := validateInferenceURL(url); err != nil {
+		return runtime.Ok(runtime.Bool(false)), nil
+	}
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
@@ -287,16 +347,25 @@ func checkHealth(url string) (runtime.Value, error) {
 }
 
 func doGet(url string) (runtime.Value, error) {
+	if err := validateInferenceURL(url); err != nil {
+		return errRes(err.Error(), "mlinfer"), nil
+	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
 		return errRes(err.Error(), "mlinfer"), nil
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := readInferenceBody(resp.Body)
+	if err != nil {
+		return errRes("inference response: "+err.Error(), "mlinfer"), nil
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return errRes(fmt.Sprintf("inference HTTP %d: %s", resp.StatusCode, responsePreview(body)), "mlinfer"), nil
+	}
 	var result any
 	if err := json.Unmarshal(body, &result); err != nil {
-		return runtime.Ok(runtime.Str(string(body))), nil
+		return errRes("inference response was not valid JSON: "+err.Error(), "mlinfer"), nil
 	}
 	return runtime.Ok(goToValue(result)), nil
 }

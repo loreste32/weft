@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -216,25 +220,210 @@ func cmdStdlib(args []string) int {
 }
 
 func stdlibMemberInfo(pkg, member string) int {
+	members := weft.StdlibMembers(pkg)
+	if members == nil {
+		fmt.Fprintf(os.Stderr, "unknown stdlib package %q\nrun: weft stdlib  # list all packages\n", pkg)
+		return 1
+	}
+	known := false
+	for _, candidate := range members {
+		if candidate == member {
+			known = true
+			break
+		}
+	}
+	if !known {
+		fmt.Fprintf(os.Stderr, "unknown stdlib member %q\n", pkg+"."+member)
+		fmt.Fprintf(os.Stderr, "available members: %s\n", strings.Join(members, ", "))
+		return 1
+	}
+
 	sig, detail := weft.StdlibMemberHelp(pkg, member)
 	if sig != "" {
 		fmt.Printf("\n  %s\n  %s\n\n", sig, detail)
 	} else {
 		fmt.Printf("\n  %s.%s\n\n", pkg, member)
 	}
+	if sig == "" || !canProbeWithoutArgs(sig) {
+		if sig != "" && !canProbeWithoutArgs(sig) {
+			fmt.Println("  (not run: this member requires arguments)")
+			fmt.Println()
+		}
+		return 0
+	}
 
-	// try to run zero-arg functions and show the result
+	// Run zero-argument functions and render their result with labels where
+	// the shape has well-defined units or ordering. Capture the probe so a
+	// failed lookup cannot look like a successful command.
 	src := fmt.Sprintf("fn main -> Result { say(json.pretty(%s.%s()?)) }", pkg, member)
-	ctx := weft.New(weft.Options{Stdout: os.Stdout, Stderr: os.Stderr})
-	err := ctx.RunSource(nil, "stdlib-probe.weft", src)
+	var output bytes.Buffer
+	ctx := weft.New(weft.Options{Stdout: &output, Stderr: os.Stderr})
+	err := ctx.RunSource(context.Background(), "stdlib-probe.weft", src)
 	if err != nil {
+		if strings.Contains(sig, "-> Result") {
+			fmt.Fprintf(os.Stderr, "unable to run %s.%s: %v\n", pkg, member, err)
+			return 1
+		}
 		// try without ? (non-Result functions)
 		src = fmt.Sprintf("fn main { say(json.pretty(%s.%s())) }", pkg, member)
-		ctx = weft.New(weft.Options{Stdout: os.Stdout, Stderr: os.Stderr})
-		ctx.RunSource(nil, "stdlib-probe.weft", src)
+		output.Reset()
+		ctx = weft.New(weft.Options{Stdout: &output, Stderr: os.Stderr})
+		if fallbackErr := ctx.RunSource(context.Background(), "stdlib-probe.weft", src); fallbackErr != nil {
+			fmt.Fprintf(os.Stderr, "unable to run %s.%s: %v\n", pkg, member, fallbackErr)
+			return 1
+		}
 	}
+	printStdlibProbe(pkg, member, output.Bytes())
 	fmt.Println()
 	return 0
+}
+
+func canProbeWithoutArgs(sig string) bool {
+	start := strings.IndexByte(sig, '(')
+	if start < 0 {
+		return false
+	}
+	end := strings.IndexByte(sig[start+1:], ')')
+	if end < 0 {
+		return false
+	}
+	params := strings.TrimSpace(sig[start+1 : start+1+end])
+	if params == "" {
+		return true
+	}
+	for _, param := range strings.Split(params, ",") {
+		param = strings.TrimSpace(param)
+		if !strings.HasSuffix(param, "?") {
+			return false
+		}
+	}
+	return true
+}
+
+func printStdlibProbe(pkg, member string, raw []byte) {
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		fmt.Print(string(raw))
+		return
+	}
+
+	switch pkg + "." + member {
+	case "sysinfo.memory":
+		if m, ok := value.(map[string]any); ok {
+			printByteSummary(m, "available")
+			return
+		}
+	case "sysinfo.disk":
+		if m, ok := value.(map[string]any); ok {
+			printByteSummary(m, "free")
+			if path, ok := m["path"].(string); ok && path != "" {
+				fmt.Printf("  path: %s\n", path)
+			}
+			return
+		}
+	case "sysinfo.loadavg":
+		if values, ok := value.([]any); ok && len(values) >= 3 {
+			fmt.Println("  1m:", values[0])
+			fmt.Println("  5m:", values[1])
+			fmt.Println("  15m:", values[2])
+			return
+		}
+	case "sysinfo.uptime":
+		if m, ok := value.(map[string]any); ok {
+			if seconds, ok := m["seconds"]; ok {
+				fmt.Printf("  seconds: %v\n", seconds)
+			}
+			if human, ok := m["human"].(string); ok {
+				fmt.Printf("  duration: %s\n", human)
+			}
+			return
+		}
+	case "sysinfo.cpu_count":
+		fmt.Printf("  logical CPUs visible to this process: %v\n", value)
+		return
+	case "proc.self":
+		if m, ok := value.(map[string]any); ok {
+			printProcessSummary(m)
+			return
+		}
+	}
+
+	var pretty bytes.Buffer
+	if err := json.Indent(&pretty, raw, "", "  "); err == nil {
+		fmt.Print(pretty.String())
+	} else {
+		fmt.Print(string(raw))
+	}
+}
+
+func printByteSummary(m map[string]any, availableKey string) {
+	for _, key := range []string{"total", availableKey, "used"} {
+		if value, ok := numberValue(m[key]); ok {
+			fmt.Printf("  %-10s %s (%s bytes)\n", key+":", formatBytes(value), formatInteger(value))
+		}
+	}
+	if percent, ok := numberValue(m["percent"]); ok {
+		fmt.Printf("  %-10s %.2f%% used\n", "percent:", percent)
+	}
+	if availableKey == "free" {
+		fmt.Println("  note: free is space available to the current user")
+	}
+	if unit, ok := m["unit"].(string); ok && unit != "" {
+		fmt.Printf("  unit: %s\n", unit)
+	}
+}
+
+func printProcessSummary(m map[string]any) {
+	labels := []struct {
+		key   string
+		label string
+	}{
+		{"pid", "pid"},
+		{"ppid", "parent pid"},
+		{"uid", "user id"},
+		{"gid", "group id"},
+		{"user", "user"},
+		{"group", "group"},
+		{"executable", "executable"},
+		{"cwd", "working directory"},
+	}
+	for _, item := range labels {
+		if value, ok := m[item.key]; ok && value != nil {
+			fmt.Printf("  %-19s %v\n", item.label+":", value)
+		}
+	}
+}
+
+func numberValue(value any) (float64, bool) {
+	switch number := value.(type) {
+	case float64:
+		return number, true
+	case json.Number:
+		parsed, err := number.Float64()
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func formatInteger(value float64) string {
+	return strconv.FormatInt(int64(math.Round(value)), 10)
+}
+
+func formatBytes(value float64) string {
+	if value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		return "unknown"
+	}
+	units := []string{"B", "KiB", "MiB", "GiB", "TiB", "PiB"}
+	unit := 0
+	for value >= 1024 && unit < len(units)-1 {
+		value /= 1024
+		unit++
+	}
+	if unit == 0 {
+		return fmt.Sprintf("%.0f %s", value, units[unit])
+	}
+	return fmt.Sprintf("%.2f %s", value, units[unit])
 }
 
 func cmdFmt(args []string) int {

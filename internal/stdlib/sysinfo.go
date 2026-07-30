@@ -50,7 +50,7 @@ func packageSysinfo() runtime.Value {
 		return runtime.Ok(runtime.List(items...)), nil
 	}, 0)
 
-	// sysinfo.memory() -> Result[map]  {total, available, used, percent}
+	// sysinfo.memory() -> Result[map]  byte counts plus human-readable fields.
 	set(p, "memory", func(args []runtime.Value) (runtime.Value, error) {
 		info, err := sysMemory()
 		if err != nil {
@@ -66,10 +66,20 @@ func packageSysinfo() runtime.Value {
 		put("available", runtime.Int(int64(info.available)))
 		put("used", runtime.Int(int64(info.used)))
 		put("percent", runtime.Float(info.percent))
+		// Keep the original numeric keys for compatibility. These explicit names
+		// make the unit and meaning unambiguous for new callers.
+		put("unit", runtime.Str("bytes"))
+		put("total_bytes", runtime.Int(int64(info.total)))
+		put("available_bytes", runtime.Int(int64(info.available)))
+		put("used_bytes", runtime.Int(int64(info.used)))
+		put("total_human", runtime.Str(formatBytes(info.total)))
+		put("available_human", runtime.Str(formatBytes(info.available)))
+		put("used_human", runtime.Str(formatBytes(info.used)))
+		put("percent_used", runtime.Float(info.percent))
 		return runtime.Ok(m), nil
 	}, 0)
 
-	// sysinfo.disk(path?) -> Result[map]  {total, free, used, percent, path}
+	// sysinfo.disk(path?) -> Result[map]  filesystem byte counts and path.
 	set(p, "disk", func(args []runtime.Value) (runtime.Value, error) {
 		path := "/"
 		if len(args) >= 1 && args[0].Kind != runtime.KindNull {
@@ -89,6 +99,15 @@ func packageSysinfo() runtime.Value {
 		put("free", runtime.Int(int64(info.free)))
 		put("used", runtime.Int(int64(info.used)))
 		put("percent", runtime.Float(info.percent))
+		put("unit", runtime.Str("bytes"))
+		put("total_bytes", runtime.Int(int64(info.total)))
+		put("free_bytes", runtime.Int(int64(info.free)))
+		put("used_bytes", runtime.Int(int64(info.used)))
+		put("total_human", runtime.Str(formatBytes(info.total)))
+		put("free_human", runtime.Str(formatBytes(info.free)))
+		put("used_human", runtime.Str(formatBytes(info.used)))
+		put("percent_used", runtime.Float(info.percent))
+		put("free_scope", runtime.Str("available to the current user"))
 		put("path", runtime.Str(path))
 		return runtime.Ok(m), nil
 	}, 1)
@@ -184,6 +203,21 @@ func humanDuration(sec float64) string {
 	return fmt.Sprintf("%dm", mins)
 }
 
+func formatBytes(value uint64) string {
+	const base = 1024.0
+	units := []string{"B", "KiB", "MiB", "GiB", "TiB", "PiB"}
+	amount := float64(value)
+	unit := 0
+	for amount >= base && unit < len(units)-1 {
+		amount /= base
+		unit++
+	}
+	if unit == 0 {
+		return fmt.Sprintf("%.0f %s", amount, units[unit])
+	}
+	return fmt.Sprintf("%.2f %s", amount, units[unit])
+}
+
 // parseMeminfo reads /proc/meminfo (Linux).
 func parseMeminfo() (memInfo, error) {
 	data, err := os.ReadFile("/proc/meminfo")
@@ -197,13 +231,22 @@ func parseMeminfo() (memInfo, error) {
 			continue
 		}
 		key := strings.TrimSuffix(parts[0], ":")
-		val, _ := strconv.ParseUint(parts[1], 10, 64)
+		val, parseErr := strconv.ParseUint(parts[1], 10, 64)
+		if parseErr != nil {
+			return memInfo{}, fmt.Errorf("invalid /proc/meminfo value for %s: %w", key, parseErr)
+		}
 		fields[key] = val * 1024 // kB to bytes
 	}
 	total := fields["MemTotal"]
 	avail := fields["MemAvailable"]
 	if avail == 0 {
 		avail = fields["MemFree"] + fields["Buffers"] + fields["Cached"]
+	}
+	if total == 0 {
+		return memInfo{}, fmt.Errorf("/proc/meminfo did not report total memory")
+	}
+	if avail > total {
+		avail = total
 	}
 	used := total - avail
 	pct := 0.0
@@ -225,7 +268,11 @@ func parseLoadAvg() ([]float64, error) {
 	}
 	avgs := make([]float64, 3)
 	for i := 0; i < 3; i++ {
-		avgs[i], _ = strconv.ParseFloat(parts[i], 64)
+		value, parseErr := strconv.ParseFloat(parts[i], 64)
+		if parseErr != nil {
+			return nil, fmt.Errorf("invalid /proc/loadavg value %q: %w", parts[i], parseErr)
+		}
+		avgs[i] = value
 	}
 	return avgs, nil
 }

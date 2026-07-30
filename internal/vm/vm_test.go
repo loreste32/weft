@@ -3,12 +3,38 @@ package vm_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/loreste/weft/internal/vm"
 	"github.com/loreste/weft/pkg/weft"
 )
+
+func TestRunSourceHonorsCancellationDuringLoop(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runDone := make(chan error, 1)
+	go func() {
+		runDone <- weft.New(weft.Options{}).RunSource(ctx, "cancel.weft", `
+fn main {
+    while true { }
+}`)
+	}()
+
+	time.Sleep(25 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-runDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("want context cancellation, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("VM did not stop after context cancellation")
+	}
+}
 
 func run(t *testing.T, src string) string {
 	t.Helper()

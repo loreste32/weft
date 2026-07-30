@@ -196,7 +196,27 @@ func SaveLock(dir string, l *Lockfile) error {
 		return err
 	}
 	b = append(b, '\n')
-	return os.WriteFile(filepath.Join(dir, "weft.lock"), b, 0o644)
+
+	// Replace the lock atomically so a failed write cannot leave a truncated
+	// lockfile that disagrees with the vendor tree.
+	tmp, err := os.CreateTemp(dir, ".weft-lock-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o644); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(b); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, filepath.Join(dir, "weft.lock"))
 }
 
 // Init creates a minimal weft.json in dir.

@@ -122,6 +122,13 @@ func (vm *VM) readU16(fr *frame) uint16 {
 
 func (vm *VM) run() (runtime.Value, error) {
 	for len(vm.frames) > 0 {
+		// Builtins already receive the execution context, but pure VM code can
+		// otherwise spin forever without giving cancellation a chance to be
+		// observed. Check between instructions so RunSource can interrupt
+		// CPU-bound scripts as well as I/O-bound ones.
+		if err := vm.Env.Context().Err(); err != nil {
+			return runtime.Null(), err
+		}
 		if vm.fatal != nil {
 			return runtime.Null(), vm.wrapErr(vm.fatal)
 		}

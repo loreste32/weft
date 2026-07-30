@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/loreste/weft/internal/llmpack"
 )
@@ -53,6 +54,11 @@ func PrepareTrainBundle(opts PrepareOptions) error {
 		extra, err := llmpack.LoadExamplesFile(opts.From)
 		if err != nil {
 			return fmt.Errorf("private data --from: %w", err)
+		}
+		for _, example := range extra {
+			if err := llmpack.ValidateExample(example); err != nil {
+				return fmt.Errorf("private data --from: %w", err)
+			}
 		}
 		privateN = len(extra)
 		exs = append(exs, extra...)
@@ -153,8 +159,13 @@ func TrainStats(expand bool) error {
 	fmt.Println()
 	fmt.Printf("avg output chars: %.0f\n", st.AvgOut)
 	fmt.Println("tags:")
-	for t, n := range st.Tags {
-		fmt.Printf("  %-12s %d\n", t, n)
+	tags := make([]string, 0, len(st.Tags))
+	for tag := range st.Tags {
+		tags = append(tags, tag)
+	}
+	sort.Strings(tags)
+	for _, tag := range tags {
+		fmt.Printf("  %-12s %d\n", tag, st.Tags[tag])
 	}
 	return nil
 }

@@ -2,6 +2,7 @@ package weft
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,10 +61,15 @@ func PrintPresets() {
 
 // isCloudOpenAI reports whether base URL is a public OpenAI host (data leaves your network).
 func isCloudOpenAI(base string) bool {
-	b := strings.ToLower(strings.TrimSpace(base))
-	b = strings.TrimPrefix(b, "https://")
-	b = strings.TrimPrefix(b, "http://")
-	return strings.HasPrefix(b, "api.openai.com") || b == "" || b == "api.openai.com/v1"
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return true // empty resolves to the public OpenAI default
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(u.Hostname(), "api.openai.com")
 }
 
 // OfflinePackOptions configures an air-gapped training bundle.

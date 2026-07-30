@@ -11,6 +11,9 @@ func sysDisk(path string) (diskInfo, error) {
 	}
 	total := stat.Blocks * uint64(stat.Bsize)
 	free := stat.Bavail * uint64(stat.Bsize)
+	if free > total {
+		free = total
+	}
 	used := total - free
 	pct := 0.0
 	if total > 0 {
