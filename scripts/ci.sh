@@ -316,11 +316,13 @@ fi
 doc_ollama=$(WEFT_PROVIDER=ollama /tmp/weft-ci doctor)
 echo "$doc_ollama" | grep -q ollama
 echo "== private train =="
-presets=$(/tmp/weft-ci train presets)
+rm -rf /tmp/ci-weft-airgap
+presets=$(/tmp/weft-ci train presets 2>&1)
 echo "$presets" | grep -q qwen-7b
-/tmp/weft-ci train offline -o /tmp/ci-weft-airgap
-test -f /tmp/ci-weft-airgap/PRIVACY.md
-test -f /tmp/ci-weft-airgap/train_private.sh
+/tmp/weft-ci train offline -o /tmp/ci-weft-airgap 2>&1
+echo "airgap contents:" && ls /tmp/ci-weft-airgap/
+test -f /tmp/ci-weft-airgap/PRIVACY.md || { echo "PRIVACY.md missing"; exit 1; }
+test -f /tmp/ci-weft-airgap/train_private.sh || { echo "train_private.sh missing"; exit 1; }
 # cloud without --allow-upload must refuse
 set +e
 /tmp/weft-ci train finetune --backend openai --skip-prepare --data /tmp/ci-weft-sft --dry-run >/tmp/ci-priv.out 2>/tmp/ci-priv.err
