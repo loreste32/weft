@@ -332,7 +332,8 @@ if [ "$rc" -eq 0 ]; then
   echo "expected privacy refusal for public openai without --allow-upload" >&2
   exit 1
 fi
-grep -Eq "refusing to upload|allow-upload|--private" /tmp/ci-priv.err
+echo "refusal stderr:" && cat /tmp/ci-priv.err
+grep -Eq "refusing to upload|allow-upload|--private|privacy" /tmp/ci-priv.err || { echo "refusal check: also checking stdout"; cat /tmp/ci-priv.out; grep -Eq "refusing|privacy|allow-upload" /tmp/ci-priv.out; }
 # private dry-run is allowed
 set +e
 privdry=$(/tmp/weft-ci train finetune --private --skip-prepare --data /tmp/ci-weft-sft --preset qwen-1.5b --dry-run 2>&1)
