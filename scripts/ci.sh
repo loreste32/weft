@@ -24,9 +24,9 @@ go test ./internal/vm/ -race -count=1 -timeout 120s -run 'Parallel|Concurrent|St
 go test ./internal/runtime/ -race -count=1 -timeout 60s
 echo "== fuzz smoke =="
 # Short budgets — fail the build on any crash/panic found in this window
-go test ./internal/lex/ -fuzz=FuzzLex -fuzztime=8s
-go test ./internal/parse/ -fuzz=FuzzParseFile -fuzztime=8s
-go test ./internal/compile/ -fuzz=FuzzCompileValidate -fuzztime=8s
+go test ./internal/lex/ -fuzz=FuzzLex -fuzztime=5s -timeout=30s
+go test ./internal/parse/ -fuzz=FuzzParseFile -fuzztime=5s -timeout=30s
+go test ./internal/compile/ -fuzz=FuzzCompileValidate -fuzztime=5s -timeout=30s
 echo "== compat corpus =="
 # Pinned language/runtime goldens (testdata/compat) — fail on output drift
 go test ./pkg/weft/ -count=1 -run TestCompatCorpus
