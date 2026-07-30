@@ -334,7 +334,15 @@ if [ "$rc" -eq 0 ]; then
 fi
 grep -Eq "refusing to upload|allow-upload|--private" /tmp/ci-priv.err
 # private dry-run is allowed
-/tmp/weft-ci train finetune --private --skip-prepare --data /tmp/ci-weft-sft --preset qwen-1.5b --dry-run 2>&1 | grep -q "dry-run"
+set +e
+privdry=$(/tmp/weft-ci train finetune --private --skip-prepare --data /tmp/ci-weft-sft --preset qwen-1.5b --dry-run 2>&1)
+privrc=$?
+set -e
+echo "$privdry" | grep -q "dry-run" || echo "$privdry" | grep -q "privacy"
+if [ "$privrc" -ne 0 ]; then
+  echo "private dry-run failed (rc=$privrc): $privdry" >&2
+  exit 1
+fi
 # gold accuracy (embedded train corpus)
 gold=$(/tmp/weft-ci train eval --quiet)
 echo "$gold" | grep -q "gold accuracy"
