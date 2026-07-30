@@ -2,6 +2,27 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
+## [0.4.6] — 2026-07-30
+
+### Added
+- **stdlib live probe** — `weft stdlib sysinfo.memory` now runs the function and shows human-readable output (bytes → GiB, labeled fields)
+- **sysinfo enriched** — memory/disk return human-readable sizes, units, and scoped labels
+- **proc hardening** — rejects dangerous inputs (PID 0, negative signals, blank search)
+- **mlinfer hardening** — URL validation, response size cap (32 MiB), input sanitization
+- 18 new tests (1360 total across 21 packages)
+
+## [0.4.5] — 2026-07-30
+
+### Added
+- **`weft info`** — comprehensive system report: memory, disk, uptime, load, network interfaces, configured services, weft version
+- **`weft sysinfo`** — alias for `weft info`
+- **Helpful CLI suggestions** — typo a command and get the right one (`weft search` → `weft registry search`, 30+ mappings)
+- **`weft stdlib` grouped by category** — LLM/AI, Web, Data, DevOps, Network, etc.
+- **`weft stdlib <pkg>`** — shows signatures and descriptions for all members
+- **`weft stdlib <pkg.member>`** — shows signature, description, and live output
+- **REPL** — `help`, `exit`, `quit` work without colon prefix
+- **Help entries for all 76 stdlib packages** — sysinfo, proc, netutil, mcp, deepgram, elevenlabs, mlinfer, governor, supervisor, cluster, and 30+ more
+
 ## [0.4.4] — 2026-07-29
 
 ### Added
