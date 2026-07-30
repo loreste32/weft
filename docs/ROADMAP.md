@@ -2,7 +2,7 @@
 
 Weft is for agent scripts, telecom, HTTP glue, and ops tooling. It stays small on purpose.
 
-## Where we are now (0.4.3)
+## Where we are now (0.4.4)
 
 Weft is on the **0.4.x** line (0.3.x complete — see [VERSIONING.md](VERSIONING.md)). Positioning and maturity: [STABILITY.md](STABILITY.md). You can build the binary, write real scripts, and run them on a single Go runtime.
 
@@ -27,7 +27,7 @@ Weft is on the **0.4.x** line (0.3.x complete — see [VERSIONING.md](VERSIONING
 - Collections: `str`, `math`, `time`, `re`, `iter`, `collections`, `heap`, `bisect`, `pipe`, `functools`, `copy`, `traceback`  
 - Full list: `weft stdlib`  
 
-**10 registry modules** at [registry.weftproject.dev](https://registry.weftproject.dev)
+**14 registry modules** at [registry.weftproject.dev](https://registry.weftproject.dev)
 
 | Module | What |
 |--------|------|
@@ -41,6 +41,12 @@ Weft is on the **0.4.x** line (0.3.x complete — see [VERSIONING.md](VERSIONING
 | `cache` | In-memory key-value cache with TTL |
 | `color` | ANSI terminal colors for CLI tools |
 | `jwt` | JWT token decode and inspection |
+| `http_router` | Routing with path params, middleware, groups, CORS |
+| `template` | String templating with placeholders, loops, HTML escaping |
+| `validate` | Data validation for forms/APIs |
+| `cron` | Recurring task scheduler |
+
+Plus 4 local ML-stack packages in `packages/` (`dataframe`, `embed`, `experiment`, `metrics`) — install via path/git.
 
 **Registry and packages**
 
@@ -60,7 +66,7 @@ Weft is on the **0.4.x** line (0.3.x complete — see [VERSIONING.md](VERSIONING
 - `weft update` — self-update binary · `weft upgrade` — upgrade packages  
 - `weft gen "task" -o out.weft` — LLM generates Weft from English  
 - `weft train prepare|finetune|eval` — private fine-tuning pipeline  
-- LSP: completion, hover, signatures, definition, symbols, diagnostics, format  
+- LSP: completion, hover, signatures, definition, references, rename, extract-function, auto-import, diagnostics, format  
 - VS Code and JetBrains editor plugins  
 
 **Distribution**
@@ -71,7 +77,7 @@ Weft is on the **0.4.x** line (0.3.x complete — see [VERSIONING.md](VERSIONING
 - DNF repo (Fedora/RHEL): `dnf install weft`  
 - Homebrew formula  
 - Dockerfile for containers  
-- GitHub Release with binaries for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64  
+- GitHub Release with binaries for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64 — automated on `v*` tags (`.github/workflows/release.yml`)  
 - macOS binaries ad-hoc signed for Gatekeeper  
 
 **Still rough or incomplete**
@@ -83,23 +89,28 @@ Weft is on the **0.4.x** line (0.3.x complete — see [VERSIONING.md](VERSIONING
 - Binary is convenience-first (~40MB with drivers); not a minimal embed  
 - Concurrent-by-default `map`/`filter` need discipline (`seq_map` for stateful work)  
 - Package signatures prove key identity, not human ownership (trust store helps)  
+- DAP `evaluate` resolves identifiers only — no expression evaluation, `setVariable`, or restart yet  
+- Windows `sysinfo` memory/disk return "not implemented"; Unix is full  
+- Browser Wasm playground stubs 29 network/db/LLM packages — it is a pure-language sandbox  
+- Slim build stubs the db/broker packages (clear runtime error, but no build-time warning)  
+- CI executes on Linux only; macOS/Windows are cross-compiled, never run  
 
 In one line: **useful for agents, telecom, and ops scripts when versions are pinned and tested; not a finished ecosystem.**
 
 ## Where we hope to go
 
-The **0.3.x line is complete** (0.3.31–0.4.3). Everything shipped.
+The **0.3.x line is complete** (0.3.31–0.4.4). Everything shipped.
 
-**Completed in 0.3.x:** registry modules (`http_router`, `template`, `validate`, `cron` — 14 total), changelog page, `weft doc`, `weft lint`, `weft build`, `weft test --race/--mem/--timeout`, `cluster`/`governor`/`supervisor` stdlib, `deepgram`/`elevenlabs`/`mlinfer`, MCP, telecom with FreeSWITCH/Asterisk, website with 36 doc pages.
+**Completed in 0.3.x:** changelog page, `weft doc`, `weft lint`, `weft build`, `weft test --race/--mem/--timeout`, `cluster`/`governor`/`supervisor` stdlib, `deepgram`/`elevenlabs`/`mlinfer`, MCP, telecom with FreeSWITCH/Asterisk, website with 36 doc pages. (0.4.0 then added the `http_router`, `template`, `validate`, `cron` registry modules — 14 total.)
 
 ## 0.4.x — make it solid
 
-**Shipped in 0.4.x so far:** optional type annotations + `--strict`, DAP debugging, browser Wasm playground, registry namespace trust, telecom SIP REFER / WebRTC bridge, VS Code 0.4.3 (LSP types + DAP), bytecode validation, fuzz/race/bench smoke targets.
+**Shipped in 0.4.x so far (0.4.0–0.4.4):** optional type annotations + `--strict`, DAP debugging, browser Wasm playground, registry namespace trust, telecom SIP REFER / WebRTC bridge, VS Code 0.4.4 (LSP types + DAP), bytecode validation, fuzz/race/bench smoke targets, grouped imports, registry auto-fetch, third-party git imports, LSP references/rename/extract/auto-import, REPL tab completion + multi-line polish, compat corpus expansion, glue benchmarks vs Python, reference apps (`ref_agent_ops`, `ref_http_glue`, `ref_ops`), tag-triggered release workflow.
 
 **Reliability (priority now — prove the core):**
 - Language/VM fuzzing and malformed-input testing (`make fuzz-smoke`) — done (smoke + weekly deep)  
 - Race detector + concurrency stress (`make race-smoke`) — done  
-- Cross-platform reproducible releases — done (`make release-smoke`)  
+- Cross-platform reproducible releases — done (`make release-smoke` + tag-triggered `.github/workflows/release.yml` publishing binaries, checksums, and the VSIX)  
 - Compatibility / gold corpus discipline — done (`testdata/compat`, still expand)  
 - Benchmarks vs Python for glue scripts — done (`make bench` + `make bench-glue`)  
 - Optional stdlib build tags / binary size — done (`make build-slim`)  
@@ -112,12 +123,22 @@ The **0.3.x line is complete** (0.3.31–0.4.3). Everything shipped.
 
 **IDE & tooling:**
 - LSP: locals, multi-file rename, extract-function — done  
-- VS Code extension 0.4.3 VSIX packaged; Marketplace publish needs `VSCE_PAT`
+- VS Code extension 0.4.4 VSIX packaged; Marketplace publish needs `VSCE_PAT`
+
+**Release & platform gaps (next):**
+- macOS + Windows CI runners — today those targets are cross-compiled, never executed  
+- Dockerfile built and smoke-tested in CI (currently unverified)  
+- Windows `sysinfo` memory/disk implementation  
+- DAP: real expression evaluation, `setVariable`, exception breakpoints  
+- Live-broker test coverage for `amqp`/`mongo`/`nats` ([STDLIB_GAPS.md](STDLIB_GAPS.md))  
+- LSP tests for rename / references / extract / auto-import  
+- Bring `install.sh` / APT / DNF / Homebrew packaging automation in-repo (maintained out-of-tree today; this repo alone cannot reproduce those channels)  
+- Audit registry.weftproject.dev contents against `packages/` — publish any of the 14 modules that are missing  
 
 **Scale & adoption:**
 - Key rotation policy for namespaces  
 - More telecom (SIP REFER already partially in-module)  
-- Production-quality reference apps (small set, polished)  
+- More production-quality reference apps (initial set shipped in 0.4.2; polish and expand)  
 
 **Probably never in core**
 

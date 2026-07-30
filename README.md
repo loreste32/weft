@@ -15,7 +15,7 @@ It handles errors with `Result` / `?` instead of exceptions, runs concurrent wor
 
 | | |
 |--|--|
-| Version | 0.4.3 (`main` branch) |
+| Version | 0.4.4 (`main` branch) |
 | Website | [weftproject.dev](https://weftproject.dev) |
 | Install | `curl -fsSL https://weftproject.dev/install.sh \| sh` |
 | Docs | [weftproject.dev/docs.html](https://weftproject.dev/docs.html) |
@@ -126,7 +126,7 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 - `weft upgrade` — upgrade installed packages
 - `weft lsp` — Language Server (completion, hover, rename, diagnostics)
 
-**10 registry modules** at [registry.weftproject.dev](https://registry.weftproject.dev):
+**14 registry modules** at [registry.weftproject.dev](https://registry.weftproject.dev):
 
 | Module | What it does |
 |--------|-------------|
@@ -140,6 +140,12 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 | [cache](packages/cache/) | In-memory key-value cache with TTL |
 | [color](packages/color/) | ANSI terminal colors for CLI tools |
 | [jwt](packages/jwt/) | JWT token decode and inspection |
+| [http_router](packages/http_router/) | Routing with path params, middleware, groups, CORS |
+| [template](packages/template/) | String templating with placeholders, loops, HTML escaping |
+| [validate](packages/validate/) | Data validation for forms/APIs |
+| [cron](packages/cron/) | Recurring task scheduler with intervals and daily times |
+
+`packages/` also holds 4 local ML-stack packages — [dataframe](packages/dataframe/), [embed](packages/embed/), [experiment](packages/experiment/), [metrics](packages/metrics/) — installable via path/git (see `packages/index.json`).
 
 **Packages:**
 - Path and git imports into `vendor/`

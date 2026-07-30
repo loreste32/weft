@@ -2,7 +2,7 @@
   "name": "weft",
   "displayName": "Weft",
   "description": "Weft language support — syntax, LSP (types/hover/completion/extract/rename), snippets, and DAP debugging",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "publisher": "weft",
   "license": "Apache-2.0",
   "icon": "media/icon.png",

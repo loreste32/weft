@@ -18,9 +18,13 @@ import (
 	"github.com/loreste/weft/internal/vm"
 )
 
+// weftVersion is set at build time via -ldflags "-X main.weftVersion=..."
+// (see the wasm target in the Makefile, which derives it from pkg/weft.Version).
+var weftVersion = "dev-wasm"
+
 func main() {
 	js.Global().Set("runWeft", js.FuncOf(runWeft))
-	js.Global().Set("weftVersion", js.ValueOf("0.4.1-wasm"))
+	js.Global().Set("weftVersion", js.ValueOf(weftVersion))
 	// Keep Go runtime alive for JS callbacks
 	select {}
 }

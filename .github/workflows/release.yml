@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build and publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+
+      - name: Check tag matches pkg/weft.Version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          CODE=$(sed -n 's/^const Version = "\(.*\)"/\1/p' pkg/weft/weft.go)
+          if [ "$TAG" != "$CODE" ]; then
+            echo "tag v$TAG does not match pkg/weft.Version ($CODE)" >&2
+            exit 1
+          fi
+
+      - name: Build binaries (full + slim, 5 platforms)
+        run: |
+          set -euo pipefail
+          mkdir -p dist/bin
+          VERSION=$(sed -n 's/^const Version = "\(.*\)"/\1/p' pkg/weft/weft.go)
+          for pair in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            goos=${pair%/*}
+            goarch=${pair#*/}
+            ext=""
+            [ "$goos" = "windows" ] && ext=".exe"
+            for flavor in full slim; do
+              tags=""
+              suffix=""
+              if [ "$flavor" = "slim" ]; then
+                tags="-tags slim"
+                suffix="-slim"
+              fi
+              echo "  $goos/$goarch ($flavor)"
+              # shellcheck disable=SC2086
+              GOOS=$goos GOARCH=$goarch go build $tags -o "dist/bin/weft${ext}" ./cmd/weft
+              pkg="weft-${VERSION}-${goos}-${goarch}${suffix}"
+              if [ "$goos" = "windows" ]; then
+                (cd dist/bin && zip -q "../${pkg}.zip" "weft${ext}")
+              else
+                (cd dist/bin && tar -czf "../${pkg}.tar.gz" "weft${ext}")
+              fi
+              rm "dist/bin/weft${ext}"
+            done
+          done
+          (cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS)
+
+      - name: Package VS Code extension
+        run: |
+          bash scripts/package-vscode.sh
+          cp editors/vscode/weft-*.vsix dist/
+
+      - name: Artifacts
+        run: ls -la dist
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+
+      - name: Upload artifacts (manual run)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: weft-release-dist
+          path: dist/*

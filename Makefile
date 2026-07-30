@@ -4,6 +4,9 @@
 PREFIX ?= $(HOME)/.local
 BIN    ?= weft
 
+# Single version source: pkg/weft/weft.go (const Version).
+VERSION := $(shell sed -n 's/^const Version = "\(.*\)"/\1/p' pkg/weft/weft.go)
+
 build:
 	go build -o $(BIN) ./cmd/weft
 
@@ -42,7 +45,7 @@ wasm:
 	mkdir -p wasm
 	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" wasm/wasm_exec.js 2>/dev/null || \
 		cp "$$(go env GOROOT)/misc/wasm/wasm_exec.js" wasm/wasm_exec.js
-	GOOS=js GOARCH=wasm go build -o wasm/weft.wasm ./cmd/weft-wasm
+	GOOS=js GOARCH=wasm go build -ldflags "-X main.weftVersion=$(VERSION)-wasm" -o wasm/weft.wasm ./cmd/weft-wasm
 	@ls -lah wasm/weft.wasm
 	@echo "Open wasm/playground.html via a local server, e.g.: make wasm-serve"
 

@@ -49,7 +49,7 @@ Runnable offline recipes: **[`examples/cookbook/`](../examples/cookbook/)** (`01
 
 ## Agents, telecom & optional modules
 
-10 modules in the [public registry](https://registry.weftproject.dev). Install with `weft registry install <name>`.
+14 modules in the [public registry](https://registry.weftproject.dev). Install with `weft registry install <name>`.
 
 | Module | Role | Doc |
 |--------|------|-----|
@@ -58,6 +58,7 @@ Runnable offline recipes: **[`examples/cookbook/`](../examples/cookbook/)** (`01
 | **ml** | Embeddings, vectors, RAG index, metrics | [ML.md](ML.md) |
 | **tokensave** | Context thrift, memory, teach → train | [`packages/tokensave`](../packages/tokensave/) |
 | **retry** · **semver** · **cache** · **color** · **jwt** · **warp** | Ops utilities | [registry](https://registry.weftproject.dev) |
+| **http_router** · **template** · **validate** · **cron** | Web & app utilities | [registry](https://registry.weftproject.dev) |
 
 | Stdlib (binary) | Role | Doc |
 |-----------------|------|-----|

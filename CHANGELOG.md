@@ -2,6 +2,23 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
+## [0.4.4] — 2026-07-29
+
+### Added
+- **Release workflow** — `.github/workflows/release.yml`: pushing a `v*` tag builds full + slim binaries for 5 platforms with SHA256 checksums, packages the VS Code VSIX, and publishes a GitHub Release; the tag must match `pkg/weft.Version`
+- **VS Code extension 0.4.3** — `editors/vscode/weft-0.4.3.vsix` (matches language 0.4.3)
+
+### Fixed
+- **Wasm version drift** — the playground build derives its version from `pkg/weft.Version` via ldflags (was hardcoded `0.4.1-wasm`)
+
+## [0.4.3] — 2026-07-29
+
+### Added
+- **Grouped imports** — `use { "mold" "telecom" "cache" }`
+- **Registry auto-fetch** — a package missing from `vendor/` is downloaded from the registry on first `use`; disable with `WEFT_NO_AUTO_FETCH=1`
+- **Third-party git imports** — `use "github.com/user/repo"` auto-clones into `vendor/`; URL imports like `use "weftproject.dev/mold"` extract the package name
+- **LSP auto-import** — code action adds the `use` statement when you type `pkg.member`; covers all 76 stdlib packages and the registry modules
+
 ## [0.4.2] — 2026-07-29
 
 ### Added
@@ -17,11 +34,21 @@ All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](ht
 - **LSP extract function** — `refactor.extract.function` code action on a selection
 - **REPL tab completion** — interactive TTY: Tab for keywords/stdlib/`:`cmds, ↑/↓ history (via `golang.org/x/term`)
 - **VS Code extension 0.4.2** — `editors/vscode/weft-0.4.2.vsix` (weft-lsp 0.4.2)
+- **DAP debugger** — `weft debug --dap` speaks the Debug Adapter Protocol; VS Code adapter wired in `editors/vscode`
 
 ### Fixed
 - **Call under-arity** — missing args no longer become null then fail with `numeric op on int and null`; report `wrong number of arguments to name: have N, want M` at the call site
 - **Parse diagnostics** — unterminated strings show as such (not `ILLEGAL`); `use pkg::name` gets a clear path hint; missing `}` before `else` is called out; empty `match x {}` parses (compile still requires arms)
 - **REPL top-level `fn`/`type`/`const`** — no longer errors with `no main function`; definitions bind into the session env
+
+## [0.4.1] — 2026-07-29
+
+### Added
+- **LSP find-references** — `textDocument/references` (find all usages of an identifier)
+- **Telecom SIP REFER** — blind + attended transfer via FreeSWITCH (`sip_refer`)
+- **Telecom WebRTC bridge** — `webrtc_signal_server` (browser-to-SIP signaling), `click_to_call` (originate + bridge via ARI)
+- **VS Code extension 0.4.1** — `editors/vscode/weft-0.4.1.vsix`
+- **telecom module 0.3.0** published to the registry
 
 ## [0.4.0] — 2026-07-29
 
@@ -29,8 +56,6 @@ All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](ht
 - **Interactive playground** at [weftproject.dev/playground.html](https://weftproject.dev/playground.html) — try Weft in the browser with 8 examples, share links, server-side sandbox
 - **Browser Wasm runtime** — `make wasm` → `wasm/weft.wasm` + `wasm/playground.html` (client-side; network/db/llm packages stubbed)
 - **Registry namespace trust** — `weft registry trust|untrust|trusts`, server pins namespace signing keys, `/v1/namespaces.json`
-- **Telecom SIP REFER / WebRTC bridge** — blind/attended REFER, bridge_and_refer, WebRTC session refer/originate hooks
-- **VS Code extension 0.4.1** — DAP + typed LSP; `editors/vscode/weft-0.4.1.vsix`
 - **Reliability foundation** — bytecode `ValidateChunk`, lex/parse/compile fuzz, VM concurrency stress, `make race-smoke|fuzz-smoke|bench`, docs/STABILITY.md
 - **`weft doc`** — generate API docs from `pub fn` declarations and doc comments
 - **Better error messages** — parse errors now show the source line with a caret pointing at the problem
