@@ -71,9 +71,11 @@ func (c *Context) RunREPL(in io.Reader, out io.Writer) error {
 			switch {
 			case trim == ":q" || trim == ":quit" || trim == ":exit":
 				return nil
-			case trim == ":help" || trim == ":h":
+			case trim == ":help" || trim == ":h" || trim == "help":
 				fmt.Fprint(out, replHelp)
 				continue
+			case trim == "exit" || trim == "quit":
+				return nil
 			case trim == ":clear" || trim == ":c":
 				fmt.Fprint(out, "\033[H\033[2J")
 				continue

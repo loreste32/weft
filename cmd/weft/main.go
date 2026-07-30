@@ -375,7 +375,49 @@ Registry (public packages with ed25519 signing):
 	case "registry":
 		return cmdRegistry(args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n", args[0])
+		cmd := args[0]
+		// helpful suggestions for common mistakes
+		suggestions := map[string]string{
+			"sysinfo":    "weft stdlib sysinfo",
+			"search":     "weft registry search",
+			"info":       "weft registry info <name>",
+			"install":    "weft registry install <name>  (or: weft install for weft.json deps)",
+			"get":        "weft registry install <name>  (or: weft get <name> <path>)",
+			"packages":   "weft packages list",
+			"pkgs":       "weft packages list",
+			"publish":    "weft publish --key <name>",
+			"login":      "weft registry keygen <name>  (Weft uses ed25519 keys, not login)",
+			"add":        "weft registry install <name>",
+			"remove":     "weft packages  (then remove from weft.json)",
+			"start":      "weft run <file.weft>",
+			"exec":       "weft run <file.weft>",
+			"serve":      "weft run server.weft",
+			"compile":    "weft build -o <name>  (Weft is interpreted; build bundles a standalone binary)",
+			"repl":       "weft  (just run weft with no args for the REPL)",
+			"shell":      "weft  (REPL)",
+			"test-race":  "weft test --race",
+			"format":     "weft fmt",
+			"lint":       "weft lint",
+			"linter":     "weft lint",
+			"type-check": "weft check --types",
+			"typecheck":  "weft check --types",
+			"types":      "weft check --types",
+			"upgrade":    "weft upgrade  (upgrade installed packages)",
+			"update":     "weft update  (update weft itself)",
+			"mcp":        "weft mcp serve <file.weft>",
+			"debug":      "weft debug <file.weft>",
+			"profile":    "weft profile <file.weft>",
+			"doc":        "weft doc <path>  (generate docs from pub fn)",
+			"docs":       "weft doc <path>  (or visit: weftproject.dev/docs.html)",
+			"playground": "visit: weftproject.dev/playground.html",
+			"website":    "visit: weftproject.dev",
+			"site":       "visit: weftproject.dev",
+		}
+		if suggestion, ok := suggestions[cmd]; ok {
+			fmt.Fprintf(os.Stderr, "unknown command %q — did you mean:\n  %s\n", cmd, suggestion)
+		} else {
+			fmt.Fprintf(os.Stderr, "unknown command %q\nrun: weft help\n", cmd)
+		}
 		return 2
 	}
 }
