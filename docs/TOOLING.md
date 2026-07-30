@@ -10,7 +10,10 @@ Small set of commands for day-to-day work. Nothing here replaces a full IDE or p
 | `weft test [path…]` | Run unit tests in `*_test.weft` / `fn test_*`. |
 | `weft fmt <path>…` | Pretty-print from the AST (or whitespace-only if the file doesn’t parse). |
 | `weft bench [path…]` | Rough microbenches: `*_bench.weft` / `fn bench_*`. |
-| `weft stdlib [pkg]` | List stdlib packages, or members of one package. |
+| `weft stdlib [pkg]` | List stdlib packages grouped by category. |
+| `weft stdlib <pkg>` | Show all members with signatures and descriptions. |
+| `weft stdlib <pkg.member>` | Show signature, description, and **live output** (runs the function). |
+| `weft info` | Comprehensive system report (memory, disk, uptime, load, network, services). |
 | `weft notebook <file> [-o out.html]` | Run `.weft` as cells, output HTML. |
 | `weft debug <file>` | Interactive source-level debugger. |
 | `weft profile <file>` | Execution profiler. |
@@ -22,7 +25,6 @@ Small set of commands for day-to-day work. Nothing here replaces a full IDE or p
 | `weft update` | Self-update weft binary to latest version. |
 | `weft upgrade` | Upgrade installed packages to latest registry versions. |
 | `weft lsp` | Language server: diagnostics, completion, hover, definition, symbols, **format**. |
-| `weft info` | Comprehensive system report (memory, disk, load, network, services). |
 | `weft eval [dir]` | Smoke-run scripts that have `fn main`. |
 | `weft train eval` | Score the embedded gold examples (parse/compile). |
 | `weft` / `weft repl` | Interactive REPL (session bindings, multi-line, history). |
