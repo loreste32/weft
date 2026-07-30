@@ -140,25 +140,14 @@ func cmdCheckPaths(paths []string, showTypes bool, strict bool) int {
 func cmdStdlib(args []string) int {
 	if len(args) >= 1 && !strings.HasPrefix(args[0], "-") {
 		name := args[0]
-		// handle "pkg.member" — show help for specific member
+		// handle "pkg.member" — show help AND run it if it takes no args
 		if strings.Contains(name, ".") {
-			sig, detail := weft.StdlibMemberHelp(strings.SplitN(name, ".", 2)[0], strings.SplitN(name, ".", 2)[1])
-			if sig != "" {
-				fmt.Printf("\n  %s\n  %s\n\n", sig, detail)
-			} else {
-				fmt.Printf("\n  %s  (no documentation available)\n\n", name)
-			}
-			return 0
+			parts := strings.SplitN(name, ".", 2)
+			return stdlibMemberInfo(parts[0], parts[1])
 		}
 		// also handle "weft stdlib sysinfo cpu_count" (two args)
 		if len(args) >= 2 && !strings.HasPrefix(args[1], "-") {
-			sig, detail := weft.StdlibMemberHelp(name, args[1])
-			if sig != "" {
-				fmt.Printf("\n  %s\n  %s\n\n", sig, detail)
-			} else {
-				fmt.Printf("\n  %s.%s  (no documentation available)\n\n", name, args[1])
-			}
-			return 0
+			return stdlibMemberInfo(name, args[1])
 		}
 		members := weft.StdlibMembers(name)
 		if members == nil {
@@ -223,6 +212,28 @@ func cmdStdlib(args []string) int {
 		}
 	}
 	fmt.Println("weft stdlib <name>  # show members with signatures")
+	return 0
+}
+
+func stdlibMemberInfo(pkg, member string) int {
+	sig, detail := weft.StdlibMemberHelp(pkg, member)
+	if sig != "" {
+		fmt.Printf("\n  %s\n  %s\n\n", sig, detail)
+	} else {
+		fmt.Printf("\n  %s.%s\n\n", pkg, member)
+	}
+
+	// try to run zero-arg functions and show the result
+	src := fmt.Sprintf("fn main -> Result { say(json.pretty(%s.%s()?)) }", pkg, member)
+	ctx := weft.New(weft.Options{Stdout: os.Stdout, Stderr: os.Stderr})
+	err := ctx.RunSource(nil, "stdlib-probe.weft", src)
+	if err != nil {
+		// try without ? (non-Result functions)
+		src = fmt.Sprintf("fn main { say(json.pretty(%s.%s())) }", pkg, member)
+		ctx = weft.New(weft.Options{Stdout: os.Stdout, Stderr: os.Stderr})
+		ctx.RunSource(nil, "stdlib-probe.weft", src)
+	}
+	fmt.Println()
 	return 0
 }
 
