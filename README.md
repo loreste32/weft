@@ -168,6 +168,7 @@ weft bench | stdlib | doctor | version | lsp
 weft debug [--dap] [file.weft]    debugger (DAP for IDEs)
 weft profile <file.weft>          profiler
 weft mcp serve <file.weft>        MCP tool server
+weft info                         system information (memory, disk, load, network)
 weft update                       self-update binary
 weft upgrade                      upgrade packages
 

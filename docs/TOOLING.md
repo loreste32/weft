@@ -22,6 +22,7 @@ Small set of commands for day-to-day work. Nothing here replaces a full IDE or p
 | `weft update` | Self-update weft binary to latest version. |
 | `weft upgrade` | Upgrade installed packages to latest registry versions. |
 | `weft lsp` | Language server: diagnostics, completion, hover, definition, symbols, **format**. |
+| `weft info` | Comprehensive system report (memory, disk, load, network, services). |
 | `weft eval [dir]` | Smoke-run scripts that have `fn main`. |
 | `weft train eval` | Score the embedded gold examples (parse/compile). |
 | `weft` / `weft repl` | Interactive REPL (session bindings, multi-line, history). |

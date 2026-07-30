@@ -281,6 +281,7 @@ Language:
   weft gen "task" [-o out.weft] [--run]   # LLM writes Weft (pure Go API)
   weft update                update weft to the latest version
   weft upgrade               upgrade installed packages to latest
+  weft info                   system information (memory, disk, load, network)
   weft doctor                environment readiness
   weft lsp                   Language Server (stdio) for editors
   weft ollama list|chat|ps   # local Ollama
