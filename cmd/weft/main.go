@@ -85,6 +85,8 @@ func run(args []string) int {
 			return 1
 		}
 		return weft.PrintLintReport(rep)
+	case "info", "sysinfo":
+		return cmdInfo()
 	case "doc":
 		paths := args[1:]
 		if err := weft.Doc(paths); err != nil {
@@ -378,7 +380,7 @@ Registry (public packages with ed25519 signing):
 		cmd := args[0]
 		// helpful suggestions for common mistakes
 		suggestions := map[string]string{
-			"sysinfo":    "weft stdlib sysinfo",
+			"system":     "weft info  (comprehensive system information)",
 			"search":     "weft registry search",
 			"info":       "weft registry info <name>",
 			"install":    "weft registry install <name>  (or: weft install for weft.json deps)",

@@ -13,7 +13,7 @@ import (
 
 func isCommand(s string) bool {
 	switch s {
-	case "run", "build", "lint", "doc", "version", "--version", "-v", "help", "-h", "--help",
+	case "run", "build", "lint", "doc", "info", "sysinfo", "version", "--version", "-v", "help", "-h", "--help",
 		"repl", "check", "test", "stdlib", "fmt", "bench", "init", "new", "mod", "get", "install", "list", "deps",
 		"packages", "pkgs", "catalog",
 		"publish", "registry", "notebook", "nb", "debug", "profile",
@@ -142,22 +142,67 @@ func cmdStdlib(args []string) int {
 		name := args[0]
 		members := weft.StdlibMembers(name)
 		if members == nil {
-			fmt.Fprintf(os.Stderr, "unknown stdlib package %q\n", name)
+			fmt.Fprintf(os.Stderr, "unknown stdlib package %q\nrun: weft stdlib  # list all packages\n", name)
 			return 1
 		}
-		fmt.Printf("%s (%d)\n", name, len(members))
+		fmt.Printf("%s (%d members)\n\n", name, len(members))
 		for _, m := range members {
-			fmt.Printf("  %s\n", m)
+			sig, detail := weft.StdlibMemberHelp(name, m)
+			if sig != "" {
+				fmt.Printf("  %-24s %s\n", sig, detail)
+			} else {
+				fmt.Printf("  %s.%s\n", name, m)
+			}
 		}
+		fmt.Printf("\nuse %s\n", name)
 		return 0
 	}
 	names := weft.StdlibNames()
-	fmt.Printf("weft stdlib — %d packages\n", len(names))
-	for _, n := range names {
-		mem := weft.StdlibMembers(n)
-		fmt.Printf("  %-14s %d members\n", n, len(mem))
+	fmt.Printf("weft stdlib — %d packages\n\n", len(names))
+	// group by category
+	categories := []struct {
+		name string
+		pkgs []string
+	}{
+		{"LLM / AI", []string{"llm", "ollama", "vllm", "mcp", "deepgram", "elevenlabs", "mlinfer"}},
+		{"Web", []string{"http", "web", "ws", "webrtc", "graphql", "url"}},
+		{"Data", []string{"db", "redis", "mongo", "nats", "amqp", "csv", "json", "jsonl", "yaml", "toml", "xml", "ini", "table"}},
+		{"DevOps", []string{"sysinfo", "proc", "netutil", "sh", "fs", "cli", "env", "platform", "signal", "secrets", "log"}},
+		{"Network", []string{"pcap", "socket", "email", "ip"}},
+		{"Text / Math", []string{"str", "re", "math", "decimal", "time", "random", "uuid", "base64", "mime", "html", "crypto"}},
+		{"Collections", []string{"iter", "collections", "heap", "bisect", "pipe", "functools", "copy", "traceback"}},
+		{"Runtime", []string{"governor", "supervisor", "cluster", "ratelimit", "migrate", "metrics", "tokenizer", "dataset"}},
+		{"Other", []string{"archive", "binstruct", "difflib", "shlex", "pickle", "viz", "io", "test"}},
 	}
-	fmt.Println("\nweft stdlib <name>  # list members")
+	listed := map[string]bool{}
+	for _, cat := range categories {
+		var inCat []string
+		for _, p := range cat.pkgs {
+			for _, n := range names {
+				if n == p {
+					inCat = append(inCat, n)
+					listed[n] = true
+				}
+			}
+		}
+		if len(inCat) == 0 {
+			continue
+		}
+		fmt.Printf("  %s:\n", cat.name)
+		for _, n := range inCat {
+			mem := weft.StdlibMembers(n)
+			fmt.Printf("    %-14s %d members\n", n, len(mem))
+		}
+		fmt.Println()
+	}
+	// unlisted
+	for _, n := range names {
+		if !listed[n] {
+			mem := weft.StdlibMembers(n)
+			fmt.Printf("  %-14s %d members\n", n, len(mem))
+		}
+	}
+	fmt.Println("weft stdlib <name>  # show members with signatures")
 	return 0
 }
 

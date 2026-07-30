@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/loreste/weft/internal/format"
+	"github.com/loreste/weft/internal/lsp"
 	"github.com/loreste/weft/internal/stdlib"
 )
 
@@ -19,6 +20,12 @@ func StdlibMembers(name string) []string {
 		return nil
 	}
 	return stdlib.PackageMembers(name)
+}
+
+// StdlibMemberHelp returns the signature and description for a stdlib member.
+func StdlibMemberHelp(pkg, member string) (sig, detail string) {
+	key := pkg + "." + member
+	return lsp.LookupMemberHelp(key)
 }
 
 // FmtFiles pretty-prints Weft files via AST (falls back to whitespace trim on parse error).

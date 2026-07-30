@@ -319,3 +319,11 @@ func lookupCall(name string) (memberHelp, bool) {
 	}
 	return memberHelp{}, false
 }
+
+// LookupMemberHelp returns the sig and detail for a "pkg.member" key.
+func LookupMemberHelp(key string) (string, string) {
+	if h, ok := memberCatalog[key]; ok {
+		return h.Sig, h.Detail
+	}
+	return "", ""
+}
