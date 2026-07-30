@@ -334,7 +334,7 @@ echo "cloud refusal: ok"
 echo "private dry-run: ok"
 # gold accuracy (embedded train corpus)
 gold=$(/tmp/weft-ci train eval --quiet)
-echo "$gold" | grep -q "gold accuracy"
+echo "$gold" | grep -qE "gold accuracy|gold validity"
 echo "$gold" | grep -Eq "100\.0%|100%"
 ev=$(/tmp/weft-ci eval examples/realworld)
 echo "$ev" | tail -8
