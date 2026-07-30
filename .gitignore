@@ -7,6 +7,8 @@ wasm/weft.wasm
 *.exe
 *.test
 *.out
+!testdata/compat/*.out
+!testdata/bench/*.out
 .DS_Store
 /tmp/
 # package manager cache
@@ -23,7 +25,7 @@ examples/data/*.db
 examples/data/out/
 # editor / local noise
 editors/vscode/node_modules/
-editors/vscode/*.vsix
+# editors/vscode/*.vsix  — tracked for release workflow
 editors/vscode/package-lock.json
 # tokensave / local train memory (never publish)
 .memory.json
