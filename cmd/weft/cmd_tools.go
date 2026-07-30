@@ -140,6 +140,26 @@ func cmdCheckPaths(paths []string, showTypes bool, strict bool) int {
 func cmdStdlib(args []string) int {
 	if len(args) >= 1 && !strings.HasPrefix(args[0], "-") {
 		name := args[0]
+		// handle "pkg.member" — show help for specific member
+		if strings.Contains(name, ".") {
+			sig, detail := weft.StdlibMemberHelp(strings.SplitN(name, ".", 2)[0], strings.SplitN(name, ".", 2)[1])
+			if sig != "" {
+				fmt.Printf("\n  %s\n  %s\n\n", sig, detail)
+			} else {
+				fmt.Printf("\n  %s  (no documentation available)\n\n", name)
+			}
+			return 0
+		}
+		// also handle "weft stdlib sysinfo cpu_count" (two args)
+		if len(args) >= 2 && !strings.HasPrefix(args[1], "-") {
+			sig, detail := weft.StdlibMemberHelp(name, args[1])
+			if sig != "" {
+				fmt.Printf("\n  %s\n  %s\n\n", sig, detail)
+			} else {
+				fmt.Printf("\n  %s.%s  (no documentation available)\n\n", name, args[1])
+			}
+			return 0
+		}
 		members := weft.StdlibMembers(name)
 		if members == nil {
 			fmt.Fprintf(os.Stderr, "unknown stdlib package %q\nrun: weft stdlib  # list all packages\n", name)

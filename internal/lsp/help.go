@@ -327,3 +327,189 @@ func LookupMemberHelp(key string) (string, string) {
 	}
 	return "", ""
 }
+
+func init() {
+	// sysinfo
+	memberCatalog["sysinfo.memory"] = memberHelp{"sysinfo.memory() -> Result[map]", "system memory: total, used, available, percent"}
+	memberCatalog["sysinfo.disk"] = memberHelp{"sysinfo.disk(path?) -> Result[map]", "disk usage: total, free, used, percent"}
+	memberCatalog["sysinfo.uptime"] = memberHelp{"sysinfo.uptime() -> Result[map]", "system uptime: seconds, human"}
+	memberCatalog["sysinfo.loadavg"] = memberHelp{"sysinfo.loadavg() -> Result[[float]]", "load averages: [1m, 5m, 15m]"}
+	memberCatalog["sysinfo.cpu_count"] = memberHelp{"sysinfo.cpu_count() -> int", "number of CPUs"}
+	memberCatalog["sysinfo.net_interfaces"] = memberHelp{"sysinfo.net_interfaces() -> Result[[map]]", "network interfaces: name, mac, mtu, addrs, up"}
+	memberCatalog["sysinfo.env_summary"] = memberHelp{"sysinfo.env_summary() -> map", "os, arch, cpus, hostname, user, home, pid"}
+
+	// proc
+	memberCatalog["proc.self"] = memberHelp{"proc.self() -> map", "current process: pid, ppid, uid, gid"}
+	memberCatalog["proc.list"] = memberHelp{"proc.list() -> Result[[map]]", "all processes: pid, name, cmd"}
+	memberCatalog["proc.find"] = memberHelp{"proc.find(name) -> Result[[map]]", "find processes by name"}
+	memberCatalog["proc.kill"] = memberHelp{"proc.kill(pid, signal?) -> Result", "send signal to process (default SIGTERM)"}
+	memberCatalog["proc.exists"] = memberHelp{"proc.exists(pid) -> bool", "check if process exists"}
+
+	// netutil
+	memberCatalog["netutil.port_open"] = memberHelp{"netutil.port_open(host, port, timeout?) -> Result[bool]", "check if TCP port is open"}
+	memberCatalog["netutil.tcp_ping"] = memberHelp{"netutil.tcp_ping(host, port, timeout?) -> Result[map]", "TCP ping: open, latency_ms"}
+	memberCatalog["netutil.resolve"] = memberHelp{"netutil.resolve(host) -> Result[[str]]", "DNS lookup → IP addresses"}
+	memberCatalog["netutil.lookup_host"] = memberHelp{"netutil.lookup_host(host) -> Result[[str]]", "DNS name lookup"}
+	memberCatalog["netutil.lookup_txt"] = memberHelp{"netutil.lookup_txt(host) -> Result[[str]]", "DNS TXT records"}
+	memberCatalog["netutil.lookup_mx"] = memberHelp{"netutil.lookup_mx(host) -> Result[[map]]", "DNS MX records"}
+	memberCatalog["netutil.reverse_lookup"] = memberHelp{"netutil.reverse_lookup(ip) -> Result[[str]]", "reverse DNS"}
+	memberCatalog["netutil.scan_ports"] = memberHelp{"netutil.scan_ports(host, [ports]) -> Result[[map]]", "scan multiple ports"}
+
+	// mcp
+	memberCatalog["mcp.connect"] = memberHelp{"mcp.connect(command, args?) -> Result[client]", "connect to MCP server (stdio)"}
+	memberCatalog["mcp.connect_sse"] = memberHelp{"mcp.connect_sse(url) -> Result[client]", "connect to MCP server (HTTP+SSE)"}
+	memberCatalog["mcp.tool"] = memberHelp{"mcp.tool(name, desc, fn, schema?) -> map", "define an MCP tool"}
+	memberCatalog["mcp.serve_stdio"] = memberHelp{"mcp.serve_stdio([tools])", "run MCP server on stdio"}
+
+	// deepgram
+	memberCatalog["deepgram.stream"] = memberHelp{"deepgram.stream(opts?) -> Result[stream]", "streaming STT via WebSocket (Nova-2)"}
+	memberCatalog["deepgram.transcribe"] = memberHelp{"deepgram.transcribe(url_or_file, opts?) -> Result[map]", "transcribe audio (REST)"}
+
+	// elevenlabs
+	memberCatalog["elevenlabs.stream"] = memberHelp{"elevenlabs.stream(text, opts?) -> Result[stream]", "streaming TTS via WebSocket"}
+	memberCatalog["elevenlabs.stream_ws"] = memberHelp{"elevenlabs.stream_ws(opts?) -> Result[ws]", "bidirectional TTS (lowest latency)"}
+	memberCatalog["elevenlabs.speak"] = memberHelp{"elevenlabs.speak(text, opts?) -> Result[map]", "synthesize audio (REST)"}
+	memberCatalog["elevenlabs.voices"] = memberHelp{"elevenlabs.voices() -> Result[[map]]", "list available voices"}
+
+	// mlinfer
+	memberCatalog["mlinfer.predict"] = memberHelp{"mlinfer.predict(url, input, opts?) -> Result", "generic inference call"}
+	memberCatalog["mlinfer.onnx"] = memberHelp{"mlinfer.onnx(base, model, input) -> Result", "ONNX Runtime Server"}
+	memberCatalog["mlinfer.triton"] = memberHelp{"mlinfer.triton(base, model, input) -> Result", "NVIDIA Triton"}
+	memberCatalog["mlinfer.hf"] = memberHelp{"mlinfer.hf(model, input, opts?) -> Result", "HuggingFace Inference API"}
+	memberCatalog["mlinfer.classify"] = memberHelp{"mlinfer.classify(url, text) -> Result", "text classification shortcut"}
+	memberCatalog["mlinfer.embed"] = memberHelp{"mlinfer.embed(url, text) -> Result", "embedding shortcut"}
+	memberCatalog["mlinfer.detect"] = memberHelp{"mlinfer.detect(url, image_url) -> Result", "object detection shortcut"}
+	memberCatalog["mlinfer.batch"] = memberHelp{"mlinfer.batch(url, [inputs]) -> Result", "batched inference"}
+	memberCatalog["mlinfer.onnx_health"] = memberHelp{"mlinfer.onnx_health(base) -> Result[bool]", "ONNX health check"}
+	memberCatalog["mlinfer.triton_health"] = memberHelp{"mlinfer.triton_health(base) -> Result[bool]", "Triton health check"}
+
+	// governor
+	memberCatalog["governor.new"] = memberHelp{"governor.new(opts) -> map", "create execution governor (token/time/cost budgets)"}
+
+	// supervisor
+	memberCatalog["supervisor.new"] = memberHelp{"supervisor.new(opts) -> map", "create supervisor (one_for_one/all/rest_for_one)"}
+	memberCatalog["supervisor.process"] = memberHelp{"supervisor.process(fn, opts?) -> map", "create isolated process with mailbox"}
+
+	// cluster
+	memberCatalog["cluster.store"] = memberHelp{"cluster.store(redis_url) -> Result[map]", "connect to shared state store (Redis)"}
+	memberCatalog["cluster.lock"] = memberHelp{"cluster.lock(store, key, opts?) -> Result[lock]", "distributed lock with TTL"}
+	memberCatalog["cluster.register"] = memberHelp{"cluster.register(store, node_id, opts?) -> Result", "register node with heartbeat"}
+	memberCatalog["cluster.nodes"] = memberHelp{"cluster.nodes(store) -> Result[[map]]", "list active nodes"}
+	memberCatalog["cluster.rate_limit"] = memberHelp{"cluster.rate_limit(store, key, max, window) -> Result[bool]", "distributed rate limiter"}
+	memberCatalog["cluster.counter"] = memberHelp{"cluster.counter(store, key) -> Result[counter]", "distributed atomic counter"}
+	memberCatalog["cluster.publish"] = memberHelp{"cluster.publish(store, channel, msg) -> Result", "pub/sub publish"}
+
+	// ratelimit
+	memberCatalog["ratelimit.new"] = memberHelp{"ratelimit.new(rate, unit) -> Result[limiter]", "token bucket rate limiter"}
+	memberCatalog["ratelimit.wait"] = memberHelp{"ratelimit.wait(rl)", "block until token available"}
+	memberCatalog["ratelimit.acquire"] = memberHelp{"ratelimit.acquire(rl) -> bool", "non-blocking acquire"}
+
+	// migrate
+	memberCatalog["migrate.run"] = memberHelp{"migrate.run(conn, dir) -> Result[int]", "apply pending migrations"}
+	memberCatalog["migrate.status"] = memberHelp{"migrate.status(conn, dir) -> Result[list]", "migration status"}
+	memberCatalog["migrate.create"] = memberHelp{"migrate.create(dir, name) -> Result[str]", "create timestamped .sql file"}
+
+	// metrics
+	memberCatalog["metrics.accuracy"] = memberHelp{"metrics.accuracy(y_true, y_pred) -> counter", "accuracy score"}
+	memberCatalog["metrics.f1"] = memberHelp{"metrics.f1(y_true, y_pred) -> gauge", "F1 score"}
+	memberCatalog["metrics.precision"] = memberHelp{"metrics.precision(y_true, y_pred) -> histogram", "precision score"}
+
+	// email
+	memberCatalog["email.send"] = memberHelp{"email.send(to, subject, body, opts?) -> Result", "send email via SMTP"}
+	memberCatalog["email.parse"] = memberHelp{"email.parse(raw) -> Result[map]", "parse email message"}
+
+	// socket
+	memberCatalog["socket.dial"] = memberHelp{"socket.dial(network, addr, timeout?) -> Result[conn]", "TCP/UDP connection (SSRF-guarded)"}
+	memberCatalog["socket.listen"] = memberHelp{"socket.listen(network, addr) -> Result[listener]", "bind TCP/UDP listener"}
+	memberCatalog["socket.resolve"] = memberHelp{"socket.resolve(host) -> Result[[str]]", "DNS lookup → IPs"}
+
+	// pcap
+	memberCatalog["pcap.ethernet"] = memberHelp{"pcap.ethernet(opts) -> bytes", "build Ethernet frame"}
+	memberCatalog["pcap.ipv4"] = memberHelp{"pcap.ipv4(opts) -> bytes", "build IPv4 packet"}
+	memberCatalog["pcap.tcp"] = memberHelp{"pcap.tcp(opts) -> bytes", "build TCP segment"}
+	memberCatalog["pcap.udp"] = memberHelp{"pcap.udp(opts) -> bytes", "build UDP datagram"}
+	memberCatalog["pcap.write"] = memberHelp{"pcap.write(path, [pkts]) -> Result", "write PCAP file"}
+	memberCatalog["pcap.read"] = memberHelp{"pcap.read(path) -> Result[[map]]", "read PCAP file"}
+
+	// shlex
+	memberCatalog["shlex.split"] = memberHelp{"shlex.split(s) -> [str]", "POSIX shell-style split"}
+	memberCatalog["shlex.quote"] = memberHelp{"shlex.quote(s) -> str", "shell-safe quote"}
+	memberCatalog["shlex.join"] = memberHelp{"shlex.join([args]) -> str", "join into shell command"}
+
+	// signal
+	memberCatalog["signal.listen"] = memberHelp{"signal.listen()", "start watching SIGINT/SIGTERM"}
+	memberCatalog["signal.received"] = memberHelp{"signal.received(name?) -> bool", "check if signal received"}
+	memberCatalog["signal.reset"] = memberHelp{"signal.reset()", "clear signal flags"}
+
+	// binstruct
+	memberCatalog["binstruct.pack"] = memberHelp{"binstruct.pack(fmt, values) -> Result[str]", "pack binary data"}
+	memberCatalog["binstruct.unpack"] = memberHelp{"binstruct.unpack(fmt, data) -> Result[[any]]", "unpack binary data"}
+	memberCatalog["binstruct.size"] = memberHelp{"binstruct.size(fmt) -> int", "packed size in bytes"}
+
+	// difflib
+	memberCatalog["difflib.unified_diff"] = memberHelp{"difflib.unified_diff(a, b, opts?) -> str", "unified diff"}
+	memberCatalog["difflib.ndiff"] = memberHelp{"difflib.ndiff(a, b) -> str", "ndiff comparison"}
+
+	// copy
+	memberCatalog["copy.copy"] = memberHelp{"copy.copy(v) -> any", "shallow copy"}
+	memberCatalog["copy.deepcopy"] = memberHelp{"copy.deepcopy(v) -> any", "deep copy"}
+
+	// functools
+	memberCatalog["functools.partial"] = memberHelp{"functools.partial(fn, args…) -> fn", "partial application"}
+	memberCatalog["functools.once"] = memberHelp{"functools.once(fn) -> fn", "call only once, cache result"}
+
+	// traceback
+	memberCatalog["traceback.format"] = memberHelp{"traceback.format(err) -> str", "format error with traceback"}
+
+	// pickle
+	memberCatalog["pickle.dumps"] = memberHelp{"pickle.dumps(v) -> str", "serialize to pickle-like format"}
+	memberCatalog["pickle.loads"] = memberHelp{"pickle.loads(s) -> any", "deserialize"}
+
+	// decimal
+	memberCatalog["decimal.new"] = memberHelp{"decimal.new(v) -> decimal", "create decimal number"}
+	memberCatalog["decimal.add"] = memberHelp{"decimal.add(a, b) -> decimal", "add decimals"}
+	memberCatalog["decimal.sub"] = memberHelp{"decimal.sub(a, b) -> decimal", "subtract"}
+	memberCatalog["decimal.mul"] = memberHelp{"decimal.mul(a, b) -> decimal", "multiply"}
+	memberCatalog["decimal.div"] = memberHelp{"decimal.div(a, b) -> Result[decimal]", "divide"}
+	memberCatalog["decimal.abs"] = memberHelp{"decimal.abs(d) -> decimal", "absolute value"}
+
+	// random
+	memberCatalog["random.int"] = memberHelp{"random.int(min, max) -> int", "random integer in range"}
+	memberCatalog["random.float"] = memberHelp{"random.float() -> float", "random float 0.0-1.0"}
+	memberCatalog["random.choice"] = memberHelp{"random.choice(list) -> any", "random element"}
+	memberCatalog["random.shuffle"] = memberHelp{"random.shuffle(list) -> [any]", "shuffle list"}
+	memberCatalog["random.bytes"] = memberHelp{"random.bytes(n) -> str", "random bytes"}
+
+	// ip
+	memberCatalog["ip.parse"] = memberHelp{"ip.parse(s) -> Result[map]", "parse IP address"}
+	memberCatalog["ip.network"] = memberHelp{"ip.network(cidr) -> Result[map]", "parse CIDR network"}
+	memberCatalog["ip.in_network"] = memberHelp{"ip.in_network(ip, cidr) -> bool", "check if IP is in network"}
+
+	// mime
+	memberCatalog["mime.by_ext"] = memberHelp{"mime.by_ext(ext) -> str", "MIME type by file extension"}
+	memberCatalog["mime.ext"] = memberHelp{"mime.ext(mime) -> str", "file extension for MIME type"}
+
+	// html
+	memberCatalog["html.escape"] = memberHelp{"html.escape(s) -> str", "HTML-escape special chars"}
+	memberCatalog["html.strip_tags"] = memberHelp{"html.strip_tags(s) -> str", "remove HTML tags"}
+	memberCatalog["html.links"] = memberHelp{"html.links(html) -> [str]", "extract URLs from HTML"}
+
+	// base64
+	memberCatalog["base64.encode"] = memberHelp{"base64.encode(s) -> str", "base64 encode"}
+	memberCatalog["base64.decode"] = memberHelp{"base64.decode(s) -> Result[str]", "base64 decode"}
+	memberCatalog["base64.url_encode"] = memberHelp{"base64.url_encode(s) -> str", "URL-safe base64 encode"}
+	memberCatalog["base64.url_decode"] = memberHelp{"base64.url_decode(s) -> Result[str]", "URL-safe base64 decode"}
+
+	// tokenizer
+	memberCatalog["tokenizer.encode"] = memberHelp{"tokenizer.encode(text) -> [int]", "tokenize text"}
+	memberCatalog["tokenizer.decode"] = memberHelp{"tokenizer.decode([ints]) -> str", "decode tokens"}
+	memberCatalog["tokenizer.count"] = memberHelp{"tokenizer.count(text) -> int", "count tokens"}
+
+	// dataset
+	memberCatalog["dataset.stream"] = memberHelp{"dataset.stream(path) -> Result[list]", "stream JSONL rows"}
+	memberCatalog["dataset.head"] = memberHelp{"dataset.head(data, n) -> Result", "first N rows"}
+	memberCatalog["dataset.sample"] = memberHelp{"dataset.sample(data, n) -> [train, test]", "random sample of N rows"}
+
+	// webrtc
+	memberCatalog["webrtc.hub"] = memberHelp{"webrtc.hub() -> hub", "create signaling hub"}
+}
