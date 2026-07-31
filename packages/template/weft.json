@@ -1,11 +1,17 @@
 {
   "name": "template",
-  "version": "0.1.0",
-  "description": "Simple string templating with {{placeholders}}, loops, conditionals, HTML escaping",
+  "version": "0.2.0",
+  "description": "HTML templating: layouts, partials, loops, conditionals, auto-escaping, components",
   "type": "module",
   "entry": "lib.weft",
-  "exports": ["render", "render_file", "each", "cond", "html_escape", "html"],
+  "exports": [
+    "render", "render_file", "html", "html_file",
+    "layout", "layout_file", "partial",
+    "html_escape", "html_page", "tag", "link", "img", "form", "input",
+    "table_html", "list_html",
+    "each", "cond"
+  ],
   "license": "Apache-2.0",
-  "keywords": ["template", "render", "html", "string", "placeholder"],
+  "keywords": ["template", "html", "render", "layout", "partial", "component", "escaping", "web"],
   "deps": {}
 }

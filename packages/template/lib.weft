@@ -1,31 +1,208 @@
+// template — HTML templating engine with layouts, partials, loops, conditionals, auto-escaping.
+//
+//   weft registry install template
+//   use template
+
+// ─── core rendering ────────────────────────────────────────────────
+
+// template.render(tmpl, data) -> str
+// Replace {{key}} placeholders with values from data.
+// Supports nested access: {{user.name}}, {{items.0.title}}
 pub fn render(tmpl, data) {
     mut result := tmpl
-    for key in data {
-        val := "$key"
-        if data[key] != null {
-            val = "${data[key]}"
-        }
-        result = str.replace(result, "{{$key}}", val)
-        result = str.replace(result, "{{ $key }}", val)
-    }
+
+    // process {%each items as item%}...{%/each%} loops first
+    result = process_loops(result, data)
+
+    // process {%if condition%}...{%else%}...{%/if%} conditionals
+    result = process_conditionals(result, data)
+
+    // replace {{key}} placeholders
+    result = replace_vars(result, data)
+
     result
 }
 
-
-pub fn render_file(path, data) -> Result[any] {
+// template.render_file(path, data) -> Result[str]
+pub fn render_file(path, data) -> Result {
     tmpl := fs.read(path)?
     Ok(render(tmpl, data))
 }
 
+// template.html(tmpl, data) -> str
+// Render with auto HTML-escaping on all values.
+pub fn html(tmpl, data) {
+    render(tmpl, escape_data(data))
+}
 
+// template.html_file(path, data) -> Result[str]
+pub fn html_file(path, data) -> Result {
+    tmpl := fs.read(path)?
+    Ok(html(tmpl, data))
+}
+
+// ─── layouts and partials ──────────────────────────────────────────
+
+// template.layout(layout_tmpl, content, data?) -> str
+// Render a layout template with {{content}} replaced by the content block.
+pub fn layout(layout_tmpl, content, data) {
+    mut d := if data != null { data } else { {} }
+    d["content"] = content
+    render(layout_tmpl, d)
+}
+
+// template.layout_file(layout_path, content_path, data?) -> Result[str]
+pub fn layout_file(layout_path, content_path, data) -> Result {
+    layout_tmpl := fs.read(layout_path)?
+    content_tmpl := fs.read(content_path)?
+    mut d := if data != null { data } else { {} }
+    content := render(content_tmpl, d)
+    d["content"] = content
+    Ok(render(layout_tmpl, d))
+}
+
+// template.partial(tmpl, partials, data) -> str
+// Render with {{> partial_name}} replaced by partial templates.
+// partials: {"header": "<nav>...</nav>", "footer": "..."}
+pub fn partial(tmpl, partials, data) {
+    mut result := tmpl
+    if partials != null {
+        for name in partials {
+            result = str.replace(result, "{{> $name}}", partials[name])
+            result = str.replace(result, "{{> $name }}", partials[name])
+            result = str.replace(result, "{{ > $name}}", partials[name])
+            result = str.replace(result, "{{ > $name }}", partials[name])
+        }
+    }
+    render(result, data)
+}
+
+// ─── HTML helpers ──────────────────────────────────────────────────
+
+// template.html_escape(s) -> str
+pub fn html_escape(s) {
+    mut result := "$s"
+    result = str.replace(result, "&", "&amp;")
+    result = str.replace(result, "<", "&lt;")
+    result = str.replace(result, ">", "&gt;")
+    result = str.replace(result, "\"", "&quot;")
+    result = str.replace(result, "'", "&#39;")
+    result
+}
+
+// template.html_page(opts) -> str
+// Generate a complete HTML page.
+// opts: {title, body, head?, css?, js?, lang?, charset?, viewport?}
+pub fn html_page(opts) {
+    title := if opts.title != null { opts.title } else { "" }
+    body := if opts.body != null { opts.body } else { "" }
+    lang := if opts.lang != null { opts.lang } else { "en" }
+    charset := if opts.charset != null { opts.charset } else { "utf-8" }
+    mut head := ""
+    if opts.head != null { head = opts.head }
+    if opts.css != null { head = "$head\n<style>${opts.css}</style>" }
+    if opts.viewport != null {
+        head = "<meta name=\"viewport\" content=\"${opts.viewport}\">\n$head"
+    } else {
+        head = "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n$head"
+    }
+    mut foot := ""
+    if opts.js != null { foot = "<script>${opts.js}</script>" }
+
+    "<!DOCTYPE html>\n<html lang=\"$lang\">\n<head>\n<meta charset=\"$charset\">\n<title>$title</title>\n$head\n</head>\n<body>\n$body\n$foot\n</body>\n</html>"
+}
+
+// template.tag(name, attrs?, content?) -> str
+// Build an HTML tag.
+pub fn tag(name, attrs, content) {
+    mut attr_str := ""
+    if attrs != null {
+        for key in attrs {
+            if attrs[key] != null {
+                attr_str = "$attr_str $key=\"${html_escape(attrs[key])}\""
+            }
+        }
+    }
+    if content != null {
+        "<$name$attr_str>$content</$name>"
+    } else {
+        "<$name$attr_str />"
+    }
+}
+
+// template.link(href, text, attrs?) -> str
+pub fn link(href, text, attrs) {
+    mut a := if attrs != null { attrs } else { {} }
+    a["href"] = href
+    tag("a", a, html_escape(text))
+}
+
+// template.img(src, alt, attrs?) -> str
+pub fn img(src, alt, attrs) {
+    mut a := if attrs != null { attrs } else { {} }
+    a["src"] = src
+    a["alt"] = alt
+    tag("img", a, null)
+}
+
+// template.form(action, method, content, attrs?) -> str
+pub fn form(action, method, content, attrs) {
+    mut a := if attrs != null { attrs } else { {} }
+    a["action"] = action
+    a["method"] = method
+    tag("form", a, content)
+}
+
+// template.input(name, input_type, attrs?) -> str
+pub fn input(name, input_type, attrs) {
+    mut a := if attrs != null { attrs } else { {} }
+    a["name"] = name
+    a["type"] = if input_type != null { input_type } else { "text" }
+    tag("input", a, null)
+}
+
+// template.table_html(headers, rows) -> str
+// Generate an HTML table from headers and rows.
+pub fn table_html(headers, rows) {
+    mut html_out := "<table>\n<thead>\n<tr>"
+    for h in headers {
+        html_out = "$html_out<th>${html_escape(h)}</th>"
+    }
+    html_out = "$html_out</tr>\n</thead>\n<tbody>"
+    for row in rows {
+        html_out = "$html_out\n<tr>"
+        for cell in row {
+            escaped := html_escape("$cell")
+            html_out = "$html_out<td>$escaped</td>"
+        }
+        html_out = "$html_out</tr>"
+    }
+    "$html_out\n</tbody>\n</table>"
+}
+
+// template.list_html(items, ordered?) -> str
+pub fn list_html(items, ordered) {
+    list_tag := if ordered == true { "ol" } else { "ul" }
+    mut html_out := "<$list_tag>"
+    for item in items {
+        escaped := html_escape("$item")
+        html_out = "$html_out\n<li>$escaped</li>"
+    }
+    "$html_out\n</$list_tag>"
+}
+
+// ─── component helpers ─────────────────────────────────────────────
+
+// template.each(tmpl, items, item_name) -> str
+// Repeat a template for each item. Inside the template, use {{item.field}}.
 pub fn each(tmpl, items, item_name) {
     mut parts := []
     for item in items {
         mut rendered := tmpl
         if item != null {
             for key in item {
-                rendered = str.replace(rendered, "{{$item_name.$key}}", "${item[key]}")
-                rendered = str.replace(rendered, "{{ $item_name.$key }}", "${item[key]}")
+                rendered = str.replace(rendered, "{{${item_name}.$key}}", "${item[key]}")
+                rendered = str.replace(rendered, "{{ ${item_name}.$key }}", "${item[key]}")
             }
         }
         rendered = str.replace(rendered, "{{$item_name}}", "$item")
@@ -35,26 +212,26 @@ pub fn each(tmpl, items, item_name) {
     str.join(parts, "")
 }
 
-
+// template.cond(condition, if_true, if_false?) -> str
 pub fn cond(condition, if_true, if_false) {
-    if condition { if_true } else {
-        if if_false != null { if_false } else { "" }
-    }
+    if condition { if_true } else { if if_false != null { if_false } else { "" } }
 }
 
+// ─── internal helpers ──────────────────────────────────────────────
 
-pub fn html_escape(s) {
-    mut result := s
-    result = str.replace(result, "&", "&amp;")
-    result = str.replace(result, "<", "&lt;")
-    result = str.replace(result, ">", "&gt;")
-    result = str.replace(result, "\"", "&quot;")
-    result = str.replace(result, "'", "&#39;")
+fn replace_vars(tmpl, data) {
+    mut result := tmpl
+    if data == null { return result }
+    for key in data {
+        val := if data[key] != null { "${data[key]}" } else { "" }
+        result = str.replace(result, "{{$key}}", val)
+        result = str.replace(result, "{{ $key }}", val)
+    }
     result
 }
 
-
-pub fn html(tmpl, data) {
+fn escape_data(data) {
+    if data == null { return {} }
     mut safe := {}
     for key in data {
         if data[key] != null {
@@ -63,6 +240,77 @@ pub fn html(tmpl, data) {
             safe[key] = ""
         }
     }
-    render(tmpl, safe)
+    safe
 }
 
+fn process_loops(tmpl, data) {
+    mut result := tmpl
+    // {%each items as item%}...{%/each%}
+    mut safety := 0
+    while str.contains(result, "{%each ") && safety < 50 {
+        safety = safety + 1
+        start := str.index(result, "{%each ")
+        if start < 0 { break }
+        tag_end := str.index(str.slice(result, start), "%}")
+        if tag_end < 0 { break }
+        tag_content := str.slice(result, start + 7, start + tag_end)
+        // parse "items as item"
+        parts := str.fields(str.trim(tag_content))
+        if len(parts) < 3 { break }
+        list_name := parts[0]
+        item_name := parts[2]
+
+        block_end := str.index(str.slice(result, start + tag_end + 2), "{%/each%}")
+        if block_end < 0 { break }
+        body := str.slice(result, start + tag_end + 2, start + tag_end + 2 + block_end)
+
+        // render the loop
+        items := data[list_name]
+        mut rendered := ""
+        if items != null {
+            rendered = each(body, items, item_name)
+        }
+
+        before := str.slice(result, 0, start)
+        after := str.slice(result, start + tag_end + 2 + block_end + 9)
+        result = "$before$rendered$after"
+    }
+    result
+}
+
+fn process_conditionals(tmpl, data) {
+    mut result := tmpl
+    mut safety := 0
+    while str.contains(result, "{%if ") && safety < 50 {
+        safety = safety + 1
+        start := str.index(result, "{%if ")
+        if start < 0 { break }
+        tag_end := str.index(str.slice(result, start), "%}")
+        if tag_end < 0 { break }
+        cond_key := str.trim(str.slice(result, start + 4, start + tag_end))
+
+        block_end := str.index(str.slice(result, start + tag_end + 2), "{%/if%}")
+        if block_end < 0 { break }
+        block := str.slice(result, start + tag_end + 2, start + tag_end + 2 + block_end)
+
+        // check for {%else%}
+        mut if_body := block
+        mut else_body := ""
+        else_pos := str.index(block, "{%else%}")
+        if else_pos >= 0 {
+            if_body = str.slice(block, 0, else_pos)
+            else_body = str.slice(block, else_pos + 8)
+        }
+
+        // evaluate condition
+        val := data[cond_key]
+        truthy := val != null && val != "" && val != false && val != 0
+
+        rendered := if truthy { if_body } else { else_body }
+
+        before := str.slice(result, 0, start)
+        after := str.slice(result, start + tag_end + 2 + block_end + 7)
+        result = "$before$rendered$after"
+    }
+    result
+}
