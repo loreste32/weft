@@ -221,6 +221,13 @@ func run(args []string) int {
 			return 1
 		}
 		return 0
+	case "outdated":
+		wd, _ := os.Getwd()
+		if err := weft.PkgOutdated(wd); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
 	case "upgrade":
 		dir := "."
 		if len(args) > 1 {
@@ -406,6 +413,8 @@ Registry (public packages with ed25519 signing):
 			"typecheck":  "weft check --types",
 			"types":      "weft check --types",
 			"upgrade":    "weft upgrade  (upgrade installed packages)",
+			"outdated":   "weft outdated  (check for newer package versions)",
+			"stale":      "weft outdated  (check for newer package versions)",
 			"update":     "weft update  (update weft itself)",
 			"mcp":        "weft mcp serve <file.weft>",
 			"debug":      "weft debug <file.weft>",

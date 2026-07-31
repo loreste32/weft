@@ -61,3 +61,6 @@ func packageVLLM(env *runtime.Env) runtime.Value       { return stubPkg("vllm") 
 func packageWeb(env *runtime.Env) runtime.Value        { return stubPkg("web") }
 func packageWebRTC(env *runtime.Env) runtime.Value     { return stubPkg("webrtc") }
 func packageWS(env *runtime.Env) runtime.Value         { return stubPkg("ws") }
+func packageDNS() runtime.Value                        { return stubPkg("dns") }
+func packageTLS() runtime.Value                        { return stubPkg("tls") }
+func packageOS() runtime.Value                         { return stubPkg("os") }

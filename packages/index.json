@@ -2,47 +2,28 @@
   "name": "weft-packages",
   "description": "Monorepo catalog — not a public registry. Install via path/git. Order follows the agent stack (docs/ECOSYSTEM.md).",
   "packages": [
-    {
-      "name": "mold",
-      "path": "./mold",
-      "version": "0.1.0",
-      "summary": "Structure & validate agent JSON — JSON Schema, tool_params, tool_spec"
-    },
-    {
-      "name": "tokensave",
-      "path": "./tokensave",
-      "version": "0.5.0",
-      "summary": "Thrift context, memory, teach → train gold"
-    },
-    {
-      "name": "ml",
-      "path": "./ml",
-      "version": "0.1.0",
-      "summary": "Embeddings, vectors, RAG index, metrics"
-    },
-    {
-      "name": "warp",
-      "path": "./warp",
-      "version": "0.1.0",
-      "summary": "N-dimensional array math — pure Weft, no native deps"
-    },
-    {
-      "name": "dataframe",
-      "path": "./dataframe",
-      "version": "0.1.0",
-      "summary": "Tabular data wrangling — filter, group, join, pivot, sort"
-    },
-    {
-      "name": "embed",
-      "path": "./embed",
-      "version": "0.1.0",
-      "summary": "Embeddings client + vector store with cosine search"
-    },
-    {
-      "name": "experiment",
-      "path": "./experiment",
-      "version": "0.1.0",
-      "summary": "Experiment tracking — log runs, params, metrics, compare"
-    }
+    {"name": "mold", "path": "./mold", "version": "0.1.0", "summary": "Structure & validate agent JSON — JSON Schema, tool_params, tool_spec"},
+    {"name": "tokensave", "path": "./tokensave", "version": "0.5.0", "summary": "Thrift context, memory, teach → train gold"},
+    {"name": "ml", "path": "./ml", "version": "0.1.0", "summary": "Embeddings, vectors, RAG index, metrics"},
+    {"name": "warp", "path": "./warp", "version": "0.1.0", "summary": "N-dimensional array math — pure Weft, no native deps"},
+    {"name": "dataframe", "path": "./dataframe", "version": "0.1.0", "summary": "Tabular data wrangling — filter, group, join, pivot, sort"},
+    {"name": "embed", "path": "./embed", "version": "0.1.0", "summary": "Embeddings client + vector store with cosine search"},
+    {"name": "experiment", "path": "./experiment", "version": "0.1.0", "summary": "Experiment tracking — log runs, params, metrics, compare"},
+    {"name": "metrics", "path": "./metrics", "version": "0.1.0", "summary": "ML metrics — accuracy, F1, precision, recall, confusion matrix"},
+    {"name": "http_router", "path": "./http_router", "version": "0.2.0", "summary": "HTTP routing with path params, middleware, groups, CORS"},
+    {"name": "template", "path": "./template", "version": "0.2.0", "summary": "HTML templating — layouts, partials, loops, conditionals, auto-escaping"},
+    {"name": "validate", "path": "./validate", "version": "0.1.0", "summary": "Data validation for forms and APIs"},
+    {"name": "cron", "path": "./cron", "version": "0.1.0", "summary": "Recurring task scheduler — intervals and daily times"},
+    {"name": "retry", "path": "./retry", "version": "0.1.0", "summary": "Retry with backoff, jitter, and circuit breaker"},
+    {"name": "semver", "path": "./semver", "version": "0.1.0", "summary": "Semantic versioning — parse, compare, bump, ranges"},
+    {"name": "color", "path": "./color", "version": "0.1.0", "summary": "Terminal color output — ANSI 256 and truecolor"},
+    {"name": "cache", "path": "./cache", "version": "0.1.0", "summary": "In-process LRU cache with TTL"},
+    {"name": "jwt", "path": "./jwt", "version": "0.3.0", "summary": "JWT decode, inspect claims, expiry check"},
+    {"name": "telecom", "path": "./telecom", "version": "0.3.0", "summary": "IVA, FreeSWITCH ESL, Asterisk ARI, SIP, STT/TTS, routing, queues"},
+    {"name": "auth", "path": "./auth", "version": "0.1.0", "summary": "HMAC, password hashing, token generation, OAuth helpers"},
+    {"name": "queue", "path": "./queue", "version": "0.1.0", "summary": "In-process job queue — workers, retries, dead-letter, priority"},
+    {"name": "config", "path": "./config", "version": "0.1.0", "summary": "Unified config loader — .env, JSON, YAML, TOML with validation"},
+    {"name": "logger", "path": "./logger", "version": "0.1.0", "summary": "Structured logging — levels, JSON output, context fields, child loggers"},
+    {"name": "router", "path": "./router", "version": "0.1.0", "summary": "HTTP routing — path params, middleware chains, CORS, rate limiting"}
   ]
 }

@@ -23,6 +23,8 @@ type BenchOptions struct {
 	Quiet bool
 	// Filter: substring match on function name
 	Filter string
+	// Compare: path to a previous bench run JSON to compare against
+	Compare string
 }
 
 // BenchResult is one fn bench_* measurement.
@@ -221,4 +223,94 @@ func PrintBenchReport(rep *BenchReport, quiet bool) int {
 		return 1
 	}
 	return 0
+}
+
+// SaveBenchJSON saves bench results as JSON for later --compare.
+func SaveBenchJSON(rep *BenchReport, path string) error {
+	var sb strings.Builder
+	sb.WriteString("[\n")
+	for i, r := range rep.Results {
+		if i > 0 {
+			sb.WriteString(",\n")
+		}
+		fmt.Fprintf(&sb, `  {"name":%q,"ns_op":%d,"ok":%v}`, r.Name, r.NsOp, r.OK)
+	}
+	sb.WriteString("\n]\n")
+	return os.WriteFile(path, []byte(sb.String()), 0o644)
+}
+
+// CompareBench compares current results against a baseline JSON file.
+func CompareBench(rep *BenchReport, baselinePath string) error {
+	data, err := os.ReadFile(baselinePath)
+	if err != nil {
+		return fmt.Errorf("reading baseline: %w", err)
+	}
+	// parse simple JSON array
+	baseline := map[string]int64{}
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		line = strings.TrimSuffix(line, ",")
+		if !strings.HasPrefix(line, `{"name":`) {
+			continue
+		}
+		// extract name and ns_op
+		var name string
+		var nsOp int64
+		fmt.Sscanf(extractJSONField(line, "name"), "%q", &name)
+		fmt.Sscanf(extractJSONField(line, "ns_op"), "%d", &nsOp)
+		if name != "" {
+			baseline[name] = nsOp
+		}
+	}
+
+	fmt.Println("\n--- comparison vs baseline ---")
+	fmt.Printf("%-30s %12s %12s %8s\n", "BENCH", "BASELINE", "CURRENT", "CHANGE")
+	for _, r := range rep.Results {
+		if !r.OK {
+			continue
+		}
+		base, ok := baseline[r.Name]
+		if !ok {
+			fmt.Printf("%-30s %12s %12s %8s\n", r.Name, "(new)", fmtNs(r.NsOp), "—")
+			continue
+		}
+		pct := 0.0
+		if base > 0 {
+			pct = float64(r.NsOp-base) / float64(base) * 100
+		}
+		sign := ""
+		if pct > 0 {
+			sign = "+"
+		}
+		fmt.Printf("%-30s %12s %12s %s%.1f%%\n", r.Name, fmtNs(base), fmtNs(r.NsOp), sign, pct)
+	}
+	return nil
+}
+
+func fmtNs(ns int64) string {
+	f := float64(ns)
+	switch {
+	case f >= 1e6:
+		return fmt.Sprintf("%.2f ms", f/1e6)
+	case f >= 1e3:
+		return fmt.Sprintf("%.2f µs", f/1e3)
+	default:
+		return fmt.Sprintf("%d ns", ns)
+	}
+}
+
+func extractJSONField(line, field string) string {
+	key := `"` + field + `":`
+	idx := strings.Index(line, key)
+	if idx < 0 {
+		return ""
+	}
+	rest := line[idx+len(key):]
+	// find end: next comma or }
+	end := strings.IndexAny(rest, ",}")
+	if end < 0 {
+		return strings.TrimSpace(rest)
+	}
+	return strings.TrimSpace(rest[:end])
 }

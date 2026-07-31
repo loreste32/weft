@@ -22,7 +22,7 @@ func isCommand(s string) bool {
 		"packages", "pkgs", "catalog",
 		"publish", "registry", "notebook", "nb", "debug", "profile",
 		"prompt", "teach", "train", "eval", "gen", "doctor", "ollama", "vllm", "lsp",
-		"update", "upgrade", "mcp":
+		"update", "upgrade", "outdated", "mcp":
 		return true
 	}
 	return false
@@ -180,12 +180,12 @@ func cmdStdlib(args []string) int {
 		{"LLM / AI", []string{"llm", "ollama", "vllm", "mcp", "deepgram", "elevenlabs", "mlinfer"}},
 		{"Web", []string{"http", "web", "ws", "webrtc", "graphql", "url"}},
 		{"Data", []string{"db", "redis", "mongo", "nats", "amqp", "csv", "json", "jsonl", "yaml", "toml", "xml", "ini", "table"}},
-		{"DevOps", []string{"sysinfo", "proc", "netutil", "sh", "fs", "cli", "env", "platform", "signal", "secrets", "log"}},
-		{"Network", []string{"pcap", "socket", "email", "ip"}},
-		{"Text / Math", []string{"str", "re", "math", "decimal", "time", "random", "uuid", "base64", "mime", "html", "crypto"}},
+		{"DevOps", []string{"sysinfo", "proc", "netutil", "sh", "fs", "cli", "env", "platform", "signal", "secrets", "log", "os"}},
+		{"Network", []string{"pcap", "socket", "email", "ip", "dns", "tls"}},
+		{"Text / Math", []string{"str", "re", "math", "decimal", "time", "random", "uuid", "base64", "encoding", "mime", "html", "crypto"}},
 		{"Collections", []string{"iter", "collections", "heap", "bisect", "pipe", "functools", "copy", "traceback"}},
 		{"Runtime", []string{"governor", "supervisor", "cluster", "ratelimit", "migrate", "metrics", "tokenizer", "dataset"}},
-		{"Other", []string{"archive", "binstruct", "difflib", "shlex", "pickle", "viz", "io", "test"}},
+		{"Other", []string{"archive", "compress", "binstruct", "difflib", "shlex", "pickle", "viz", "io", "test"}},
 	}
 	listed := map[string]bool{}
 	for _, cat := range categories {
@@ -472,6 +472,7 @@ func cmdFmt(args []string) int {
 func cmdBench(args []string) int {
 	opts := weft.BenchOptions{N: 1000}
 	var paths []string
+	var savePath string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
@@ -489,9 +490,19 @@ func cmdBench(args []string) int {
 				i++
 				opts.Filter = args[i]
 			}
+		case a == "--compare":
+			if i+1 < len(args) {
+				i++
+				opts.Compare = args[i]
+			}
+		case a == "--save":
+			if i+1 < len(args) {
+				i++
+				savePath = args[i]
+			}
 		case strings.HasPrefix(a, "-"):
 			fmt.Fprintf(os.Stderr, "unknown flag %s\n", a)
-			fmt.Fprintln(os.Stderr, "usage: weft bench [path…] [-n N] [-run filter]")
+			fmt.Fprintln(os.Stderr, "usage: weft bench [path…] [-n N] [-run filter] [--compare baseline.json] [--save out.json]")
 			return 2
 		default:
 			paths = append(paths, a)
@@ -503,7 +514,20 @@ func cmdBench(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	return weft.PrintBenchReport(rep, opts.Quiet)
+	code := weft.PrintBenchReport(rep, opts.Quiet)
+	if savePath != "" {
+		if err := weft.SaveBenchJSON(rep, savePath); err != nil {
+			fmt.Fprintf(os.Stderr, "save: %v\n", err)
+		} else {
+			fmt.Printf("saved to %s\n", savePath)
+		}
+	}
+	if opts.Compare != "" {
+		if err := weft.CompareBench(rep, opts.Compare); err != nil {
+			fmt.Fprintf(os.Stderr, "compare: %v\n", err)
+		}
+	}
+	return code
 }
 
 func cmdTest(args []string) int {

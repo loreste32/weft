@@ -1,0 +1,15 @@
+{
+  "name": "queue",
+  "version": "0.1.0",
+  "description": "In-process job queue with workers, retries, dead-letter, and priority",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": [
+    "new", "push", "process", "stats",
+    "retry", "dead_letter", "drain",
+    "priority_queue", "priority_push"
+  ],
+  "license": "Apache-2.0",
+  "keywords": ["queue", "job", "worker", "task", "async", "retry", "background"],
+  "deps": {}
+}

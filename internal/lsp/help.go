@@ -512,4 +512,61 @@ func init() {
 
 	// webrtc
 	memberCatalog["webrtc.hub"] = memberHelp{"webrtc.hub() -> hub", "create signaling hub"}
+
+	// encoding
+	memberCatalog["encoding.hex_encode"] = memberHelp{"encoding.hex_encode(data) -> str", "hex encode"}
+	memberCatalog["encoding.hex_decode"] = memberHelp{"encoding.hex_decode(s) -> Result[str]", "hex decode"}
+	memberCatalog["encoding.base32_encode"] = memberHelp{"encoding.base32_encode(data) -> str", "base32 encode"}
+	memberCatalog["encoding.base32_decode"] = memberHelp{"encoding.base32_decode(s) -> Result[str]", "base32 decode"}
+	memberCatalog["encoding.url_encode"] = memberHelp{"encoding.url_encode(s) -> str", "URL query encode"}
+	memberCatalog["encoding.url_decode"] = memberHelp{"encoding.url_decode(s) -> Result[str]", "URL query decode"}
+	memberCatalog["encoding.path_encode"] = memberHelp{"encoding.path_encode(s) -> str", "URL path encode"}
+	memberCatalog["encoding.path_decode"] = memberHelp{"encoding.path_decode(s) -> Result[str]", "URL path decode"}
+	memberCatalog["encoding.to_hex"] = memberHelp{"encoding.to_hex(n) -> str", "number/bytes to hex"}
+
+	// compress
+	memberCatalog["compress.gzip"] = memberHelp{"compress.gzip(data) -> Result[str]", "gzip compress"}
+	memberCatalog["compress.gunzip"] = memberHelp{"compress.gunzip(data) -> Result[str]", "gzip decompress"}
+	memberCatalog["compress.deflate"] = memberHelp{"compress.deflate(data) -> Result[str]", "zlib compress"}
+	memberCatalog["compress.inflate"] = memberHelp{"compress.inflate(data) -> Result[str]", "zlib decompress"}
+
+	// dns
+	memberCatalog["dns.lookup"] = memberHelp{"dns.lookup(host) -> Result[[str]]", "DNS A/AAAA lookup"}
+	memberCatalog["dns.srv"] = memberHelp{"dns.srv(service, proto, name) -> Result[[map]]", "SRV record lookup"}
+	memberCatalog["dns.cname"] = memberHelp{"dns.cname(host) -> Result[str]", "CNAME lookup"}
+	memberCatalog["dns.ns"] = memberHelp{"dns.ns(domain) -> Result[[str]]", "nameserver lookup"}
+	memberCatalog["dns.mx"] = memberHelp{"dns.mx(domain) -> Result[[map]]", "MX record lookup"}
+	memberCatalog["dns.txt"] = memberHelp{"dns.txt(domain) -> Result[[str]]", "TXT record lookup"}
+	memberCatalog["dns.reverse"] = memberHelp{"dns.reverse(ip) -> Result[[str]]", "reverse DNS (PTR)"}
+
+	// tls
+	memberCatalog["tls.cert_info"] = memberHelp{"tls.cert_info(host) -> Result[map]", "TLS certificate details"}
+	memberCatalog["tls.verify"] = memberHelp{"tls.verify(host) -> Result[map]", "verify TLS certificate validity"}
+	memberCatalog["tls.chain"] = memberHelp{"tls.chain(host) -> Result[[map]]", "certificate chain"}
+	memberCatalog["tls.expiry_check"] = memberHelp{"tls.expiry_check(host, warn_days?) -> Result[map]", "check cert expiry with warning threshold"}
+	memberCatalog["tls.supported_versions"] = memberHelp{"tls.supported_versions() -> [str]", "list supported TLS versions"}
+	memberCatalog["tls.system_roots"] = memberHelp{"tls.system_roots() -> Result[int]", "count system root CAs"}
+
+	// os
+	memberCatalog["os.getenv"] = memberHelp{"os.getenv(key) -> str?", "get environment variable"}
+	memberCatalog["os.setenv"] = memberHelp{"os.setenv(key, val) -> Result", "set environment variable"}
+	memberCatalog["os.unsetenv"] = memberHelp{"os.unsetenv(key) -> Result", "remove environment variable"}
+	memberCatalog["os.environ"] = memberHelp{"os.environ() -> map", "all environment variables"}
+	memberCatalog["os.cwd"] = memberHelp{"os.cwd() -> str", "current working directory"}
+	memberCatalog["os.chdir"] = memberHelp{"os.chdir(path) -> Result", "change working directory"}
+	memberCatalog["os.hostname"] = memberHelp{"os.hostname() -> str", "system hostname"}
+	memberCatalog["os.pid"] = memberHelp{"os.pid() -> int", "current process ID"}
+	memberCatalog["os.user"] = memberHelp{"os.user() -> Result[map]", "current user info"}
+	memberCatalog["os.home"] = memberHelp{"os.home() -> str", "user home directory"}
+	memberCatalog["os.temp_dir"] = memberHelp{"os.temp_dir() -> str", "system temp directory"}
+	memberCatalog["os.args"] = memberHelp{"os.args() -> [str]", "command-line arguments"}
+	memberCatalog["os.platform"] = memberHelp{"os.platform() -> map", "OS/arch/CPU info"}
+	memberCatalog["os.path_join"] = memberHelp{"os.path_join(parts...) -> str", "join path components"}
+	memberCatalog["os.path_exists"] = memberHelp{"os.path_exists(path) -> bool", "check if path exists"}
+	memberCatalog["os.mkdir"] = memberHelp{"os.mkdir(path) -> Result", "create directory (recursive)"}
+	memberCatalog["os.remove"] = memberHelp{"os.remove(path) -> Result", "remove file or directory"}
+	memberCatalog["os.rename"] = memberHelp{"os.rename(old, new) -> Result", "rename file or directory"}
+	memberCatalog["os.stat"] = memberHelp{"os.stat(path) -> Result[map]", "file info (size, mode, time)"}
+	memberCatalog["os.chmod"] = memberHelp{"os.chmod(path, mode) -> Result", "change file permissions"}
+	memberCatalog["os.separator"] = memberHelp{"os.separator() -> str", "path separator for this OS"}
 }

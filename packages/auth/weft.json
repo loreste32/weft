@@ -1,0 +1,18 @@
+{
+  "name": "auth",
+  "version": "0.1.0",
+  "description": "Authentication utilities: HMAC signing, password hashing, token generation, OAuth helpers",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": [
+    "hmac_sign", "hmac_verify",
+    "hash_password", "verify_password",
+    "generate_token", "generate_api_key",
+    "basic_auth_header", "parse_basic_auth",
+    "bearer_header", "parse_bearer",
+    "oauth_authorize_url", "oauth_token_request"
+  ],
+  "license": "Apache-2.0",
+  "keywords": ["auth", "hmac", "password", "token", "oauth", "security", "api-key"],
+  "deps": {}
+}

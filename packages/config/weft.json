@@ -1,0 +1,15 @@
+{
+  "name": "config",
+  "version": "0.1.0",
+  "description": "Unified config loader: .env, JSON, YAML, TOML with env var overlay, defaults, and validation",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": [
+    "load", "load_env", "load_json", "load_yaml", "load_toml",
+    "get", "get_or", "require", "merge", "validate",
+    "from_env"
+  ],
+  "license": "Apache-2.0",
+  "keywords": ["config", "configuration", "env", "dotenv", "settings", "yaml", "toml", "json"],
+  "deps": {}
+}

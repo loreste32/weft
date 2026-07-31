@@ -1,0 +1,200 @@
+// router — HTTP routing with path params, middleware, groups, and CORS.
+
+pub fn new(opts) -> map {
+    o := if opts != null { opts } else { {} }
+    {
+        "routes": [],
+        "middleware": [],
+        "not_found_handler": null,
+        "prefix": if o.prefix != null { o.prefix } else { "" },
+    }
+}
+
+pub fn get(r, path, handler) -> map {
+    add_route(r, "GET", path, handler)
+}
+
+pub fn post(r, path, handler) -> map {
+    add_route(r, "POST", path, handler)
+}
+
+pub fn put(r, path, handler) -> map {
+    add_route(r, "PUT", path, handler)
+}
+
+pub fn delete(r, path, handler) -> map {
+    add_route(r, "DELETE", path, handler)
+}
+
+pub fn patch(r, path, handler) -> map {
+    add_route(r, "PATCH", path, handler)
+}
+
+fn add_route(r, method, path, handler) -> map {
+    full_path := r.prefix + path
+    r.routes = r.routes + [{
+        "method": method,
+        "path": full_path,
+        "handler": handler,
+        "middleware": r.middleware,
+    }]
+    r
+}
+
+pub fn group(r, prefix, setup_fn) -> map {
+    sub := new({"prefix": r.prefix + prefix})
+    sub.middleware = r.middleware
+    sub = setup_fn(sub)
+    r.routes = r.routes + sub.routes
+    r
+}
+
+pub fn use_middleware(r, mw) -> map {
+    r.middleware = r.middleware + [mw]
+    r
+}
+
+pub fn cors(opts) -> fn {
+    o := if opts != null { opts } else { {} }
+    origin := if o.origin != null { o.origin } else { "*" }
+    methods := if o.methods != null { o.methods } else { "GET, POST, PUT, DELETE, OPTIONS" }
+    headers := if o.headers != null { o.headers } else { "Content-Type, Authorization" }
+    fn(req, next) {
+        if req.method == "OPTIONS" {
+            return {
+                "status": 204,
+                "headers": {
+                    "Access-Control-Allow-Origin": origin,
+                    "Access-Control-Allow-Methods": methods,
+                    "Access-Control-Allow-Headers": headers,
+                },
+            }
+        }
+        resp := next(req)
+        if resp.headers == null { resp.headers = {} }
+        resp.headers["Access-Control-Allow-Origin"] = origin
+        resp
+    }
+}
+
+pub fn rate_limit(max_requests, window_seconds) -> fn {
+    tracker := {}
+    fn(req, next) {
+        key := if req.remote_addr != null { req.remote_addr } else { "unknown" }
+        now := time.now()
+        entry := tracker[key]
+        if entry == null || (now - entry.start) > window_seconds {
+            tracker[key] = {"count": 1, "start": now}
+        } else {
+            entry.count = entry.count + 1
+            if entry.count > max_requests {
+                return {
+                    "status": 429,
+                    "body": json.encode({"error": "rate limit exceeded"}),
+                    "headers": {"Content-Type": "application/json", "Retry-After": str(window_seconds)},
+                }
+            }
+        }
+        next(req)
+    }
+}
+
+pub fn auth_middleware(validator) -> fn {
+    fn(req, next) {
+        auth := req.headers["Authorization"]
+        if auth == null {
+            return {"status": 401, "body": json.encode({"error": "unauthorized"})}
+        }
+        valid := validator(auth)
+        if valid != true {
+            return {"status": 403, "body": json.encode({"error": "forbidden"})}
+        }
+        next(req)
+    }
+}
+
+pub fn static_files(r, prefix, dir) -> map {
+    get(r, prefix + "/*path", fn(req) {
+        file_path := dir + "/" + req.params.path
+        content := fs.read(file_path)
+        match content {
+            Ok(data) {
+                ext := str.split(file_path, ".")
+                ct := mime.by_ext("." + ext[len(ext) - 1])
+                {"status": 200, "body": data, "headers": {"Content-Type": ct}}
+            }
+            Err(_) {
+                {"status": 404, "body": "not found"}
+            }
+        }
+    })
+}
+
+pub fn not_found(r, handler) -> map {
+    r.not_found_handler = handler
+    r
+}
+
+pub fn serve(r, addr) -> Result[any] {
+    web.serve(addr, fn(req) {
+        for route in r.routes {
+            if matches(route.method, route.path, req) {
+                req.params = extract_params(route.path, req.path)
+                handler := route.handler
+                // apply middleware chain in reverse
+                mws := route.middleware
+                i := len(mws) - 1
+                while i >= 0 {
+                    mw := mws[i]
+                    inner := handler
+                    handler = fn(rq) { mw(rq, inner) }
+                    i = i - 1
+                }
+                return handler(req)
+            }
+        }
+        if r.not_found_handler != null {
+            return r.not_found_handler(req)
+        }
+        {"status": 404, "body": "not found"}
+    })
+}
+
+fn matches(method, pattern, req) -> bool {
+    if method != req.method { return false }
+    pattern_parts := str.split(pattern, "/")
+    req_parts := str.split(req.path, "/")
+    if len(pattern_parts) != len(req_parts) {
+        // check wildcard
+        for i in range(len(pattern_parts)) {
+            if str.starts_with(pattern_parts[i], "*") {
+                return true
+            }
+        }
+        return false
+    }
+    for i in range(len(pattern_parts)) {
+        if str.starts_with(pattern_parts[i], ":") { continue }
+        if pattern_parts[i] != req_parts[i] { return false }
+    }
+    true
+}
+
+fn extract_params(pattern, path) -> map {
+    params := {}
+    pattern_parts := str.split(pattern, "/")
+    path_parts := str.split(path, "/")
+    for i in range(len(pattern_parts)) {
+        if i >= len(path_parts) { break }
+        if str.starts_with(pattern_parts[i], ":") {
+            name := pattern_parts[i][1:]
+            params[name] = path_parts[i]
+        }
+        if str.starts_with(pattern_parts[i], "*") {
+            name := pattern_parts[i][1:]
+            params[name] = str.join(path_parts[i:], "/")
+            break
+        }
+    }
+    params
+}

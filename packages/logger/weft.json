@@ -1,0 +1,14 @@
+{
+  "name": "logger",
+  "version": "0.1.0",
+  "description": "Structured logging with levels, JSON output, context fields, and child loggers",
+  "type": "module",
+  "entry": "lib.weft",
+  "exports": [
+    "new", "debug", "info", "warn", "error", "fatal",
+    "with", "child", "set_level", "json_format", "text_format"
+  ],
+  "license": "Apache-2.0",
+  "keywords": ["log", "logger", "logging", "structured", "json", "levels", "observability"],
+  "deps": {}
+}

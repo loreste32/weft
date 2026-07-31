@@ -282,6 +282,51 @@ func min(a, b int) int {
 	return b
 }
 
+// PkgOutdated compares installed vendor packages against the registry for newer versions.
+func PkgOutdated(dir string) error {
+	if dir == "" {
+		dir, _ = os.Getwd()
+	}
+	lock, err := pkgman.LoadLock(dir)
+	if err != nil || len(lock.Packages) == 0 {
+		fmt.Println("(no installed packages)")
+		return nil
+	}
+
+	idx, err := pkgman.FetchIndex(pkgman.RegistryURL())
+	if err != nil {
+		return fmt.Errorf("registry: %w", err)
+	}
+
+	// build latest version map from registry
+	latest := map[string]string{}
+	for _, p := range idx.Packages {
+		cur, exists := latest[p.Name]
+		if !exists || pkgman.VersionGreater(p.Version, cur) {
+			latest[p.Name] = p.Version
+		}
+	}
+
+	outdated := 0
+	for _, lp := range lock.Packages {
+		reg, ok := latest[lp.Name]
+		if !ok {
+			continue // not a registry package
+		}
+		if lp.Version == "" || lp.Version == reg {
+			continue
+		}
+		if pkgman.VersionGreater(reg, lp.Version) {
+			fmt.Printf("%-20s %s → %s\n", lp.Name, lp.Version, reg)
+			outdated++
+		}
+	}
+	if outdated == 0 {
+		fmt.Println("all packages up to date")
+	}
+	return nil
+}
+
 // DetectProjectDir walks up from start for weft.json (or legacy loom.json).
 func DetectProjectDir(start string) string {
 	dir := start

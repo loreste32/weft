@@ -102,6 +102,11 @@ var packages = []struct {
 	{"sysinfo", func(env *runtime.Env) runtime.Value { return packageSysinfo() }},
 	{"proc", func(env *runtime.Env) runtime.Value { return packageProc() }},
 	{"netutil", packageNetutil},
+	{"encoding", func(env *runtime.Env) runtime.Value { return packageEncoding() }},
+	{"compress", func(env *runtime.Env) runtime.Value { return packageCompress() }},
+	{"dns", func(env *runtime.Env) runtime.Value { return packageDNS() }},
+	{"tls", func(env *runtime.Env) runtime.Value { return packageTLS() }},
+	{"os", func(env *runtime.Env) runtime.Value { return packageOS() }},
 }
 
 // packageIndex is built once from packages for O(1) IsPackage.

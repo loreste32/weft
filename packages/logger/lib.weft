@@ -1,0 +1,90 @@
+// logger — structured logging with levels, JSON output, and child loggers.
+
+levels := {"debug": 0, "info": 1, "warn": 2, "error": 3, "fatal": 4}
+
+pub fn new(opts) -> map {
+    o := if opts != null { opts } else { {} }
+    {
+        "level": if o.level != null { o.level } else { "info" },
+        "format": if o.format != null { o.format } else { "text" },
+        "fields": if o.fields != null { o.fields } else { {} },
+        "_levels": levels,
+    }
+}
+
+fn should_log(logger, level) -> bool {
+    current := levels[logger.level]
+    target := levels[level]
+    if current == null || target == null { return true }
+    target >= current
+}
+
+fn emit(logger, level, msg, extra) {
+    if !should_log(logger, level) { return null }
+    ts := time.format(time.now(), "2006-01-02T15:04:05Z07:00")
+    fields := logger.fields
+    if extra != null {
+        for k in extra {
+            fields[k] = extra[k]
+        }
+    }
+    if logger.format == "json" {
+        entry := {"time": ts, "level": level, "msg": msg}
+        for k in fields {
+            entry[k] = fields[k]
+        }
+        say(json.encode(entry))
+    } else {
+        prefix := ts + " [" + str.upper(level) + "] "
+        suffix := ""
+        if len(fields) > 0 {
+            parts := []
+            for k in fields {
+                parts = parts + [k + "=" + str(fields[k])]
+            }
+            suffix = " " + str.join(parts, " ")
+        }
+        say(prefix + msg + suffix)
+    }
+}
+
+pub fn debug(logger, msg, extra) { emit(logger, "debug", msg, extra) }
+pub fn info(logger, msg, extra) { emit(logger, "info", msg, extra) }
+pub fn warn(logger, msg, extra) { emit(logger, "warn", msg, extra) }
+pub fn error(logger, msg, extra) { emit(logger, "error", msg, extra) }
+
+pub fn fatal(logger, msg, extra) {
+    emit(logger, "fatal", msg, extra)
+}
+
+pub fn with(logger, fields) -> map {
+    merged := logger.fields
+    for k in fields {
+        merged[k] = fields[k]
+    }
+    {
+        "level": logger.level,
+        "format": logger.format,
+        "fields": merged,
+        "_levels": levels,
+    }
+}
+
+pub fn child(logger, name) -> map {
+    with(logger, {"logger": name})
+}
+
+pub fn set_level(logger, level) -> map {
+    logger.level = level
+    logger
+}
+
+pub fn json_format(logger) -> map {
+    logger.format = "json"
+    logger
+}
+
+pub fn text_format(logger) -> map {
+    logger.format = "text"
+    logger
+}

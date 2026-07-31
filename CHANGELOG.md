@@ -2,6 +2,25 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
+## [0.4.7] — 2026-07-28
+
+### Added
+- **5 new stdlib packages** (81 total):
+  - `encoding` — hex, base32, URL encoding/decoding
+  - `compress` — gzip/gunzip, deflate/inflate with 100 MiB decompression limit
+  - `dns` — full DNS client: A/AAAA, SRV, CNAME, NS, MX, TXT, reverse (PTR)
+  - `tls` — certificate inspection, chain verification, expiry monitoring
+  - `os` — unified OS operations: env, paths, user info, filesystem, platform
+- **5 new registry modules** (23 total):
+  - `auth` — HMAC signing, password hashing, token generation, Basic/Bearer parsing, OAuth helpers
+  - `queue` — in-process job queue with workers, retries, dead-letter, priority levels
+  - `config` — unified config loader for .env/JSON/YAML/TOML with env overlay, dot-path access, validation
+  - `logger` — structured logging with levels (debug→fatal), JSON/text output, context fields, child loggers
+  - `router` — HTTP routing with path params, middleware chains, groups, CORS, rate limiting, auth middleware
+- **`weft bench --compare`** — compare bench results against a saved baseline; `--save` exports JSON
+- **`weft outdated`** — check installed packages against the registry for newer versions
+- 14 new tests (1374 total across 21 packages)
+
 ## [0.4.6] — 2026-07-30
 
 ### Added

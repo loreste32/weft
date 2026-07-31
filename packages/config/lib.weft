@@ -1,0 +1,134 @@
+// config — unified configuration loader with env overlay and validation.
+
+pub fn load(path) -> Result[any] {
+    content := fs.read(path)?
+    if str.ends_with(path, ".json") {
+        return json.parse(content)
+    }
+    if str.ends_with(path, ".yaml") || str.ends_with(path, ".yml") {
+        return yaml.parse(content)
+    }
+    if str.ends_with(path, ".toml") {
+        return toml.parse(content)
+    }
+    if str.ends_with(path, ".env") {
+        return Ok(load_env(path)?)
+    }
+    Err("unsupported config format: " + path)
+}
+
+pub fn load_env(path) -> Result[any] {
+    content := fs.read(path)?
+    lines := str.split(content, "\n")
+    result := {}
+    for line in lines {
+        line = str.trim(line)
+        if line == "" || str.starts_with(line, "#") {
+            continue
+        }
+        parts := str.split(line, "=")
+        if len(parts) >= 2 {
+            key := str.trim(parts[0])
+            val := str.trim(str.join(parts[1:], "="))
+            // strip surrounding quotes
+            if len(val) >= 2 {
+                if (str.starts_with(val, "\"") && str.ends_with(val, "\"")) || (str.starts_with(val, "'") && str.ends_with(val, "'")) {
+                    val = val[1:len(val)-1]
+                }
+            }
+            result[key] = val
+        }
+    }
+    Ok(result)
+}
+
+pub fn load_json(path) -> Result[any] {
+    content := fs.read(path)?
+    json.parse(content)
+}
+
+pub fn load_yaml(path) -> Result[any] {
+    content := fs.read(path)?
+    yaml.parse(content)
+}
+
+pub fn load_toml(path) -> Result[any] {
+    content := fs.read(path)?
+    toml.parse(content)
+}
+
+pub fn get(cfg, key) {
+    parts := str.split(key, ".")
+    current := cfg
+    for part in parts {
+        if current == null {
+            return null
+        }
+        current = current[part]
+    }
+    current
+}
+
+pub fn get_or(cfg, key, default_val) {
+    v := get(cfg, key)
+    if v == null { default_val } else { v }
+}
+
+pub fn require(cfg, keys) -> Result[any] {
+    missing := []
+    for key in keys {
+        if get(cfg, key) == null {
+            missing = missing + [key]
+        }
+    }
+    if len(missing) > 0 {
+        return Err("missing required config keys: " + str.join(missing, ", "))
+    }
+    Ok(cfg)
+}
+
+pub fn merge(base, overlay) -> map {
+    result := base
+    for key in overlay {
+        result[key] = overlay[key]
+    }
+    result
+}
+
+pub fn validate(cfg, schema) -> Result[any] {
+    errors := []
+    for key in schema {
+        rule := schema[key]
+        val := get(cfg, key)
+        if rule.required == true && val == null {
+            errors = errors + [key + " is required"]
+            continue
+        }
+        if val != null && rule.kind != null {
+            if rule.kind == "int" && type(val) != "int" {
+                errors = errors + [key + " must be an integer"]
+            }
+            if rule.kind == "str" && type(val) != "str" {
+                errors = errors + [key + " must be a string"]
+            }
+            if rule.kind == "bool" && type(val) != "bool" {
+                errors = errors + [key + " must be a boolean"]
+            }
+        }
+    }
+    if len(errors) > 0 {
+        return Err(str.join(errors, "; "))
+    }
+    Ok(cfg)
+}
+
+pub fn from_env(keys) -> map {
+    result := {}
+    for key in keys {
+        v := env.get(key)
+        if v != null {
+            result[key] = v
+        }
+    }
+    result
+}

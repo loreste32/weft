@@ -39,6 +39,10 @@ var RestrictedByDefault = []string{
 	"elevenlabs", // ElevenLabs TTS (API keys, network)
 	"mlinfer",    // ML inference (network, API keys)
 	"cluster",    // distributed state (Redis, locks)
+	"dns",        // DNS lookups (network)
+	"tls",        // TLS connections (network)
+	"os",         // OS operations (env, filesystem, processes)
+	"compress",   // compression (file I/O)
 }
 
 // CapsAll is the grant-everything token.

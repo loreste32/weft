@@ -1,0 +1,85 @@
+// queue — in-process job queue with workers, retries, and dead-letter.
+
+pub fn new(opts) -> map {
+    o := if opts != null { opts } else { {} }
+    {
+        "items": [],
+        "dead": [],
+        "processed": 0,
+        "failed": 0,
+        "max_retries": if o.max_retries != null { o.max_retries } else { 3 },
+        "concurrency": if o.concurrency != null { o.concurrency } else { 1 },
+    }
+}
+
+pub fn push(q, job) {
+    q.items = q.items + [{"payload": job, "attempts": 0, "id": uuid.v4()}]
+    q
+}
+
+pub fn process(q, handler) -> Result[any] {
+    results := []
+    remaining := []
+    dead := q.dead
+    for item in q.items {
+        result := try {
+            handler(item.payload)
+        }
+        match result {
+            Ok(v) {
+                results = results + [{"id": item.id, "result": v, "status": "ok"}]
+                q.processed = q.processed + 1
+            }
+            Err(e) {
+                item.attempts = item.attempts + 1
+                if item.attempts >= q.max_retries {
+                    dead = dead + [{"id": item.id, "payload": item.payload, "error": str(e), "attempts": item.attempts}]
+                    q.failed = q.failed + 1
+                } else {
+                    remaining = remaining + [item]
+                }
+            }
+        }
+    }
+    q.items = remaining
+    q.dead = dead
+    Ok({"queue": q, "results": results})
+}
+
+pub fn stats(q) -> map {
+    {
+        "pending": len(q.items),
+        "processed": q.processed,
+        "failed": q.failed,
+        "dead_letter": len(q.dead),
+    }
+}
+
+pub fn retry(q, handler) -> Result[any] {
+    retryable := q.dead
+    q.dead = []
+    for item in retryable {
+        q.items = q.items + [{"payload": item.payload, "attempts": 0, "id": item.id}]
+    }
+    process(q, handler)
+}
+
+pub fn dead_letter(q) -> list {
+    q.dead
+}
+
+pub fn drain(q) -> map {
+    items := q.items
+    q.items = []
+    {"queue": q, "drained": items}
+}
+
+pub fn priority_queue() -> map {
+    {"high": [], "normal": [], "low": [], "processed": 0, "failed": 0}
+}
+
+pub fn priority_push(pq, job, priority) -> map {
+    p := if priority != null { priority } else { "normal" }
+    pq[p] = pq[p] + [{"payload": job, "id": uuid.v4()}]
+    pq
+}
