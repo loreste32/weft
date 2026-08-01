@@ -159,7 +159,7 @@ All available at [registry.weftproject.dev](https://registry.weftproject.dev). I
 | Module | What it does |
 |--------|-------------|
 | **telecom** | IVA, FreeSWITCH ESL, Asterisk ARI, SIP, STT/TTS, routing, queues |
-| **auth** | HMAC, iterative SHA-256 password hashing (not bcrypt), tokens, OAuth helpers |
+| **auth** | HMAC, Argon2id password hashing (Go native), PBKDF2, tokens, OAuth helpers |
 | **router** | HTTP routing, path params, middleware chains, CORS |
 | **config** | Unified config: .env/JSON/YAML/TOML, dot-path access, validation |
 | **logger** | Structured logging: levels, JSON/text, context fields, child loggers |

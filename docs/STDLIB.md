@@ -37,7 +37,7 @@ What we keep vs won’t: **[STDLIB_GAPS.md](STDLIB_GAPS.md)**.
 | Network diag | `netutil` (port check, TCP ping, DNS, port scan) |
 | Runtime / infra | `governor` (token/cost budgets), `supervisor` (Erlang-style), `cluster` (distributed state via Redis), `ratelimit`, `migrate` |
 | ML / data | `tokenizer`, `dataset`, `metrics` |
-| Crypto | `crypto` |
+| Crypto | `crypto` (sha256, hmac, argon2id, pbkdf2, random_bytes, uuid) |
 | Errors | `traceback` |
 | Charts | `viz` |
 | GraphQL | `graphql` |

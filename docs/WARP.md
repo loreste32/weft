@@ -157,9 +157,9 @@ say(warp.percentile(a, 75))       // ~4.75
 | `norm(a)` / `norm_l1(a)` | L2 / L1 norm |
 | `normalize(a)` | Unit vector |
 | `trace(a)` | Trace (sum of diagonal) |
-| `det(a)` | Determinant (up to 3x3) |
-| `inv(a)` | Matrix inverse (2x2) → Result |
-| `solve(a, b)` | Solve Ax = b (2x2) → Result |
+| `det(a)` | Determinant (any size via LU decomposition) → Result |
+| `inv(a)` | Matrix inverse (any size via LU) → Result |
+| `solve(a, b)` | Solve Ax = b (any size via LU) → Result |
 | `outer(a, b)` | Outer product |
 | `cross(a, b)` | 3D cross product |
 
@@ -208,7 +208,7 @@ say(warp.describe(a))
 ## Limitations
 
 - Pure Weft — no SIMD, no BLAS. Fine for arrays up to ~10k elements.
-- `det` and `inv` only support up to 3x3 and 2x2 respectively.
+- `det`, `inv`, `solve` use LU decomposition with partial pivoting — O(n³), practical up to ~50x50.
 - Sort uses insertion sort — O(n²) for large arrays.
 - No sparse arrays or complex numbers.
 - For heavy numeric work, use `mlinfer` to call ONNX/Triton/HuggingFace.

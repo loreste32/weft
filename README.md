@@ -15,7 +15,7 @@ It handles errors with `Result` / `?` instead of exceptions, runs concurrent wor
 
 | | |
 |--|--|
-| Version | 0.4.7 (`main` branch) |
+| Version | 0.4.8 (`main` branch) |
 | Website | [weftproject.dev](https://weftproject.dev) |
 | Install | `curl -fsSL https://weftproject.dev/install.sh \| sh` |
 | Docs | [weftproject.dev/docs.html](https://weftproject.dev/docs.html) |
@@ -127,7 +127,7 @@ Install with `weft get <name>` — or just `use auth` and it auto-fetches from t
 | Module | What it does |
 |--------|-------------|
 | [telecom](packages/telecom/) | IVA voice agents, FreeSWITCH ESL, Asterisk ARI, STT/TTS, DTMF, routing, queues, CDR |
-| [auth](packages/auth/) | HMAC signing, password hashing (10k rounds), token generation, OAuth helpers |
+| [auth](packages/auth/) | HMAC, Argon2id password hashing, token generation, OAuth helpers |
 | [router](packages/router/) | HTTP routing with path params, middleware chains, CORS |
 | [config](packages/config/) | Unified config loader (.env/JSON/YAML/TOML) with validation |
 | [logger](packages/logger/) | Structured logging: levels, JSON/text output, child loggers |
