@@ -227,6 +227,19 @@ func packageCrypto() runtime.Value {
 				keyLen = uint32(v)
 			}
 		}
+		// Enforce safety bounds at the Go level — cannot be bypassed from Weft
+		if t < 1 || t > 10 {
+			return errRes("crypto.argon2id: time must be 1-10", "crypto"), nil
+		}
+		if mem < 8*1024 || mem > 256*1024 {
+			return errRes("crypto.argon2id: memory must be 8192-262144 KiB (8-256 MiB)", "crypto"), nil
+		}
+		if threads < 1 || threads > 16 {
+			return errRes("crypto.argon2id: threads must be 1-16", "crypto"), nil
+		}
+		if keyLen < 16 || keyLen > 64 {
+			return errRes("crypto.argon2id: keyLen must be 16-64", "crypto"), nil
+		}
 		key := argon2.IDKey(password, salt, t, mem, threads, keyLen)
 		return runtime.Str(hex.EncodeToString(key)), nil
 	}, 2)
@@ -258,6 +271,13 @@ func packageCrypto() runtime.Value {
 			case "sha1":
 				h = sha1.New
 			}
+		}
+		// Enforce safety bounds at the Go level
+		if iter < 10000 || iter > 10_000_000 {
+			return errRes("crypto.pbkdf2: iterations must be 10000-10000000", "crypto"), nil
+		}
+		if keyLen < 16 || keyLen > 64 {
+			return errRes("crypto.pbkdf2: keyLen must be 16-64", "crypto"), nil
 		}
 		key := pbkdf2.Key(password, salt, iter, keyLen, h)
 		return runtime.Str(hex.EncodeToString(key)), nil

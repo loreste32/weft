@@ -921,6 +921,19 @@ pub fn nan_to_num(a, nan_val, posinf, neginf) {
 
 fn _data(a) { if _is_arr(a) { a.data } else { a } }
 
+fn _validate_2d(a) -> Result[any] {
+    ensure(a != null && _is_arr(a), "expected warp array")?
+    ensure(len(a.shape) == 2, "expected 2D array")?
+    ensure(len(a.data) == a.shape[0] * a.shape[1], "data/shape mismatch")?
+    Ok(null)
+}
+
+fn _validate_square(a) -> Result[any] {
+    _validate_2d(a)?
+    ensure(a.shape[0] == a.shape[1], "expected square matrix")?
+    Ok(null)
+}
+
 fn _is_arr(a) { a != null && len(keys(a)) > 0 && contains(keys(a), "_warp") }
 
 fn _prod(shape) {

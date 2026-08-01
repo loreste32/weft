@@ -147,7 +147,6 @@ func wrapConn(c net.Conn) runtime.Value {
 		return runtime.Ok(runtime.Unit()), nil
 	})
 	put("set_deadline", 1, func(args []runtime.Value) (runtime.Value, error) {
-		// seconds from now
 		sec := int64(30)
 		if len(args) >= 1 {
 			if n, e := runtime.AsInt(args[0]); e == nil {
@@ -161,6 +160,52 @@ func wrapConn(c net.Conn) runtime.Value {
 			return errRes(err.Error(), "socket"), nil
 		}
 		return runtime.Ok(runtime.Unit()), nil
+	})
+	put("set_read_deadline", 1, func(args []runtime.Value) (runtime.Value, error) {
+		sec := int64(30)
+		if len(args) >= 1 {
+			if n, e := runtime.AsInt(args[0]); e == nil {
+				sec = n
+			}
+		}
+		mu.Lock()
+		err := c.SetReadDeadline(time.Now().Add(time.Duration(sec) * time.Second))
+		mu.Unlock()
+		if err != nil {
+			return errRes(err.Error(), "socket"), nil
+		}
+		return runtime.Ok(runtime.Unit()), nil
+	})
+	// read_timeout: read with a specific timeout in seconds, returns Err on timeout
+	put("read_timeout", 2, func(args []runtime.Value) (runtime.Value, error) {
+		n := 4096
+		sec := int64(5)
+		if len(args) >= 1 {
+			if x, e := runtime.AsInt(args[0]); e == nil && x > 0 && x < 1<<20 {
+				n = int(x)
+			}
+		}
+		if len(args) >= 2 {
+			if x, e := runtime.AsInt(args[1]); e == nil && x > 0 {
+				sec = x
+			}
+		}
+		buf := make([]byte, n)
+		mu.Lock()
+		_ = c.SetReadDeadline(time.Now().Add(time.Duration(sec) * time.Second))
+		nr, err := c.Read(buf)
+		// restore to no deadline
+		_ = c.SetReadDeadline(time.Time{})
+		mu.Unlock()
+		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				return errRes("timeout", "socket"), nil
+			}
+			if err != io.EOF {
+				return errRes(err.Error(), "socket"), nil
+			}
+		}
+		return runtime.Ok(runtime.Str(string(buf[:nr]))), nil
 	})
 	return m
 }
