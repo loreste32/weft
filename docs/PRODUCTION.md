@@ -27,6 +27,9 @@ Stack + trust map: [ECOSYSTEM.md](ECOSYSTEM.md) · full threat model: [SECURITY.
 | Distributed state | `cluster` — locks, counters, pub/sub via Redis |
 | Rate limiting | `ratelimit.new(rate, unit)` — token bucket per endpoint |
 | TLS monitoring | `tls.expiry_check(host, 30)` — certificate expiry alerts |
+| Password hashing | `auth.hash_password` uses Argon2id with stored params; `auth.needs_rehash` detects outdated records |
+| ESL limits | Frame parser caps: 64KB headers, 10MB body, 128 headers, 10k event queue |
+| Router safety | 405 for wrong method, query-string stripping, trailing-slash normalization, HEAD/OPTIONS handling |
 | DNS health | `dns.lookup` / `dns.srv` — service discovery checks |
 | System metrics | `sysinfo.memory` / `disk` / `loadavg` — monitoring hooks |
 | Standalone deploy | `weft build -o myapp` — single executable, no weft needed on target |

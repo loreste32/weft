@@ -594,6 +594,10 @@ fn main {
 
 Connect directly to FreeSWITCH via the Event Socket Library for real-time call control.
 
+**Protocol handling:** The ESL client uses proper Content-Length-based frame parsing with partial-read buffering. Command replies and async events are separated — `recv_event()` queues events that arrive during command execution. Both `\n\n` and `\r\n\r\n` delimiters are supported.
+
+**Safety limits:** Max header block 64KB, max body 10MB, max 128 headers per frame, max 10k queued events, max 16MB internal buffer. These prevent unbounded memory growth from malformed or high-volume FreeSWITCH streams.
+
 ### Inbound mode
 
 ```weft

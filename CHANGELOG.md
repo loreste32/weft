@@ -17,9 +17,21 @@ All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](ht
 - 4 new Go tests, 6 new Weft tests (1378 Go tests, 68 warp tests, 62 dataframe tests)
 
 ### Changed
-- auth: password hashing upgraded from iterative SHA-256 to Argon2id
+- auth: password hashing upgraded from iterative SHA-256 to Argon2id with stored parameters
+- auth: `verify_password` rejects unknown algorithms (was silent SHA-256 fallback)
+- auth: bounded Argon2id memory (1MB-4GB) and PBKDF2 iterations (10k-10M) to prevent DoS
+- auth: `needs_rehash()` detects outdated password parameters
 - warp: det/inv/solve generalized via LU decomposition (2x2 fast path preserved)
-- telecom/esl: frame-level protocol handling replaces bare socket reads
+- warp: solve() matrix RHS properly assembled row-major (was column-major)
+- warp: det/inv/solve validate square 2D input and data/shape consistency
+- telecom/esl: frame-level protocol handling with Content-Length, \r\n\r\n support
+- telecom/esl: memory limits — 64KB headers, 10MB body, 128 headers, 10k event queue, 16MB buffer
+- telecom/esl: outbound_server passes initial read into frame parser (no data loss)
+- router: wildcard matching validates prefix segments before accepting
+- router: query strings stripped, trailing slashes normalized
+- router: HEAD matches GET routes, OPTIONS returns 204 with Allow header
+- router: 405 for path-match/method-mismatch (was 404)
+- stdlib: unknown packages default to "experimental" maturity (was "stable")
 
 ## [0.4.7] — 2026-07-31
 
