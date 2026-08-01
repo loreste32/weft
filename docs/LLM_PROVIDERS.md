@@ -64,9 +64,9 @@ fn main -> Result {
 
 | Module | When | Doc |
 |--------|------|-----|
-| [mold](MOLD.md) | Validate tool/model JSON; emit tool params / JSON Schema | `weft registry install mold` |
-| [tokensave](../packages/tokensave/) | Thrift context, memory, teach → train | `weft registry install tokensave` |
-| [ml](ML.md) | Embeddings / RAG vectors | `weft registry install ml` |
+| [mold](MOLD.md) | Validate tool/model JSON; emit tool params / JSON Schema | `weft get mold` |
+| [tokensave](../packages/tokensave/) | Thrift context, memory, teach → train | `weft get tokensave` |
+| [ml](ML.md) | Embeddings / RAG vectors | `weft get ml` |
 
 See [ECOSYSTEM.md](ECOSYSTEM.md#agent-path-cohesive-recipe) for the full agent path. Cookbook: `examples/cookbook/13_agent.weft`, `14_mold.weft`.
 

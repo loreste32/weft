@@ -498,7 +498,7 @@ myapp/
 ```bash
 weft new app myapp           # scaffold
 cd myapp
-weft registry install mold   # add deps
+weft get mold   # add deps
 weft run main.weft           # run
 weft test                    # test
 weft check --types           # type check

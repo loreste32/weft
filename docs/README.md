@@ -22,7 +22,7 @@ Language + VM      Result/? · concurrency
 | Learn the language in an hour | [TUTORIAL.md](TUTORIAL.md) |
 | Paste a recipe | [COOKBOOK.md](COOKBOOK.md) · [`examples/cookbook/`](../examples/cookbook/) |
 | Build an agent | [ECOSYSTEM.md](ECOSYSTEM.md#agent-path-cohesive-recipe) → [LLM_PROVIDERS.md](LLM_PROVIDERS.md) → [MOLD.md](MOLD.md) |
-| Structure LLM JSON / tool params | [MOLD.md](MOLD.md) · `weft registry install mold` |
+| Structure LLM JSON / tool params | [MOLD.md](MOLD.md) · `weft get mold` |
 | Embeddings / RAG | [ML.md](ML.md) |
 | HTTP + HTMX UI | [web.md](web.md) |
 | Install / publish modules | [packages.md](packages.md) · [modules.md](modules.md) |
@@ -49,7 +49,7 @@ Runnable offline recipes: **[`examples/cookbook/`](../examples/cookbook/)** (`01
 
 ## Agents, telecom & optional modules
 
-14 modules in the [public registry](https://registry.weftproject.dev). Install with `weft registry install <name>`.
+23 modules in the [public registry](https://registry.weftproject.dev). Install with `weft get <name>`.
 
 | Module | Role | Doc |
 |--------|------|-----|
@@ -57,6 +57,11 @@ Runnable offline recipes: **[`examples/cookbook/`](../examples/cookbook/)** (`01
 | **mold** | Validate / coerce structured JSON; JSON Schema & tool params | [MOLD.md](MOLD.md) |
 | **ml** | Embeddings, vectors, RAG index, metrics | [ML.md](ML.md) |
 | **tokensave** | Context thrift, memory, teach → train | [`packages/tokensave`](../packages/tokensave/) |
+| **auth** | HMAC, password hashing, tokens, OAuth helpers | [registry](https://registry.weftproject.dev) |
+| **config** | Unified config loader (.env/JSON/YAML/TOML) | [registry](https://registry.weftproject.dev) |
+| **logger** | Structured logging: levels, JSON/text, child loggers | [registry](https://registry.weftproject.dev) |
+| **router** | HTTP routing, path params, middleware, CORS | [registry](https://registry.weftproject.dev) |
+| **queue** | Job queue with retries and dead-letter | [registry](https://registry.weftproject.dev) |
 | **retry** · **semver** · **cache** · **color** · **jwt** · **warp** | Ops utilities | [registry](https://registry.weftproject.dev) |
 | **http_router** · **template** · **validate** · **cron** | Web & app utilities | [registry](https://registry.weftproject.dev) |
 
@@ -69,8 +74,8 @@ Runnable offline recipes: **[`examples/cookbook/`](../examples/cookbook/)** (`01
 | train CLI | Private fine-tune orchestration | [FINETUNE.md](FINETUNE.md) |
 
 ```bash
-weft registry install telecom
-weft registry install mold
+weft get telecom
+weft get mold
 ```
 
 ---

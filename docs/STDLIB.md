@@ -376,7 +376,7 @@ Not listed by `weft stdlib` — they live under `packages/` and install into `ve
 
 ```bash
 weft packages list
-weft registry install mold
+weft get mold
 ```
 
 ---

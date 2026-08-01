@@ -294,7 +294,7 @@ weft get <name> <spec>     add dependency
 weft install               vendor/ + weft.lock
 weft list                  show project deps
 weft packages list         monorepo catalog (packages/index.json)
-weft registry install <name>   install from registry
+weft get <name>   install from registry
 weft list packages         same as packages list
 ```
 

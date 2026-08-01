@@ -3,7 +3,7 @@
 Build voice agents, IVR flows, and real-time telephony applications. One module for call control, STT/TTS, DTMF, routing, queues, CDR, and direct integration with **FreeSWITCH** (ESL) and **Asterisk** (ARI).
 
 ```bash
-weft registry install telecom
+weft get telecom
 ```
 
 ```weft
@@ -211,7 +211,7 @@ sudo apt install -y freeswitch-meta-all
 
 # 2. install weft + telecom module
 curl -fsSL https://weftproject.dev/install.sh | sh
-weft registry install telecom
+weft get telecom
 
 # 3. write your IVA
 cat > iva.weft << 'WEFT'

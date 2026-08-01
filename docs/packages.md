@@ -63,9 +63,9 @@ weft packages list              # walk up for packages/index.json
 weft packages list embed        # filter by name/summary
 weft packages search rag        # same idea
 weft packages info tokensave    # one entry (path, version, install hints)
-weft registry install ml
-weft registry install mold
-weft registry install tokensave
+weft get ml
+weft get mold
+weft get tokensave
 ```
 
 #### Monorepo catalog (`packages/index.json`)
@@ -165,7 +165,7 @@ Weft has a package registry with ed25519 signed packages. Override the default e
 # browse and install from registry
 weft registry search json
 weft registry info mypkg
-weft registry install mypkg@^1.0
+weft get mypkg@^1.0
 
 # generate a signing key
 weft registry keygen myname

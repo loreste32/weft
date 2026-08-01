@@ -30,7 +30,7 @@ internal/
   compile/         AST → bytecode
   vm/              Stack VM execution
   runtime/         Values, types, env
-  stdlib/          All 76 stdlib packages (one .go file each)
+  stdlib/          All 81 stdlib packages (one .go file each)
   pkgman/          Package manager, registry client/server, signing
   types/           Gradual type checker
   lsp/             Language server
