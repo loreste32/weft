@@ -131,9 +131,14 @@ func packageTLS() runtime.Value {
 			}
 		}
 
-		conn, err := dial(addr, &tls.Config{InsecureSkipVerify: true})
+		// Use verified TLS by default — cert must be valid to trust expiry info
+		conn, err := dial(addr, &tls.Config{})
 		if err != nil {
-			return errRes(err.Error(), "tls"), nil
+			// Fall back to unverified to still report expiry of expired/self-signed certs
+			conn, err = dial(addr, &tls.Config{InsecureSkipVerify: true})
+			if err != nil {
+				return errRes(err.Error(), "tls"), nil
+			}
 		}
 		defer conn.Close()
 

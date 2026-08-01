@@ -3,8 +3,8 @@ package stdlib
 import (
 	"encoding/base32"
 	"encoding/hex"
+	"fmt"
 	"net/url"
-	"strings"
 
 	"github.com/loreste/weft/internal/runtime"
 )
@@ -95,7 +95,7 @@ func packageEncoding() runtime.Value {
 			return errRes("encoding.to_hex(n)", "encoding"), nil
 		}
 		if n, err := runtime.AsInt(args[0]); err == nil {
-			return runtime.Str(strings.ToUpper(hex.EncodeToString([]byte{byte(n)}))), nil
+			return runtime.Str(fmt.Sprintf("%X", n)), nil
 		}
 		return runtime.Str(hex.EncodeToString([]byte(args[0].String()))), nil
 	}, 1)

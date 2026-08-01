@@ -564,7 +564,8 @@ func init() {
 	memberCatalog["os.path_join"] = memberHelp{"os.path_join(parts...) -> str", "join path components"}
 	memberCatalog["os.path_exists"] = memberHelp{"os.path_exists(path) -> bool", "check if path exists"}
 	memberCatalog["os.mkdir"] = memberHelp{"os.mkdir(path) -> Result", "create directory (recursive)"}
-	memberCatalog["os.remove"] = memberHelp{"os.remove(path) -> Result", "remove file or directory"}
+	memberCatalog["os.remove"] = memberHelp{"os.remove(path) -> Result", "remove single file or empty directory"}
+	memberCatalog["os.remove_tree"] = memberHelp{"os.remove_tree(path) -> Result", "recursively remove directory tree (refuses / and .)"}
 	memberCatalog["os.rename"] = memberHelp{"os.rename(old, new) -> Result", "rename file or directory"}
 	memberCatalog["os.stat"] = memberHelp{"os.stat(path) -> Result[map]", "file info (size, mode, time)"}
 	memberCatalog["os.chmod"] = memberHelp{"os.chmod(path, mode) -> Result", "change file permissions"}

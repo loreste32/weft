@@ -204,6 +204,8 @@ func packageOS() rt.Value {
 				perm = os.FileMode(p)
 			}
 		}
+		// Strip setuid/setgid/sticky and cap at 0755
+		perm &= 0o755
 		if err := os.MkdirAll(args[0].String(), perm); err != nil {
 			return errRes(err.Error(), "os"), nil
 		}
@@ -214,7 +216,23 @@ func packageOS() rt.Value {
 		if len(args) < 1 {
 			return errRes("os.remove(path)", "os"), nil
 		}
-		if err := os.RemoveAll(args[0].String()); err != nil {
+		// Single file/empty dir only — use remove_tree for recursive
+		if err := os.Remove(args[0].String()); err != nil {
+			return errRes(err.Error(), "os"), nil
+		}
+		return rt.Ok(rt.Null()), nil
+	}, 1)
+
+	set(p, "remove_tree", func(args []rt.Value) (rt.Value, error) {
+		if len(args) < 1 {
+			return errRes("os.remove_tree(path)", "os"), nil
+		}
+		target := args[0].String()
+		// Block removing root or very short paths as safety guard
+		if len(target) < 2 || target == "/" || target == "." || target == ".." {
+			return errRes("refusing to remove_tree on root or current directory", "os"), nil
+		}
+		if err := os.RemoveAll(target); err != nil {
 			return errRes(err.Error(), "os"), nil
 		}
 		return rt.Ok(rt.Null()), nil
