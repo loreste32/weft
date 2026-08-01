@@ -1,6 +1,6 @@
 # How Weft fits together
 
-One picture for language, stdlib, optional modules, agents, web, and trust.
+One picture for language, stdlib, optional modules, agents, telecom, web, and trust.
 Detail pages stay short and point back here when you get lost.
 
 ## Layers
@@ -10,28 +10,31 @@ Detail pages stay short and point back here when you get lost.
 │  Your app  (.weft + weft.json + vendor/)                     │
 ├─────────────────────────────────────────────────────────────┤
 │  Optional modules  (registry → vendor/ — NOT in the binary)  │
-│    telecom · mold · ml · tokensave · retry · cache · …       │
+│    telecom · auth · router · config · logger · queue ·       │
+│    mold · ml · tokensave · retry · cache · jwt · …  (23)     │
 ├─────────────────────────────────────────────────────────────┤
-│  Stdlib  (IN the binary — 76 packages)                       │
-│    llm · mcp · deepgram · elevenlabs · mlinfer · http · …   │
+│  Stdlib  (IN the binary — 81 packages)                       │
+│    llm · mcp · deepgram · elevenlabs · mlinfer · http ·     │
+│    dns · tls · os · compress · encoding · governor ·         │
+│    supervisor · cluster · sysinfo · proc · netutil · …       │
 ├─────────────────────────────────────────────────────────────┤
 │  Language + VM  (weft binary)                                │
-│    Result/? · concurrency · modules system                   │
+│    Result/? · concurrency · modules system · auto-fetch      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 | Layer | Lives where | You get it by |
 |-------|-------------|----------------|
-| Language / VM | `weft` binary | build / install `weft` |
-| Stdlib | same binary | `use http` / `use llm` / … |
-| Optional modules | `packages/` → `vendor/` | `weft registry install` / `weft get` |
+| Language / VM | `weft` binary | `curl -fsSL https://weftproject.dev/install.sh \| sh` |
+| Stdlib (81 pkgs) | same binary | `use http` / `use llm` / `use dns` / … |
+| Registry modules (23) | `packages/` → `vendor/` | `weft get name` or auto-fetch on `use` |
 | Your code | project dir | `weft run` |
 
-**Rule:** if it is domain-specific (embeddings, structured tool args, context thrift), it is a **module**. If most agent/ops scripts need it (HTTP, LLM chat, files), it is **stdlib**.
+**Rule:** if it is domain-specific (telecom, embeddings, structured tool args), it is a **module**. If most agent/ops scripts need it (HTTP, LLM chat, files, DNS), it is **stdlib**.
 
 ---
 
-## Agent path (cohesive recipe)
+## Agent path
 
 Typical agent work uses **core `llm`** plus optional modules as needed:
 
@@ -52,50 +55,44 @@ Typical agent work uses **core `llm`** plus optional modules as needed:
 | Piece | Kind | Job | Doc |
 |-------|------|-----|-----|
 | `llm` · `ollama` · `vllm` | **stdlib** | chat, tools, stream, local hosts | [LLM_PROVIDERS.md](LLM_PROVIDERS.md) · [LLM_LOCAL.md](LLM_LOCAL.md) |
+| `mcp` | **stdlib** | Model Context Protocol client + server | [MCP.md](MCP.md) |
+| `deepgram` | **stdlib** | streaming STT via WebSocket (Nova-2) | [DEEPGRAM.md](DEEPGRAM.md) |
+| `elevenlabs` | **stdlib** | streaming TTS via WebSocket (Turbo v2.5) | [ELEVENLABS.md](ELEVENLABS.md) |
+| `mlinfer` | **stdlib** | ML inference (ONNX, Triton, HuggingFace) | [MLINFER.md](MLINFER.md) |
+| `governor` | **stdlib** | token/cost/time budgets for LLM calls | [STDLIB.md](STDLIB.md) |
+| `supervisor` | **stdlib** | Erlang-style process supervision | [STDLIB.md](STDLIB.md) |
+| `cluster` | **stdlib** | distributed state via Redis (locks, counters, pub/sub) | [CLUSTER.md](CLUSTER.md) |
 | **mold** | **module** | structured models, validate JSON, JSON Schema / tool params | [MOLD.md](MOLD.md) |
 | **tokensave** | **module** | thrift context, memory, teach → train gold | [`packages/tokensave`](../packages/tokensave/) |
 | **ml** | **module** | embeddings, vectors, RAG index, metrics | [ML.md](ML.md) |
 | fine-tune | **CLI + external GPU** | private train orchestration | [FINETUNE.md](FINETUNE.md) |
 
-### Install the agent modules you need
+---
 
-```bash
-# monorepo
-weft packages list
-weft registry install mold
-weft registry install ml
-weft registry install tokensave
-weft install
+## Telecom / IVA path
 
-# or path form
-weft registry install mold
-```
+Build voice applications with FreeSWITCH ESL or Asterisk ARI:
+
+| Piece | Kind | Job |
+|-------|------|-----|
+| **telecom** | **module** | IVA agents, FreeSWITCH ESL, Asterisk ARI, SIP, routing, queues, CDR, dial plans, SSML |
+| `deepgram` | **stdlib** | real-time speech-to-text |
+| `elevenlabs` | **stdlib** | real-time text-to-speech |
+| `llm` | **stdlib** | conversational AI for IVA |
 
 ```weft
-use mold
-use ml          // only if you installed it
-use tokensave   // only if you installed it
+use telecom
 
 fn main -> Result {
-    // shape tool args / model JSON
-    Args := mold.model({"city": "str!"})?
-    a := mold.parse(Args, "{\"city\":\"Paris\"}")?
-
-    // chat / tools stay in stdlib
-    say(llm.chat("hi")?)
+    conn := telecom.esl_connect("127.0.0.1", 8021, "ClueCon")?
+    telecom.esl_answer(conn)?
+    telecom.esl_play(conn, "ivr/welcome.wav")?
+    digits := telecom.dtmf_collect(conn, {"max_digits": 4, "timeout": 10})?
+    say("caller pressed: " + digits)
 }
 ```
 
-Offline samples:
-
-| Example | Shows |
-|---------|--------|
-| **[`examples/agent_stack/`](../examples/agent_stack/)** | **mold + tokensave + ml together** (no network) |
-| [`examples/cookbook/13_agent.weft`](../examples/cookbook/13_agent.weft) | `llm` tools (stdlib, mock-friendly) |
-| [`examples/cookbook/14_mold.weft`](../examples/cookbook/14_mold.weft) | mold parse / extract / tool_params |
-| [`examples/mold_ai.weft`](../examples/mold_ai.weft) | mold + tool_spec wire formats |
-| [`examples/ml_demo/`](../examples/ml_demo/) | ml vectors (after install) |
-| [`examples/tokensave_demo/`](../examples/tokensave_demo/) | tokensave brain + memory |
+Doc: [TELECOM.md](TELECOM.md)
 
 ---
 
@@ -116,7 +113,90 @@ Offline samples:
 |-------|-----|
 | Routes, static, SSE | [web.md](web.md) |
 | HTMX helpers, cookies, `before` | [web.md](web.md#htmx) |
-| Demo | `weft run examples/htmx.weft` |
+| **router** module (path params, middleware, CORS) | `use router` |
+| **template** module (layouts, partials, loops, escaping) | `use template` |
+| **auth** module (HMAC, passwords, tokens, OAuth) | `use auth` |
+
+---
+
+## DevOps / sysops path
+
+```text
+  weft run runbook.weft
+       │
+       ├── sysinfo.memory / disk / uptime / loadavg
+       ├── proc.list / find / kill
+       ├── netutil.port_open / tcp_ping / scan_ports
+       ├── dns.lookup / srv / mx / txt / reverse
+       ├── tls.cert_info / verify / expiry_check
+       ├── os.hostname / pid / user / stat / mkdir
+       ├── compress.gzip / gunzip
+       ├── encoding.hex_encode / base32_encode / url_encode
+       └── sh.run / capture / lines
+```
+
+| Piece | Kind | Job |
+|-------|------|-----|
+| `sysinfo` | **stdlib** | CPU, memory, disk, uptime, load, interfaces |
+| `proc` | **stdlib** | process list, find, kill, exists |
+| `netutil` | **stdlib** | port check, TCP ping, DNS, port scan |
+| `dns` | **stdlib** | full DNS client (A/AAAA, SRV, CNAME, NS, MX, TXT, PTR) |
+| `tls` | **stdlib** | TLS certificate inspection, chain, expiry monitoring |
+| `os` | **stdlib** | env, paths, user info, filesystem, platform |
+| `compress` | **stdlib** | gzip/gunzip, deflate/inflate |
+| `encoding` | **stdlib** | hex, base32, URL encoding |
+| **config** module | config loader (.env/JSON/YAML/TOML, validation) | `use config` |
+| **logger** module | structured logging (levels, JSON, child loggers) | `use logger` |
+
+Doc: [SYSOPS.md](SYSOPS.md)
+
+---
+
+## Registry modules (23 packages)
+
+All available at [registry.weftproject.dev](https://registry.weftproject.dev). Install with `weft get <name>` or they auto-fetch on first `use` (disable with `WEFT_NO_AUTO_FETCH=1`).
+
+| Module | What it does |
+|--------|-------------|
+| **telecom** | IVA, FreeSWITCH ESL, Asterisk ARI, SIP, STT/TTS, routing, queues |
+| **auth** | HMAC, password hashing (10k rounds), tokens, OAuth helpers |
+| **router** | HTTP routing, path params, middleware chains, CORS |
+| **config** | Unified config: .env/JSON/YAML/TOML, dot-path access, validation |
+| **logger** | Structured logging: levels, JSON/text, context fields, child loggers |
+| **queue** | In-process job queue: workers, retries, dead-letter |
+| **template** | HTML templating: layouts, partials, loops, conditionals, auto-escaping |
+| **validate** | Data validation for forms and APIs |
+| **http_router** | HTTP routing with path params, middleware, groups, CORS |
+| **jwt** | JWT decode, inspect claims, expiry check |
+| **cache** | In-process LRU cache with TTL |
+| **retry** | Retry with backoff, jitter, and circuit breaker |
+| **cron** | Recurring task scheduler |
+| **semver** | Semantic versioning: parse, compare, bump, ranges |
+| **color** | Terminal color output (ANSI 256 / truecolor) |
+| **mold** | Structured models, JSON Schema, tool params |
+| **tokensave** | Thrift context, memory, teach → train gold |
+| **ml** | Embeddings, vectors, RAG index |
+| **warp** | N-dimensional array math |
+| **dataframe** | Tabular data: filter, group, join, pivot |
+| **embed** | Embeddings client + vector store |
+| **experiment** | Experiment tracking: runs, params, metrics |
+| **metrics** | ML metrics: accuracy, F1, precision, recall |
+
+### Install
+
+```bash
+# auto-fetch: just use it
+use auth
+use config
+
+# explicit install
+weft get auth
+weft get config
+weft install
+
+# grouped imports
+use { "auth" "config" "logger" }
+```
 
 ---
 
@@ -126,23 +206,47 @@ Offline samples:
 |----------|-----|
 | Installing modules into an app | [packages.md](packages.md) |
 | Writing a module for others | [modules.md](modules.md) |
-| Monorepo catalog (`ml` / `mold` / `tokensave`) | [`packages/README.md`](../packages/README.md) · `weft packages list` |
+| Browsing the registry | [registry.weftproject.dev](https://registry.weftproject.dev) |
 
-Same install model for all modules:
+Install model:
 
 ```text
-weft get <name> <path|git@tag>   →  weft.json deps
+weft get <name> [path|git@tag]   →  weft.json deps
 weft install                     →  vendor/ + weft.lock
 use <name>                      →  import
+
+# or auto-fetch (no weft get needed):
+use auth      # downloads from registry if not in vendor/
 ```
 
-Capabilities: third-party code in `vendor/` is **restricted by default**. Profiles (`@llm`, `@agent`, `@data`, …) and explicit grants live in the module’s `weft.json`. Details: [modules.md](modules.md#capabilities-host-access) · [SECURITY.md](../SECURITY.md).
+Capabilities: third-party code in `vendor/` is **restricted by default**. Profiles (`@llm`, `@agent`, `@data`, …) and explicit grants live in the module's `weft.json`. Details: [modules.md](modules.md#capabilities-host-access).
 
-| Module | Typical caps | Notes |
-|--------|----------------|-------|
-| `mold` | none | pure validation — safe default |
-| `ml` | `@agent` + `fs` + `env` | HTTP embeddings / keys |
-| `tokensave` | `@agent` + `fs` + `env` | memory on disk + model calls |
+---
+
+## CLI tools
+
+| Command | What |
+|---------|------|
+| `weft run` | Run a script |
+| `weft build` | Standalone executable (no weft needed on target) |
+| `weft check [--types]` | Type check |
+| `weft test [--race] [--mem] [--timeout N]` | Run tests |
+| `weft bench [--save f.json] [--compare base.json]` | Benchmarks with regression tracking |
+| `weft lint` | Static analysis |
+| `weft doc` | Generate API docs |
+| `weft fmt` | Format code |
+| `weft info` | System report |
+| `weft debug` | Interactive debugger |
+| `weft profile` | Execution profiler |
+| `weft mcp serve` | MCP tool server |
+| `weft lsp` | Language server |
+| `weft update` | Self-update weft |
+| `weft upgrade` | Upgrade packages |
+| `weft outdated` | Check for newer versions |
+| `weft stdlib [pkg]` | Browse stdlib (live probe on zero-arg functions) |
+| `weft doctor` | Check environment |
+
+Doc: [TOOLING.md](TOOLING.md) · [cli.md](cli.md)
 
 ---
 
@@ -157,9 +261,10 @@ Weft is **host-power** for your scripts (like a shell + HTTP toolkit), not a mul
 | Outbound HTTP | SSRF guards (private/metadata blocked by default) |
 | Env API keys → `llm` | Hostname allowlist only (`WEFT_LLM_TRUST_HOSTS` to extend) |
 | `Secret` | Prints as `***`; use `secrets.unwrap` at the edge |
+| `os.remove` | Single file only; `os.remove_tree` guards against `/` and `.` |
+| `os.mkdir` | Permissions capped at 0755 |
 
-Operator checklist and hardening list: **[SECURITY.md](../SECURITY.md)**.  
-Production habits: [PRODUCTION.md](PRODUCTION.md).
+Operator checklist: **[SECURITY.md](../SECURITY.md)** · Production habits: [PRODUCTION.md](PRODUCTION.md).
 
 ---
 
@@ -169,13 +274,19 @@ Production habits: [PRODUCTION.md](PRODUCTION.md).
 [TUTORIAL](TUTORIAL.md) → [LANGUAGE](LANGUAGE.md) → [SYNTAX](SYNTAX.md) → [COOKBOOK](COOKBOOK.md)
 
 ### Build agents
-This page → [LLM_PROVIDERS](LLM_PROVIDERS.md) → [MOLD](MOLD.md) → [ML](ML.md) → [FINETUNE](FINETUNE.md)
+This page → [LLM_PROVIDERS](LLM_PROVIDERS.md) → [MCP](MCP.md) → [MOLD](MOLD.md) → [ML](ML.md) → [FINETUNE](FINETUNE.md)
+
+### Build voice / telecom
+[TELECOM](TELECOM.md) → [DEEPGRAM](DEEPGRAM.md) → [ELEVENLABS](ELEVENLABS.md)
 
 ### Build HTTP / HTMX
 [web.md](web.md) → cookbook server examples → [PRODUCTION](PRODUCTION.md)
 
+### DevOps / sysops
+[SYSOPS](SYSOPS.md) → [STDLIB](STDLIB.md) → [TOOLING](TOOLING.md)
+
 ### Extend Weft
-[packages.md](packages.md) (consume) · [modules.md](modules.md) (author) · [`packages/`](../packages/)
+[packages.md](packages.md) (consume) · [modules.md](modules.md) (author) · [registry](https://registry.weftproject.dev)
 
 ### Operate safely
 [SECURITY.md](../SECURITY.md) · [PRODUCTION.md](PRODUCTION.md) · [SYSOPS.md](SYSOPS.md)

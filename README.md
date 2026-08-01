@@ -9,13 +9,13 @@ A scripting language for agent tools, telecom, HTTP glue, and ops work. One bina
 
 ## What it is
 
-Weft is a small language with its own syntax, a stack VM, and 76 stdlib packages baked into the binary. You write `.weft` files, run them with `weft run`, and ship scripts without setting up environments or installing interpreters.
+Weft is a small language with its own syntax, a stack VM, and 81 stdlib packages baked into the binary. You write `.weft` files, run them with `weft run`, and ship scripts without setting up environments or installing interpreters.
 
 It handles errors with `Result` / `?` instead of exceptions, runs concurrent work without `async`/`await`, and talks to LLMs, databases, SIP servers, and HTTP services out of the box.
 
 | | |
 |--|--|
-| Version | 0.4.6 (`main` branch) |
+| Version | 0.4.7 (`main` branch) |
 | Website | [weftproject.dev](https://weftproject.dev) |
 | Install | `curl -fsSL https://weftproject.dev/install.sh \| sh` |
 | Docs | [weftproject.dev/docs.html](https://weftproject.dev/docs.html) |
@@ -100,15 +100,17 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 
 **Language:** lex, parse, compile, stack VM. Closures (capture by value), sum types with payloads, `match` with destructuring, `defer`, `Result`/`?`. Concurrent `map`/`filter`, `spawn`, channels — no `async`/`await`.
 
-**76 stdlib packages (in the binary):**
+**81 stdlib packages (in the binary):**
 
 | Area | Packages |
 |------|----------|
-| LLM / AI | `llm` (OpenAI/Anthropic/Ollama/vLLM), `mcp` (Model Context Protocol), `deepgram` (streaming STT), `elevenlabs` (streaming TTS), `mlinfer` (ONNX/Triton/HF inference) |
+| LLM / AI | `llm` (OpenAI/Anthropic/Ollama/vLLM), `mcp`, `deepgram` (STT), `elevenlabs` (TTS), `mlinfer` (ONNX/Triton/HF) |
 | Web | `http`, `web` (HTMX/SSE), `ws`, `webrtc`, `graphql` |
-| DevOps | `sysinfo`, `proc`, `netutil`, `sh`, `fs`, `cli`, `env`, `signal`, `secrets`, `log` |
+| DevOps | `sysinfo`, `proc`, `netutil`, `os`, `dns`, `tls`, `sh`, `fs`, `cli`, `env`, `signal`, `secrets`, `log` |
 | Data | `db` (SQLite/Postgres/MySQL), `csv`, `json`, `yaml`, `toml`, `xml`, `redis`, `mongo`, `nats`, `amqp` |
-| Network | `pcap`, `socket`, `email`, `ip` |
+| Network | `pcap`, `socket`, `email`, `ip`, `dns`, `tls` |
+| Encoding | `encoding` (hex, base32, URL), `compress` (gzip, zlib), `base64`, `crypto` |
+| Runtime | `governor`, `supervisor`, `cluster`, `ratelimit`, `migrate` |
 | All | Run `weft stdlib` to see the full list |
 
 **Tooling:**
@@ -122,11 +124,15 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 - **Reliability** — bytecode validation, fuzz/race/compat CI, `make release-smoke`; slim binary (`-tags slim`); see [docs/STABILITY.md](docs/STABILITY.md)
 - `weft notebook` — run `.weft` as cells, output HTML
 - `weft mcp serve <file>` — expose Weft functions as MCP tools
+- `weft lint` — static analysis (unused imports, trailing whitespace, TODOs)
+- `weft doc` — generate API docs from `pub fn`
+- `weft bench [--save f.json] [--compare base.json]` — benchmarks with regression tracking
 - `weft update` — self-update to latest version
 - `weft upgrade` — upgrade installed packages
+- `weft outdated` — check for newer package versions
 - `weft lsp` — Language Server (completion, hover, rename, diagnostics)
 
-**14 registry modules** at [registry.weftproject.dev](https://registry.weftproject.dev):
+**23 registry modules** at [registry.weftproject.dev](https://registry.weftproject.dev):
 
 | Module | What it does |
 |--------|-------------|
@@ -144,15 +150,24 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 | [template](packages/template/) | String templating with placeholders, loops, HTML escaping |
 | [validate](packages/validate/) | Data validation for forms/APIs |
 | [cron](packages/cron/) | Recurring task scheduler with intervals and daily times |
-
-`packages/` also holds 4 local ML-stack packages — [dataframe](packages/dataframe/), [embed](packages/embed/), [experiment](packages/experiment/), [metrics](packages/metrics/) — installable via path/git (see `packages/index.json`).
+| [auth](packages/auth/) | HMAC, password hashing, tokens, OAuth helpers |
+| [queue](packages/queue/) | In-process job queue with retries and dead-letter |
+| [config](packages/config/) | Unified config loader (.env/JSON/YAML/TOML) with validation |
+| [logger](packages/logger/) | Structured logging: levels, JSON/text, child loggers |
+| [router](packages/router/) | HTTP routing with path params, middleware, CORS |
+| [dataframe](packages/dataframe/) | Tabular data: filter, group, join, pivot |
+| [embed](packages/embed/) | Embeddings client + vector store |
+| [experiment](packages/experiment/) | Experiment tracking: runs, params, metrics |
+| [metrics](packages/metrics/) | ML metrics: accuracy, F1, precision, recall |
 
 **Packages:**
+- **Auto-fetch:** `use auth` downloads from registry if not in vendor/ (disable with `WEFT_NO_AUTO_FETCH=1`)
+- **Grouped imports:** `use { "auth" "config" "logger" }`
+- **Git imports:** `use "github.com/user/repo"` auto-clones into vendor/
 - Path and git imports into `vendor/`
 - Public registry with ed25519 signing, version immutability, namespace key ownership
-- Local package trust: `weft registry trust|untrust|trusts` (`WEFT_REQUIRE_TRUST=1`)
 - Capability system for third-party package sandboxing
-- `weft registry search|install|keygen|serve`
+- `weft get <name>` / `weft registry search|install|keygen|serve`
 
 ## CLI
 
@@ -164,7 +179,11 @@ weft check <file|dir> [--types] [--strict]   type check
 weft test [--race] [--mem] [--timeout N] [--coverage]
 weft fmt [--check] <file|dir>     format
 weft notebook <file> [-o out.html]
-weft bench | stdlib | doctor | version | lsp
+weft bench [--save f.json] [--compare base.json]
+weft lint [path]                  static analysis
+weft doc [path]                   generate API docs
+weft outdated                     check for newer package versions
+weft stdlib | doctor | version | lsp
 weft debug [--dap] [file.weft]    debugger (DAP for IDEs)
 weft profile <file.weft>          profiler
 weft mcp serve <file.weft>        MCP tool server
