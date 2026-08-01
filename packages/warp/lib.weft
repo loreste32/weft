@@ -490,32 +490,183 @@ pub fn trace(a) {
     s
 }
 
-pub fn det(a) {
-    // 2x2 and 3x3 determinants; larger via LU would be too slow in pure Weft
+// ponytail: LU decomposition is O(n^3) pure Weft — fine for n<=50, use mlinfer for larger
+fn _lu(a) -> Result[any] {
+    // LU decomposition with partial pivoting: PA = LU
+    n := a.shape[0]
+    // copy matrix data into mutable flat array
+    let mut m = []
+    for x in a.data { m = push(m, x + 0.0) }
+    // permutation vector
+    let mut perm = []
+    let mut i = 0
+    while i < n { perm = push(perm, i)
+        i = i + 1 }
+    let mut sign = 1
+    // forward elimination
+    let mut col = 0
+    while col < n {
+        // find pivot
+        let mut max_val = -1.0
+        let mut max_row = col
+        let mut r = col
+        while r < n {
+            v := math.abs(m[r * n + col])
+            if v > max_val {
+                max_val = v
+                max_row = r
+            }
+            r = r + 1
+        }
+        ensure(max_val > 1e-12, "singular matrix")?
+        // swap rows
+        if max_row != col {
+            let mut c = 0
+            while c < n {
+                tmp := m[col * n + c]
+                m[col * n + c] = m[max_row * n + c]
+                m[max_row * n + c] = tmp
+                c = c + 1
+            }
+            tmp := perm[col]
+            perm[col] = perm[max_row]
+            perm[max_row] = tmp
+            sign = sign * -1
+        }
+        // eliminate below pivot
+        r = col + 1
+        while r < n {
+            factor := m[r * n + col] / m[col * n + col]
+            m[r * n + col] = factor
+            let mut c = col + 1
+            while c < n {
+                m[r * n + c] = m[r * n + c] - factor * m[col * n + c]
+                c = c + 1
+            }
+            r = r + 1
+        }
+        col = col + 1
+    }
+    Ok({"m": m, "perm": perm, "n": n, "sign": sign})
+}
+
+fn _lu_solve(lu, b_data) {
+    // Forward then back substitution using LU result
+    n := lu.n
+    m := lu.m
+    perm := lu.perm
+    // apply permutation to b
+    let mut pb = []
+    let mut i = 0
+    while i < n { pb = push(pb, b_data[perm[i]])
+        i = i + 1 }
+    // forward substitution (L * y = Pb)
+    i = 1
+    while i < n {
+        let mut s = pb[i]
+        let mut j = 0
+        while j < i {
+            s = s - m[i * n + j] * pb[j]
+            j = j + 1
+        }
+        pb[i] = s
+        i = i + 1
+    }
+    // back substitution (U * x = y)
+    i = n - 1
+    while i >= 0 {
+        let mut s = pb[i]
+        let mut j = i + 1
+        while j < n {
+            s = s - m[i * n + j] * pb[j]
+            j = j + 1
+        }
+        pb[i] = s / m[i * n + i]
+        i = i - 1
+    }
+    pb
+}
+
+pub fn det(a) -> Result[any] {
     n := a.shape[0]
     d := a.data
-    if n == 1 { return d[0] }
-    if n == 2 { return d[0] * d[3] - d[1] * d[2] }
-    if n == 3 {
-        return d[0]*(d[4]*d[8]-d[5]*d[7]) - d[1]*(d[3]*d[8]-d[5]*d[6]) + d[2]*(d[3]*d[7]-d[4]*d[6])
+    if n == 1 { return Ok(d[0]) }
+    if n == 2 { return Ok(d[0] * d[3] - d[1] * d[2]) }
+    // General case via LU
+    lu := _lu(a)?
+    let mut det_val = lu.sign + 0.0
+    let mut i = 0
+    while i < n {
+        det_val = det_val * lu.m[i * n + i]
+        i = i + 1
     }
-    Err("det: only 1x1, 2x2, 3x3 supported in pure Weft")
+    Ok(det_val)
 }
 
 pub fn inv(a) -> Result[any] {
-    // 2x2 inverse
     n := a.shape[0]
     d := a.data
-    ensure(n == 2, "inv: only 2x2 supported in pure Weft")?
-    dt := d[0] * d[3] - d[1] * d[2] + 0.0
-    ensure(dt != 0, "inv: singular matrix")?
-    Ok(array([d[3]/dt, -d[1]/dt, -d[2]/dt, d[0]/dt], [2, 2]))
+    // 2x2 fast path
+    if n == 2 {
+        dt := d[0] * d[3] - d[1] * d[2] + 0.0
+        ensure(dt != 0, "inv: singular matrix")?
+        return Ok(array([d[3]/dt, -d[1]/dt, -d[2]/dt, d[0]/dt], [2, 2]))
+    }
+    // General case: solve A * X = I column by column
+    lu := _lu(a)?
+    let mut result = []
+    let mut col = 0
+    while col < n {
+        // identity column
+        let mut e = []
+        let mut i = 0
+        while i < n { e = push(e, if i == col { 1.0 } else { 0.0 })
+            i = i + 1 }
+        x := _lu_solve(lu, e)
+        col = col + 1
+        // x is one column of the inverse — we'll assemble row-major later
+        let mut j = 0
+        while j < n { result = push(result, x[j])
+            j = j + 1 }
+    }
+    // result is column-major, transpose to row-major
+    let mut row_major = []
+    let mut r = 0
+    while r < n {
+        let mut c = 0
+        while c < n { row_major = push(row_major, result[c * n + r])
+            c = c + 1 }
+        r = r + 1
+    }
+    Ok(array(row_major, [n, n]))
 }
 
 pub fn solve(a, b) -> Result[any] {
-    // Solve Ax = b for 2x2 via inverse
-    ai := inv(a)?
-    Ok(matmul(ai, b))
+    n := a.shape[0]
+    lu := _lu(a)?
+    // b can be a vector (n x 1) or just a flat array
+    bd := _data(b)
+    if len(bd) == n {
+        // single right-hand side
+        x := _lu_solve(lu, bd)
+        return Ok(array(x, b.shape))
+    }
+    // multiple right-hand sides (n x m matrix)
+    m := len(bd) / n
+    let mut result = []
+    let mut col = 0
+    while col < m {
+        let mut rhs = []
+        let mut i = 0
+        while i < n { rhs = push(rhs, bd[i * m + col])
+            i = i + 1 }
+        x := _lu_solve(lu, rhs)
+        i = 0
+        while i < n { result = push(result, x[i])
+            i = i + 1 }
+        col = col + 1
+    }
+    Ok(array(result, [n, m]))
 }
 
 pub fn outer(a, b) {

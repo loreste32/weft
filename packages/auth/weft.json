@@ -6,12 +6,13 @@
   "entry": "lib.weft",
   "exports": [
     "hmac_sign", "hmac_verify",
-    "hash_password", "verify_password",
+    "hash_password", "hash_password_pbkdf2", "verify_password",
     "generate_token", "generate_api_key",
     "basic_auth_header", "parse_basic_auth",
     "bearer_header", "parse_bearer",
     "oauth_authorize_url", "oauth_token_request"
   ],
+  "maturity": "experimental",
   "license": "Apache-2.0",
   "keywords": ["auth", "hmac", "password", "token", "oauth", "security", "api-key"],
   "deps": {}

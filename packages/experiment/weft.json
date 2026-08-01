@@ -5,6 +5,7 @@
   "type": "module",
   "entry": "lib.weft",
   "capabilities": ["fs"],
+  "maturity": "experimental",
   "license": "Apache-2.0",
   "keywords": ["experiment", "tracking", "mlops", "runs", "compare"]
 }

@@ -153,6 +153,39 @@ func IsPackage(name string) bool {
 	return packageIndex[name]
 }
 
+// StdlibMaturity returns "stable", "beta", or "experimental" for a stdlib package.
+func StdlibMaturity(name string) string {
+	if m, ok := stdlibMaturity[name]; ok {
+		return m
+	}
+	return "stable"
+}
+
+var stdlibMaturity = map[string]string{
+	// experimental: new, API may change
+	"deepgram":   "experimental",
+	"elevenlabs": "experimental",
+	"mlinfer":    "experimental",
+	"governor":   "experimental",
+	"supervisor": "experimental",
+	"cluster":    "experimental",
+	"mcp":        "experimental",
+	"encoding":   "experimental",
+	"compress":   "experimental",
+	"dns":        "experimental",
+	"tls":        "experimental",
+	"os":         "experimental",
+	"webrtc":     "experimental",
+	"pcap":       "experimental",
+	// beta: functional but limited test coverage
+	"sysinfo": "beta",
+	"proc":    "beta",
+	"netutil": "beta",
+	"migrate": "beta",
+	"viz":     "beta",
+	// everything else: stable
+}
+
 // PackageMembers returns sorted member names of a stdlib package (for LSP/completion).
 // Empty if name is unknown. Builds a temporary env; safe for tooling.
 func PackageMembers(name string) []string {

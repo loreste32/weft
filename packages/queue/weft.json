@@ -8,6 +8,7 @@
     "new", "push", "process", "stats",
     "retry_dead", "dead_letter", "drain"
   ],
+  "maturity": "experimental",
   "license": "Apache-2.0",
   "keywords": ["queue", "job", "worker", "task", "async", "retry", "background"],
   "deps": {}

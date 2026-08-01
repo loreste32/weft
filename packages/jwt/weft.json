@@ -15,6 +15,7 @@
     "audience",
     "summary"
   ],
+  "maturity": "beta",
   "license": "Apache-2.0",
   "keywords": ["jwt", "token", "auth", "claims", "decode", "inspect"],
   "deps": {}

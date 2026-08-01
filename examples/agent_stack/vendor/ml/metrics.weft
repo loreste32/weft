@@ -1,10 +1,13 @@
 pub fn accuracy(preds, labels) {
+    if preds == null || labels == null {
+        return Err("ml.accuracy expects predictions and labels")
+    }
+    if len(preds) != len(labels) {
+        return Err("ml.accuracy requires predictions and labels with equal lengths")
+    }
     mut ok := 0
     mut i := 0
-    mut n := len(preds)
-    if len(labels) < n {
-        n = len(labels)
-    }
+    n := len(preds)
     if n == 0 {
         return 0.0
     }
@@ -19,12 +22,15 @@ pub fn accuracy(preds, labels) {
 
 
 pub fn mse(preds, labels) {
+    if preds == null || labels == null {
+        return Err("ml.mse expects predictions and labels")
+    }
+    if len(preds) != len(labels) {
+        return Err("ml.mse requires predictions and labels with equal lengths")
+    }
     mut s := 0.0
     mut i := 0
-    mut n := len(preds)
-    if len(labels) < n {
-        n = len(labels)
-    }
+    n := len(preds)
     if n == 0 {
         return 0.0
     }
@@ -38,13 +44,14 @@ pub fn mse(preds, labels) {
 
 
 pub fn split(rows, train_ratio) {
-    n := len(rows)
-    mut cut := n * train_ratio
-    mut k := 0
-    while k < n && k < cut {
-        k = k + 1
+    if rows == null {
+        return Err("ml.split expects rows")
     }
-    k = 0
+    if train_ratio < 0.0 || train_ratio > 1.0 {
+        return Err("ml.split train_ratio must be between 0 and 1")
+    }
+    n := len(rows)
+    mut k := 0
     while k < n && k * 1.0 / n < train_ratio {
         k = k + 1
     }
@@ -57,4 +64,3 @@ pub fn split(rows, train_ratio) {
     }
     {"train": train, "test": test}
 }
-

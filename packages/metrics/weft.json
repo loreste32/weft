@@ -4,6 +4,7 @@
   "description": "ML evaluation metrics — wraps stdlib metrics with helpers for experiment tracking",
   "type": "module",
   "entry": "lib.weft",
+  "maturity": "experimental",
   "license": "Apache-2.0",
   "keywords": ["metrics", "ml", "evaluation", "accuracy", "f1"]
 }

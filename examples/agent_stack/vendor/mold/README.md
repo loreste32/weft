@@ -8,7 +8,7 @@ Stack map: [docs/ECOSYSTEM.md](../../docs/ECOSYSTEM.md) · full guide: [docs/MOL
 Pure Weft for agent work: define **molds**, validate JSON, emit **JSON Schema** / **tool parameters**.
 
 ```bash
-weft get mold ./packages/mold   # monorepo path (or git@tag)
+weft registry install mold   # monorepo path (or git@tag)
 weft install
 ```
 
@@ -97,7 +97,7 @@ No host capabilities required (pure logic + `json`).
 - Stack map: [`docs/ECOSYSTEM.md`](../../docs/ECOSYSTEM.md)
 - Cookbook: [`examples/cookbook/14_mold.weft`](../../examples/cookbook/14_mold.weft)
 - Full stack offline: [`examples/agent_stack/`](../../examples/agent_stack/)
-- Catalog: `weft packages get mold`
+- Catalog: `weft registry install mold`
 
 ## Tests
 

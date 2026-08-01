@@ -9,6 +9,7 @@
     "group", "use_middleware", "cors_headers",
     "not_found", "serve"
   ],
+  "maturity": "experimental",
   "license": "Apache-2.0",
   "keywords": ["router", "http", "middleware", "routing", "cors", "api", "rest", "web"],
   "deps": {}

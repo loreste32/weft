@@ -5,6 +5,7 @@
   "type": "module",
   "entry": "lib.weft",
   "capabilities": ["http", "llm", "fs"],
+  "maturity": "experimental",
   "license": "Apache-2.0",
   "keywords": ["embeddings", "vectors", "rag", "search", "semantic"]
 }

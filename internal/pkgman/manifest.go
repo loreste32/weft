@@ -44,8 +44,10 @@ type Manifest struct {
 	Capabilities []string `json:"capabilities,omitempty"`
 	// CapabilityProfile is a named preset (none|data|net|host|full) merged into
 	// capabilities. Prefer explicit packages when possible; profiles are shortcuts.
-	CapabilityProfile string             `json:"capability_profile,omitempty"`
-	Deps              map[string]DepSpec `json:"deps,omitempty"`
+	CapabilityProfile string `json:"capability_profile,omitempty"`
+	// Maturity: experimental|beta|stable|deprecated
+	Maturity string             `json:"maturity,omitempty"`
+	Deps     map[string]DepSpec `json:"deps,omitempty"`
 }
 
 // DepSpec is either a string shorthand or an object.

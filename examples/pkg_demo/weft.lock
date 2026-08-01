@@ -5,7 +5,7 @@
       "name": "greeter",
       "source": "path:/Users/loreste/weft/examples/packages/greeter",
       "version": "0.1.0",
-      "sum": "sha256:c7eede463b335ffb5b6278911342a77f9b63ae449e4ae192fb0d829a91cb9f0a",
+      "sum": "sha256:a4557ad483ecc7161c2be00149f517b7242ca158fe9bfe04db269d95d8ffa825",
       "dir": "vendor/greeter"
     }
   ]

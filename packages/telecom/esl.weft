@@ -1,80 +1,233 @@
+// ESL — FreeSWITCH Event Socket Library client with proper frame parsing.
+// Protocol: headers separated by \n, blank line between headers and body,
+// Content-Length header determines body size.
+
+// ──────────────────────────────────────────────
+// Frame parser internals
+// ──────────────────────────────────────────────
+
+fn _read_until(conn, buf, delimiter) -> Result[any] {
+    // Read from conn until delimiter is found in buf, return {before, after}
+    let mut b = buf
+    while !str.contains(b, delimiter) {
+        chunk := conn.read()?
+        if chunk == "" || chunk == null {
+            return Err("ESL: connection closed while reading")
+        }
+        b = b + chunk
+    }
+    idx := str.find(b, delimiter)
+    before := str.slice(b, 0, idx)
+    after := str.slice(b, idx + len(delimiter))
+    Ok({"before": before, "after": after})
+}
+
+fn _parse_headers(raw) {
+    // Parse "Key: Value\nKey2: Value2" into a map
+    let mut headers = {}
+    lines := str.split(raw, "\n")
+    for line in lines {
+        trimmed := str.trim(line)
+        if trimmed == "" { continue }
+        idx := str.find(trimmed, ": ")
+        if idx >= 0 {
+            key := str.slice(trimmed, 0, idx)
+            val := str.slice(trimmed, idx + 2)
+            headers[key] = val
+        }
+    }
+    headers
+}
+
+fn _read_frame(conn, buf) -> Result[any] {
+    // Read one ESL frame: headers\n\nbody (body length from Content-Length)
+    result := _read_until(conn, buf, "\n\n")?
+    headers := _parse_headers(result.before)
+    let mut remaining = result.after
+
+    // If Content-Length is set, read that many bytes for the body
+    cl := headers["Content-Length"]
+    if cl != null {
+        content_len := json.parse(cl)
+        if content_len.ok {
+            needed := content_len.value
+            // Read until we have enough body data
+            while len(remaining) < needed {
+                chunk := conn.read()?
+                if chunk == "" || chunk == null {
+                    return Err("ESL: connection closed while reading body")
+                }
+                remaining = remaining + chunk
+            }
+            body := str.slice(remaining, 0, needed)
+            leftover := str.slice(remaining, needed)
+            return Ok({"headers": headers, "body": body, "_buf": leftover})
+        }
+    }
+    Ok({"headers": headers, "body": "", "_buf": remaining})
+}
+
+fn _is_event(frame) {
+    ct := frame.headers["Content-Type"]
+    ct != null && (str.contains(ct, "event") || str.contains(ct, "text/event"))
+}
+
+// ──────────────────────────────────────────────
+// Connection
+// ──────────────────────────────────────────────
+
 pub fn connect(host, port, password) -> Result[any] {
-    h := if host != null { host } else { env.get("FREESWITCH_HOST", "127.0.0.1") }
-    p := if port != null { port } else { int.parse(env.get("FREESWITCH_ESL_PORT", "8021")).unwrap_or(8021) }
-    pw := if password != null { password } else { env.get("FREESWITCH_ESL_PASSWORD", "ClueCon") }
+    h := if host != null { host } else { "127.0.0.1" }
+    p := if port != null { port } else { 8021 }
+    pw := if password != null { password } else { "ClueCon" }
     conn := socket.dial("tcp", "$h:$p")?
-    auth_line := conn.read()?
-    ensure(str.contains(auth_line, "auth/request"), "expected auth/request from FreeSWITCH")?
+
+    // Read auth/request frame
+    frame := _read_frame(conn, "")?
+    ensure(frame.headers["Content-Type"] == "auth/request", "expected auth/request from FreeSWITCH")?
+
+    // Send auth
     conn.write("auth $pw\n\n")?
-    reply := conn.read()?
-    ensure(str.contains(reply, "+OK"), "ESL auth failed: $reply")?
-    {
+    reply := _read_frame(conn, frame._buf)?
+    reply_type := reply.headers["Reply-Text"]
+    ensure(reply_type != null && str.starts_with(reply_type, "+OK"), "ESL auth failed")?
+
+    Ok({
         "_conn": conn,
+        "_buf": reply._buf,
+        "_events": [],
         "_mode": "inbound",
         "host": h,
         "port": p,
         "connected": true,
-    }
+    })
 }
 
+// ──────────────────────────────────────────────
+// Commands
+// ──────────────────────────────────────────────
 
 pub fn command(e, cmd) -> Result[any] {
     e._conn.write("$cmd\n\n")?
-    resp := e._conn.read()?
-    Ok(resp)
+    // Read frames until we get a command reply (skip async events)
+    let mut buf = e._buf
+    let mut events = e._events
+    while true {
+        frame := _read_frame(e._conn, buf)?
+        buf = frame._buf
+        if _is_event(frame) {
+            // Queue the event for later recv_event() calls
+            events = push(events, frame)
+            continue
+        }
+        // Update connection buffer state
+        e._buf = buf
+        e._events = events
+        // Parse body if JSON
+        if frame.body != "" && str.contains("" + frame.headers["Content-Type"], "json") {
+            parsed := json.parse(frame.body)
+            if parsed.ok {
+                return Ok(parsed.value)
+            }
+        }
+        return Ok(frame.body)
+    }
 }
-
 
 pub fn api(e, cmd) -> Result[any] { command(e, "api $cmd") }
 
-
-pub fn bgapi(e, cmd) -> Result[any] {
-    resp := command(e, "bgapi $cmd")?
-    Ok(resp)
-}
-
+pub fn bgapi(e, cmd) -> Result[any] { command(e, "bgapi $cmd") }
 
 pub fn subscribe(e, events) -> Result[any] {
     command(e, "event json $events")?
-    Ok(unit)
+    Ok(null)
 }
-
 
 pub fn filter(e, header, value) -> Result[any] {
     command(e, "filter $header $value")?
-    Ok(unit)
+    Ok(null)
 }
-
 
 pub fn myevents(e, uuid) -> Result[any] {
     command(e, "myevents json $uuid")?
-    Ok(unit)
+    Ok(null)
 }
 
+// ──────────────────────────────────────────────
+// Event receiving
+// ──────────────────────────────────────────────
+
+pub fn recv_event(e) -> Result[any] {
+    // Return a queued event, or read until one arrives
+    if len(e._events) > 0 {
+        evt := e._events[0]
+        // shift: rebuild without first element
+        let mut remaining = []
+        let mut i = 1
+        while i < len(e._events) {
+            remaining = push(remaining, e._events[i])
+            i = i + 1
+        }
+        e._events = remaining
+        if evt.body != "" {
+            parsed := json.parse(evt.body)
+            if parsed.ok { return Ok(parsed.value) }
+        }
+        return Ok(evt)
+    }
+    // Read frames until an event arrives
+    let mut buf = e._buf
+    while true {
+        frame := _read_frame(e._conn, buf)?
+        buf = frame._buf
+        e._buf = buf
+        if _is_event(frame) {
+            if frame.body != "" {
+                parsed := json.parse(frame.body)
+                if parsed.ok { return Ok(parsed.value) }
+            }
+            return Ok(frame)
+        }
+        // Non-event frame while waiting — discard (or could queue)
+    }
+}
+
+pub fn recv_event_timeout(e, timeout_sec) -> Result[any] {
+    // ponytail: uses polling with sleep, proper select() needs runtime support
+    let mut elapsed = 0.0
+    while elapsed < timeout_sec {
+        if len(e._events) > 0 {
+            return recv_event(e)
+        }
+        time.sleep(0.1)
+        elapsed = elapsed + 0.1
+    }
+    Err("ESL: recv_event timeout after " + str(timeout_sec) + "s")
+}
+
+// ──────────────────────────────────────────────
+// Call control
+// ──────────────────────────────────────────────
 
 pub fn execute(e, uuid, app, arg) -> Result[any] {
-    mut msg := "sendmsg $uuid\ncall-command: execute\nexecute-app-name: $app"
+    let mut msg = "sendmsg $uuid\ncall-command: execute\nexecute-app-name: $app"
     if arg != null && arg != "" {
         msg = "$msg\nexecute-app-arg: $arg"
     }
     command(e, msg)
 }
 
-
 pub fn answer(e, uuid) -> Result[any] { execute(e, uuid, "answer", null) }
-
 
 pub fn hangup(e, uuid, cause) -> Result[any] {
     c := if cause != null { cause } else { "NORMAL_CLEARING" }
     execute(e, uuid, "hangup", c)
 }
 
-
 pub fn playback(e, uuid, file) -> Result[any] { execute(e, uuid, "playback", file) }
 
-
 pub fn record(e, uuid, file, max_sec, silence_thresh) -> Result[any] {
-    arg := file
+    let mut arg = file
     if max_sec != null {
         arg = "$arg $max_sec"
     }
@@ -84,21 +237,16 @@ pub fn record(e, uuid, file, max_sec, silence_thresh) -> Result[any] {
     execute(e, uuid, "record_session", arg)
 }
 
-
 pub fn bridge(e, uuid, destination) -> Result[any] { execute(e, uuid, "bridge", destination) }
-
 
 pub fn transfer(e, uuid, extension, context) -> Result[any] {
     ctx := if context != null { context } else { "default" }
     api(e, "uuid_transfer $uuid $extension XML $ctx")
 }
 
-
 pub fn send_dtmf(e, uuid, digits) -> Result[any] { api(e, "uuid_send_dtmf $uuid $digits") }
 
-
 pub fn set_var(e, uuid, name, value) -> Result[any] { execute(e, uuid, "set", "$name=$value") }
-
 
 pub fn play_and_get_digits(e, uuid, opts) -> Result[any] {
     min := if opts.min != null { opts.min } else { 1 }
@@ -114,63 +262,58 @@ pub fn play_and_get_digits(e, uuid, opts) -> Result[any] {
     execute(e, uuid, "play_and_get_digits", arg)
 }
 
-
 pub fn originate(e, dest, app, arg) -> Result[any] {
     a := if app != null { app } else { "&park" }
     full := if arg != null { "$a($arg)" } else { a }
     api(e, "originate $dest $full")
 }
 
-
 pub fn conference(e, uuid, room, opts) -> Result[any] {
-    flags := ""
+    let mut flags = ""
     if opts != null {
-        if opts.muted == true {
-            flags = "$flags+muted"
-        }
-        if opts.deaf == true {
-            flags = "$flags+deaf"
-        }
-        if opts.moderator == true {
-            flags = "$flags+moderator"
-        }
+        if opts.muted == true { flags = "$flags+muted" }
+        if opts.deaf == true { flags = "$flags+deaf" }
+        if opts.moderator == true { flags = "$flags+moderator" }
     }
-    if flags != "" { execute(e, uuid, "conference", "$room$flags") } else { execute(e, uuid, "conference", room) }
+    if flags != "" { execute(e, uuid, "conference", "$room$flags") }
+    else { execute(e, uuid, "conference", room) }
 }
-
 
 pub fn uuid_bridge(e, uuid1, uuid2) -> Result[any] { api(e, "uuid_bridge $uuid1 $uuid2") }
 
-
 pub fn show(e, what) -> Result[any] { api(e, "show $what as json") }
 
-
 pub fn status(e) -> Result[any] { api(e, "status") }
-
 
 pub fn close(e) -> Result[any] {
     e._conn.close()?
     e.connected = false
-    Ok(unit)
+    Ok(null)
 }
 
+// ──────────────────────────────────────────────
+// Outbound mode (FreeSWITCH connects to us)
+// ──────────────────────────────────────────────
 
-pub fn outbound_server(port, handler) {
+pub fn outbound_server(port, handler) -> Result[any] {
     p := if port != null { port } else { 9090 }
     ln := socket.listen("tcp", ":$p")?
     say("ESL outbound server listening on :$p")
     while true {
         conn := ln.accept()?
+        // Read the initial channel data
         data := conn.read()?
         conn.write("connect\n\n")?
-        channel_info := conn.read()?
+        frame := _read_frame(conn, "")?
         conn.write("myevents json\n\n")?
-        conn.read()?
-        send_fn := fn(cmd) -> Result[any] {
-            conn.write("$cmd\n\n")?
-            Ok(conn.read()?)
+        ack := _read_frame(conn, frame._buf)?
+        e := {
+            "_conn": conn,
+            "_buf": ack._buf,
+            "_events": [],
+            "_mode": "outbound",
+            "connected": true,
         }
-        handler(channel_info, send_fn)
+        handler(e)
     }
 }
-

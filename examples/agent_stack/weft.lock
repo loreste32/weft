@@ -4,22 +4,22 @@
     {
       "name": "ml",
       "source": "path:/Users/loreste/weft/packages/ml",
-      "version": "0.1.0",
-      "sum": "sha256:25dcb62fce4033663a6f775e0f58e7df9ce00618fec7a10f12db07072afd6e2d",
+      "version": "0.3.0",
+      "sum": "sha256:ce43fc08f92d9bed3c259a24add438b528d77af9d2a5b466e8fc03b5df816f7d",
       "dir": "vendor/ml"
     },
     {
       "name": "mold",
       "source": "path:/Users/loreste/weft/packages/mold",
-      "version": "0.1.0",
-      "sum": "sha256:6972db9dd7e18b99233f5de28d1e64704f6c3c0a4558400cbfbd5f60104d1d82",
+      "version": "0.3.0",
+      "sum": "sha256:a0d9c56bf4040bf46d382e32d34882168a3966bb813692269b18f5ccea34c1ee",
       "dir": "vendor/mold"
     },
     {
       "name": "tokensave",
       "source": "path:/Users/loreste/weft/packages/tokensave",
-      "version": "0.5.0",
-      "sum": "sha256:7932d4ae9ddfe5e30f9086f53aa1ceba95dc8cb6011a05f7c9b45297f78bef2b",
+      "version": "0.7.0",
+      "sum": "sha256:b6f3140eab4865e838de706ec87a580418e17028556d5086bc1838c783b6d12f",
       "dir": "vendor/tokensave"
     }
   ]

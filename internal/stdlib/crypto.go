@@ -16,6 +16,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/loreste/weft/internal/runtime"
+	"golang.org/x/crypto/argon2"
+	"golang.org/x/crypto/pbkdf2"
 )
 
 // packageCrypto — production primitives: hash, base64, uuid, random, hmac.
@@ -192,6 +194,73 @@ func packageCrypto() runtime.Value {
 			return errRes(err.Error(), "crypto"), nil
 		}
 		return runtime.Ok(runtime.Str(hex.EncodeToString(h.Sum(nil)))), nil
+	}, 2)
+
+	// argon2id(password, salt, time?, memory?, threads?, keyLen?) → hex
+	set(p, "argon2id", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 2 {
+			return errRes("crypto.argon2id(password, salt, time?, memory?, threads?, keyLen?)", "crypto"), nil
+		}
+		password := []byte(args[0].String())
+		salt := []byte(args[1].String())
+		t := uint32(1)
+		mem := uint32(64 * 1024)
+		threads := uint8(4)
+		keyLen := uint32(32)
+		if len(args) > 2 {
+			if v, err := runtime.AsInt(args[2]); err == nil && v > 0 {
+				t = uint32(v)
+			}
+		}
+		if len(args) > 3 {
+			if v, err := runtime.AsInt(args[3]); err == nil && v > 0 {
+				mem = uint32(v)
+			}
+		}
+		if len(args) > 4 {
+			if v, err := runtime.AsInt(args[4]); err == nil && v > 0 {
+				threads = uint8(v)
+			}
+		}
+		if len(args) > 5 {
+			if v, err := runtime.AsInt(args[5]); err == nil && v > 0 {
+				keyLen = uint32(v)
+			}
+		}
+		key := argon2.IDKey(password, salt, t, mem, threads, keyLen)
+		return runtime.Str(hex.EncodeToString(key)), nil
+	}, 2)
+
+	// pbkdf2(password, salt, iterations?, keyLen?, algo?) → hex
+	set(p, "pbkdf2", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 2 {
+			return errRes("crypto.pbkdf2(password, salt, iterations?, keyLen?, algo?)", "crypto"), nil
+		}
+		password := []byte(args[0].String())
+		salt := []byte(args[1].String())
+		iter := 100000
+		keyLen := 32
+		var h func() hash.Hash = sha256.New
+		if len(args) > 2 {
+			if v, err := runtime.AsInt(args[2]); err == nil && v > 0 {
+				iter = int(v)
+			}
+		}
+		if len(args) > 3 {
+			if v, err := runtime.AsInt(args[3]); err == nil && v > 0 {
+				keyLen = int(v)
+			}
+		}
+		if len(args) > 4 {
+			switch strings.ToLower(args[4].String()) {
+			case "sha512":
+				h = sha512.New
+			case "sha1":
+				h = sha1.New
+			}
+		}
+		key := pbkdf2.Key(password, salt, iter, keyLen, h)
+		return runtime.Str(hex.EncodeToString(key)), nil
 	}, 2)
 
 	return p

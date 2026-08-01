@@ -9,6 +9,7 @@
     "get", "get_or", "require", "merge", "validate",
     "from_env"
   ],
+  "maturity": "experimental",
   "license": "Apache-2.0",
   "keywords": ["config", "configuration", "env", "dotenv", "settings", "yaml", "toml", "json"],
   "deps": {}

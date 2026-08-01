@@ -50,6 +50,7 @@ type RegistryPackage struct {
 	Published   string            `json:"published,omitempty"`
 	Exports     []string          `json:"exports,omitempty"`     // pub fn/type names
 	Description string            `json:"description,omitempty"` // long description
+	Maturity    string            `json:"maturity,omitempty"`    // experimental|beta|stable
 }
 
 // FetchIndex downloads the registry index.

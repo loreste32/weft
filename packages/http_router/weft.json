@@ -8,6 +8,7 @@
     "new", "get", "post", "put", "delete", "patch", "any",
     "middleware", "group", "serve", "handle", "cors", "logger"
   ],
+  "maturity": "experimental",
   "license": "Apache-2.0",
   "keywords": ["http", "router", "routing", "middleware", "cors", "rest", "api"],
   "capability_profile": "agent",

@@ -11,6 +11,7 @@
     "table_html", "list_html",
     "each", "cond"
   ],
+  "maturity": "experimental",
   "license": "Apache-2.0",
   "keywords": ["template", "html", "render", "layout", "partial", "component", "escaping", "web"],
   "deps": {}

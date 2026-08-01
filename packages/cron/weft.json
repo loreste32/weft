@@ -5,6 +5,7 @@
   "type": "module",
   "entry": "lib.weft",
   "exports": ["every", "at", "schedule", "stop", "stop_all", "stats", "wait"],
+  "maturity": "beta",
   "license": "Apache-2.0",
   "keywords": ["cron", "schedule", "interval", "timer", "recurring", "jobs"],
   "deps": {}

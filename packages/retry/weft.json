@@ -10,6 +10,7 @@
     "once",
     "with_timeout"
   ],
+  "maturity": "beta",
   "license": "Apache-2.0",
   "keywords": ["retry", "backoff", "resilience", "ops", "api", "network"],
   "deps": {}

@@ -12,27 +12,45 @@ pub fn hmac_verify(key, message, signature) -> Result[any] {
     Ok(crypto.equal(expected, signature))
 }
 
-// hash_password uses iterated SHA-256 (10000 rounds). For production systems
-// with high-value accounts, prefer bcrypt or argon2 via a native binding.
+// hash_password uses Argon2id — the recommended password-hashing algorithm.
+// Defaults: time=1, memory=64MB, threads=4, keyLen=32.
 pub fn hash_password(password) -> Result[any] {
     ensure(len(password) >= 8, "password must be at least 8 characters")?
     salt := crypto.random_hex(16)
-    // iterate to slow brute-force (PBKDF2-style, SHA-256, 10000 rounds)
-    let mut hash = salt + password
-    let mut i = 0
-    while i < 10000 {
-        hash = crypto.sha256(hash + salt)
-        i = i + 1
-    }
+    hash := crypto.argon2id(password, salt)
     Ok({
         "hash": hash,
         "salt": salt,
-        "algorithm": "sha256-10k",
-        "rounds": 10000,
+        "algorithm": "argon2id",
+    })
+}
+
+// hash_password_pbkdf2 uses PBKDF2-HMAC-SHA-256 as a portable alternative.
+pub fn hash_password_pbkdf2(password, iterations) -> Result[any] {
+    ensure(len(password) >= 8, "password must be at least 8 characters")?
+    salt := crypto.random_hex(16)
+    iter := if iterations != null { iterations } else { 100000 }
+    hash := crypto.pbkdf2(password, salt, iter)
+    Ok({
+        "hash": hash,
+        "salt": salt,
+        "algorithm": "pbkdf2",
+        "iterations": iter,
     })
 }
 
 pub fn verify_password(password, record) -> Result[any] {
+    alg := if record.algorithm != null { record.algorithm } else { "argon2id" }
+    if alg == "argon2id" {
+        expected := crypto.argon2id(password, record.salt)
+        return Ok(crypto.equal(expected, record.hash))
+    }
+    if alg == "pbkdf2" {
+        iter := if record.iterations != null { record.iterations } else { 100000 }
+        expected := crypto.pbkdf2(password, record.salt, iter)
+        return Ok(crypto.equal(expected, record.hash))
+    }
+    // legacy sha256-10k fallback
     let mut hash = record.salt + password
     rounds := if record.rounds != null { record.rounds } else { 10000 }
     let mut i = 0

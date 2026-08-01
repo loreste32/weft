@@ -8,6 +8,7 @@
     "check", "require", "email", "url", "phone",
     "in_range", "length", "matches"
   ],
+  "maturity": "beta",
   "license": "Apache-2.0",
   "keywords": ["validate", "validation", "form", "api", "schema", "check"],
   "deps": {}

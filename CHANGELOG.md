@@ -2,6 +2,25 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
+## [0.4.8] — 2026-08-01
+
+### Added
+- **crypto.argon2id** — Argon2id password hashing (Go native binding via golang.org/x/crypto)
+- **crypto.pbkdf2** — PBKDF2-HMAC-SHA-256 key derivation (Go native binding)
+- **auth** module upgraded — `hash_password` now uses Argon2id by default; `hash_password_pbkdf2` added; `verify_password` auto-detects algorithm (argon2id/pbkdf2/legacy sha256-10k)
+- **ESL frame parser** — telecom ESL rewritten with proper Content-Length framing, partial-read buffering, command/event separation, and queued async event delivery
+- **warp LU decomposition** — `det`, `inv`, `solve` now work for any size matrix (was limited to 2x2/3x3); O(n³) with partial pivoting
+- **Maturity labels** — every stdlib package (81) and registry module (23) now has an explicit `experimental`/`beta`/`stable` designation via `StdlibMaturity()` and `weft.json` `"maturity"` field
+- **Supply-chain tests** — auto-fetch local-wins, redirect-to-private-IP rejection, private git URL rejection, maturity field parsing
+- **Weekly deep fuzz** — CI fuzz-deep job bumped from 2 minutes to 5 minutes per target (20 min total)
+- **Benchmark publishing** — CI publishes Go benchmark and Weft-vs-Python glue results as artifacts on every push to main
+- 4 new Go tests, 6 new Weft tests (1378 Go tests, 68 warp tests, 62 dataframe tests)
+
+### Changed
+- auth: password hashing upgraded from iterative SHA-256 to Argon2id
+- warp: det/inv/solve generalized via LU decomposition (2x2 fast path preserved)
+- telecom/esl: frame-level protocol handling replaces bare socket reads
+
 ## [0.4.7] — 2026-07-31
 
 ### Added

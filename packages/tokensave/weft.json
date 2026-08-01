@@ -30,6 +30,7 @@
     "gold_row",
     "teach"
   ],
+  "maturity": "experimental",
   "license": "Apache-2.0",
   "keywords": ["agent-stack", "llm", "brain", "memory", "train", "clarify", "tokens"],
   "capability_profile": "agent",

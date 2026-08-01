@@ -16,6 +16,7 @@
     "get_or_set",
     "memoize"
   ],
+  "maturity": "beta",
   "license": "Apache-2.0",
   "keywords": ["cache", "ttl", "memoize", "key-value", "api", "performance"],
   "deps": {}

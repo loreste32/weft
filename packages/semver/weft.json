@@ -13,6 +13,7 @@
     "format",
     "valid"
   ],
+  "maturity": "beta",
   "license": "Apache-2.0",
   "keywords": ["semver", "version", "compare", "constraint", "bump"],
   "deps": {}

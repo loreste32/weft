@@ -283,6 +283,8 @@ var memberCatalog = map[string]memberHelp{
 	"base64.encode":       {Sig: "base64.encode(s)", Detail: "base64 encode"},
 	"base64.decode":       {Sig: "base64.decode(s) -> Result", Detail: "base64 decode"},
 	"crypto.sha256":       {Sig: "crypto.sha256(s)", Detail: "SHA-256 hex"},
+	"crypto.argon2id":     {Sig: "crypto.argon2id(password, salt, time?, memory?, threads?, keyLen?)", Detail: "Argon2id password hash → hex"},
+	"crypto.pbkdf2":       {Sig: "crypto.pbkdf2(password, salt, iterations?, keyLen?, algo?)", Detail: "PBKDF2-HMAC key derivation → hex"},
 	"crypto.uuid":         {Sig: "crypto.uuid()", Detail: "UUID helper"},
 	"archive.zip":         {Sig: "archive.zip(src, dest) -> Result", Detail: "zip path"},
 	"archive.unzip":       {Sig: "archive.unzip(src, dest) -> Result", Detail: "unzip"},

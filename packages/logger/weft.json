@@ -8,6 +8,7 @@
     "new", "debug", "info", "warn", "error", "fatal",
     "with", "child", "set_level", "json_format", "text_format"
   ],
+  "maturity": "experimental",
   "license": "Apache-2.0",
   "keywords": ["log", "logger", "logging", "structured", "json", "levels", "observability"],
   "deps": {}

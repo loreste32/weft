@@ -27,6 +27,7 @@
     "errors",
     "ok"
   ],
+  "maturity": "beta",
   "license": "Apache-2.0",
   "keywords": ["agent-stack", "mold", "schema", "validate", "json-schema", "llm", "tools", "structured"],
   "deps": {}

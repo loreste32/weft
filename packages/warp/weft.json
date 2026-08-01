@@ -37,6 +37,7 @@
     "to_list", "print_", "describe", "allclose",
     "isnan", "isinf", "nan_to_num"
   ],
+  "maturity": "experimental",
   "license": "Apache-2.0",
   "keywords": ["array", "math", "numpy", "ndarray", "science", "linear-algebra", "statistics", "matrix", "vector"]
 }

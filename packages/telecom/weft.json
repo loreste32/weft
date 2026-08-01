@@ -32,6 +32,7 @@
     "webrtc_signal_server", "sip_refer", "sip_refer_blind", "sip_refer_attended",
     "bridge_and_refer", "click_to_call"
   ],
+  "maturity": "experimental",
   "license": "Apache-2.0",
   "keywords": [
     "telecom", "telephony", "voip", "sip", "ivr", "iva",

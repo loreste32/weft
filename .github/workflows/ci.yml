@@ -112,9 +112,36 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Deep fuzz (2m each)
+      - name: Deep fuzz (5m each)
         run: |
-          go test ./internal/lex/ -fuzz=FuzzLex -fuzztime=2m
-          go test ./internal/parse/ -fuzz=FuzzParseFile -fuzztime=2m
-          go test ./internal/compile/ -fuzz=FuzzCompileValidate -fuzztime=2m
-          go test ./internal/vm/ -fuzz=FuzzCompileAndRun -fuzztime=2m
+          go clean -fuzzcache
+          go test ./internal/lex/ -fuzz=FuzzLex -fuzztime=5m -timeout=600s
+          go test ./internal/parse/ -fuzz=FuzzParseFile -fuzztime=5m -timeout=600s
+          go test ./internal/compile/ -fuzz=FuzzCompileValidate -fuzztime=5m -timeout=600s
+          go test ./internal/vm/ -fuzz=FuzzCompileAndRun -fuzztime=5m -timeout=600s
+
+  # Benchmark results — runs on every push to main, publishes as artifact
+  benchmarks:
+    name: benchmarks
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Go benchmarks
+        run: |
+          go test ./internal/vm/ ./internal/compile/ -bench=. -benchmem -count=3 -run=^$ -timeout=300s | tee bench-go.txt
+      - name: Glue benchmarks (Weft vs Python)
+        run: |
+          go build -o /tmp/weft-bench ./cmd/weft
+          bash scripts/bench-glue.sh 2>&1 | tee bench-glue.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            bench-go.txt
+            bench-glue.txt
