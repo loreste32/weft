@@ -1,4 +1,4 @@
-# Production notes (0.3)
+# Production notes
 
 Practical defaults for agents, small APIs, queue workers, and CLIs on one binary. This is not a full ops platform — just what the runtime already does for timeouts, secrets, and similar.
 
@@ -22,6 +22,14 @@ Stack + trust map: [ECOSYSTEM.md](ECOSYSTEM.md) · full threat model: [SECURITY.
 | Logs | `log.info` / `warn` / `error` / `debug`, optional map of fields |
 | Hashing | `crypto.*` (sha256, hmac, …) |
 | Simple validation | `re.*` or `mold` for object shapes |
+| LLM budgets | `governor` — token limits, cost tracking, execution timeouts |
+| Process supervision | `supervisor` — Erlang-style restart (one_for_one, one_for_all, rest_for_one) |
+| Distributed state | `cluster` — locks, counters, pub/sub via Redis |
+| Rate limiting | `ratelimit.new(rate, unit)` — token bucket per endpoint |
+| TLS monitoring | `tls.expiry_check(host, 30)` — certificate expiry alerts |
+| DNS health | `dns.lookup` / `dns.srv` — service discovery checks |
+| System metrics | `sysinfo.memory` / `disk` / `loadavg` — monitoring hooks |
+| Standalone deploy | `weft build -o myapp` — single executable, no weft needed on target |
 
 Full threat model: [SECURITY.md](../SECURITY.md).
 

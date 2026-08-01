@@ -11,6 +11,8 @@ Full language notes: [LANGUAGE.md](LANGUAGE.md). Cookbook: [COOKBOOK.md](COOKBOO
 | `x := 1` | bind (immutable rebind) |
 | `mut n := 0` then `n = 1` | reassignable |
 | `use pkg` / `use "./x.weft" as x` | packages / path modules |
+| `use { "auth" "config" }` | grouped imports |
+| `use "github.com/user/repo"` | git / URL imports |
 | `say "hi"` / `say(x)` | print |
 | `"hi $name"` / `"${expr}"` | string interpolation (JSON-safe) |
 | `fn main { }` | empty `()` optional |

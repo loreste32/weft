@@ -300,6 +300,26 @@ weft list packages         same as packages list
 
 Catalog env: `WEFT_PACKAGES=/path/to/packages` (or `…/index.json`) when not in monorepo.
 
+## Auto-fetch
+
+Packages missing from `vendor/` are downloaded from the registry on first `use`:
+
+```weft
+use auth     // auto-fetched from registry.weftproject.dev if not installed
+```
+
+Disable with `WEFT_NO_AUTO_FETCH=1`. Grouped imports also auto-fetch:
+
+```weft
+use { "auth" "config" "logger" }
+```
+
+Git and URL imports work too:
+
+```weft
+use "github.com/user/repo"         // clones into vendor/
+```
+
 ## Example
 
 ```bash

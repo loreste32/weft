@@ -408,12 +408,29 @@ use greeter
 say(greeter.hello("weft"))
 ```
 
+### Grouped imports
+
+```weft
+use { "auth" "config" "logger" }
+```
+
+### Git / URL imports
+
+```weft
+use "github.com/user/repo"
+```
+
+### Auto-fetch
+
+Packages not in `vendor/` are downloaded from the registry on first `use`. Disable with `WEFT_NO_AUTO_FETCH=1`.
+
 Resolution order (simplified):
 
-1. Stdlib (`http`, `json`, `fs`, …)  
+1. Stdlib (`http`, `json`, `fs`, …) — 81 packages  
 2. `vendor/<name>/`  
 3. `WEFT_PATH`  
 4. `packages/<name>/`  
+5. Registry auto-fetch (if enabled)  
 
 ### Authoring
 

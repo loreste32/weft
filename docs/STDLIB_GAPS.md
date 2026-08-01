@@ -1,4 +1,4 @@
-# Stdlib Tier A / B (0.3.x)
+# Stdlib Tier A / B
 
 Honest map of the ops/agent surface. Live list: `weft stdlib`.
 

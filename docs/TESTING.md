@@ -9,6 +9,10 @@ weft test                              # current tree
 weft test examples/stdlib_test.weft
 weft test -run math                    # name substring
 weft test -q                           # summary only
+weft test --race                       # data race detection
+weft test --mem                        # memory allocation tracking
+weft test --timeout 30                 # per-test timeout (seconds)
+weft test --coverage                   # coverage report
 ```
 
 ## Layout
@@ -85,9 +89,32 @@ Each test file is compiled on its own, so you need that path import (or similar)
 - `weft check` is fine on modules and tests (no `main` required).
 - If a function is declared with a non-`Result` return type, `?` is a type error.
 
+## Benchmarks
+
+Convention: files `*_bench.weft` or `bench_*.weft`, functions `fn bench_*` (zero args).
+
+```bash
+weft bench                             # discover and run
+weft bench -n 5000                     # 5000 iterations per bench
+weft bench --save baseline.json        # export results
+weft bench --compare baseline.json     # regression tracking
+weft bench -run fib                    # filter by name
+```
+
+## Linting
+
+```bash
+weft lint                              # current tree
+weft lint src/                         # specific path
+```
+
+Checks: parse errors, unused imports, trailing whitespace, long lines, TODO markers, missing entry points.
+
 ## CI
 
 ```bash
-weft test -q
-weft check examples packages
+weft test -q --race
+weft check --strict examples packages
+weft lint
+weft bench
 ```

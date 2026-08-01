@@ -5,16 +5,16 @@ One Go binary; optional modules vendored into `vendor/`.
 
 ## How the pieces fit
 
-**Start with the map:** **[ECOSYSTEM.md](ECOSYSTEM.md)** — language · stdlib · optional modules (`mold` / `ml` / `tokensave`) · agents · web · trust.
+**Start with the map:** **[ECOSYSTEM.md](ECOSYSTEM.md)** — language · stdlib · modules · agents · telecom · web · trust.
 
 ```text
 Your app
    ↑
-Optional modules   mold · ml · tokensave     (packages/ → vendor/)
+23 registry modules    telecom · auth · router · config · …   (packages/ → vendor/)
    ↑
-Stdlib             llm · web · http · fs …   (in the weft binary)
+81 stdlib packages     llm · mcp · dns · tls · os · http · …  (in the weft binary)
    ↑
-Language + VM      Result/? · concurrency
+Language + VM          Result/? · concurrency · auto-fetch
 ```
 
 | I want to… | Go here |

@@ -500,7 +500,11 @@ weft new app myapp           # scaffold
 cd myapp
 weft get mold   # add deps
 weft run main.weft           # run
-weft test                    # test
-weft check --types           # type check
+weft build -o myapp          # standalone executable
+weft test --race             # test with race detection
+weft check --strict          # type check (CI mode)
+weft lint                    # static analysis
+weft bench                   # benchmarks
 weft fmt                     # format
+weft outdated                # check for newer deps
 ```
