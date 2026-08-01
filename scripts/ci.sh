@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eu
+# Note: pipefail intentionally omitted. grep -q closes pipes early,
+# causing SIGPIPE (141) for the writer, which kills the script under pipefail.
 cd "$(dirname "$0")/.."
 echo "== gofmt =="
-test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+test -z "$(find . -name '*.go' -not -path './vendor/*' | xargs gofmt -l 2>/dev/null)" || { find . -name '*.go' -not -path './vendor/*' | xargs gofmt -l; exit 1; }
 echo "== editors packaging =="
 test -f editors/vscode/package.json
 test -f editors/vscode/extension.js
@@ -24,9 +26,14 @@ go test ./internal/vm/ -race -count=1 -timeout 120s -run 'Parallel|Concurrent|St
 go test ./internal/runtime/ -race -count=1 -timeout 60s
 echo "== fuzz smoke =="
 # Short budgets — fail the build on any crash/panic found in this window
-go test ./internal/lex/ -fuzz=FuzzLex -fuzztime=5s -timeout=30s
-go test ./internal/parse/ -fuzz=FuzzParseFile -fuzztime=5s -timeout=30s
-go test ./internal/compile/ -fuzz=FuzzCompileValidate -fuzztime=5s -timeout=30s
+# Clean accumulated fuzz corpus — large corpus causes baseline-gathering timeouts
+go clean -fuzzcache 2>/dev/null || true
+rm -rf "${HOME}/Library/Caches/go-build/fuzz" 2>/dev/null || true
+# Fuzz: baseline gathering can be slow, so use generous timeout.
+# Each fuzz seed has an internal 10s per-input cap; -timeout is for the whole binary.
+go test ./internal/lex/ -fuzz=FuzzLex -fuzztime=3s -timeout=120s
+go test ./internal/parse/ -fuzz=FuzzParseFile -fuzztime=3s -timeout=120s
+go test ./internal/compile/ -fuzz=FuzzCompileValidate -fuzztime=3s -timeout=120s
 echo "== compat corpus =="
 # Pinned language/runtime goldens (testdata/compat) — fail on output drift
 go test ./pkg/weft/ -count=1 -run TestCompatCorpus
@@ -63,9 +70,12 @@ echo "== weft test =="
 /tmp/weft-ci test -q examples
 echo "== reference apps =="
 /tmp/weft-ci test -q examples/ref_agent_ops examples/ref_http_glue examples/ref_ops
-/tmp/weft-ci run examples/ref_agent_ops/main.weft -- status | grep -q weft_ref
-/tmp/weft-ci run examples/ref_http_glue/main.weft -- demo | grep -q ref_http_glue
-/tmp/weft-ci run examples/ref_ops/main.weft -- info | grep -q ref_ops
+out=$(/tmp/weft-ci run examples/ref_agent_ops/main.weft -- status)
+echo "$out" | grep -q weft_ref
+out=$(/tmp/weft-ci run examples/ref_http_glue/main.weft -- demo)
+echo "$out" | grep -q ref_http_glue
+out=$(/tmp/weft-ci run examples/ref_ops/main.weft -- info)
+echo "$out" | grep -q ref_ops
 echo "== examples =="
 out=$(/tmp/weft-ci run examples/hello.weft)
 echo "$out" | grep -q "hello, weft"

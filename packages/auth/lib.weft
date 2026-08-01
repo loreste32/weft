@@ -13,7 +13,7 @@ pub fn hmac_verify(key, message, signature) -> Result[any] {
 
 pub fn hash_password(password) -> Result[any] {
     ensure(len(password) >= 8, "password must be at least 8 characters")?
-    salt := random.bytes(16)
+    salt := crypto.random_hex(16)
     hash := crypto.sha256(salt + password)
     Ok({
         "hash": hash,
@@ -29,12 +29,12 @@ pub fn verify_password(password, record) -> Result[any] {
 
 pub fn generate_token(length) -> str {
     n := if length != null { length } else { 32 }
-    base64.url_encode(random.bytes(n))
+    crypto.random_hex(n)
 }
 
 pub fn generate_api_key(prefix) -> str {
     p := if prefix != null { prefix + "_" } else { "" }
-    p + base64.url_encode(random.bytes(24))
+    p + crypto.random_hex(24)
 }
 
 pub fn basic_auth_header(username, password) -> str {
@@ -43,10 +43,14 @@ pub fn basic_auth_header(username, password) -> str {
 
 pub fn parse_basic_auth(header) -> Result[any] {
     ensure(str.starts_with(header, "Basic "), "not a Basic auth header")?
-    decoded := base64.decode(str.trim_prefix(header, "Basic "))?
-    parts := str.split(decoded, ":")
-    ensure(len(parts) >= 2, "invalid Basic auth format")?
-    Ok({"username": parts[0], "password": str.join(parts[1:], ":")})
+    decoded := base64.decode(str.slice(header, 6))?
+    // find first colon to split user:password (password may contain colons)
+    idx := str.find(decoded, ":")
+    ensure(idx >= 0, "invalid Basic auth format")?
+    Ok({
+        "username": str.slice(decoded, 0, idx),
+        "password": str.slice(decoded, idx + 1),
+    })
 }
 
 pub fn bearer_header(token) -> str {
@@ -55,31 +59,26 @@ pub fn bearer_header(token) -> str {
 
 pub fn parse_bearer(header) -> Result[any] {
     ensure(str.starts_with(header, "Bearer "), "not a Bearer token header")?
-    Ok(str.trim_prefix(header, "Bearer "))
+    Ok(str.slice(header, 7))
 }
 
 pub fn oauth_authorize_url(base_url, client_id, redirect_uri, scope, state) -> str {
-    params := {
-        "response_type": "code",
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-    }
-    q := "response_type=code&client_id=" + url.query_escape(client_id) + "&redirect_uri=" + url.query_escape(redirect_uri)
+    let mut q = "response_type=code&client_id=" + url.escape(client_id) + "&redirect_uri=" + url.escape(redirect_uri)
     if scope != null {
-        q = q + "&scope=" + url.query_escape(scope)
+        q = q + "&scope=" + url.escape(scope)
     }
     if state != null {
-        q = q + "&state=" + url.query_escape(state)
+        q = q + "&state=" + url.escape(state)
     }
     base_url + "?" + q
 }
 
 pub fn oauth_token_request(token_url, client_id, client_secret, code, redirect_uri) -> Result[any] {
     body := "grant_type=authorization_code"
-        + "&code=" + url.query_escape(code)
-        + "&client_id=" + url.query_escape(client_id)
-        + "&client_secret=" + url.query_escape(client_secret)
-        + "&redirect_uri=" + url.query_escape(redirect_uri)
+        + "&code=" + url.escape(code)
+        + "&client_id=" + url.escape(client_id)
+        + "&client_secret=" + url.escape(client_secret)
+        + "&redirect_uri=" + url.escape(redirect_uri)
     resp := http.post(token_url, body, {
         "headers": {"Content-Type": "application/x-www-form-urlencoded"},
     })?

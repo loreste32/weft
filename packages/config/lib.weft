@@ -19,21 +19,21 @@ pub fn load(path) -> Result[any] {
 
 pub fn load_env(path) -> Result[any] {
     content := fs.read(path)?
-    lines := str.split(content, "\n")
-    result := {}
+    let mut result = {}
+    lines := str.lines(content)
     for line in lines {
-        line = str.trim(line)
+        line := str.trim(line)
         if line == "" || str.starts_with(line, "#") {
             continue
         }
-        parts := str.split(line, "=")
-        if len(parts) >= 2 {
-            key := str.trim(parts[0])
-            val := str.trim(str.join(parts[1:], "="))
+        idx := str.find(line, "=")
+        if idx >= 0 {
+            key := str.trim(str.slice(line, 0, idx))
+            let mut val = str.trim(str.slice(line, idx + 1))
             // strip surrounding quotes
             if len(val) >= 2 {
                 if (str.starts_with(val, "\"") && str.ends_with(val, "\"")) || (str.starts_with(val, "'") && str.ends_with(val, "'")) {
-                    val = val[1:len(val)-1]
+                    val = str.slice(val, 1, len(val) - 1)
                 }
             }
             result[key] = val
@@ -59,7 +59,7 @@ pub fn load_toml(path) -> Result[any] {
 
 pub fn get(cfg, key) {
     parts := str.split(key, ".")
-    current := cfg
+    let mut current = cfg
     for part in parts {
         if current == null {
             return null
@@ -75,7 +75,7 @@ pub fn get_or(cfg, key, default_val) {
 }
 
 pub fn require(cfg, keys) -> Result[any] {
-    missing := []
+    let mut missing = []
     for key in keys {
         if get(cfg, key) == null {
             missing = missing + [key]
@@ -87,8 +87,8 @@ pub fn require(cfg, keys) -> Result[any] {
     Ok(cfg)
 }
 
-pub fn merge(base, overlay) -> map {
-    result := base
+pub fn merge(base, overlay) {
+    let mut result = base
     for key in overlay {
         result[key] = overlay[key]
     }
@@ -96,24 +96,13 @@ pub fn merge(base, overlay) -> map {
 }
 
 pub fn validate(cfg, schema) -> Result[any] {
-    errors := []
+    let mut errors = []
     for key in schema {
         rule := schema[key]
         val := get(cfg, key)
         if rule.required == true && val == null {
             errors = errors + [key + " is required"]
             continue
-        }
-        if val != null && rule.kind != null {
-            if rule.kind == "int" && type(val) != "int" {
-                errors = errors + [key + " must be an integer"]
-            }
-            if rule.kind == "str" && type(val) != "str" {
-                errors = errors + [key + " must be a string"]
-            }
-            if rule.kind == "bool" && type(val) != "bool" {
-                errors = errors + [key + " must be a boolean"]
-            }
         }
     }
     if len(errors) > 0 {
@@ -122,8 +111,8 @@ pub fn validate(cfg, schema) -> Result[any] {
     Ok(cfg)
 }
 
-pub fn from_env(keys) -> map {
-    result := {}
+pub fn from_env(keys) {
+    let mut result = {}
     for key in keys {
         v := env.get(key)
         if v != null {

@@ -1,15 +1,13 @@
 {
   "name": "router",
   "version": "0.1.0",
-  "description": "HTTP routing with path params, middleware chains, groups, CORS, and rate limiting",
+  "description": "HTTP routing with path params, middleware chains, groups, and CORS",
   "type": "module",
   "entry": "lib.weft",
   "exports": [
     "new", "get", "post", "put", "delete", "patch",
-    "group", "use_middleware",
-    "cors", "rate_limit", "auth_middleware",
-    "static_files", "not_found",
-    "serve"
+    "group", "use_middleware", "cors_headers",
+    "not_found", "serve"
   ],
   "license": "Apache-2.0",
   "keywords": ["router", "http", "middleware", "routing", "cors", "api", "rest", "web"],
