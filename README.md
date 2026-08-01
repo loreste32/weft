@@ -19,8 +19,9 @@ It handles errors with `Result` / `?` instead of exceptions, runs concurrent wor
 | Website | [weftproject.dev](https://weftproject.dev) |
 | Install | `curl -fsSL https://weftproject.dev/install.sh \| sh` |
 | Docs | [weftproject.dev/docs.html](https://weftproject.dev/docs.html) |
-| Registry | [registry.weftproject.dev](https://registry.weftproject.dev) |
-| Security | [SECURITY.md](SECURITY.md) |
+| Playground | [weftproject.dev/playground.html](https://weftproject.dev/playground.html) |
+| Registry | [registry.weftproject.dev](https://registry.weftproject.dev) (23 modules) |
+| VS Code | `editors/vscode/` — syntax, LSP, DAP debugger |
 
 ## Install
 
@@ -47,9 +48,10 @@ go build -o weft ./cmd/weft
 ## Quick start
 
 ```bash
-weft doctor
-weft run examples/hello.weft
-weft run examples/todoapp/main.weft   # web app with SQLite
+weft doctor                                # check environment
+weft run examples/hello.weft               # hello world
+weft run examples/todoapp/main.weft        # web app with SQLite
+weft run examples/sysops_host.weft -- info # devops host checks
 ```
 
 ## The language
@@ -68,11 +70,11 @@ fn main -> Result {
 | Syntax | What it does |
 |--------|-------------|
 | `x := 1` | Bind a value |
-| `mut n := 0` | Mutable binding |
-| `use pkg` | Import a package |
-| `say("hi")` | Print |
-| `"hello $name"` | String interpolation |
-| `expr?` | Propagate errors |
+| `let mut n = 0` | Mutable binding |
+| `use pkg` | Import a stdlib or registry package |
+| `use { "auth" "config" }` | Grouped imports |
+| `say("hello $name")` | Print with string interpolation |
+| `expr?` | Propagate errors (`Result` type) |
 | `x \|> f` | Pipeline |
 | `match x { 1 { "one" } _ { "other" } }` | Pattern matching |
 
@@ -98,107 +100,101 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 
 ## What's in the box
 
-**Language:** lex, parse, compile, stack VM. Closures (capture by value), sum types with payloads, `match` with destructuring, `defer`, `Result`/`?`. Concurrent `map`/`filter`, `spawn`, channels — no `async`/`await`.
+**Language:** lex → parse → compile → stack VM. Closures (capture by value), sum types with payloads, `match` with destructuring, `defer`, `Result`/`?`. Concurrent `map`/`filter`, `spawn`, channels — no `async`/`await`.
 
-**81 stdlib packages (in the binary):**
+### 81 stdlib packages (in the binary)
 
 | Area | Packages |
 |------|----------|
-| LLM / AI | `llm` (OpenAI/Anthropic/Ollama/vLLM), `mcp`, `deepgram` (STT), `elevenlabs` (TTS), `mlinfer` (ONNX/Triton/HF) |
-| Web | `http`, `web` (HTMX/SSE), `ws`, `webrtc`, `graphql` |
-| DevOps | `sysinfo`, `proc`, `netutil`, `os`, `dns`, `tls`, `sh`, `fs`, `cli`, `env`, `signal`, `secrets`, `log` |
+| LLM / AI | `llm` (OpenAI/Anthropic/Ollama/vLLM), `mcp` (Model Context Protocol), `deepgram` (streaming STT), `elevenlabs` (streaming TTS), `mlinfer` (ONNX/Triton/HF inference) |
+| Infrastructure | `governor` (token/cost budgets), `supervisor` (Erlang-style), `cluster` (distributed state via Redis), `ratelimit`, `migrate` |
+| Web | `http`, `web` (HTMX/SSE/cookies), `ws`, `webrtc`, `graphql` |
+| DevOps | `sysinfo`, `proc`, `netutil`, `os`, `sh`, `fs`, `cli`, `env`, `signal`, `secrets`, `log` |
+| Network | `dns` (A/SRV/CNAME/NS/MX/TXT/PTR), `tls` (cert inspect/verify/expiry), `pcap`, `socket`, `email`, `ip` |
 | Data | `db` (SQLite/Postgres/MySQL), `csv`, `json`, `yaml`, `toml`, `xml`, `redis`, `mongo`, `nats`, `amqp` |
-| Network | `pcap`, `socket`, `email`, `ip`, `dns`, `tls` |
-| Encoding | `encoding` (hex, base32, URL), `compress` (gzip, zlib), `base64`, `crypto` |
-| Runtime | `governor`, `supervisor`, `cluster`, `ratelimit`, `migrate` |
-| All | Run `weft stdlib` to see the full list |
+| Encoding | `encoding` (hex/base32/URL), `compress` (gzip/zlib), `base64`, `crypto` |
+| Text / math | `str`, `re`, `math`, `decimal`, `time`, `random`, `uuid`, `html`, `mime` |
+| Collections | `iter`, `collections`, `heap`, `bisect`, `pipe`, `functools`, `copy` |
+| ML | `tokenizer`, `dataset`, `metrics` |
+| Other | `table`, `viz`, `archive`, `binstruct`, `difflib`, `shlex`, `platform`, `traceback`, `pickle`, `io`, `test` |
 
-**Tooling:**
-- `weft check [--types] [--strict]` — type checking (`--strict` fails on type warnings; CI uses this)
-- `weft test [--coverage]` — run `fn test_*` in `*_test.weft` files
-- `weft fmt [--check]` — code formatter (CI-friendly with `--check`)
-- `weft run [--watch]` — run scripts, auto-reload on file changes
-- `weft debug [--dap]` / `profile` — debugger (CLI or DAP for VS Code) and profiler
-- **Browser Wasm** — `make wasm` builds a client-side runtime (`wasm/playground.html`)
-- **LSP types** — hover/completion use annotations + inference; type warnings as diagnostics
-- **Reliability** — bytecode validation, fuzz/race/compat CI, `make release-smoke`; slim binary (`-tags slim`); see [docs/STABILITY.md](docs/STABILITY.md)
-- `weft notebook` — run `.weft` as cells, output HTML
-- `weft mcp serve <file>` — expose Weft functions as MCP tools
-- `weft lint` — static analysis (unused imports, trailing whitespace, TODOs)
-- `weft doc` — generate API docs from `pub fn`
-- `weft bench [--save f.json] [--compare base.json]` — benchmarks with regression tracking
-- `weft update` — self-update to latest version
-- `weft upgrade` — upgrade installed packages
-- `weft outdated` — check for newer package versions
-- `weft lsp` — Language Server (completion, hover, rename, diagnostics)
+Full list: `weft stdlib`
 
-**23 registry modules** at [registry.weftproject.dev](https://registry.weftproject.dev):
+### 23 registry modules
+
+Install with `weft get <name>` — or just `use auth` and it auto-fetches from the registry.
 
 | Module | What it does |
 |--------|-------------|
 | [telecom](packages/telecom/) | IVA voice agents, FreeSWITCH ESL, Asterisk ARI, STT/TTS, DTMF, routing, queues, CDR |
+| [auth](packages/auth/) | HMAC signing, password hashing (10k rounds), token generation, OAuth helpers |
+| [router](packages/router/) | HTTP routing with path params, middleware chains, CORS |
+| [config](packages/config/) | Unified config loader (.env/JSON/YAML/TOML) with validation |
+| [logger](packages/logger/) | Structured logging: levels, JSON/text output, child loggers |
+| [queue](packages/queue/) | In-process job queue with retries and dead-letter |
+| [template](packages/template/) | HTML templating: layouts, partials, loops, conditionals, auto-escaping |
+| [jwt](packages/jwt/) | JWT token decode, claims inspection, expiry check |
+| [http_router](packages/http_router/) | Routing with path params, middleware, groups, CORS |
+| [validate](packages/validate/) | Data validation for forms/APIs |
 | [mold](packages/mold/) | Structured LLM JSON, validation, tool params |
 | [ml](packages/ml/) | Embeddings, vectors, RAG index |
 | [tokensave](packages/tokensave/) | Context thrift, memory, train data |
-| [warp](packages/warp/) | N-dimensional array math |
-| [retry](packages/retry/) | Exponential backoff for flaky operations |
+| [retry](packages/retry/) | Exponential backoff with jitter and circuit breaker |
+| [cache](packages/cache/) | In-memory LRU cache with TTL |
+| [cron](packages/cron/) | Recurring task scheduler |
 | [semver](packages/semver/) | Semver parsing, comparison, constraints |
-| [cache](packages/cache/) | In-memory key-value cache with TTL |
 | [color](packages/color/) | ANSI terminal colors for CLI tools |
-| [jwt](packages/jwt/) | JWT token decode and inspection |
-| [http_router](packages/http_router/) | Routing with path params, middleware, groups, CORS |
-| [template](packages/template/) | String templating with placeholders, loops, HTML escaping |
-| [validate](packages/validate/) | Data validation for forms/APIs |
-| [cron](packages/cron/) | Recurring task scheduler with intervals and daily times |
-| [auth](packages/auth/) | HMAC, password hashing, tokens, OAuth helpers |
-| [queue](packages/queue/) | In-process job queue with retries and dead-letter |
-| [config](packages/config/) | Unified config loader (.env/JSON/YAML/TOML) with validation |
-| [logger](packages/logger/) | Structured logging: levels, JSON/text, child loggers |
-| [router](packages/router/) | HTTP routing with path params, middleware, CORS |
+| [warp](packages/warp/) | N-dimensional array math |
 | [dataframe](packages/dataframe/) | Tabular data: filter, group, join, pivot |
 | [embed](packages/embed/) | Embeddings client + vector store |
 | [experiment](packages/experiment/) | Experiment tracking: runs, params, metrics |
 | [metrics](packages/metrics/) | ML metrics: accuracy, F1, precision, recall |
 
-**Packages:**
+Browse all: [registry.weftproject.dev](https://registry.weftproject.dev)
+
+### Packages
+
 - **Auto-fetch:** `use auth` downloads from registry if not in vendor/ (disable with `WEFT_NO_AUTO_FETCH=1`)
 - **Grouped imports:** `use { "auth" "config" "logger" }`
 - **Git imports:** `use "github.com/user/repo"` auto-clones into vendor/
-- Path and git imports into `vendor/`
 - Public registry with ed25519 signing, version immutability, namespace key ownership
-- Capability system for third-party package sandboxing
-- `weft get <name>` / `weft registry search|install|keygen|serve`
+- Capability sandboxing for third-party code in `vendor/`
 
-## CLI
+### Tooling
 
-```text
-weft                              REPL
-weft run <file.weft> [--watch]    run a script
-weft build [dir] [-o out]        bundle into .weftapp archive
-weft check <file|dir> [--types] [--strict]   type check
-weft test [--race] [--mem] [--timeout N] [--coverage]
-weft fmt [--check] <file|dir>     format
-weft notebook <file> [-o out.html]
-weft bench [--save f.json] [--compare base.json]
-weft lint [path]                  static analysis
-weft doc [path]                   generate API docs
-weft outdated                     check for newer package versions
-weft stdlib | doctor | version | lsp
-weft debug [--dap] [file.weft]    debugger (DAP for IDEs)
-weft profile <file.weft>          profiler
-weft mcp serve <file.weft>        MCP tool server
-weft info                         system information (memory, disk, load, network)
-weft update                       self-update binary
-weft upgrade                      upgrade packages
+| Command | What it does |
+|---------|-------------|
+| `weft run [--watch]` | Run scripts, auto-reload on change |
+| `weft build [-o out]` | Standalone executable (no weft needed on target) |
+| `weft check [--types] [--strict]` | Type-check (CI uses `--strict`) |
+| `weft test [--race] [--mem] [--timeout N] [--coverage]` | Unit tests |
+| `weft bench [--save f.json] [--compare base.json]` | Benchmarks with regression tracking |
+| `weft lint` | Static analysis (unused imports, TODOs, line length) |
+| `weft fmt [--check]` | Code formatter |
+| `weft doc` | Generate API docs from `pub fn` |
+| `weft info` | System report (memory, disk, uptime, network) |
+| `weft debug [--dap]` | Debugger (CLI or DAP for VS Code) |
+| `weft profile` | Execution profiler |
+| `weft notebook [-o out.html]` | Run `.weft` as cells, output HTML |
+| `weft mcp serve <file>` | Expose functions as MCP tools |
+| `weft lsp` | Language server (completion, hover, rename, diagnostics) |
+| `weft update` | Self-update weft binary |
+| `weft upgrade` | Upgrade installed packages |
+| `weft outdated` | Check for newer package versions |
+| `weft stdlib [pkg[.member]]` | Browse stdlib (live probe on zero-arg functions) |
+| `weft doctor` | Check environment |
+| `weft gen "task"` | LLM generates Weft code |
 
-weft new module|app|cli <name>    scaffold
-weft get <name> <path|git>        add dependency
-weft install                      install from weft.json
-weft publish [--key name]         sign and upload
-weft registry search|install|keygen|serve
-weft gen "task" [-o out.weft]     LLM generates Weft
-weft train prepare|finetune|eval  fine-tuning pipeline
-```
+Plus: `weft new module|app|cli <name>`, `weft get`, `weft install`, `weft publish`, `weft train prepare|finetune|eval`.
+
+### Reliability
+
+- Bytecode validation, lex/parse/compile fuzz, VM concurrency stress
+- Race detector + compat corpus in CI
+- Glue benchmarks vs Python (output parity)
+- Browser Wasm playground (29 network/db packages stubbed)
+- Slim build (`-tags slim`) for smaller binaries
+- See [docs/STABILITY.md](docs/STABILITY.md)
 
 ## Examples
 
@@ -220,12 +216,13 @@ More in [`examples/`](examples/) and [`examples/cookbook/`](examples/cookbook/).
 |---|---|
 | [weftproject.dev/docs.html](https://weftproject.dev/docs.html) | Full docs (on-site, searchable) |
 | [weftproject.dev/cookbook.html](https://weftproject.dev/cookbook.html) | 22 searchable recipes |
+| [weftproject.dev/playground.html](https://weftproject.dev/playground.html) | Try Weft in the browser |
 | [weftproject.dev/download.html](https://weftproject.dev/download.html) | Install guides (apt, dnf, brew, Docker) |
 | [docs/TUTORIAL.md](docs/TUTORIAL.md) | Guided first hour |
-| [docs/STDLIB.md](docs/STDLIB.md) | Stdlib reference |
+| [docs/ECOSYSTEM.md](docs/ECOSYSTEM.md) | How all the pieces fit together |
+| [docs/STDLIB.md](docs/STDLIB.md) | Stdlib reference (81 packages) |
 | [docs/TELECOM.md](docs/TELECOM.md) | Telecom / IVA / FreeSWITCH / Asterisk |
 | [docs/MCP.md](docs/MCP.md) | MCP integration |
-| [docs/ECOSYSTEM.md](docs/ECOSYSTEM.md) | How pieces fit together |
 | [SECURITY.md](SECURITY.md) | Threat model and capabilities |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Where we are and what's next |
 
