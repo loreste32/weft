@@ -1,21 +1,42 @@
 {
   "name": "warp",
-  "version": "0.3.0",
-  "description": "N-dimensional array math for Weft — pure .weft, no native deps",
+  "version": "0.4.0",
+  "description": "N-dimensional array math for Weft — numpy-style API, pure .weft, no native deps",
   "type": "module",
   "entry": "lib.weft",
   "exports": [
-    "array", "zeros", "ones", "arange", "linspace", "full",
+    "array", "zeros", "ones", "arange", "linspace", "full", "eye", "diag",
+    "from_list", "rand", "randn", "randint",
+
     "shape", "size", "ndim", "reshape", "flatten", "T",
-    "add", "sub", "mul", "div", "neg", "abs_",
-    "dot", "matmul",
-    "sum", "mean", "std_", "var_", "min_", "max_", "argmin", "argmax",
-    "sqrt", "pow_", "exp", "log_",
-    "where", "clip", "round_",
-    "eye", "diag",
-    "equal", "less", "greater",
-    "to_list", "print_"
+    "get", "set", "row", "col", "slice",
+
+    "add", "sub", "mul", "div", "mod_", "neg", "abs_",
+    "pow_", "round_", "floor_", "ceil_", "clip", "sign",
+
+    "sqrt", "exp", "log_", "log2", "log10",
+    "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+    "sinh", "cosh", "tanh",
+
+    "equal", "not_equal", "less", "less_equal", "greater", "greater_equal",
+    "where", "all_", "any_",
+
+    "sum", "prod", "mean", "var_", "std_", "min_", "max_",
+    "argmin", "argmax", "cumsum", "cumprod",
+    "median", "percentile",
+    "sum_axis", "mean_axis", "min_axis", "max_axis",
+
+    "dot", "matmul", "norm", "norm_l1", "normalize",
+    "trace", "det", "inv", "solve", "outer", "cross",
+
+    "concat", "vstack", "hstack", "tile", "repeat", "flip",
+    "sort", "argsort", "unique",
+
+    "apply", "apply2", "mask", "count_nonzero",
+
+    "to_list", "print_", "describe", "allclose",
+    "isnan", "isinf", "nan_to_num"
   ],
   "license": "Apache-2.0",
-  "keywords": ["array", "math", "science", "ndarray", "warp"]
+  "keywords": ["array", "math", "numpy", "ndarray", "science", "linear-algebra", "statistics", "matrix", "vector"]
 }
