@@ -1,6 +1,6 @@
 # Weft cookbook
 
-Paste-ready recipes for common jobs. All examples target **0.3.x** Weft.
+Paste-ready recipes for common jobs. All examples target **0.4.x** Weft.
 
 | Before you paste | |
 |------------------|--|

@@ -457,12 +457,18 @@ Overview: [STDLIB.md](STDLIB.md). Domain guides: [web.md](web.md), [cli.md](cli.
 |---------|---------|
 | `weft run file.weft` | Execute |
 | `weft` | REPL |
-| `weft check path…` | Parse / type-check |
-| `weft check --types` | Print inferred types |
-| `weft test` | Run `*_test.weft` · `fn test_*` |
+| `weft build [-o out]` | Standalone executable |
+| `weft check [--types] [--strict]` | Parse / type-check |
+| `weft test [--race] [--mem]` | Run `*_test.weft` · `fn test_*` |
 | `weft fmt` | Pretty-print from AST |
-| `weft bench` | Microbench `fn bench_*` |
-| `weft lsp` | Language server (stdio) |
+| `weft lint` | Static analysis |
+| `weft doc` | Generate API docs |
+| `weft bench [--compare base.json]` | Microbench `fn bench_*` |
+| `weft info` | System report |
+| `weft debug [--dap]` | Debugger |
+| `weft mcp serve file.weft` | MCP tool server |
+| `weft lsp` | Language server |
+| `weft update` / `upgrade` / `outdated` | Manage versions |
 | `weft doctor` | Environment readiness |
 | `weft gen "task"` | LLM writes Weft |
 

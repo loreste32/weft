@@ -25,6 +25,30 @@ weft install                           # from weft.json → vendor/
 weft run main.weft
 ```
 
+### Auto-fetch
+
+Packages missing from `vendor/` are downloaded from the registry on first `use`:
+
+```weft
+use auth     // auto-fetched from registry.weftproject.dev
+use config   // no manual install needed
+```
+
+Disable with `WEFT_NO_AUTO_FETCH=1`.
+
+### Grouped imports
+
+```weft
+use { "auth" "config" "logger" }
+```
+
+### Git and URL imports
+
+```weft
+use "github.com/user/repo"         // auto-clones into vendor/
+use "weftproject.dev/mold"         // extracts package name from URL
+```
+
 ## Quick start (author)
 
 ```bash

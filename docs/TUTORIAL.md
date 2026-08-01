@@ -9,14 +9,18 @@ A guided path from install to a small real script. Work in order; each step is s
 ## Before you start
 
 ```bash
-git clone <your-weft-repo>   # or open this monorepo
-cd weft                     # repo root
+# one-line install (macOS / Linux)
+curl -fsSL https://weftproject.dev/install.sh | sh
+
+# or from source
+git clone https://github.com/loreste32/weft && cd weft
 go build -o weft ./cmd/weft
-./weft doctor
-./weft version
+
+weft doctor
+weft version
 ```
 
-You should see something like `weft 0.3.x`. Put `./weft` on your `PATH` if you like (`make install` installs to `~/.local/bin/weft`).
+You should see something like `weft 0.4.x`. The install script puts `weft` in `/usr/local/bin`. From-source builds go to the current directory; `make install` installs to `~/.local/bin/weft`.
 
 Docs map: [README.md](README.md) · Language: [LANGUAGE.md](LANGUAGE.md) · Recipes: [COOKBOOK.md](COOKBOOK.md)
 
