@@ -1,187 +1,1059 @@
-use math
+// dataframe — pandas-style tabular data for Weft.
+// Column-oriented maps over row-list storage.
 
-
-use str
-
+// ──────────────────────────────────────────────
+// Creation
+// ──────────────────────────────────────────────
 
 pub fn from_rows(rows) {
     if len(rows) == 0 {
-        return {
-            "_df": true,
-            "columns": [],
-            "rows": [],
-        }
+        return {"_df": true, "columns": [], "rows": []}
     }
-    cols := keys(rows[0])
-    {
-        "_df": true,
-        "columns": cols,
-        "rows": rows,
-    }
+    {"_df": true, "columns": keys(rows[0]), "rows": rows}
 }
-
 
 pub fn from_columns(col_map) {
     cols := keys(col_map)
-    vals := values(col_map)
-    n := if len(vals) > 0 { len(vals[0]) } else { 0 }
-    mut rows := []
-    mut i := 0
+    n := if len(cols) > 0 { len(col_map[cols[0]]) } else { 0 }
+    let mut rows = []
+    let mut i = 0
     while i < n {
-        mut row := {}
+        let mut row = {}
         for c in cols {
             row[c] = col_map[c][i]
         }
         rows = push(rows, row)
         i = i + 1
     }
-    {
-        "_df": true,
-        "columns": cols,
-        "rows": rows,
-    }
+    {"_df": true, "columns": cols, "rows": rows}
 }
 
+pub fn from_csv(text, sep) {
+    delimiter := if sep == null { "," } else { sep }
+    lines := str.split(text, "\n")
+    if len(lines) == 0 { return from_rows([]) }
+    cols := str.split(str.trim(lines[0]), delimiter)
+    let mut rows = []
+    let mut i = 1
+    while i < len(lines) {
+        line := str.trim(lines[i])
+        if line == "" {
+            i = i + 1
+            continue
+        }
+        vals := str.split(line, delimiter)
+        let mut row = {}
+        let mut j = 0
+        while j < len(cols) {
+            v := if j < len(vals) { _parse_value(str.trim(vals[j])) } else { null }
+            row[cols[j]] = v
+            j = j + 1
+        }
+        rows = push(rows, row)
+        i = i + 1
+    }
+    {"_df": true, "columns": cols, "rows": rows}
+}
+
+pub fn from_json(text) -> Result[any] {
+    data := json.parse(text)?
+    Ok(from_rows(data))
+}
+
+pub fn from_jsonl(text) -> Result[any] {
+    lines := str.split(str.trim(text), "\n")
+    let mut rows = []
+    for line in lines {
+        trimmed := str.trim(line)
+        if trimmed == "" { continue }
+        row := json.parse(trimmed)?
+        rows = push(rows, row)
+    }
+    Ok(from_rows(rows))
+}
+
+pub fn read_csv(path, sep) -> Result[any] {
+    text := fs.read(path)?
+    Ok(from_csv(text, sep))
+}
+
+pub fn read_json(path) -> Result[any] {
+    text := fs.read(path)?
+    from_json(text)
+}
+
+pub fn read_jsonl(path) -> Result[any] {
+    text := fs.read(path)?
+    from_jsonl(text)
+}
+
+pub fn empty(cols) {
+    {"_df": true, "columns": cols, "rows": []}
+}
+
+// ──────────────────────────────────────────────
+// Shape / info
+// ──────────────────────────────────────────────
 
 pub fn columns(t) { t.columns }
 
-
 pub fn rows(t) { t.rows }
-
 
 pub fn nrows(t) { len(t.rows) }
 
-
 pub fn ncols(t) { len(t.columns) }
 
+pub fn shape(t) { [len(t.rows), len(t.columns)] }
 
-pub fn col(t, name) { map(t.rows, fn(r) { r[name] }) }
+pub fn dtypes(t) {
+    if len(t.rows) == 0 { return {} }
+    let mut result = {}
+    row := t.rows[0]
+    for c in t.columns {
+        v := row[c]
+        if v == null { result[c] = "null" }
+        else if v == true || v == false { result[c] = "bool" }
+        else {
+            // check if numeric
+            let mut is_num = true
+            result[c] = "str"
+        }
+    }
+    result
+}
 
+pub fn info(t) {
+    {
+        "rows": len(t.rows),
+        "columns": len(t.columns),
+        "column_names": t.columns,
+        "memory_est": len(t.rows) * len(t.columns) * 8,
+    }
+}
+
+// ──────────────────────────────────────────────
+// Selection / indexing
+// ──────────────────────────────────────────────
+
+pub fn col(t, name) {
+    let mut vals = []
+    for r in t.rows { vals = push(vals, r[name]) }
+    vals
+}
 
 pub fn head(t, n) {
-    cnt := if n == null { 5 } else { n }
-    from_rows(slice(t.rows, 0, cnt))
+    let mut cnt = if n == null { 5 } else { n }
+    if cnt > len(t.rows) { cnt = len(t.rows) }
+    let mut rows = []
+    let mut i = 0
+    while i < cnt {
+        rows = push(rows, t.rows[i])
+        i = i + 1
+    }
+    from_rows(rows)
 }
-
 
 pub fn tail(t, n) {
-    cnt := if n == null { 5 } else { n }
-    start := len(t.rows) - cnt
-    if start < 0 {
-        start = 0
+    let mut cnt = if n == null { 5 } else { n }
+    let mut start = len(t.rows) - cnt
+    if start < 0 { start = 0 }
+    let mut rows = []
+    let mut i = start
+    while i < len(t.rows) {
+        rows = push(rows, t.rows[i])
+        i = i + 1
     }
-    from_rows(slice(t.rows, start))
+    from_rows(rows)
 }
 
+pub fn iloc(t, idx) {
+    // Single row by position
+    t.rows[idx]
+}
+
+pub fn loc(t, start, stop) {
+    // Row range by position
+    let mut rows = []
+    let mut i = start
+    s := if stop == null { len(t.rows) } else { stop }
+    while i < s {
+        rows = push(rows, t.rows[i])
+        i = i + 1
+    }
+    from_rows(rows)
+}
 
 pub fn select_(t, cols) {
-    new_rows := map(t.rows, fn(r) {
-        mut nr := {}
-        for c in cols {
-            nr[c] = r[c]
-        }
-        nr
-    })
-    {
-        "_df": true,
-        "columns": cols,
-        "rows": new_rows,
+    let mut new_rows = []
+    for r in t.rows {
+        let mut nr = {}
+        for c in cols { nr[c] = r[c] }
+        new_rows = push(new_rows, nr)
     }
+    {"_df": true, "columns": cols, "rows": new_rows}
 }
-
-
-pub fn rename(t, old, new_name) {
-    new_cols := map(t.columns, fn(c) {
-        if c == old { new_name } else { c }
-    })
-    new_rows := map(t.rows, fn(r) {
-        mut nr := {}
-        for c in t.columns {
-            nc := if c == old { new_name } else { c }
-            nr[nc] = r[c]
-        }
-        nr
-    })
-    {
-        "_df": true,
-        "columns": new_cols,
-        "rows": new_rows,
-    }
-}
-
-
-pub fn add_column(t, name, f) {
-    new_cols := concat(t.columns, [name])
-    new_rows := map(t.rows, fn(r) {
-        mut nr := {}
-        for c in t.columns {
-            nr[c] = r[c]
-        }
-        nr[name] = f(r)
-        nr
-    })
-    {
-        "_df": true,
-        "columns": new_cols,
-        "rows": new_rows,
-    }
-}
-
 
 pub fn drop(t, cols) {
-    keep := filter(t.columns, fn(c) { !contains(cols, c) })
+    let mut keep = []
+    for c in t.columns {
+        if !contains(cols, c) { keep = push(keep, c) }
+    }
     select_(t, keep)
 }
 
+// ──────────────────────────────────────────────
+// Filtering / querying
+// ──────────────────────────────────────────────
 
-pub fn filter_(t, pred) { from_rows(filter(t.rows, pred)) }
+pub fn filter_(t, pred) {
+    let mut rows = []
+    for r in t.rows {
+        if pred(r) { rows = push(rows, r) }
+    }
+    from_rows(rows)
+}
 
+pub fn query(t, column, op, value) {
+    // query(df, "age", ">", 30) — string-based for simple filters
+    filter_(t, fn(r) {
+        v := r[column]
+        if v == null { return false }
+        match op {
+            "==" { v == value }
+            "!=" { v != value }
+            ">"  { v > value }
+            ">=" { v >= value }
+            "<"  { v < value }
+            "<=" { v <= value }
+            _    { false }
+        }
+    })
+}
+
+pub fn isin(t, column, values) {
+    filter_(t, fn(r) { contains(values, r[column]) })
+}
+
+pub fn between(t, column, low, high) {
+    filter_(t, fn(r) {
+        v := r[column]
+        v != null && v >= low && v <= high
+    })
+}
+
+pub fn notnull(t, column) {
+    filter_(t, fn(r) { r[column] != null })
+}
+
+// ──────────────────────────────────────────────
+// Sorting
+// ──────────────────────────────────────────────
 
 pub fn sort_by(t, column, desc) {
+    // insertion sort — Weft's builtin sort ignores comparator for maps
+    let mut d = []
+    for r in t.rows { d = push(d, r) }
+    let mut i = 1
+    while i < len(d) {
+        key := d[i]
+        let mut j = i - 1
+        if desc {
+            while j >= 0 && d[j][column] < key[column] {
+                d[j + 1] = d[j]
+                j = j - 1
+            }
+        } else {
+            while j >= 0 && d[j][column] > key[column] {
+                d[j + 1] = d[j]
+                j = j - 1
+            }
+        }
+        d[j + 1] = key
+        i = i + 1
+    }
+    from_rows(d)
+}
+
+pub fn sort_by_multi(t, columns_list, desc_list) {
     sorted := sort(t.rows, fn(a, b) {
-        if desc { a[column] < b[column] } else { a[column] > b[column] }
+        let mut i = 0
+        while i < len(columns_list) {
+            col_name := columns_list[i]
+            descending := if i < len(desc_list) { desc_list[i] } else { false }
+            av := a[col_name]
+            bv := b[col_name]
+            if av != bv {
+                if descending { return av < bv }
+                else { return av > bv }
+            }
+            i = i + 1
+        }
+        false
     })
     from_rows(sorted)
 }
 
+pub fn nlargest(t, n, column) {
+    sort_by(t, column, true) |> head(n)
+}
 
-pub fn group_by(t, col, aggs) {
-    mut groups := {}
+pub fn nsmallest(t, n, column) {
+    sort_by(t, column, false) |> head(n)
+}
+
+// ──────────────────────────────────────────────
+// Column operations
+// ──────────────────────────────────────────────
+
+pub fn add_column(t, name, f) {
+    let mut new_cols = []
+    for c in t.columns { new_cols = push(new_cols, c) }
+    new_cols = push(new_cols, name)
+    let mut new_rows = []
     for r in t.rows {
-        k := r[col]
-        ks := "" + k
-        if groups[ks] == null {
-            groups[ks] = {
-                "key": k,
-                "rows": [],
-            }
+        let mut nr = {}
+        for c in t.columns { nr[c] = r[c] }
+        nr[name] = f(r)
+        new_rows = push(new_rows, nr)
+    }
+    {"_df": true, "columns": new_cols, "rows": new_rows}
+}
+
+pub fn assign(t, assignments) {
+    // assign(df, {"full_name": fn(r) { r.first + " " + r.last }, "age_group": fn(r) { ... }})
+    let mut result = t
+    for name in keys(assignments) {
+        result = add_column(result, name, assignments[name])
+    }
+    result
+}
+
+pub fn rename(t, mapping) {
+    // rename(df, {"old_name": "new_name"})
+    let mut new_cols = []
+    for c in t.columns {
+        nc := if mapping[c] != null { mapping[c] } else { c }
+        new_cols = push(new_cols, nc)
+    }
+    let mut new_rows = []
+    for r in t.rows {
+        let mut nr = {}
+        for c in t.columns {
+            nc := if mapping[c] != null { mapping[c] } else { c }
+            nr[nc] = r[c]
         }
-        groups[ks] = {
-            "key": groups[ks].key,
-            "rows": push(groups[ks].rows, r),
+        new_rows = push(new_rows, nr)
+    }
+    {"_df": true, "columns": new_cols, "rows": new_rows}
+}
+
+pub fn apply_(t, column, f) {
+    // Apply function to one column, return new df
+    let mut new_rows = []
+    for r in t.rows {
+        let mut nr = {}
+        for c in t.columns { nr[c] = r[c] }
+        nr[column] = f(r[column])
+        new_rows = push(new_rows, nr)
+    }
+    {"_df": true, "columns": t.columns, "rows": new_rows}
+}
+
+pub fn apply_row(t, f) {
+    // Apply function to each row, collect results as list
+    let mut results = []
+    for r in t.rows { results = push(results, f(r)) }
+    results
+}
+
+pub fn replace(t, column, old_val, new_val) {
+    apply_(t, column, fn(v) { if v == old_val { new_val } else { v } })
+}
+
+pub fn clip_(t, column, lo, hi) {
+    apply_(t, column, fn(v) {
+        if v == null { null }
+        else if v < lo { lo }
+        else if v > hi { hi }
+        else { v }
+    })
+}
+
+pub fn fill_value(t, column, fill) {
+    apply_(t, column, fn(v) { if v == null { fill } else { v } })
+}
+
+// ──────────────────────────────────────────────
+// Missing data
+// ──────────────────────────────────────────────
+
+pub fn fillna(t, fill_map) {
+    // fillna(df, {"age": 0, "name": "unknown"})
+    let mut result = t
+    for col_name in keys(fill_map) {
+        result = fill_value(result, col_name, fill_map[col_name])
+    }
+    result
+}
+
+pub fn dropna(t, subset) {
+    // Drop rows where any column in subset is null (default: all columns)
+    check_cols := if subset == null { t.columns } else { subset }
+    filter_(t, fn(r) {
+        for c in check_cols {
+            if r[c] == null { return false }
+        }
+        true
+    })
+}
+
+pub fn isna(t, column) {
+    // Return list of booleans
+    let mut result = []
+    for r in t.rows { result = push(result, r[column] == null) }
+    result
+}
+
+pub fn count_na(t, column) {
+    let mut n = 0
+    for r in t.rows { if r[column] == null { n = n + 1 } }
+    n
+}
+
+// ──────────────────────────────────────────────
+// Duplicates
+// ──────────────────────────────────────────────
+
+pub fn drop_duplicates(t, subset) {
+    check_cols := if subset == null { t.columns } else { subset }
+    let mut seen = {}
+    let mut rows = []
+    for r in t.rows {
+        let mut parts = []
+        for c in check_cols { parts = push(parts, "" + r[c]) }
+        key := str.join(parts, "|")
+        if seen[key] == null {
+            seen[key] = true
+            rows = push(rows, r)
         }
     }
-    mut result := []
+    from_rows(rows)
+}
+
+pub fn duplicated(t, subset) {
+    check_cols := if subset == null { t.columns } else { subset }
+    let mut seen = {}
+    let mut result = []
+    for r in t.rows {
+        let mut parts = []
+        for c in check_cols { parts = push(parts, "" + r[c]) }
+        key := str.join(parts, "|")
+        if seen[key] != null {
+            result = push(result, true)
+        } else {
+            seen[key] = true
+            result = push(result, false)
+        }
+    }
+    result
+}
+
+// ──────────────────────────────────────────────
+// Aggregation / grouping
+// ──────────────────────────────────────────────
+
+pub fn group_by(t, group_col, aggs) {
+    let mut groups = {}
+    for r in t.rows {
+        k := "" + r[group_col]
+        if groups[k] == null {
+            groups[k] = {"key": r[group_col], "rows": []}
+        }
+        groups[k] = {"key": groups[k].key, "rows": push(groups[k].rows, r)}
+    }
+    let mut result = []
     for gk in keys(groups) {
         g := groups[gk]
-        mut row := {}
-        row[col] = g.key
+        let mut row = {}
+        row[group_col] = g.key
         for agg_name in keys(aggs) {
             spec := aggs[agg_name]
-            src_col := spec.col
-            vals := map(g.rows, fn(r) { r[src_col] })
+            vals := _col_vals(g.rows, spec.col)
             row[agg_name] = _agg(spec.op, vals)
         }
         result = push(result, row)
     }
-    new_cols := concat([col], keys(aggs))
+    let mut new_cols = [group_col]
+    for c in keys(aggs) { new_cols = push(new_cols, c) }
+    {"_df": true, "columns": new_cols, "rows": result}
+}
+
+pub fn agg(t, aggs) {
+    // Aggregate whole dataframe: agg(df, {"total": {col: "price", op: "sum"}, ...})
+    let mut row = {}
+    for agg_name in keys(aggs) {
+        spec := aggs[agg_name]
+        vals := _col_vals(t.rows, spec.col)
+        row[agg_name] = _agg(spec.op, vals)
+    }
+    row
+}
+
+pub fn value_counts(t, column) {
+    let mut counts = {}
+    for r in t.rows {
+        k := "" + r[column]
+        if counts[k] == null { counts[k] = 0 }
+        counts[k] = counts[k] + 1
+    }
+    counts
+}
+
+pub fn nunique(t, column) {
+    let mut seen = {}
+    let mut n = 0
+    for r in t.rows {
+        k := "" + r[column]
+        if seen[k] == null {
+            seen[k] = true
+            n = n + 1
+        }
+    }
+    n
+}
+
+// ──────────────────────────────────────────────
+// Statistics
+// ──────────────────────────────────────────────
+
+pub fn describe(t, column) {
+    vals := _numeric_col(t, column)
+    n := len(vals)
+    if n == 0 { return {"count": 0} }
+    sorted := sort(vals)
+    s := _sum_list(vals)
+    mn := s / n
+    let mut var_sum = 0.0
+    for x in vals { var_sum = var_sum + (x - mn) * (x - mn) }
     {
-        "_df": true,
-        "columns": new_cols,
-        "rows": result,
+        "count": n,
+        "mean": mn,
+        "std": math.sqrt(var_sum / n),
+        "min": sorted[0],
+        "25%": _percentile(sorted, 25),
+        "50%": _percentile(sorted, 50),
+        "75%": _percentile(sorted, 75),
+        "max": sorted[n - 1],
+        "sum": s,
     }
 }
 
+pub fn describe_all(t) {
+    let mut result = {}
+    for c in t.columns {
+        vals := _numeric_col(t, c)
+        if len(vals) > 0 {
+            result[c] = describe(t, c)
+        }
+    }
+    result
+}
+
+pub fn corr(t, col_a, col_b) {
+    va := _numeric_col(t, col_a)
+    vb := _numeric_col(t, col_b)
+    n := len(va)
+    if n < 2 { return 0 }
+    ma := _sum_list(va) / n
+    mb := _sum_list(vb) / n
+    let mut cov = 0.0
+    let mut sa = 0.0
+    let mut sb = 0.0
+    let mut i = 0
+    while i < n {
+        da := va[i] - ma
+        db := vb[i] - mb
+        cov = cov + da * db
+        sa = sa + da * da
+        sb = sb + db * db
+        i = i + 1
+    }
+    denom := math.sqrt(sa) * math.sqrt(sb)
+    if denom == 0 { 0 } else { cov / denom }
+}
+
+pub fn cov(t, col_a, col_b) {
+    va := _numeric_col(t, col_a)
+    vb := _numeric_col(t, col_b)
+    n := len(va)
+    if n < 2 { return 0 }
+    ma := _sum_list(va) / n
+    mb := _sum_list(vb) / n
+    let mut c = 0.0
+    let mut i = 0
+    while i < n {
+        c = c + (va[i] - ma) * (vb[i] - mb)
+        i = i + 1
+    }
+    c / (n - 1)
+}
+
+// ──────────────────────────────────────────────
+// Joins / merging
+// ──────────────────────────────────────────────
+
+pub fn join(left, right, on, how) {
+    join_type := if how == null { "inner" } else { how }
+    let mut idx = {}
+    for r in right.rows {
+        k := "" + r[on]
+        if idx[k] == null { idx[k] = [] }
+        idx[k] = push(idx[k], r)
+    }
+    let mut result = []
+    let mut right_matched = {}
+    for lr in left.rows {
+        k := "" + lr[on]
+        matches := idx[k]
+        if matches != null {
+            right_matched[k] = true
+            for rr in matches {
+                let mut merged = {}
+                for c in left.columns { merged[c] = lr[c] }
+                for c in right.columns {
+                    if c != on { merged[c] = rr[c] }
+                }
+                result = push(result, merged)
+            }
+        } else if join_type == "left" || join_type == "outer" {
+            let mut merged = {}
+            for c in left.columns { merged[c] = lr[c] }
+            for c in right.columns {
+                if c != on { merged[c] = null }
+            }
+            result = push(result, merged)
+        }
+    }
+    // For outer join, add unmatched right rows
+    if join_type == "outer" {
+        for rr in right.rows {
+            k := "" + rr[on]
+            if right_matched[k] == null {
+                let mut merged = {}
+                for c in left.columns {
+                    if c == on { merged[c] = rr[on] }
+                    else { merged[c] = null }
+                }
+                for c in right.columns { merged[c] = rr[c] }
+                result = push(result, merged)
+            }
+        }
+    }
+    let mut all_cols = []
+    for c in left.columns { all_cols = push(all_cols, c) }
+    for c in right.columns {
+        if c != on && !contains(all_cols, c) { all_cols = push(all_cols, c) }
+    }
+    {"_df": true, "columns": all_cols, "rows": result}
+}
+
+pub fn concat_df(dfs) {
+    // Concatenate dataframes vertically
+    if len(dfs) == 0 { return from_rows([]) }
+    cols := dfs[0].columns
+    let mut rows = []
+    for df in dfs {
+        for r in df.rows { rows = push(rows, r) }
+    }
+    {"_df": true, "columns": cols, "rows": rows}
+}
+
+pub fn merge(left, right, left_on, right_on, how) {
+    // Merge on different column names
+    join_type := if how == null { "inner" } else { how }
+    let mut idx = {}
+    for r in right.rows {
+        k := "" + r[right_on]
+        if idx[k] == null { idx[k] = [] }
+        idx[k] = push(idx[k], r)
+    }
+    let mut result = []
+    for lr in left.rows {
+        k := "" + lr[left_on]
+        matches := idx[k]
+        if matches != null {
+            for rr in matches {
+                let mut merged = {}
+                for c in left.columns { merged[c] = lr[c] }
+                for c in right.columns {
+                    if c != right_on { merged[c] = rr[c] }
+                }
+                result = push(result, merged)
+            }
+        } else if join_type == "left" {
+            let mut merged = {}
+            for c in left.columns { merged[c] = lr[c] }
+            for c in right.columns {
+                if c != right_on { merged[c] = null }
+            }
+            result = push(result, merged)
+        }
+    }
+    let mut all_cols = []
+    for c in left.columns { all_cols = push(all_cols, c) }
+    for c in right.columns {
+        if c != right_on && !contains(all_cols, c) { all_cols = push(all_cols, c) }
+    }
+    {"_df": true, "columns": all_cols, "rows": result}
+}
+
+// ──────────────────────────────────────────────
+// Reshaping
+// ──────────────────────────────────────────────
+
+pub fn pivot(t, index_col, pivot_col, value_col) {
+    // Pivot: rows become columns
+    let mut pivot_vals = []
+    let mut seen = {}
+    for r in t.rows {
+        k := "" + r[pivot_col]
+        if seen[k] == null {
+            seen[k] = true
+            pivot_vals = push(pivot_vals, r[pivot_col])
+        }
+    }
+    let mut groups = {}
+    for r in t.rows {
+        k := "" + r[index_col]
+        if groups[k] == null { groups[k] = {"_idx": r[index_col]} }
+        pv := "" + r[pivot_col]
+        groups[k][pv] = r[value_col]
+    }
+    let mut cols = [index_col]
+    for pv in pivot_vals { cols = push(cols, "" + pv) }
+    let mut rows = []
+    for gk in keys(groups) {
+        let mut row = {}
+        row[index_col] = groups[gk]._idx
+        for pv in pivot_vals {
+            pk := "" + pv
+            row[pk] = groups[gk][pk]
+        }
+        rows = push(rows, row)
+    }
+    {"_df": true, "columns": cols, "rows": rows}
+}
+
+pub fn melt(t, id_cols, value_cols, var_name, val_name) {
+    // Melt: columns become rows (unpivot)
+    vn := if var_name == null { "variable" } else { var_name }
+    vl := if val_name == null { "value" } else { val_name }
+    melt_cols := if value_cols == null {
+        let mut mc = []
+        for c in t.columns {
+            if !contains(id_cols, c) { mc = push(mc, c) }
+        }
+        mc
+    } else { value_cols }
+    let mut rows = []
+    for r in t.rows {
+        for vc in melt_cols {
+            let mut nr = {}
+            for ic in id_cols { nr[ic] = r[ic] }
+            nr[vn] = vc
+            nr[vl] = r[vc]
+            rows = push(rows, nr)
+        }
+    }
+    let mut cols = []
+    for c in id_cols { cols = push(cols, c) }
+    cols = push(cols, vn)
+    cols = push(cols, vl)
+    {"_df": true, "columns": cols, "rows": rows}
+}
+
+pub fn crosstab(t, row_col, col_col) {
+    // Cross-tabulation (frequency table)
+    let mut ct = {}
+    let mut col_vals = {}
+    for r in t.rows {
+        rk := "" + r[row_col]
+        ck := "" + r[col_col]
+        col_vals[ck] = true
+        if ct[rk] == null { ct[rk] = {} }
+        if ct[rk][ck] == null { ct[rk][ck] = 0 }
+        ct[rk][ck] = ct[rk][ck] + 1
+    }
+    let mut cols = [row_col]
+    for c in keys(col_vals) { cols = push(cols, c) }
+    let mut rows = []
+    for rk in keys(ct) {
+        let mut row = {}
+        row[row_col] = rk
+        for ck in keys(col_vals) {
+            row[ck] = if ct[rk][ck] != null { ct[rk][ck] } else { 0 }
+        }
+        rows = push(rows, row)
+    }
+    {"_df": true, "columns": cols, "rows": rows}
+}
+
+// ──────────────────────────────────────────────
+// Window / rolling
+// ──────────────────────────────────────────────
+
+pub fn shift(t, column, periods) {
+    n := if periods == null { 1 } else { periods }
+    let mut new_rows = []
+    let mut i = 0
+    while i < len(t.rows) {
+        let mut nr = {}
+        for c in t.columns { nr[c] = t.rows[i][c] }
+        src := i - n
+        nr[column] = if src >= 0 && src < len(t.rows) { t.rows[src][column] } else { null }
+        new_rows = push(new_rows, nr)
+        i = i + 1
+    }
+    {"_df": true, "columns": t.columns, "rows": new_rows}
+}
+
+pub fn diff(t, column, periods) {
+    n := if periods == null { 1 } else { periods }
+    let mut new_rows = []
+    let mut i = 0
+    while i < len(t.rows) {
+        let mut nr = {}
+        for c in t.columns { nr[c] = t.rows[i][c] }
+        src := i - n
+        if src >= 0 && t.rows[src][column] != null && t.rows[i][column] != null {
+            nr[column] = t.rows[i][column] - t.rows[src][column]
+        } else {
+            nr[column] = null
+        }
+        new_rows = push(new_rows, nr)
+        i = i + 1
+    }
+    {"_df": true, "columns": t.columns, "rows": new_rows}
+}
+
+pub fn pct_change(t, column, periods) {
+    n := if periods == null { 1 } else { periods }
+    let mut new_rows = []
+    let mut i = 0
+    while i < len(t.rows) {
+        let mut nr = {}
+        for c in t.columns { nr[c] = t.rows[i][c] }
+        src := i - n
+        if src >= 0 && t.rows[src][column] != null && t.rows[src][column] != 0 && t.rows[i][column] != null {
+            nr[column] = (t.rows[i][column] - t.rows[src][column] + 0.0) / t.rows[src][column]
+        } else {
+            nr[column] = null
+        }
+        new_rows = push(new_rows, nr)
+        i = i + 1
+    }
+    {"_df": true, "columns": t.columns, "rows": new_rows}
+}
+
+pub fn rolling(t, column, window, op) {
+    let mut new_rows = []
+    let mut i = 0
+    while i < len(t.rows) {
+        let mut nr = {}
+        for c in t.columns { nr[c] = t.rows[i][c] }
+        if i >= window - 1 {
+            let mut vals = []
+            let mut j = i - window + 1
+            while j <= i {
+                vals = push(vals, t.rows[j][column])
+                j = j + 1
+            }
+            nr[column] = _agg(op, vals)
+        } else {
+            nr[column] = null
+        }
+        new_rows = push(new_rows, nr)
+        i = i + 1
+    }
+    {"_df": true, "columns": t.columns, "rows": new_rows}
+}
+
+pub fn expanding(t, column, op) {
+    let mut new_rows = []
+    let mut i = 0
+    while i < len(t.rows) {
+        let mut nr = {}
+        for c in t.columns { nr[c] = t.rows[i][c] }
+        let mut vals = []
+        let mut j = 0
+        while j <= i {
+            vals = push(vals, t.rows[j][column])
+            j = j + 1
+        }
+        nr[column] = _agg(op, vals)
+        new_rows = push(new_rows, nr)
+        i = i + 1
+    }
+    {"_df": true, "columns": t.columns, "rows": new_rows}
+}
+
+pub fn rank(t, column) {
+    vals := col(t, column)
+    sorted := sort(vals)
+    let mut ranks = {}
+    let mut i = 0
+    while i < len(sorted) {
+        ranks["" + sorted[i]] = i + 1
+        i = i + 1
+    }
+    add_column(t, column + "_rank", fn(r) { ranks["" + r[column]] })
+}
+
+pub fn cumsum_(t, column) {
+    let mut s = 0.0
+    let mut new_rows = []
+    for r in t.rows {
+        let mut nr = {}
+        for c in t.columns { nr[c] = r[c] }
+        if r[column] != null { s = s + r[column] }
+        nr[column] = s
+        new_rows = push(new_rows, nr)
+    }
+    {"_df": true, "columns": t.columns, "rows": new_rows}
+}
+
+// ──────────────────────────────────────────────
+// Sampling
+// ──────────────────────────────────────────────
+
+pub fn sample(t, n, seed) {
+    let mut cnt = if n == null { 1 } else { n }
+    if cnt >= len(t.rows) { return t }
+    // Fisher-Yates shuffle then take first n
+    let mut indices = []
+    let mut i = 0
+    while i < len(t.rows) {
+        indices = push(indices, i)
+        i = i + 1
+    }
+    i = len(indices) - 1
+    while i > 0 {
+        j := random.int(0, i)
+        tmp := indices[i]
+        indices[i] = indices[j]
+        indices[j] = tmp
+        i = i - 1
+    }
+    let mut rows = []
+    i = 0
+    while i < cnt {
+        rows = push(rows, t.rows[indices[i]])
+        i = i + 1
+    }
+    from_rows(rows)
+}
+
+pub fn shuffle(t) {
+    sample(t, len(t.rows), null)
+}
+
+// ──────────────────────────────────────────────
+// Output
+// ──────────────────────────────────────────────
+
+pub fn to_csv(t, sep) {
+    delimiter := if sep == null { "," } else { sep }
+    let mut lines = [str.join(t.columns, delimiter)]
+    for r in t.rows {
+        let mut vals = []
+        for c in t.columns {
+            v := r[c]
+            vals = push(vals, if v == null { "" } else { _csv_escape("" + v, delimiter) })
+        }
+        lines = push(lines, str.join(vals, delimiter))
+    }
+    str.join(lines, "\n")
+}
+
+pub fn to_json(t) {
+    json.stringify(t.rows)
+}
+
+pub fn to_jsonl(t) {
+    let mut lines = []
+    for r in t.rows { lines = push(lines, json.stringify(r)) }
+    str.join(lines, "\n")
+}
+
+pub fn to_records(t) {
+    t.rows
+}
+
+pub fn to_dict(t) {
+    let mut result = {}
+    for c in t.columns {
+        result[c] = col(t, c)
+    }
+    result
+}
+
+pub fn write_csv(t, path, sep) -> Result[any] {
+    fs.write(path, to_csv(t, sep))?
+    Ok(path)
+}
+
+pub fn write_json(t, path) -> Result[any] {
+    fs.write(path, to_json(t))?
+    Ok(path)
+}
+
+pub fn write_jsonl(t, path) -> Result[any] {
+    fs.write(path, to_jsonl(t))?
+    Ok(path)
+}
+
+pub fn print_(t, n) {
+    let mut cnt = if n == null { len(t.rows) } else { n }
+    if cnt > len(t.rows) { cnt = len(t.rows) }
+    // Calculate column widths
+    let mut widths = {}
+    for c in t.columns { widths[c] = len(c) }
+    let mut i = 0
+    while i < cnt {
+        for c in t.columns {
+            w := len("" + t.rows[i][c])
+            if w > widths[c] { widths[c] = w }
+        }
+        i = i + 1
+    }
+    // Header
+    let mut header = []
+    let mut sep_parts = []
+    for c in t.columns {
+        header = push(header, str.pad_right(c, widths[c]))
+        sep_parts = push(sep_parts, str.repeat("-", widths[c]))
+    }
+    say(str.join(header, "  "))
+    say(str.join(sep_parts, "  "))
+    // Rows
+    i = 0
+    while i < cnt {
+        let mut vals = []
+        for c in t.columns {
+            vals = push(vals, str.pad_right("" + t.rows[i][c], widths[c]))
+        }
+        say(str.join(vals, "  "))
+        i = i + 1
+    }
+    if cnt < len(t.rows) {
+        say("... " + str(len(t.rows) - cnt) + " more rows")
+    }
+    say("[" + str(len(t.rows)) + " rows x " + str(len(t.columns)) + " columns]")
+}
+
+// ──────────────────────────────────────────────
+// Internals
+// ──────────────────────────────────────────────
 
 fn _agg(op, vals) {
     match op {
@@ -191,135 +1063,79 @@ fn _agg(op, vals) {
             s / len(vals)
         }
         "count" { len(vals) }
-        "min" { reduce(vals, vals[0], fn(a, x) {
-            if x < a { x } else { a }
-        }) }
-        "max" { reduce(vals, vals[0], fn(a, x) {
-            if x > a { x } else { a }
-        }) }
+        "min" { reduce(vals, vals[0], fn(a, x) { if x < a { x } else { a } }) }
+        "max" { reduce(vals, vals[0], fn(a, x) { if x > a { x } else { a } }) }
         "first" { vals[0] }
         "last" { vals[len(vals) - 1] }
+        "std" {
+            n := len(vals)
+            m := reduce(vals, 0, fn(a, x) { a + x }) / n
+            let mut s = 0.0
+            for x in vals { s = s + (x - m) * (x - m) }
+            math.sqrt(s / n)
+        }
         _ { null }
     }
 }
 
-
-pub fn join(left, right, on, how) {
-    join_type := if how == null { "inner" } else { how }
-    mut idx := {}
-    for r in right.rows {
-        k := "" + r[on]
-        idx[k] = r
-    }
-    mut result := []
-    for lr in left.rows {
-        k := "" + lr[on]
-        rr := idx[k]
-        if rr != null {
-            mut merged := {}
-            for c in left.columns {
-                merged[c] = lr[c]
-            }
-            for c in right.columns {
-                if c != on {
-                    merged[c] = rr[c]
-                }
-            }
-            result = push(result, merged)
-        } else if join_type == "left" {
-            mut merged := {}
-            for c in left.columns {
-                merged[c] = lr[c]
-            }
-            for c in right.columns {
-                if c != on {
-                    merged[c] = null
-                }
-            }
-            result = push(result, merged)
-        }
-    }
-    mut all_cols := []
-    for c in left.columns {
-        all_cols = push(all_cols, c)
-    }
-    for c in right.columns {
-        if c != on && !contains(all_cols, c) {
-            all_cols = push(all_cols, c)
-        }
-    }
-    {
-        "_df": true,
-        "columns": all_cols,
-        "rows": result,
-    }
+fn _col_vals(rows, col_name) {
+    let mut vals = []
+    for r in rows { vals = push(vals, r[col_name]) }
+    vals
 }
 
-
-pub fn describe(t, column) {
-    vals := map(t.rows, fn(r) { r[column] })
-    nums := filter(vals, fn(x) { x != null })
-    n := len(nums)
-    if n == 0 {
-        return {"count": 0}
-    }
-    s := reduce(nums, 0, fn(a, x) { a + x })
-    mn := s / n
-    sorted := sort(nums)
-    {
-        "count": n,
-        "mean": mn,
-        "min": sorted[0],
-        "max": sorted[n - 1],
-        "sum": s,
-        "median": sorted[n / 2],
-    }
-}
-
-
-pub fn value_counts(t, column) {
-    mut counts := {}
+fn _numeric_col(t, col_name) {
+    let mut vals = []
     for r in t.rows {
-        k := "" + r[column]
-        if counts[k] == null {
-            counts[k] = 0
+        v := r[col_name]
+        if v == null { continue }
+        if v == true || v == false { continue }
+        // check if numeric by trying arithmetic
+        check := json.parse("" + v)
+        if check.ok {
+            vals = push(vals, check.value + 0.0)
         }
-        counts[k] = counts[k] + 1
     }
-    counts
+    vals
 }
 
-
-pub fn to_csv(t) {
-    mut lines := []
-    lines = push(lines, str.join(t.columns, ","))
-    for r in t.rows {
-        mut vals := []
-        for c in t.columns {
-            vals = push(vals, "" + r[c])
-        }
-        lines = push(lines, str.join(vals, ","))
-    }
-    str.join(lines, "\n")
+fn _sum_list(vals) {
+    let mut s = 0.0
+    for x in vals { s = s + x }
+    s
 }
 
-
-pub fn print_(t, n) {
-    cnt := if n == null { len(t.rows) } else { n }
-    if cnt > len(t.rows) {
-        cnt = len(t.rows)
-    }
-    say(str.join(t.columns, "\t"))
-    say(str.join(map(t.columns, fn(c) { "---" }), "\t"))
-    mut i := 0
-    while i < cnt {
-        r := t.rows[i]
-        mut vals := []
-        for c in t.columns {
-            vals = push(vals, "" + r[c])
-        }
-        say(str.join(vals, "\t"))
-        i = i + 1
-    }
+fn _percentile(sorted, p) {
+    n := len(sorted)
+    k := (p / 100.0) * (n - 1)
+    lo := math.floor(k)
+    hi := math.ceil(k)
+    if lo == hi { sorted[lo] }
+    else { sorted[lo] * (hi - k) + sorted[hi] * (k - lo) }
 }
 
+fn _parse_value(s) {
+    if s == "" { return null }
+    if s == "null" || s == "NULL" || s == "None" { return null }
+    if s == "true" || s == "TRUE" { return true }
+    if s == "false" || s == "FALSE" { return false }
+    if len(s) == 0 { return s }
+    // check if starts with digit or minus-digit
+    first := str.slice(s, 0, 1)
+    let mut might_be_num = false
+    if first >= "0" && first <= "9" { might_be_num = true }
+    if first == "-" && len(s) > 1 {
+        second := str.slice(s, 1, 2)
+        if second >= "0" && second <= "9" { might_be_num = true }
+    }
+    if !might_be_num { return s }
+    // try parsing as number
+    r := json.parse(s)
+    if r.ok { r.value } else { s }
+}
+
+fn _csv_escape(s, delimiter) {
+    if str.contains(s, delimiter) || str.contains(s, "\"") || str.contains(s, "\n") {
+        "\"" + str.replace(s, "\"", "\"\"") + "\""
+    } else { s }
+}

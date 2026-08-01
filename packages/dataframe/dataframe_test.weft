@@ -1,0 +1,489 @@
+use "./lib.weft" as df
+
+fn _sample_df {
+    df.from_rows([
+        {"name": "Alice", "age": 30, "dept": "eng", "salary": 90000},
+        {"name": "Bob", "age": 25, "dept": "eng", "salary": 75000},
+        {"name": "Carol", "age": 35, "dept": "sales", "salary": 85000},
+        {"name": "Dan", "age": 28, "dept": "sales", "salary": 70000},
+        {"name": "Eve", "age": 32, "dept": "eng", "salary": 95000},
+    ])
+}
+
+// === Creation ===
+
+fn test_from_rows {
+    t := _sample_df()
+    test.eq(df.nrows(t), 5)
+    test.eq(df.ncols(t), 4)
+}
+
+fn test_from_columns {
+    t := df.from_columns({"x": [1, 2, 3], "y": [4, 5, 6]})
+    test.eq(df.nrows(t), 3)
+    test.eq(df.col(t, "x"), [1, 2, 3])
+}
+
+fn test_from_csv {
+    csv_text := "name,age,score\nAlice,30,95\nBob,25,87\n"
+    t := df.from_csv(csv_text, null)
+    test.eq(df.nrows(t), 2)
+    test.eq(df.columns(t), ["name", "age", "score"])
+    test.eq(df.col(t, "name"), ["Alice", "Bob"])
+    // auto-parses numbers
+    test.eq(df.col(t, "age"), [30, 25])
+}
+
+fn test_from_csv_with_nulls {
+    csv_text := "a,b\n1,null\n,3\n"
+    t := df.from_csv(csv_text, null)
+    test.eq(df.nrows(t), 2)
+    r := df.rows(t)
+    test.eq(r[0].b, null)
+    test.eq(r[1].a, null)
+}
+
+fn test_empty {
+    t := df.empty(["a", "b"])
+    test.eq(df.nrows(t), 0)
+    test.eq(df.columns(t), ["a", "b"])
+}
+
+// === Shape / info ===
+
+fn test_shape {
+    t := _sample_df()
+    test.eq(df.shape(t), [5, 4])
+}
+
+fn test_info {
+    t := _sample_df()
+    i := df.info(t)
+    test.eq(i.rows, 5)
+    test.eq(i.columns, 4)
+}
+
+// === Selection ===
+
+fn test_col {
+    t := _sample_df()
+    names := df.col(t, "name")
+    test.eq(len(names), 5)
+    test.eq(names[0], "Alice")
+}
+
+fn test_head_tail {
+    t := _sample_df()
+    h := df.head(t, 2)
+    test.eq(df.nrows(h), 2)
+    tl := df.tail(t, 2)
+    test.eq(df.nrows(tl), 2)
+    test.eq(df.col(tl, "name"), ["Dan", "Eve"])
+}
+
+fn test_head_default {
+    t := _sample_df()
+    h := df.head(t, null)
+    test.eq(df.nrows(h), 5)
+}
+
+fn test_iloc {
+    t := _sample_df()
+    row := df.iloc(t, 2)
+    test.eq(row.name, "Carol")
+}
+
+fn test_loc {
+    t := _sample_df()
+    sub := df.loc(t, 1, 3)
+    test.eq(df.nrows(sub), 2)
+    test.eq(df.col(sub, "name"), ["Bob", "Carol"])
+}
+
+fn test_select {
+    t := _sample_df()
+    s := df.select_(t, ["name", "age"])
+    test.eq(df.columns(s), ["name", "age"])
+    test.eq(df.ncols(s), 2)
+}
+
+fn test_drop {
+    t := _sample_df()
+    d := df.drop(t, ["salary"])
+    test.eq(df.ncols(d), 3)
+    test.is_false(contains(df.columns(d), "salary"))
+}
+
+// === Filtering ===
+
+fn test_filter {
+    t := _sample_df()
+    eng := df.filter_(t, fn(r) { r.dept == "eng" })
+    test.eq(df.nrows(eng), 3)
+}
+
+fn test_query {
+    t := _sample_df()
+    old := df.query(t, "age", ">", 30)
+    test.eq(df.nrows(old), 2)
+}
+
+fn test_isin {
+    t := _sample_df()
+    sub := df.isin(t, "name", ["Alice", "Eve"])
+    test.eq(df.nrows(sub), 2)
+}
+
+fn test_between {
+    t := _sample_df()
+    mid := df.between(t, "age", 26, 32)
+    test.eq(df.nrows(mid), 3)
+}
+
+fn test_notnull {
+    t := df.from_rows([{"a": 1, "b": null}, {"a": null, "b": 2}, {"a": 3, "b": 3}])
+    result := df.notnull(t, "a")
+    test.eq(df.nrows(result), 2)
+}
+
+// === Sorting ===
+
+fn test_sort_by {
+    t := _sample_df()
+    s := df.sort_by(t, "age", false)
+    ages := df.col(s, "age")
+    test.eq(ages[0], 25)
+    test.eq(ages[4], 35)
+}
+
+fn test_sort_desc {
+    t := _sample_df()
+    s := df.sort_by(t, "salary", true)
+    test.eq(df.col(s, "name")[0], "Eve")
+}
+
+fn test_nlargest {
+    t := _sample_df()
+    top := df.nlargest(t, 2, "salary")
+    test.eq(df.nrows(top), 2)
+    test.eq(df.col(top, "name")[0], "Eve")
+}
+
+fn test_nsmallest {
+    t := _sample_df()
+    bottom := df.nsmallest(t, 2, "salary")
+    test.eq(df.nrows(bottom), 2)
+}
+
+// === Column ops ===
+
+fn test_add_column {
+    t := _sample_df()
+    t2 := df.add_column(t, "senior", fn(r) { r.age >= 30 })
+    test.eq(df.ncols(t2), 5)
+    test.is_true(df.iloc(t2, 0).senior)
+    test.is_false(df.iloc(t2, 1).senior)
+}
+
+fn test_assign {
+    t := df.from_columns({"x": [1, 2, 3]})
+    t2 := df.assign(t, {"double": fn(r) { r.x * 2 }, "triple": fn(r) { r.x * 3 }})
+    test.eq(df.ncols(t2), 3)
+    test.eq(df.col(t2, "double"), [2, 4, 6])
+    test.eq(df.col(t2, "triple"), [3, 6, 9])
+}
+
+fn test_rename {
+    t := df.from_columns({"old_name": [1, 2]})
+    t2 := df.rename(t, {"old_name": "new_name"})
+    test.eq(df.columns(t2), ["new_name"])
+}
+
+fn test_apply {
+    t := df.from_columns({"x": [1, 2, 3]})
+    t2 := df.apply_(t, "x", fn(v) { v * 10 })
+    test.eq(df.col(t2, "x"), [10, 20, 30])
+}
+
+fn test_replace {
+    t := df.from_columns({"status": ["active", "inactive", "active"]})
+    t2 := df.replace(t, "status", "inactive", "disabled")
+    test.eq(df.col(t2, "status"), ["active", "disabled", "active"])
+}
+
+fn test_clip {
+    t := df.from_columns({"x": [1, 5, 10, 15]})
+    t2 := df.clip_(t, "x", 3, 12)
+    test.eq(df.col(t2, "x"), [3, 5, 10, 12])
+}
+
+// === Missing data ===
+
+fn test_fillna {
+    t := df.from_rows([{"a": 1, "b": null}, {"a": null, "b": 2}])
+    t2 := df.fillna(t, {"a": 0, "b": -1})
+    test.eq(df.col(t2, "a"), [1, 0])
+    test.eq(df.col(t2, "b"), [-1, 2])
+}
+
+fn test_dropna {
+    t := df.from_rows([{"a": 1, "b": 2}, {"a": null, "b": 3}, {"a": 4, "b": null}])
+    t2 := df.dropna(t, null)
+    test.eq(df.nrows(t2), 1)
+}
+
+fn test_dropna_subset {
+    t := df.from_rows([{"a": 1, "b": 2}, {"a": null, "b": 3}, {"a": 4, "b": null}])
+    t2 := df.dropna(t, ["a"])
+    test.eq(df.nrows(t2), 2)
+}
+
+fn test_count_na {
+    t := df.from_rows([{"a": 1}, {"a": null}, {"a": null}])
+    test.eq(df.count_na(t, "a"), 2)
+}
+
+// === Duplicates ===
+
+fn test_drop_duplicates {
+    t := df.from_rows([{"a": 1, "b": 2}, {"a": 1, "b": 2}, {"a": 3, "b": 4}])
+    t2 := df.drop_duplicates(t, null)
+    test.eq(df.nrows(t2), 2)
+}
+
+fn test_drop_duplicates_subset {
+    t := df.from_rows([{"a": 1, "b": 2}, {"a": 1, "b": 3}, {"a": 2, "b": 4}])
+    t2 := df.drop_duplicates(t, ["a"])
+    test.eq(df.nrows(t2), 2)
+}
+
+fn test_duplicated {
+    t := df.from_rows([{"a": 1}, {"a": 2}, {"a": 1}])
+    d := df.duplicated(t, ["a"])
+    test.eq(d, [false, false, true])
+}
+
+// === Grouping / aggregation ===
+
+fn test_group_by {
+    t := _sample_df()
+    g := df.group_by(t, "dept", {
+        "total_salary": {"col": "salary", "op": "sum"},
+        "avg_age": {"col": "age", "op": "mean"},
+        "headcount": {"col": "name", "op": "count"},
+    })
+    test.eq(df.nrows(g), 2)
+    test.is_true(contains(df.columns(g), "total_salary"))
+}
+
+fn test_agg {
+    t := _sample_df()
+    result := df.agg(t, {
+        "total": {"col": "salary", "op": "sum"},
+        "avg": {"col": "salary", "op": "mean"},
+        "n": {"col": "salary", "op": "count"},
+    })
+    test.eq(result.n, 5)
+    test.eq(result.total, 415000)
+}
+
+fn test_value_counts {
+    t := _sample_df()
+    vc := df.value_counts(t, "dept")
+    test.eq(vc.eng, 3)
+    test.eq(vc.sales, 2)
+}
+
+fn test_nunique {
+    t := _sample_df()
+    test.eq(df.nunique(t, "dept"), 2)
+    test.eq(df.nunique(t, "name"), 5)
+}
+
+// === Statistics ===
+
+fn test_describe {
+    t := _sample_df()
+    d := df.describe(t, "salary")
+    test.eq(d.count, 5)
+    test.eq(d.sum, 415000)
+    test.eq(d.min, 70000)
+    test.eq(d.max, 95000)
+}
+
+fn test_corr {
+    t := df.from_columns({"x": [1, 2, 3, 4, 5], "y": [2, 4, 6, 8, 10]})
+    c := df.corr(t, "x", "y")
+    test.approx(c, 1.0, 1e-6)
+}
+
+// === Joins ===
+
+fn test_inner_join {
+    left := df.from_rows([{"id": 1, "name": "a"}, {"id": 2, "name": "b"}, {"id": 3, "name": "c"}])
+    right := df.from_rows([{"id": 1, "score": 90}, {"id": 3, "score": 80}])
+    result := df.join(left, right, "id", "inner")
+    test.eq(df.nrows(result), 2)
+}
+
+fn test_left_join {
+    left := df.from_rows([{"id": 1, "name": "a"}, {"id": 2, "name": "b"}])
+    right := df.from_rows([{"id": 1, "score": 90}])
+    result := df.join(left, right, "id", "left")
+    test.eq(df.nrows(result), 2)
+    r := df.rows(result)
+    test.eq(r[1].score, null)
+}
+
+fn test_concat_df {
+    a := df.from_rows([{"x": 1}, {"x": 2}])
+    b := df.from_rows([{"x": 3}, {"x": 4}])
+    c := df.concat_df([a, b])
+    test.eq(df.nrows(c), 4)
+    test.eq(df.col(c, "x"), [1, 2, 3, 4])
+}
+
+// === Reshaping ===
+
+fn test_pivot {
+    t := df.from_rows([
+        {"date": "Mon", "metric": "cpu", "value": 45},
+        {"date": "Mon", "metric": "mem", "value": 70},
+        {"date": "Tue", "metric": "cpu", "value": 50},
+        {"date": "Tue", "metric": "mem", "value": 65},
+    ])
+    p := df.pivot(t, "date", "metric", "value")
+    test.eq(df.nrows(p), 2)
+    test.is_true(contains(df.columns(p), "cpu"))
+    test.is_true(contains(df.columns(p), "mem"))
+}
+
+fn test_melt {
+    t := df.from_rows([
+        {"name": "Alice", "math": 90, "eng": 85},
+        {"name": "Bob", "math": 75, "eng": 92},
+    ])
+    m := df.melt(t, ["name"], ["math", "eng"], "subject", "score")
+    test.eq(df.nrows(m), 4)
+    test.is_true(contains(df.columns(m), "subject"))
+    test.is_true(contains(df.columns(m), "score"))
+}
+
+fn test_crosstab {
+    t := df.from_rows([
+        {"color": "red", "size": "S"},
+        {"color": "red", "size": "M"},
+        {"color": "blue", "size": "S"},
+        {"color": "blue", "size": "S"},
+    ])
+    ct := df.crosstab(t, "color", "size")
+    test.eq(df.nrows(ct), 2)
+}
+
+// === Window / rolling ===
+
+fn test_shift {
+    t := df.from_columns({"x": [10, 20, 30, 40]})
+    s := df.shift(t, "x", 1)
+    test.eq(df.col(s, "x"), [null, 10, 20, 30])
+}
+
+fn test_diff {
+    t := df.from_columns({"x": [10, 15, 25, 40]})
+    d := df.diff(t, "x", 1)
+    vals := df.col(d, "x")
+    test.eq(vals[0], null)
+    test.eq(vals[1], 5)
+    test.eq(vals[2], 10)
+    test.eq(vals[3], 15)
+}
+
+fn test_pct_change {
+    t := df.from_columns({"x": [100, 110, 99]})
+    p := df.pct_change(t, "x", 1)
+    vals := df.col(p, "x")
+    test.eq(vals[0], null)
+    test.approx(vals[1], 0.1, 1e-6)
+}
+
+fn test_rolling_mean {
+    t := df.from_columns({"x": [1, 2, 3, 4, 5]})
+    r := df.rolling(t, "x", 3, "mean")
+    vals := df.col(r, "x")
+    test.eq(vals[0], null)
+    test.eq(vals[1], null)
+    test.eq(vals[2], 2)
+}
+
+fn test_cumsum {
+    t := df.from_columns({"x": [1, 2, 3, 4]})
+    c := df.cumsum_(t, "x")
+    test.eq(df.col(c, "x"), [1.0, 3.0, 6.0, 10.0])
+}
+
+fn test_rank {
+    t := df.from_columns({"x": [30, 10, 20]})
+    r := df.rank(t, "x")
+    test.is_true(contains(df.columns(r), "x_rank"))
+}
+
+// === Sampling ===
+
+fn test_sample {
+    t := _sample_df()
+    s := df.sample(t, 3, null)
+    test.eq(df.nrows(s), 3)
+}
+
+fn test_shuffle {
+    t := _sample_df()
+    s := df.shuffle(t)
+    test.eq(df.nrows(s), 5)
+}
+
+// === Output ===
+
+fn test_to_csv {
+    t := df.from_columns({"a": [1, 2], "b": [3, 4]})
+    csv := df.to_csv(t, null)
+    test.is_true(str.contains(csv, "a,b"))
+    test.is_true(str.contains(csv, "1,3"))
+}
+
+fn test_to_json {
+    t := df.from_rows([{"x": 1}])
+    j := df.to_json(t)
+    test.is_true(str.contains(j, "\"x\""))
+}
+
+fn test_to_jsonl {
+    t := df.from_rows([{"x": 1}, {"x": 2}])
+    jl := df.to_jsonl(t)
+    lines := str.split(jl, "\n")
+    test.eq(len(lines), 2)
+}
+
+fn test_to_records {
+    t := _sample_df()
+    recs := df.to_records(t)
+    test.eq(len(recs), 5)
+    test.eq(recs[0].name, "Alice")
+}
+
+fn test_to_dict {
+    t := df.from_columns({"x": [1, 2], "y": [3, 4]})
+    d := df.to_dict(t)
+    test.eq(d.x, [1, 2])
+    test.eq(d.y, [3, 4])
+}
+
+// === CSV roundtrip ===
+
+fn test_csv_roundtrip {
+    t := df.from_columns({"name": ["Alice", "Bob"], "score": [95, 87]})
+    csv := df.to_csv(t, null)
+    t2 := df.from_csv(csv, null)
+    test.eq(df.nrows(t2), 2)
+    test.eq(df.col(t2, "name"), ["Alice", "Bob"])
+    test.eq(df.col(t2, "score"), [95, 87])
+}

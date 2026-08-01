@@ -1,9 +1,46 @@
 {
   "name": "dataframe",
-  "version": "0.1.0",
-  "description": "Tabular data wrangling — filter, group, join, pivot, sort, aggregate",
+  "version": "0.4.0",
+  "description": "Pandas-style tabular data for Weft — filter, group, join, pivot, rolling, I/O",
   "type": "module",
   "entry": "lib.weft",
+  "exports": [
+    "from_rows", "from_columns", "from_csv", "from_json", "from_jsonl",
+    "read_csv", "read_json", "read_jsonl", "empty",
+
+    "columns", "rows", "nrows", "ncols", "shape", "dtypes", "info",
+
+    "col", "head", "tail", "iloc", "loc", "select_", "drop",
+
+    "filter_", "query", "isin", "between", "notnull",
+
+    "sort_by", "sort_by_multi", "nlargest", "nsmallest",
+
+    "add_column", "assign", "rename", "apply_", "apply_row",
+    "replace", "clip_", "fill_value",
+
+    "fillna", "dropna", "isna", "count_na",
+
+    "drop_duplicates", "duplicated",
+
+    "group_by", "agg", "value_counts", "nunique",
+
+    "describe", "describe_all", "corr", "cov",
+
+    "join", "concat_df", "merge",
+
+    "pivot", "melt", "crosstab",
+
+    "shift", "diff", "pct_change", "rolling", "expanding",
+    "rank", "cumsum_",
+
+    "sample", "shuffle",
+
+    "to_csv", "to_json", "to_jsonl", "to_records", "to_dict",
+    "write_csv", "write_json", "write_jsonl",
+
+    "print_"
+  ],
   "license": "Apache-2.0",
-  "keywords": ["data", "table", "dataframe", "pandas", "etl"]
+  "keywords": ["data", "table", "dataframe", "pandas", "etl", "csv", "json", "pivot", "group", "join", "filter", "statistics"]
 }
