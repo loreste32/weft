@@ -21,6 +21,11 @@ Language: [LANGUAGE.md](LANGUAGE.md) · CLI flags: [cli.md](cli.md) · Stdlib ma
 | System info | `sysinfo.memory` / `disk` / `uptime` / `loadavg` / `net_interfaces` |
 | Process mgmt | `proc.list` / `find` / `kill` / `exists` / `self` |
 | Network diag | `netutil.port_open` / `tcp_ping` / `resolve` / `scan_ports` / DNS lookups |
+| DNS | `dns.lookup` / `srv` / `cname` / `ns` / `mx` / `txt` / `reverse` |
+| TLS certs | `tls.cert_info` / `verify` / `chain` / `expiry_check` |
+| OS / paths | `os.hostname` / `pid` / `user` / `platform` / `path_join` / `stat` / `mkdir` |
+| Compression | `compress.gzip` / `gunzip` / `deflate` / `inflate` |
+| Encoding | `encoding.hex_encode` / `hex_decode` / `base32_encode` / `url_encode` |
 | Binary / diff / stats | `binstruct`, `difflib`, `math.quantile` / `mode` |
 | Scaffold | `weft new cli <name>` |
 

@@ -9,7 +9,10 @@ Small set of commands for day-to-day work. Nothing here replaces a full IDE or p
 | `weft check <path>…` | Parse and type-check. Directories are fine; `main` is not required. |
 | `weft test [path…]` | Run unit tests in `*_test.weft` / `fn test_*`. |
 | `weft fmt <path>…` | Pretty-print from the AST (or whitespace-only if the file doesn’t parse). |
-| `weft bench [path…]` | Rough microbenches: `*_bench.weft` / `fn bench_*`. |
+| `weft bench [path…] [--save f.json] [--compare base.json]` | Microbenches with regression tracking. |
+| `weft lint [path…]` | Static analysis: unused imports, trailing whitespace, line length, TODOs. |
+| `weft doc [path…]` | Generate API docs from `pub fn` declarations and doc comments. |
+| `weft outdated` | Check installed packages for newer registry versions. |
 | `weft stdlib [pkg]` | List stdlib packages grouped by category. |
 | `weft stdlib <pkg>` | Show all members with signatures and descriptions. |
 | `weft stdlib <pkg.member>` | Show signature, description, and **live output** (runs the function). |

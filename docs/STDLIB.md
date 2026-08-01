@@ -1,4 +1,4 @@
-# Stdlib overview (76 packages)
+# Stdlib overview (81 packages)
 
 The standard library is **in the binary**. Packages are imported with `use name` (or just called as `name.member` after import — most scripts use `use`).
 
@@ -19,14 +19,14 @@ What we keep vs won’t: **[STDLIB_GAPS.md](STDLIB_GAPS.md)**.
 
 | Job | Packages |
 |-----|----------|
-| Files & paths | `fs`, `io`, `archive`, `copy` |
+| Files & paths | `fs`, `io`, `archive`, `compress` (gzip/zlib), `copy` |
 | HTTP client / tiny server | `http`, `web`, `url`, `ws`, `webrtc` |
 | JSON / config | `json`, `jsonl`, `yaml`, `toml`, `ini`, `xml` |
-| Text | `str`, `re`, `html`, `base64`, `mime`, `difflib` |
+| Text / encoding | `str`, `re`, `html`, `base64`, `encoding` (hex, base32, URL), `mime`, `difflib` |
 | Time | `time` |
-| Env / process | `env`, `platform`, `sh`, `shlex`, `signal`, `cli`, `log`, `secrets` |
+| Env / process / OS | `env`, `os`, `platform`, `sh`, `shlex`, `signal`, `cli`, `log`, `secrets` |
 | Numbers | `math`, `decimal`, `random`, `uuid`, `ip`, `binstruct` |
-| Network / packets | `pcap` |
+| Network / packets | `pcap`, `dns` (A/AAAA/SRV/CNAME/NS/MX/TXT/PTR), `tls` (cert inspection) |
 | Data tables | `csv`, `table`, `db`, `redis`, `mongo` |
 | Messaging | `nats`, `amqp`, `email`, `socket` |
 | LLM | `llm`, `ollama`, `vllm` |
@@ -35,6 +35,8 @@ What we keep vs won’t: **[STDLIB_GAPS.md](STDLIB_GAPS.md)**.
 | System info | `sysinfo` (CPU, memory, disk, uptime, interfaces) |
 | Process mgmt | `proc` (list, find, kill, exists) |
 | Network diag | `netutil` (port check, TCP ping, DNS, port scan) |
+| Runtime / infra | `governor` (token/cost budgets), `supervisor` (Erlang-style), `cluster` (distributed state via Redis), `ratelimit`, `migrate` |
+| ML / data | `tokenizer`, `dataset`, `metrics` |
 | Crypto | `crypto` |
 | Errors | `traceback` |
 | Charts | `viz` |
