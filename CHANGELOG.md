@@ -2,7 +2,7 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
-## [0.4.7] — 2026-07-28
+## [0.4.7] — 2026-07-31
 
 ### Added
 - **5 new stdlib packages** (81 total):

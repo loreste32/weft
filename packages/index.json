@@ -20,8 +20,8 @@
     {"name": "cache", "path": "./cache", "version": "0.1.0", "summary": "In-process LRU cache with TTL"},
     {"name": "jwt", "path": "./jwt", "version": "0.3.0", "summary": "JWT decode, inspect claims, expiry check"},
     {"name": "telecom", "path": "./telecom", "version": "0.3.0", "summary": "IVA, FreeSWITCH ESL, Asterisk ARI, SIP, STT/TTS, routing, queues"},
-    {"name": "auth", "path": "./auth", "version": "0.1.0", "summary": "HMAC, password hashing, token generation, OAuth helpers"},
-    {"name": "queue", "path": "./queue", "version": "0.1.0", "summary": "In-process job queue — workers, retries, dead-letter, priority"},
+    {"name": "auth", "path": "./auth", "version": "0.1.0", "summary": "HMAC, SHA-256 password hashing, token generation, OAuth helpers"},
+    {"name": "queue", "path": "./queue", "version": "0.1.0", "summary": "Synchronous in-memory job list with retries and dead-letter, priority"},
     {"name": "config", "path": "./config", "version": "0.1.0", "summary": "Unified config loader — .env, JSON, YAML, TOML with validation"},
     {"name": "logger", "path": "./logger", "version": "0.1.0", "summary": "Structured logging — levels, JSON output, context fields, child loggers"},
     {"name": "router", "path": "./router", "version": "0.1.0", "summary": "HTTP routing — path params, middleware chains, CORS, rate limiting"}

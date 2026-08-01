@@ -81,7 +81,17 @@ pub fn serve(r, addr) -> Result[any] {
         for route in r.routes {
             if matches(route.method, route.path, req) {
                 req.params = extract_params(route.path, req.path)
-                return route.handler(req)
+                // build middleware chain: wrap handler with each middleware in reverse order
+                let mut handler = route.handler
+                let mut mws = route.middleware
+                let mut mi = len(mws) - 1
+                while mi >= 0 {
+                    mw := mws[mi]
+                    inner := handler
+                    handler = fn(rq) { mw(rq, inner) }
+                    mi = mi - 1
+                }
+                return handler(req)
             }
         }
         if r.not_found_handler != null {
