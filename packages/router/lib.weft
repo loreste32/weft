@@ -10,35 +10,21 @@ pub fn new(opts) {
     }
 }
 
-pub fn get(r, path, handler) {
-    add_route(r, "GET", path, handler)
-}
-
-pub fn post(r, path, handler) {
-    add_route(r, "POST", path, handler)
-}
-
-pub fn put(r, path, handler) {
-    add_route(r, "PUT", path, handler)
-}
-
-pub fn delete(r, path, handler) {
-    add_route(r, "DELETE", path, handler)
-}
-
-pub fn patch(r, path, handler) {
-    add_route(r, "PATCH", path, handler)
-}
+pub fn get(r, path, handler) { add_route(r, "GET", path, handler) }
+pub fn post(r, path, handler) { add_route(r, "POST", path, handler) }
+pub fn put(r, path, handler) { add_route(r, "PUT", path, handler) }
+pub fn delete(r, path, handler) { add_route(r, "DELETE", path, handler) }
+pub fn patch(r, path, handler) { add_route(r, "PATCH", path, handler) }
 
 fn add_route(r, method, path, handler) {
     full_path := r.prefix + path
     let mut routes = r.routes
-    routes = routes + [{
+    routes = push(routes, {
         "method": method,
         "path": full_path,
         "handler": handler,
         "middleware": r.middleware,
-    }]
+    })
     r.routes = routes
     r
 }
@@ -48,14 +34,16 @@ pub fn group(r, prefix, setup_fn) {
     sub.middleware = r.middleware
     sub = setup_fn(sub)
     let mut routes = r.routes
-    routes = routes + sub.routes
+    for route in sub.routes {
+        routes = push(routes, route)
+    }
     r.routes = routes
     r
 }
 
 pub fn use_middleware(r, mw) {
     let mut mws = r.middleware
-    mws = mws + [mw]
+    mws = push(mws, mw)
     r.middleware = mws
     r
 }
@@ -78,22 +66,60 @@ pub fn not_found(r, handler) {
 
 pub fn serve(r, addr) -> Result[any] {
     web.serve(addr, fn(req) {
-        for route in r.routes {
-            if matches(route.method, route.path, req) {
-                req.params = extract_params(route.path, req.path)
-                // build middleware chain: wrap handler with each middleware in reverse order
-                let mut handler = route.handler
-                let mut mws = route.middleware
-                let mut mi = len(mws) - 1
-                while mi >= 0 {
-                    mw := mws[mi]
-                    inner := handler
-                    handler = fn(rq) { mw(rq, inner) }
-                    mi = mi - 1
+        // Strip query string from path for matching
+        let mut path = req.path
+        qidx := str.find(path, "?")
+        if qidx >= 0 { path = str.slice(path, 0, qidx) }
+        // Normalize trailing slash (strip if not root)
+        if len(path) > 1 && str.ends_with(path, "/") {
+            path = str.slice(path, 0, len(path) - 1)
+        }
+        req.path = path
+
+        // HEAD requests match GET routes
+        effective_method := if req.method == "HEAD" { "GET" } else { req.method }
+
+        // Check for OPTIONS preflight
+        if req.method == "OPTIONS" {
+            // Check if any route matches this path (any method)
+            let mut has_route = false
+            let mut allowed = []
+            for route in r.routes {
+                if _path_matches(route.path, path) {
+                    has_route = true
+                    allowed = push(allowed, route.method)
                 }
-                return handler(req)
+            }
+            if has_route {
+                return {"status": 204, "headers": {"Allow": str.join(allowed, ", ")}}
             }
         }
+
+        // Find matching route
+        let mut method_matched = false
+        for route in r.routes {
+            if !_path_matches(route.path, path) { continue }
+            method_matched = true
+            if route.method != effective_method { continue }
+            req.params = extract_params(route.path, path)
+            // Build middleware chain in reverse order
+            let mut handler = route.handler
+            let mut mws = route.middleware
+            let mut mi = len(mws) - 1
+            while mi >= 0 {
+                mw := mws[mi]
+                inner := handler
+                handler = fn(rq) { mw(rq, inner) }
+                mi = mi - 1
+            }
+            return handler(req)
+        }
+
+        // 405 if path matched but method didn't
+        if method_matched {
+            return {"status": 405, "body": "method not allowed"}
+        }
+
         if r.not_found_handler != null {
             return r.not_found_handler(req)
         }
@@ -101,31 +127,29 @@ pub fn serve(r, addr) -> Result[any] {
     })
 }
 
-fn matches(method, pattern, req) {
-    if method != req.method { return false }
+fn _path_matches(pattern, path) {
     pattern_parts := str.split(pattern, "/")
-    req_parts := str.split(req.path, "/")
-    if len(pattern_parts) != len(req_parts) {
-        // check for wildcard
-        let mut i = 0
-        while i < len(pattern_parts) {
-            if str.starts_with(pattern_parts[i], "*") {
-                return true
-            }
-            i = i + 1
-        }
-        return false
-    }
+    path_parts := str.split(path, "/")
+
     let mut i = 0
     while i < len(pattern_parts) {
+        // Wildcard: matches rest of path — but prefix must have matched
+        if str.starts_with(pattern_parts[i], "*") {
+            return i <= len(path_parts)
+        }
+        // If path is shorter than pattern (without wildcard), no match
+        if i >= len(path_parts) { return false }
+        // Named param: matches any single segment
         if str.starts_with(pattern_parts[i], ":") {
             i = i + 1
             continue
         }
-        if pattern_parts[i] != req_parts[i] { return false }
+        // Literal segment must match exactly
+        if pattern_parts[i] != path_parts[i] { return false }
         i = i + 1
     }
-    true
+    // Pattern consumed — path must also be consumed (no trailing segments)
+    i == len(path_parts)
 }
 
 fn extract_params(pattern, path) {
@@ -140,11 +164,10 @@ fn extract_params(pattern, path) {
         }
         if str.starts_with(pattern_parts[i], "*") {
             name := str.slice(pattern_parts[i], 1)
-            // collect rest of path
             let mut rest = []
             let mut j = i
             while j < len(path_parts) {
-                rest = rest + [path_parts[j]]
+                rest = push(rest, path_parts[j])
                 j = j + 1
             }
             params[name] = str.join(rest, "/")

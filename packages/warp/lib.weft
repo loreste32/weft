@@ -588,6 +588,8 @@ fn _lu_solve(lu, b_data) {
 }
 
 pub fn det(a) -> Result[any] {
+    ensure(len(a.shape) == 2 && a.shape[0] == a.shape[1], "det: matrix must be square 2D")?
+    ensure(len(a.data) == a.shape[0] * a.shape[1], "det: data/shape mismatch")?
     n := a.shape[0]
     d := a.data
     if n == 1 { return Ok(d[0]) }
@@ -604,6 +606,7 @@ pub fn det(a) -> Result[any] {
 }
 
 pub fn inv(a) -> Result[any] {
+    ensure(len(a.shape) == 2 && a.shape[0] == a.shape[1], "inv: matrix must be square 2D")?
     n := a.shape[0]
     d := a.data
     // 2x2 fast path
@@ -642,29 +645,41 @@ pub fn inv(a) -> Result[any] {
 }
 
 pub fn solve(a, b) -> Result[any] {
+    ensure(len(a.shape) == 2 && a.shape[0] == a.shape[1], "solve: A must be square")?
     n := a.shape[0]
     lu := _lu(a)?
-    // b can be a vector (n x 1) or just a flat array
     bd := _data(b)
     if len(bd) == n {
-        // single right-hand side
         x := _lu_solve(lu, bd)
         return Ok(array(x, b.shape))
     }
     // multiple right-hand sides (n x m matrix)
-    m := len(bd) / n
-    let mut result = []
+    ensure(len(b.shape) == 2 && b.shape[0] == n, "solve: B rows must match A")?
+    m := b.shape[1]
+    // solve each column, then transpose column-major → row-major
+    let mut cols = []
     let mut col = 0
     while col < m {
         let mut rhs = []
         let mut i = 0
-        while i < n { rhs = push(rhs, bd[i * m + col])
-            i = i + 1 }
+        while i < n {
+            rhs = push(rhs, bd[i * m + col])
+            i = i + 1
+        }
         x := _lu_solve(lu, rhs)
-        i = 0
-        while i < n { result = push(result, x[i])
-            i = i + 1 }
+        cols = push(cols, x)
         col = col + 1
+    }
+    // assemble row-major from column solutions
+    let mut result = []
+    let mut r = 0
+    while r < n {
+        let mut c = 0
+        while c < m {
+            result = push(result, cols[c][r])
+            c = c + 1
+        }
+        r = r + 1
     }
     Ok(array(result, [n, m]))
 }

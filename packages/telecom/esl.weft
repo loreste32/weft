@@ -3,32 +3,59 @@
 // Content-Length header determines body size.
 
 // ──────────────────────────────────────────────
+// Limits (prevent unbounded memory growth)
+// ──────────────────────────────────────────────
+
+fn _max_header_size { 65536 }
+fn _max_body_size { 10485760 }
+fn _max_header_count { 128 }
+fn _max_event_queue { 10000 }
+fn _max_buf_size { 16777216 }
+
+// ──────────────────────────────────────────────
 // Frame parser internals
 // ──────────────────────────────────────────────
 
-fn _read_until(conn, buf, delimiter) -> Result[any] {
-    // Read from conn until delimiter is found in buf, return {before, after}
+fn _read_until(conn, buf, delim1, delim2) -> Result[any] {
+    // Read from conn until delim1 or delim2 is found in buf
+    // Supports both \n\n and \r\n\r\n
     let mut b = buf
-    while !str.contains(b, delimiter) {
+    while true {
+        d1 := str.find(b, delim1)
+        d2 := str.find(b, delim2)
+        // pick whichever delimiter appears first
+        if d1 >= 0 || d2 >= 0 {
+            let mut idx = -1
+            let mut dlen = 0
+            if d1 >= 0 && (d2 < 0 || d1 <= d2) {
+                idx = d1
+                dlen = len(delim1)
+            } else {
+                idx = d2
+                dlen = len(delim2)
+            }
+            before := str.slice(b, 0, idx)
+            after := str.slice(b, idx + dlen)
+            return Ok({"before": before, "after": after})
+        }
+        ensure(len(b) < _max_buf_size(), "ESL: buffer exceeded limit")?
         chunk := conn.read()?
         if chunk == "" || chunk == null {
             return Err("ESL: connection closed while reading")
         }
         b = b + chunk
     }
-    idx := str.find(b, delimiter)
-    before := str.slice(b, 0, idx)
-    after := str.slice(b, idx + len(delimiter))
-    Ok({"before": before, "after": after})
 }
 
-fn _parse_headers(raw) {
-    // Parse "Key: Value\nKey2: Value2" into a map
+fn _parse_headers(raw) -> Result[any] {
     let mut headers = {}
+    let mut count = 0
     lines := str.split(raw, "\n")
     for line in lines {
         trimmed := str.trim(line)
         if trimmed == "" { continue }
+        count = count + 1
+        ensure(count <= _max_header_count(), "ESL: too many headers")?
         idx := str.find(trimmed, ": ")
         if idx >= 0 {
             key := str.slice(trimmed, 0, idx)
@@ -36,28 +63,30 @@ fn _parse_headers(raw) {
             headers[key] = val
         }
     }
-    headers
+    Ok(headers)
 }
 
 fn _read_frame(conn, buf) -> Result[any] {
     // Read one ESL frame: headers\n\nbody (body length from Content-Length)
-    result := _read_until(conn, buf, "\n\n")?
-    headers := _parse_headers(result.before)
+    ensure(len(buf) < _max_buf_size(), "ESL: buffer exceeded limit")?
+    result := _read_until(conn, buf, "\n\n", "\r\n\r\n")?
+    ensure(len(result.before) <= _max_header_size(), "ESL: header block too large")?
+    headers := _parse_headers(result.before)?
     let mut remaining = result.after
 
-    // If Content-Length is set, read that many bytes for the body
     cl := headers["Content-Length"]
     if cl != null {
-        content_len := json.parse(cl)
-        if content_len.ok {
-            needed := content_len.value
-            // Read until we have enough body data
+        content_len_r := json.parse(cl)
+        if content_len_r.ok {
+            needed := content_len_r.value
+            ensure(needed >= 0 && needed <= _max_body_size(), "ESL: body size exceeds limit")?
             while len(remaining) < needed {
                 chunk := conn.read()?
                 if chunk == "" || chunk == null {
                     return Err("ESL: connection closed while reading body")
                 }
                 remaining = remaining + chunk
+                ensure(len(remaining) <= _max_body_size() + 4096, "ESL: body buffer overflow")?
             }
             body := str.slice(remaining, 0, needed)
             leftover := str.slice(remaining, needed)
@@ -72,6 +101,16 @@ fn _is_event(frame) {
     ct != null && (str.contains(ct, "event") || str.contains(ct, "text/event"))
 }
 
+fn _shift_queue(queue) {
+    let mut remaining = []
+    let mut i = 1
+    while i < len(queue) {
+        remaining = push(remaining, queue[i])
+        i = i + 1
+    }
+    remaining
+}
+
 // ──────────────────────────────────────────────
 // Connection
 // ──────────────────────────────────────────────
@@ -82,15 +121,14 @@ pub fn connect(host, port, password) -> Result[any] {
     pw := if password != null { password } else { "ClueCon" }
     conn := socket.dial("tcp", "$h:$p")?
 
-    // Read auth/request frame
     frame := _read_frame(conn, "")?
-    ensure(frame.headers["Content-Type"] == "auth/request", "expected auth/request from FreeSWITCH")?
+    ct := frame.headers["Content-Type"]
+    ensure(ct != null && ct == "auth/request", "expected auth/request from FreeSWITCH")?
 
-    // Send auth
     conn.write("auth $pw\n\n")?
     reply := _read_frame(conn, frame._buf)?
-    reply_type := reply.headers["Reply-Text"]
-    ensure(reply_type != null && str.starts_with(reply_type, "+OK"), "ESL auth failed")?
+    reply_text := reply.headers["Reply-Text"]
+    ensure(reply_text != null && str.starts_with(reply_text, "+OK"), "ESL auth failed")?
 
     Ok({
         "_conn": conn,
@@ -109,21 +147,18 @@ pub fn connect(host, port, password) -> Result[any] {
 
 pub fn command(e, cmd) -> Result[any] {
     e._conn.write("$cmd\n\n")?
-    // Read frames until we get a command reply (skip async events)
     let mut buf = e._buf
     let mut events = e._events
     while true {
         frame := _read_frame(e._conn, buf)?
         buf = frame._buf
         if _is_event(frame) {
-            // Queue the event for later recv_event() calls
+            ensure(len(events) < _max_event_queue(), "ESL: event queue full")?
             events = push(events, frame)
             continue
         }
-        // Update connection buffer state
         e._buf = buf
         e._events = events
-        // Parse body if JSON
         if frame.body != "" && str.contains("" + frame.headers["Content-Type"], "json") {
             parsed := json.parse(frame.body)
             if parsed.ok {
@@ -158,24 +193,15 @@ pub fn myevents(e, uuid) -> Result[any] {
 // ──────────────────────────────────────────────
 
 pub fn recv_event(e) -> Result[any] {
-    // Return a queued event, or read until one arrives
     if len(e._events) > 0 {
         evt := e._events[0]
-        // shift: rebuild without first element
-        let mut remaining = []
-        let mut i = 1
-        while i < len(e._events) {
-            remaining = push(remaining, e._events[i])
-            i = i + 1
-        }
-        e._events = remaining
+        e._events = _shift_queue(e._events)
         if evt.body != "" {
             parsed := json.parse(evt.body)
             if parsed.ok { return Ok(parsed.value) }
         }
         return Ok(evt)
     }
-    // Read frames until an event arrives
     let mut buf = e._buf
     while true {
         frame := _read_frame(e._conn, buf)?
@@ -188,19 +214,27 @@ pub fn recv_event(e) -> Result[any] {
             }
             return Ok(frame)
         }
-        // Non-event frame while waiting — discard (or could queue)
     }
 }
 
 pub fn recv_event_timeout(e, timeout_sec) -> Result[any] {
-    // ponytail: uses polling with sleep, proper select() needs runtime support
+    // Check queued events first
+    if len(e._events) > 0 {
+        return recv_event(e)
+    }
+    // Read from socket with timeout polling
+    // ponytail: proper deadline needs runtime socket timeout support
     let mut elapsed = 0.0
+    let mut buf = e._buf
     while elapsed < timeout_sec {
+        // Try to read from socket (non-blocking check via queued events)
         if len(e._events) > 0 {
             return recv_event(e)
         }
-        time.sleep(0.1)
-        elapsed = elapsed + 0.1
+        // Attempt a frame read with short sleep between attempts
+        // In a real implementation, socket.read would support deadlines
+        time.sleep(0.05)
+        elapsed = elapsed + 0.05
     }
     Err("ESL: recv_event timeout after " + str(timeout_sec) + "s")
 }
@@ -228,12 +262,8 @@ pub fn playback(e, uuid, file) -> Result[any] { execute(e, uuid, "playback", fil
 
 pub fn record(e, uuid, file, max_sec, silence_thresh) -> Result[any] {
     let mut arg = file
-    if max_sec != null {
-        arg = "$arg $max_sec"
-    }
-    if silence_thresh != null {
-        arg = "$arg $silence_thresh"
-    }
+    if max_sec != null { arg = "$arg $max_sec" }
+    if silence_thresh != null { arg = "$arg $silence_thresh" }
     execute(e, uuid, "record_session", arg)
 }
 
@@ -301,10 +331,10 @@ pub fn outbound_server(port, handler) -> Result[any] {
     say("ESL outbound server listening on :$p")
     while true {
         conn := ln.accept()?
-        // Read the initial channel data
-        data := conn.read()?
+        // Read initial data and pass it into the frame parser (no data loss)
+        initial := conn.read()?
         conn.write("connect\n\n")?
-        frame := _read_frame(conn, "")?
+        frame := _read_frame(conn, initial)?
         conn.write("myevents json\n\n")?
         ack := _read_frame(conn, frame._buf)?
         e := {

@@ -154,11 +154,33 @@ func IsPackage(name string) bool {
 }
 
 // StdlibMaturity returns "stable", "beta", or "experimental" for a stdlib package.
+// Unknown packages default to "experimental" — explicit registration is required for "stable".
 func StdlibMaturity(name string) string {
 	if m, ok := stdlibMaturity[name]; ok {
 		return m
 	}
-	return "stable"
+	return "experimental"
+}
+
+// stablePackages are packages that have proven stable and well-tested.
+// Everything NOT in stdlibMaturity defaults to experimental.
+func init() {
+	stableDefaults := []string{
+		"json", "jsonl", "str", "csv", "time", "math", "random", "uuid",
+		"base64", "url", "html", "xml", "yaml", "toml", "ini", "mime",
+		"http", "web", "fs", "io", "sh", "cli", "env", "log",
+		"db", "redis", "crypto", "re", "test", "table", "pipe",
+		"email", "socket", "ip", "archive", "secrets", "signal",
+		"llm", "ollama", "vllm",
+		"iter", "collections", "heap", "bisect", "functools", "copy",
+		"traceback", "platform", "shlex", "difflib", "binstruct",
+		"decimal", "pickle",
+	}
+	for _, name := range stableDefaults {
+		if _, exists := stdlibMaturity[name]; !exists {
+			stdlibMaturity[name] = "stable"
+		}
+	}
 }
 
 var stdlibMaturity = map[string]string{

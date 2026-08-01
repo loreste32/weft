@@ -8,20 +8,32 @@ pub fn hmac_sign(key, message) -> Result[any] {
 
 pub fn hmac_verify(key, message, signature) -> Result[any] {
     expected := hmac_sign(key, message)?
-    // constant-time comparison to prevent timing attacks
     Ok(crypto.equal(expected, signature))
 }
 
-// hash_password uses Argon2id — the recommended password-hashing algorithm.
-// Defaults: time=1, memory=64MB, threads=4, keyLen=32.
-pub fn hash_password(password) -> Result[any] {
+// hash_password uses Argon2id with stored parameters for forward compatibility.
+pub fn hash_password(password, opts) -> Result[any] {
     ensure(len(password) >= 8, "password must be at least 8 characters")?
     salt := crypto.random_hex(16)
-    hash := crypto.argon2id(password, salt)
+    t := if opts != null && opts.time != null { opts.time } else { 1 }
+    mem := if opts != null && opts.memory != null { opts.memory } else { 65536 }
+    threads := if opts != null && opts.threads != null { opts.threads } else { 4 }
+    key_len := if opts != null && opts.key_len != null { opts.key_len } else { 32 }
+    // bound parameters to prevent DoS
+    ensure(t >= 1 && t <= 100, "argon2id time must be 1-100")?
+    ensure(mem >= 1024 && mem <= 4194304, "argon2id memory must be 1024-4194304 KiB")?
+    ensure(threads >= 1 && threads <= 64, "argon2id threads must be 1-64")?
+    ensure(key_len >= 16 && key_len <= 64, "argon2id key_len must be 16-64")?
+    hash := crypto.argon2id(password, salt, t, mem, threads, key_len)
     Ok({
         "hash": hash,
         "salt": salt,
         "algorithm": "argon2id",
+        "version": 19,
+        "time": t,
+        "memory": mem,
+        "threads": threads,
+        "key_len": key_len,
     })
 }
 
@@ -30,35 +42,48 @@ pub fn hash_password_pbkdf2(password, iterations) -> Result[any] {
     ensure(len(password) >= 8, "password must be at least 8 characters")?
     salt := crypto.random_hex(16)
     iter := if iterations != null { iterations } else { 100000 }
-    hash := crypto.pbkdf2(password, salt, iter)
+    ensure(iter >= 10000 && iter <= 10000000, "pbkdf2 iterations must be 10000-10000000")?
+    hash := crypto.pbkdf2(password, salt, iter, 32)
     Ok({
         "hash": hash,
         "salt": salt,
         "algorithm": "pbkdf2",
         "iterations": iter,
+        "key_len": 32,
     })
 }
 
 pub fn verify_password(password, record) -> Result[any] {
+    ensure(record != null, "password record is null")?
+    ensure(record.hash != null && record.salt != null, "malformed password record")?
     alg := if record.algorithm != null { record.algorithm } else { "argon2id" }
     if alg == "argon2id" {
-        expected := crypto.argon2id(password, record.salt)
+        t := if record.time != null { record.time } else { 1 }
+        mem := if record.memory != null { record.memory } else { 65536 }
+        threads := if record.threads != null { record.threads } else { 4 }
+        key_len := if record.key_len != null { record.key_len } else { 32 }
+        expected := crypto.argon2id(password, record.salt, t, mem, threads, key_len)
         return Ok(crypto.equal(expected, record.hash))
     }
     if alg == "pbkdf2" {
         iter := if record.iterations != null { record.iterations } else { 100000 }
-        expected := crypto.pbkdf2(password, record.salt, iter)
+        ensure(iter <= 10000000, "pbkdf2 iterations exceed safety limit")?
+        key_len := if record.key_len != null { record.key_len } else { 32 }
+        expected := crypto.pbkdf2(password, record.salt, iter, key_len)
         return Ok(crypto.equal(expected, record.hash))
     }
-    // legacy sha256-10k fallback
-    let mut hash = record.salt + password
-    rounds := if record.rounds != null { record.rounds } else { 10000 }
-    let mut i = 0
-    while i < rounds {
-        hash = crypto.sha256(hash + record.salt)
-        i = i + 1
-    }
-    Ok(crypto.equal(hash, record.hash))
+    // Reject unknown algorithms — do not silently fall back
+    Err("unknown password algorithm: $alg")
+}
+
+// needs_rehash checks if a password record uses outdated parameters.
+pub fn needs_rehash(record) {
+    if record == null { return true }
+    if record.algorithm != "argon2id" { return true }
+    if record.time == null || record.memory == null { return true }
+    // check against current defaults
+    if record.memory < 65536 { return true }
+    false
 }
 
 pub fn generate_token(length) -> str {
@@ -78,7 +103,6 @@ pub fn basic_auth_header(username, password) -> str {
 pub fn parse_basic_auth(header) -> Result[any] {
     ensure(str.starts_with(header, "Basic "), "not a Basic auth header")?
     decoded := base64.decode(str.slice(header, 6))?
-    // find first colon to split user:password (password may contain colons)
     idx := str.find(decoded, ":")
     ensure(idx >= 0, "invalid Basic auth format")?
     Ok({
@@ -98,12 +122,8 @@ pub fn parse_bearer(header) -> Result[any] {
 
 pub fn oauth_authorize_url(base_url, client_id, redirect_uri, scope, state) -> str {
     let mut q = "response_type=code&client_id=" + url.escape(client_id) + "&redirect_uri=" + url.escape(redirect_uri)
-    if scope != null {
-        q = q + "&scope=" + url.escape(scope)
-    }
-    if state != null {
-        q = q + "&state=" + url.escape(state)
-    }
+    if scope != null { q = q + "&scope=" + url.escape(scope) }
+    if state != null { q = q + "&state=" + url.escape(state) }
     base_url + "?" + q
 }
 
