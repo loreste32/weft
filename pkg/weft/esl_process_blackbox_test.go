@@ -110,14 +110,17 @@ func serveESLBlackBox(listener net.Listener) (err error) {
 	if !strings.Contains(commands, "api one") || !strings.Contains(commands, "api two") {
 		return fmt.Errorf("missing concurrent commands in %q", commands)
 	}
+	firstCommand, secondCommand := "one", "two"
+	if strings.Index(commands, "api two") < strings.Index(commands, "api one") {
+		firstCommand, secondCommand = secondCommand, firstCommand
+	}
 
 	if err := conn.SetDeadline(time.Now().Add(processFixtureTimeout)); err != nil {
 		return fmt.Errorf("reset reply deadline: %w", err)
 	}
 	if err := writeProcessFixture(conn,
 		"Content-Type: text/event-json\nContent-Length: 17\n\n{\"Event\":\"FIRST\"}"+
-			"Content-Type: command/reply\nReply-Text: +OK one\nContent-Length: 6\n\none-ok"+
-			"Content-Type: command/reply\nReply-Text: +OK two\nContent-Length: 6\n\ntwo-ok"); err != nil {
+			processFixtureReply(firstCommand)+processFixtureReply(secondCommand)); err != nil {
 		return err
 	}
 
@@ -135,6 +138,11 @@ func serveESLBlackBox(listener net.Listener) (err error) {
 		return err
 	}
 	return nil
+}
+
+func processFixtureReply(command string) string {
+	return "Content-Type: command/reply\nReply-Text: +OK " + command +
+		"\nContent-Length: 6\n\n" + command + "-ok"
 }
 
 func writeProcessFixture(conn net.Conn, data string) error {
