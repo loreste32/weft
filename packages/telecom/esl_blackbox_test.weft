@@ -3,6 +3,7 @@ use socket
 
 fn blackbox_esl_server(listener) -> Result[any] {
     conn := listener.accept()?
+    defer conn.close()
     conn.set_read_deadline(2)?
     conn.write("Content-Type: auth/request\n\n")?
     auth := conn.read()?
