@@ -122,7 +122,7 @@ jobs:
           go build -o /tmp/weft-telecom ./cmd/weft
           /tmp/weft-telecom mod check packages/telecom
           GOTRACEBACK=all timeout --signal=QUIT --kill-after=10s 90s \
-            /tmp/weft-telecom test packages/telecom/esl_blackbox_test.weft -q
+            /tmp/weft-telecom test packages/telecom/esl_blackbox_test.weft
 
   # Multi-GOOS compile + full/slim sizes (no cross-run)
   release-smoke:
