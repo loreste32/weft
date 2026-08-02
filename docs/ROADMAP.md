@@ -2,7 +2,7 @@
 
 Weft is for agent scripts, telecom, HTTP glue, and ops tooling. It stays small on purpose.
 
-## Where we are now (0.4.8)
+## Where we are now (0.4.9)
 
 Weft is on the **0.4.x** line (0.3.x complete — see [VERSIONING.md](VERSIONING.md)). Positioning and maturity: [STABILITY.md](STABILITY.md). You can build the binary, write real scripts, and run them on a single Go runtime.
 
@@ -104,13 +104,13 @@ In one line: **useful for agents, telecom, and ops scripts when versions are pin
 
 ## Where we hope to go
 
-The **0.3.x line is complete** (0.3.31–0.4.8). Everything shipped.
+The **0.3.x line is complete** (0.3.31–0.4.9). Everything shipped.
 
 **Completed in 0.3.x:** changelog page, `weft doc`, `weft lint`, `weft build`, `weft test --race/--mem/--timeout`, `cluster`/`governor`/`supervisor` stdlib, `deepgram`/`elevenlabs`/`mlinfer`, MCP, telecom with FreeSWITCH/Asterisk, website with 36 doc pages. (0.4.0 then added the `http_router`, `template`, `validate`, `cron` registry modules — 14 total.)
 
 ## 0.4.x — make it solid
 
-**Shipped in 0.4.x so far (0.4.0–0.4.8):** optional type annotations + `--strict`, DAP debugging, browser Wasm playground, registry namespace trust, telecom SIP REFER / WebRTC bridge, VS Code 0.4.8 (LSP types + DAP), bytecode validation, fuzz/race/bench smoke targets, grouped imports, registry auto-fetch, third-party git imports, LSP references/rename/extract/auto-import, REPL tab completion + multi-line polish, compat corpus expansion, glue benchmarks vs Python, reference apps, tag-triggered release workflow, crypto.argon2id + crypto.pbkdf2, ESL Content-Length frame parser, LU decomposition for warp det/inv/solve, maturity labels for all 81+23 packages, supply-chain tests, benchmark CI publishing.
+**Shipped in 0.4.x so far (0.4.0–0.4.9):** optional type annotations + `--strict`, DAP debugging, browser Wasm playground, registry namespace trust, telecom SIP REFER / WebRTC bridge, VS Code 0.4.9 (LSP types + DAP), bytecode validation, fuzz/race/bench smoke targets, grouped imports, registry auto-fetch, third-party git imports, LSP references/rename/extract/auto-import, REPL tab completion + multi-line polish, compat corpus expansion, glue benchmarks vs Python, reference apps, tag-triggered release workflow, crypto.argon2id + crypto.pbkdf2, ESL Content-Length frame parser, LU decomposition for warp det/inv/solve, maturity labels for all 81+23 packages, supply-chain tests, benchmark CI publishing.
 
 **Reliability (priority now — prove the core):**
 - Language/VM fuzzing and malformed-input testing (`make fuzz-smoke`) — done (smoke + weekly deep)  
@@ -128,7 +128,7 @@ The **0.3.x line is complete** (0.3.31–0.4.8). Everything shipped.
 
 **IDE & tooling:**
 - LSP: locals, multi-file rename, extract-function — done  
-- VS Code extension 0.4.8 VSIX packaged; Marketplace publish needs `VSCE_PAT`
+- VS Code extension 0.4.9 VSIX packaged; Marketplace publish needs `VSCE_PAT`
 
 **Release & platform gaps (next):**
 - macOS + Windows CI runners — today those targets are cross-compiled, never executed  

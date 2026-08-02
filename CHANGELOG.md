@@ -2,6 +2,31 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
+## [0.4.9] — 2026-08-02
+
+### Changed
+- **Socket deadlines**: `conn.read()` no longer installs a hidden 60-second deadline that overrides caller-set deadlines — the critical ESL timeout fix
+- **Socket deadline API**: `set_read_deadline`, `set_write_deadline`, `read_timeout`, `write_timeout` accept fractional seconds (e.g. 0.05s for sub-second ESL timeouts)
+- **Socket deadline safety**: NaN, Inf, negative, zero, and overflow values are all rejected with clear errors
+- **Socket deadline versioning**: temporary deadlines (`read_timeout`, `write_timeout`, `read_all_timeout`) track versions and restore the caller's previous deadline correctly
+- **Socket locking**: `close()` does not acquire read mutex (interrupts blocked reads immediately); deadline setters use `deadlineMu` for safe concurrent access
+- **ESL Content-Length validation**: strict digit-only parser with duplicate/negative/float/oversized rejection
+- **ESL header normalization**: case-insensitive matching for Content-Type, Content-Length, Reply-Text
+- **ESL dispatcher**: single-reader coordinator architecture with command/event channel separation
+- **ESL timeout**: absolute deadline, no restart on non-event frames, always cleared on exit
+- **Auth validation**: salt/hash hex encoding and length checked; Argon2 version 19 enforced; excessive params rejected
+- **Router**: dispatch() extracted for testability; wildcard prefix validation; URL-decoded params; HEAD strips body; OPTIONS includes HEAD+OPTIONS in Allow; 405 includes Allow header
+
+### Added
+- **Go-level ESL wire fixture tests**: Content-Length framing, CRLF support, coalesced frames, deadline honoring, black-box process dispatcher test
+- **Socket regression tests**: deadline honoring (~1s not 60s), concurrent read+write, close interrupts blocked read, clear_read_deadline restores blocking
+- **Crypto limit tests**: Argon2id/PBKDF2 parameter bounds at Go level
+- **Auth tests**: 20 Weft tests covering hash/verify roundtrip, PBKDF2, unknown algorithm rejection, malformed records, version validation, needs_rehash, HMAC, Basic/Bearer auth
+- **Router tests**: dispatch middleware ordering and short-circuit, HEAD/OPTIONS/405/Allow, group+wildcard with URL decoding
+- **Warp tests**: det/inv validation for non-square, solve matrix RHS row-major, inv roundtrip 3x3
+- **CI**: dedicated telecom-parser and telecom-dispatcher jobs
+- 1406 Go tests total
+
 ## [0.4.8] — 2026-08-01
 
 ### Added
