@@ -136,6 +136,33 @@ jobs:
       - name: Build and run browser integration tests
         run: make wasm-test
 
+  browser-wasm:
+    name: browser-wasm
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: wasm/package-lock.json
+      - name: Build browser Wasm
+        run: make wasm
+      - name: Install browser test dependencies
+        working-directory: wasm
+        run: npm ci
+      - name: Install Chromium and Firefox
+        working-directory: wasm
+        run: npx playwright install --with-deps chromium firefox
+      - name: Run Chromium and Firefox checks
+        working-directory: wasm
+        run: npm run test:browser
+
   # Multi-GOOS compile + full/slim sizes (no cross-run)
   release-smoke:
     name: release-smoke

@@ -127,6 +127,48 @@ async function main() {
   assert.match(result.output, /http response body exceeds 32 MiB limit/);
   assert.strictEqual(oversizedBodyRead, false);
 
+  let unboundedBodyRead = false;
+  globalThis.fetch = async () => ({
+    status: 200,
+    headers: {
+      get: () => null,
+    },
+    text: async () => {
+      unboundedBodyRead = true;
+      return "not read";
+    },
+  });
+  result = await run([
+    "fn main {",
+    '    r := http.get("https://unbounded.invalid")',
+    "    say(r)",
+    "}",
+  ].join("\n"));
+  globalThis.fetch = fetchBeforeSizeLimit;
+  assert.strictEqual(result.error, null);
+  assert.match(result.output, /http response body size cannot be bounded/);
+  assert.strictEqual(unboundedBodyRead, false);
+
+  let oversizedRequestSent = false;
+  globalThis.fetch = async (_url, options) => {
+    oversizedRequestSent = options.body !== undefined;
+    return {
+      status: 200,
+      headers: { get: () => "0" },
+      text: async () => "not sent",
+    };
+  };
+  result = await run([
+    "fn main {",
+    '    r := http.post("https://request-large.invalid", str.repeat("x", 33554433))',
+    "    say(r)",
+    "}",
+  ].join("\n"));
+  globalThis.fetch = fetchBeforeSizeLimit;
+  assert.strictEqual(result.error, null);
+  assert.match(result.output, /http request body exceeds 32 MiB limit/);
+  assert.strictEqual(oversizedRequestSent, false);
+
   let oversizedStreamCancelled = false;
   globalThis.fetch = async () => ({
     status: 200,

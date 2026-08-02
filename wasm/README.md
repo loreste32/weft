@@ -7,10 +7,13 @@ This directory contains the client-side Weft interpreter used by the playground 
 ```bash
 make wasm          # generates wasm/weft.wasm and the matching wasm_exec.js
 make wasm-test     # Go adapter tests, loader tests, and real Node/WASM tests
+(cd wasm && npm ci && npx playwright install --with-deps chromium firefox && npm run test:browser)
 make wasm-serve    # http://127.0.0.1:8765/playground.html
 ```
 
 The generated binary is intentionally ignored by Git. Its size depends on the Go toolchain; the current Go 1.26 build is approximately 18 MB. `wasm_exec.js` must come from the same Go toolchain as `weft.wasm`.
+
+The Playwright smoke test serves the generated runtime over HTTP and runs browser API checks in both Chromium and Firefox. The generated Wasm binary is rebuilt before the test and is intentionally not committed.
 
 ## JavaScript API
 
@@ -33,7 +36,7 @@ The global functions `runWeft(code, timeoutMs?)` and `runWeftAsync(code, timeout
 Implemented browser capabilities:
 
 - language core, type annotations, bytecode validation, lists/maps, JSON, strings, math, time, regular expressions, and pure standard-library packages;
-- `http.get`, `post`, `put`, `patch`, `delete`, `request`, `fetch`, and `get_json` through the browser Fetch API when called from `runAsync()`; normal browser CORS and CSP rules apply, and response bodies are capped at 32 MiB;
+- `http.get`, `post`, `put`, `patch`, `delete`, `request`, `fetch`, and `get_json` through the browser Fetch API when called from `runAsync()`; normal browser CORS and CSP rules apply, and request/response bodies are capped at 32 MiB. Responses without a readable stream must provide a valid non-negative `Content-Length` or are rejected;
 - `fs` through a process-local virtual filesystem, including read/write/list/stat/walk/temp-file operations. Paths are confined to the virtual root and capped at 4096 characters; storage is capped at 16 MiB per file, 64 MiB total, 10,000 files, 5,000 directories, and 15,000 combined entries. Files are not persisted to the user’s disk;
 - browser-safe `os` environment and path helpers. Browser process identity is represented by neutral values.
 

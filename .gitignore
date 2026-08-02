@@ -26,6 +26,7 @@ examples/data/*.db
 examples/data/out/
 # editor / local noise
 editors/vscode/node_modules/
+wasm/node_modules/
 # editors/vscode/*.vsix  — tracked for release workflow
 editors/vscode/package-lock.json
 # tokensave / local train memory (never publish)

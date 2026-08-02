@@ -1,0 +1,13 @@
+{
+  "name": "weft-wasm-browser-tests",
+  "private": true,
+  "scripts": {
+    "test:browser": "node playwright_test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.52.0"
+  }
+}
