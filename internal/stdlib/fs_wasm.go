@@ -21,6 +21,7 @@ import (
 const (
 	wasmMaxFileBytes  = 16 << 20
 	wasmMaxStoreBytes = 64 << 20
+	wasmMaxFileCount  = 10000
 )
 
 type wasmFile struct {
@@ -46,7 +47,17 @@ func wasmPath(raw string) string {
 	if clean == "." || clean == "" || clean == "/" {
 		return "."
 	}
-	return strings.TrimPrefix(clean, "./")
+	clean = strings.TrimPrefix(clean, "./")
+	// Block path traversal — reject any path that escapes the virtual root
+	if clean == ".." || strings.HasPrefix(clean, "../") || strings.Contains(clean, "/../") {
+		return "."
+	}
+	// Strip leading slash (everything is relative to virtual root)
+	clean = strings.TrimPrefix(clean, "/")
+	if clean == "" {
+		return "."
+	}
+	return clean
 }
 
 func wasmParent(name string) string {
@@ -78,6 +89,9 @@ func wasmStoreBytes(fs *wasmFilesystem, name string, data []byte) error {
 	old := int64(len(fs.files[name].data))
 	if fs.bytes-old+int64(len(data)) > wasmMaxStoreBytes {
 		return fmt.Errorf("virtual filesystem exceeds %d MiB limit", wasmMaxStoreBytes>>20)
+	}
+	if _, exists := fs.files[name]; !exists && len(fs.files) >= wasmMaxFileCount {
+		return fmt.Errorf("virtual filesystem exceeds %d file limit", wasmMaxFileCount)
 	}
 	fs.ensureParents(name)
 	fs.files[name] = wasmFile{data: append([]byte(nil), data...), modified: time.Now()}

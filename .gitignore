@@ -1,4 +1,5 @@
 /weft
+/weft-wasm
 /loom
 /bin/
 /dist/
