@@ -2,14 +2,21 @@ package stdlib
 
 import (
 	"net"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/loreste/weft/internal/runtime"
 )
 
-func TestSocketReadTimeout(t *testing.T) {
-	// Create a listener that never sends data
+func getConnFn(mo *runtime.MapObj, name string) runtime.Builtin {
+	return mo.Vals[name].Obj.(*runtime.BuiltinObj).Fn
+}
+
+// TestReadHonorsCallerDeadline verifies that after set_read_deadline(1),
+// a plain read() returns a timeout in ~1 second — NOT 60 seconds.
+// This is the critical ESL timeout test.
+func TestReadHonorsCallerDeadline(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -18,7 +25,7 @@ func TestSocketReadTimeout(t *testing.T) {
 	go func() {
 		c, _ := ln.Accept()
 		if c != nil {
-			time.Sleep(5 * time.Second)
+			time.Sleep(10 * time.Second) // never send
 			c.Close()
 		}
 	}()
@@ -32,19 +39,23 @@ func TestSocketReadTimeout(t *testing.T) {
 	wrapped := wrapConn(conn)
 	mo := wrapped.Obj.(*runtime.MapObj)
 
-	// read_timeout with 1-second timeout should return error
-	readTimeout := mo.Vals["read_timeout"]
-	r, err := readTimeout.Obj.(*runtime.BuiltinObj).Fn([]runtime.Value{
-		runtime.Int(1024),
-		runtime.Int(1),
-	})
-	if err != nil {
-		t.Fatal(err)
+	// Set a 1-second read deadline
+	setFn := getConnFn(mo, "set_read_deadline")
+	setFn([]runtime.Value{runtime.Int(1)})
+
+	// read() should timeout in ~1 second, not 60
+	start := time.Now()
+	readFn := getConnFn(mo, "read")
+	r, _ := readFn([]runtime.Value{runtime.Int(1024)})
+	elapsed := time.Since(start)
+
+	// Must complete in under 3 seconds (1s deadline + margin)
+	if elapsed > 3*time.Second {
+		t.Fatalf("read took %v — deadline was not honored (would be 60s without fix)", elapsed)
 	}
-	// Should be an Err result containing "timeout"
-	s := r.String()
+	// Result should be an error containing "timeout"
 	if r.Kind != runtime.KindResult {
-		t.Fatalf("expected Result, got %v: %s", r.Kind, s)
+		t.Fatalf("expected Result, got %v", r.Kind)
 	}
 	result := r.Obj.(*runtime.ResultObj)
 	if result.Ok {
@@ -52,7 +63,8 @@ func TestSocketReadTimeout(t *testing.T) {
 	}
 }
 
-func TestSocketSetAndClearReadDeadline(t *testing.T) {
+// TestReadTimeoutReturnsInTime verifies read_timeout with a specific timeout.
+func TestReadTimeoutReturnsInTime(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -61,8 +73,8 @@ func TestSocketSetAndClearReadDeadline(t *testing.T) {
 	go func() {
 		c, _ := ln.Accept()
 		if c != nil {
-			defer c.Close()
-			time.Sleep(5 * time.Second)
+			time.Sleep(10 * time.Second)
+			c.Close()
 		}
 	}()
 
@@ -75,42 +87,34 @@ func TestSocketSetAndClearReadDeadline(t *testing.T) {
 	wrapped := wrapConn(conn)
 	mo := wrapped.Obj.(*runtime.MapObj)
 
-	// set_read_deadline should succeed
-	setFn := mo.Vals["set_read_deadline"]
-	r, err := setFn.Obj.(*runtime.BuiltinObj).Fn([]runtime.Value{runtime.Int(5)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r.Kind != runtime.KindResult {
-		t.Fatalf("set_read_deadline: expected Result, got %v", r.Kind)
-	}
+	start := time.Now()
+	rtFn := getConnFn(mo, "read_timeout")
+	r, _ := rtFn([]runtime.Value{runtime.Int(1024), runtime.Int(1)})
+	elapsed := time.Since(start)
 
-	// clear_read_deadline should succeed
-	clearFn := mo.Vals["clear_read_deadline"]
-	r, err = clearFn.Obj.(*runtime.BuiltinObj).Fn(nil)
-	if err != nil {
-		t.Fatal(err)
+	if elapsed > 3*time.Second {
+		t.Fatalf("read_timeout took %v, expected ~1s", elapsed)
 	}
-	if r.Kind != runtime.KindResult {
-		t.Fatalf("clear_read_deadline: expected Result, got %v", r.Kind)
+	result := r.Obj.(*runtime.ResultObj)
+	if result.Ok {
+		t.Fatal("expected timeout error")
 	}
 }
 
-func TestSocketSeparateReadWriteLocking(t *testing.T) {
-	// Verify reads and writes can proceed concurrently
+// TestClearDeadlineRestoresBlocking verifies clear_read_deadline works.
+func TestClearDeadlineRestoresBlocking(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ln.Close()
-
 	go func() {
 		c, _ := ln.Accept()
 		if c != nil {
-			defer c.Close()
-			buf := make([]byte, 1024)
-			c.Read(buf)
-			c.Write([]byte("pong"))
+			// Send data after 500ms — if deadline is cleared, read should succeed
+			time.Sleep(500 * time.Millisecond)
+			c.Write([]byte("hello"))
+			c.Close()
 		}
 	}()
 
@@ -123,13 +127,130 @@ func TestSocketSeparateReadWriteLocking(t *testing.T) {
 	wrapped := wrapConn(conn)
 	mo := wrapped.Obj.(*runtime.MapObj)
 
-	// Write should succeed
-	writeFn := mo.Vals["write"]
-	r, err := writeFn.Obj.(*runtime.BuiltinObj).Fn([]runtime.Value{runtime.Str("ping")})
+	// Set a very short deadline, then clear it
+	setFn := getConnFn(mo, "set_read_deadline")
+	setFn([]runtime.Value{runtime.Int(1)})
+	clearFn := getConnFn(mo, "clear_read_deadline")
+	clearFn(nil)
+
+	// Read should now block until data arrives (~500ms), not timeout
+	readFn := getConnFn(mo, "read")
+	r, _ := readFn([]runtime.Value{runtime.Int(1024)})
+	result := r.Obj.(*runtime.ResultObj)
+	if !result.Ok {
+		t.Fatal("expected successful read after clearing deadline")
+	}
+}
+
+// TestConcurrentReadWrite verifies write succeeds while read is blocked.
+func TestConcurrentReadWrite(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer ln.Close()
+
+	go func() {
+		c, _ := ln.Accept()
+		if c != nil {
+			// Read the write from client, then send reply
+			buf := make([]byte, 1024)
+			n, _ := c.Read(buf)
+			if n > 0 {
+				c.Write([]byte("reply"))
+			}
+		}
+	}()
+
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	wrapped := wrapConn(conn)
+	mo := wrapped.Obj.(*runtime.MapObj)
+	readFn := getConnFn(mo, "read")
+	writeFn := getConnFn(mo, "write")
+
+	// Start read in background — it will block until server sends "reply"
+	var readResult runtime.Value
+	var readDone sync.WaitGroup
+	readDone.Add(1)
+	go func() {
+		defer readDone.Done()
+		readResult, _ = readFn([]runtime.Value{runtime.Int(1024)})
+	}()
+
+	// Give the read goroutine time to block
+	time.Sleep(100 * time.Millisecond)
+
+	// Write should succeed even though read is blocked (separate mutexes)
+	writeStart := time.Now()
+	r, _ := writeFn([]runtime.Value{runtime.Str("ping")})
+	writeElapsed := time.Since(writeStart)
+
+	if writeElapsed > 2*time.Second {
+		t.Fatalf("write blocked for %v — read/write mutexes not separate", writeElapsed)
+	}
 	if r.Kind != runtime.KindResult {
 		t.Fatalf("write: expected Result, got %v", r.Kind)
+	}
+	result := r.Obj.(*runtime.ResultObj)
+	if !result.Ok {
+		t.Fatal("write failed")
+	}
+
+	// Wait for read to complete (server sends reply after receiving write)
+	readDone.Wait()
+	if readResult.Kind == runtime.KindResult {
+		rr := readResult.Obj.(*runtime.ResultObj)
+		if !rr.Ok {
+			t.Fatal("read failed after write")
+		}
+	}
+}
+
+// TestCloseInterruptsBlockedRead verifies close() unblocks a reader.
+func TestCloseInterruptsBlockedRead(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, _ := ln.Accept()
+		if c != nil {
+			time.Sleep(30 * time.Second) // never send
+			c.Close()
+		}
+	}()
+
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wrapped := wrapConn(conn)
+	mo := wrapped.Obj.(*runtime.MapObj)
+	readFn := getConnFn(mo, "read")
+	closeFn := getConnFn(mo, "close")
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	start := time.Now()
+	go func() {
+		defer wg.Done()
+		readFn([]runtime.Value{runtime.Int(1024)})
+	}()
+
+	// Close after 200ms — should unblock the read
+	time.Sleep(200 * time.Millisecond)
+	closeFn(nil)
+
+	wg.Wait()
+	elapsed := time.Since(start)
+	if elapsed > 3*time.Second {
+		t.Fatalf("close did not interrupt blocked read (took %v)", elapsed)
 	}
 }

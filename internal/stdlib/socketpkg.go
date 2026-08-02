@@ -107,17 +107,23 @@ func wrapConn(c net.Conn) runtime.Value {
 		}
 		buf := make([]byte, n)
 		readMu.Lock()
-		_ = c.SetReadDeadline(time.Now().Add(60 * time.Second))
+		// Do NOT set a deadline here — honor whatever the caller set via
+		// set_read_deadline. If no deadline is set, this blocks indefinitely
+		// (which is correct for ESL event loops and similar long-lived reads).
 		nr, err := c.Read(buf)
 		readMu.Unlock()
-		if err != nil && err != io.EOF {
-			return errRes(err.Error(), "socket"), nil
+		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				return errRes("timeout", "socket"), nil
+			}
+			if err != io.EOF {
+				return errRes(err.Error(), "socket"), nil
+			}
 		}
 		return runtime.Ok(runtime.Str(string(buf[:nr]))), nil
 	})
 	put("read_all", 0, func(args []runtime.Value) (runtime.Value, error) {
 		readMu.Lock()
-		_ = c.SetReadDeadline(time.Now().Add(60 * time.Second))
 		b, err := io.ReadAll(io.LimitReader(c, 32<<20))
 		readMu.Unlock()
 		if err != nil {
@@ -139,11 +145,10 @@ func wrapConn(c net.Conn) runtime.Value {
 		return runtime.Ok(runtime.Int(int64(nw))), nil
 	})
 	put("close", 0, func(args []runtime.Value) (runtime.Value, error) {
-		readMu.Lock()
-		writeMu.Lock()
+		// net.Conn.Close is safe to call concurrently — it interrupts
+		// blocked reads/writes. Do NOT hold readMu (would deadlock if
+		// another goroutine is blocked in Read).
 		err := c.Close()
-		writeMu.Unlock()
-		readMu.Unlock()
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
@@ -157,9 +162,8 @@ func wrapConn(c net.Conn) runtime.Value {
 				sec = n
 			}
 		}
-		readMu.Lock()
+		// SetDeadline is safe to call concurrently on net.Conn
 		err := c.SetDeadline(time.Now().Add(time.Duration(sec) * time.Second))
-		readMu.Unlock()
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
@@ -172,18 +176,15 @@ func wrapConn(c net.Conn) runtime.Value {
 				sec = n
 			}
 		}
-		readMu.Lock()
+		// Safe to call concurrently on net.Conn
 		err := c.SetReadDeadline(time.Now().Add(time.Duration(sec) * time.Second))
-		readMu.Unlock()
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
 		return runtime.Ok(runtime.Unit()), nil
 	})
 	put("clear_read_deadline", 0, func(args []runtime.Value) (runtime.Value, error) {
-		readMu.Lock()
 		err := c.SetReadDeadline(time.Time{})
-		readMu.Unlock()
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}

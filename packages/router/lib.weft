@@ -1,12 +1,15 @@
 // router — HTTP routing with path params, middleware, groups, and CORS.
 
 pub fn new(opts) {
-    o := if opts != null { opts } else { {} }
+    let mut prefix = ""
+    if opts != null && contains(keys(opts), "prefix") {
+        prefix = opts["prefix"]
+    }
     {
         "routes": [],
         "middleware": [],
         "not_found_handler": null,
-        "prefix": if o.prefix != null { o.prefix } else { "" },
+        "prefix": prefix,
     }
 }
 
@@ -30,7 +33,7 @@ fn add_route(r, method, path, handler) {
 }
 
 pub fn group(r, prefix, setup_fn) {
-    sub := new({"prefix": r.prefix + prefix})
+    let mut sub = new({"prefix": r.prefix + prefix})
     sub.middleware = r.middleware
     sub = setup_fn(sub)
     let mut routes = r.routes

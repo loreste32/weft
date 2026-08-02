@@ -1,0 +1,43 @@
+use "./lib.weft" as router
+
+// Test path matching directly via the module's internal logic
+// (serve() requires a running server, so we test the matching/extraction functions
+// indirectly by building routes and inspecting behavior)
+
+fn test_new {
+    r := router.new(null)
+    test.eq(r.routes, [])
+    test.eq(r.prefix, "")
+}
+
+fn test_add_routes {
+    let mut r = router.new(null)
+    r = router.get(r, "/users", fn(req) { {"status": 200} })
+    r = router.post(r, "/users", fn(req) { {"status": 201} })
+    test.eq(len(r.routes), 2)
+    test.eq(r.routes[0].method, "GET")
+    test.eq(r.routes[0].path, "/users")
+    test.eq(r.routes[1].method, "POST")
+}
+
+fn test_middleware_stored {
+    let mut r = router.new(null)
+    mw := fn(req, next) { next(req) }
+    r = router.use_middleware(r, mw)
+    test.eq(len(r.middleware), 1)
+    r = router.get(r, "/test", fn(req) { {"status": 200} })
+    test.eq(len(r.routes[0].middleware), 1)
+}
+
+fn test_cors_headers {
+    h := router.cors_headers(null, null, null)
+    test.eq(h["Access-Control-Allow-Origin"], "*")
+    h2 := router.cors_headers("https://example.com", null, null)
+    test.eq(h2["Access-Control-Allow-Origin"], "https://example.com")
+}
+
+fn test_not_found_handler {
+    let mut r = router.new(null)
+    r = router.not_found(r, fn(req) { {"status": 404, "body": "custom 404"} })
+    test.is_true(r.not_found_handler != null)
+}
