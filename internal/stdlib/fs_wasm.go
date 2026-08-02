@@ -41,23 +41,37 @@ var (
 	wasmTempID uint64
 )
 
-func wasmPath(raw string) string {
+var errWasmTraversal = fmt.Errorf("path escapes virtual filesystem root")
+
+func wasmPath(raw string) (string, error) {
 	raw = strings.ReplaceAll(raw, "\\", "/")
+	if len(raw) > 4096 {
+		return "", fmt.Errorf("path exceeds 4096 character limit")
+	}
 	clean := path.Clean(raw)
 	if clean == "." || clean == "" || clean == "/" {
-		return "."
+		return ".", nil
 	}
 	clean = strings.TrimPrefix(clean, "./")
-	// Block path traversal — reject any path that escapes the virtual root
+	// Reject path traversal — any path escaping the virtual root
 	if clean == ".." || strings.HasPrefix(clean, "../") || strings.Contains(clean, "/../") {
-		return "."
+		return "", errWasmTraversal
 	}
 	// Strip leading slash (everything is relative to virtual root)
 	clean = strings.TrimPrefix(clean, "/")
 	if clean == "" {
-		return "."
+		return ".", nil
 	}
-	return clean
+	return clean, nil
+}
+
+// wasmMustPath calls wasmPath and returns an error Result on traversal.
+func wasmMustPath(raw, op string) (string, runtime.Value) {
+	name, err := wasmPath(raw)
+	if err != nil {
+		return "", wasmError(op, raw, err.Error())
+	}
+	return name, runtime.Value{}
 }
 
 func wasmParent(name string) string {
@@ -65,7 +79,11 @@ func wasmParent(name string) string {
 	if parent == "/" {
 		return "."
 	}
-	return wasmPath(parent)
+	p, err := wasmPath(parent)
+	if err != nil {
+		return "."
+	}
+	return p
 }
 
 func (fs *wasmFilesystem) ensureParents(name string) {
@@ -128,7 +146,10 @@ func packageFS() runtime.Value {
 		if len(args) < 1 {
 			return wasmError("read", "", "path required"), nil
 		}
-		name := wasmPath(args[0].String())
+		name, errVal := wasmMustPath(args[0].String(), "read")
+		if errVal.Kind != 0 {
+			return errVal, nil
+		}
 		wasmFS.mu.RLock()
 		file, ok := wasmFS.files[name]
 		_, dir := wasmFS.dirs[name]
@@ -163,7 +184,10 @@ func packageFS() runtime.Value {
 		if len(args) < 2 {
 			return wasmError("append", "", "path and text required"), nil
 		}
-		name := wasmPath(args[0].String())
+		name, pErr := wasmPath(args[0].String())
+		if pErr != nil {
+			return wasmError("append", args[0].String(), pErr.Error()), nil
+		}
 		wasmFS.mu.Lock()
 		old := append([]byte(nil), wasmFS.files[name].data...)
 		err := wasmStoreBytes(wasmFS, name, append(old, []byte(args[1].String())...))
@@ -183,12 +207,16 @@ func packageFS() runtime.Value {
 		for i, arg := range args {
 			parts[i] = arg.String()
 		}
-		return runtime.Str(wasmPath(path.Join(parts...))), nil
+		p, _ := wasmPath(path.Join(parts...))
+		return runtime.Str(p), nil
 	}, -1)
-	set(p, "norm", func(args []runtime.Value) (runtime.Value, error) { return runtime.Str(wasmPath(wasmArg(args))), nil }, 1)
+	set(p, "norm", func(args []runtime.Value) (runtime.Value, error) {
+		p, _ := wasmPath(wasmArg(args))
+		return runtime.Str(p), nil
+	}, 1)
 	set(p, "cwd", func(args []runtime.Value) (runtime.Value, error) { return runtime.Str("."), nil }, 0)
 	set(p, "abs", func(args []runtime.Value) (runtime.Value, error) {
-		name := wasmPath(wasmArg(args))
+		name, _ := wasmPath(wasmArg(args))
 		if name == "." {
 			return runtime.Ok(runtime.Str("/")), nil
 		}
@@ -209,7 +237,7 @@ func packageFS() runtime.Value {
 		return runtime.Str(name + suffix), nil
 	}, 2)
 	set(p, "parents", func(args []runtime.Value) (runtime.Value, error) {
-		name := wasmPath(wasmArg(args))
+		name, _ := wasmPath(wasmArg(args))
 		var parents []runtime.Value
 		for parent := wasmParent(name); parent != "."; parent = wasmParent(parent) {
 			parents = append(parents, runtime.Str(parent))
@@ -218,7 +246,7 @@ func packageFS() runtime.Value {
 	}, 1)
 
 	set(p, "exists", func(args []runtime.Value) (runtime.Value, error) {
-		name := wasmPath(wasmArg(args))
+		name, _ := wasmPath(wasmArg(args))
 		wasmFS.mu.RLock()
 		_, f := wasmFS.files[name]
 		_, d := wasmFS.dirs[name]
@@ -226,14 +254,14 @@ func packageFS() runtime.Value {
 		return runtime.Bool(f || d), nil
 	}, 1)
 	set(p, "is_file", func(args []runtime.Value) (runtime.Value, error) {
-		name := wasmPath(wasmArg(args))
+		name, _ := wasmPath(wasmArg(args))
 		wasmFS.mu.RLock()
 		_, ok := wasmFS.files[name]
 		wasmFS.mu.RUnlock()
 		return runtime.Bool(ok), nil
 	}, 1)
 	set(p, "is_dir", func(args []runtime.Value) (runtime.Value, error) {
-		name := wasmPath(wasmArg(args))
+		name, _ := wasmPath(wasmArg(args))
 		wasmFS.mu.RLock()
 		_, ok := wasmFS.dirs[name]
 		wasmFS.mu.RUnlock()
@@ -244,7 +272,10 @@ func packageFS() runtime.Value {
 		if len(args) < 1 {
 			return wasmError("mkdir", "", "path required"), nil
 		}
-		name := wasmPath(args[0].String())
+		name, pErr := wasmPath(args[0].String())
+		if pErr != nil {
+			return wasmError("append", args[0].String(), pErr.Error()), nil
+		}
 		wasmFS.mu.Lock()
 		wasmFS.ensureParents(name)
 		wasmFS.dirs[name] = struct{}{}
@@ -258,7 +289,8 @@ func packageFS() runtime.Value {
 			return wasmError("copy", "", "source and destination required"), nil
 		}
 		wasmFS.mu.RLock()
-		file, ok := wasmFS.files[wasmPath(args[0].String())]
+		p, _ := wasmPath(args[0].String())
+		file, ok := wasmFS.files[p]
 		wasmFS.mu.RUnlock()
 		if !ok {
 			return wasmError("copy", args[0].String(), "file not found"), nil
@@ -281,7 +313,10 @@ func packageFS() runtime.Value {
 		if len(args) < 2 {
 			return wasmError("chmod", "", "path and mode required"), nil
 		}
-		name := wasmPath(args[0].String())
+		name, pErr := wasmPath(args[0].String())
+		if pErr != nil {
+			return wasmError("append", args[0].String(), pErr.Error()), nil
+		}
 		wasmFS.mu.RLock()
 		_, ok := wasmFS.files[name]
 		_, dir := wasmFS.dirs[name]
@@ -300,7 +335,11 @@ func packageFS() runtime.Value {
 		if len(args) > 1 {
 			base = args[1].String()
 		}
-		value, err := filepath.Rel(wasmPath(base), wasmPath(args[0].String()))
+		value, err := func() (string, error) {
+			b, _ := wasmPath(base)
+			a, _ := wasmPath(args[0].String())
+			return filepath.Rel(b, a)
+		}()
 		if err != nil {
 			return wasmError("rel", args[0].String(), err.Error()), nil
 		}
@@ -335,14 +374,17 @@ func wasmArgDefault(args []runtime.Value, fallback string) string {
 	return args[0].String()
 }
 func wasmBase(args []runtime.Value) string { return path.Base(wasmArg(args)) }
-func wasmDir(args []runtime.Value) string  { return path.Dir(wasmPath(wasmArg(args))) }
+func wasmDir(args []runtime.Value) string  { p, _ := wasmPath(wasmArg(args)); return path.Dir(p) }
 func wasmStem(args []runtime.Value) string {
 	name := wasmBase(args)
 	return strings.TrimSuffix(name, path.Ext(name))
 }
 
 func wasmWrite(raw string, data []byte, op string) runtime.Value {
-	name := wasmPath(raw)
+	name, errVal := wasmMustPath(raw, op)
+	if errVal.Kind != 0 {
+		return errVal
+	}
 	wasmFS.mu.Lock()
 	defer wasmFS.mu.Unlock()
 	if _, isDir := wasmFS.dirs[name]; isDir {
@@ -356,7 +398,7 @@ func wasmWrite(raw string, data []byte, op string) runtime.Value {
 
 func packageFSReadBytes(raw string) runtime.Value { return packageFSRead(raw, "read_bytes") }
 func packageFSRead(raw, op string) runtime.Value {
-	name := wasmPath(raw)
+	name, _ := wasmPath(raw)
 	wasmFS.mu.RLock()
 	file, ok := wasmFS.files[name]
 	wasmFS.mu.RUnlock()
@@ -384,7 +426,7 @@ func packageFSReadLines(raw string) runtime.Value {
 }
 
 func wasmList(raw string) runtime.Value {
-	dir := wasmPath(raw)
+	dir, _ := wasmPath(raw)
 	wasmFS.mu.RLock()
 	defer wasmFS.mu.RUnlock()
 	if _, ok := wasmFS.dirs[dir]; !ok {
@@ -427,7 +469,7 @@ func wasmList(raw string) runtime.Value {
 }
 
 func wasmRemove(raw string, all bool) runtime.Value {
-	name := wasmPath(raw)
+	name, _ := wasmPath(raw)
 	if name == "." {
 		return wasmError("remove", name, "cannot remove virtual root")
 	}
@@ -473,7 +515,8 @@ func wasmRename(args []runtime.Value, op string) runtime.Value {
 	if len(args) < 2 {
 		return wasmError(op, "", "source and destination required")
 	}
-	src, dst := wasmPath(args[0].String()), wasmPath(args[1].String())
+	src, _ := wasmPath(args[0].String())
+	dst, _ := wasmPath(args[1].String())
 	if src == dst {
 		return runtime.Ok(runtime.Unit())
 	}
@@ -496,7 +539,7 @@ func wasmRename(args []runtime.Value, op string) runtime.Value {
 }
 
 func wasmStat(raw string) runtime.Value {
-	name := wasmPath(raw)
+	name, _ := wasmPath(raw)
 	wasmFS.mu.RLock()
 	defer wasmFS.mu.RUnlock()
 	if file, ok := wasmFS.files[name]; ok {
@@ -517,7 +560,7 @@ func wasmSize(raw string) runtime.Value {
 }
 
 func wasmWalk(raw string) runtime.Value {
-	root := wasmPath(raw)
+	root, _ := wasmPath(raw)
 	wasmFS.mu.RLock()
 	defer wasmFS.mu.RUnlock()
 	if _, d := wasmFS.dirs[root]; !d {
@@ -556,7 +599,7 @@ func wasmWalk(raw string) runtime.Value {
 }
 
 func wasmGlob(pattern string) runtime.Value {
-	pattern = wasmPath(pattern)
+	pattern, _ = wasmPath(pattern)
 	wasmFS.mu.RLock()
 	defer wasmFS.mu.RUnlock()
 	matches := []string{}
@@ -582,7 +625,7 @@ func wasmGlob(pattern string) runtime.Value {
 
 func wasmTemp(directory bool, prefix string) runtime.Value {
 	id := atomic.AddUint64(&wasmTempID, 1)
-	name := wasmPath("/tmp/" + prefix + fmt.Sprint(id))
+	name, _ := wasmPath("/tmp/" + prefix + fmt.Sprint(id))
 	wasmFS.mu.Lock()
 	defer wasmFS.mu.Unlock()
 	wasmFS.ensureParents(name)
