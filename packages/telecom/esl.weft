@@ -359,8 +359,8 @@ pub fn connect(host, port, password) -> Result[any] {
     requests := channel(_max_request_queue())
     event_requests := channel(_max_request_queue())
     event_cancels := channel(_max_request_queue())
-    reader_task := spawn(_reader_loop, conn, frames, reply._buf)?
-    coordinator_task := spawn(_coordinator, conn, frames, requests, event_requests, event_cancels)?
+    reader_task := spawn(_reader_loop, conn, frames, reply._buf)
+    coordinator_task := spawn(_coordinator, conn, frames, requests, event_requests, event_cancels)
 
     Ok({
         "_conn": conn,
