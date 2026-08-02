@@ -356,19 +356,18 @@ func wrapConn(c net.Conn) runtime.Value {
 	})
 	// read_timeout: read with a specific timeout in seconds, returns Err on timeout
 	put("read_timeout", 2, func(args []runtime.Value) (runtime.Value, error) {
-		n := 4096
-		sec := int64(5)
-		if len(args) >= 1 {
-			if x, e := runtime.AsInt(args[0]); e == nil && x > 0 && x < 1<<20 {
-				n = int(x)
-			}
+		if len(args) < 2 {
+			return errRes("conn.read_timeout(size, seconds)", "socket"), nil
 		}
-		if len(args) >= 2 {
-			if x, e := runtime.AsInt(args[1]); e == nil && x > 0 {
-				sec = x
-			}
+		n, nErr := runtime.AsInt(args[0])
+		if nErr != nil || n <= 0 || n >= 1<<20 {
+			return errRes("conn.read_timeout: size must be a positive integer under 1MB", "socket"), nil
 		}
-		buf := make([]byte, n)
+		sec, sErr := runtime.AsInt(args[1])
+		if sErr != nil || sec <= 0 {
+			return errRes("conn.read_timeout: seconds must be a positive integer", "socket"), nil
+		}
+		buf := make([]byte, int(n))
 		readMu.Lock()
 		defer readMu.Unlock()
 		previous, version, deadlineErr := temporaryReadDeadline(time.Now().Add(time.Duration(sec) * time.Second))
