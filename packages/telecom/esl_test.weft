@@ -9,11 +9,11 @@ fn mock_esl_server(listener) -> Result[any] {
     // The first event and command reply are deliberately coalesced. The
     // event must be queued while the command waits for its reply.
     conn.read()?
-    conn.write("Content-Type: text/event-json\nContent-Length: 16\n\n{\"Event\":\"FIRST\"}Content-Type: command/reply\nReply-Text: +OK status\n\n")?
+    conn.write("Content-Type: text/event-json\nContent-Length: 17\n\n{\"Event\":\"FIRST\"}Content-Type: command/reply\nReply-Text: +OK status\n\n")?
 
     // Send an event after the client's timeout registration has expired.
     time.sleep_ms(100)
-    conn.write("Content-Type: text/event-json\nContent-Length: 17\n\n{\"Event\":\"SECOND\"}")?
+    conn.write("Content-Type: text/event-json\nContent-Length: 18\n\n{\"Event\":\"SECOND\"}")?
     conn.close()?
     listener.close()?
     Ok(null)

@@ -179,6 +179,22 @@ func TestWrappedConnReadWriteAreIndependent(t *testing.T) {
 	}
 }
 
+func TestWrappedConnDeadlineSettersRejectInvalidValues(t *testing.T) {
+	client, peer := net.Pipe()
+	defer peer.Close()
+	conn := wrapConn(client)
+	defer closeWrappedConn(t, conn)
+
+	for _, name := range []string{"set_deadline", "set_read_deadline", "set_write_deadline"} {
+		for _, arg := range []runtime.Value{runtime.Int(0), runtime.Int(-1), runtime.Str("not-a-duration")} {
+			result := resultOf(t, callWrappedConn(t, conn, name, arg))
+			if result.Ok {
+				t.Fatalf("conn.%s accepted invalid argument %v", name, arg)
+			}
+		}
+	}
+}
+
 type unexpectedSocketData struct {
 	got  string
 	want string

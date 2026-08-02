@@ -158,10 +158,13 @@ for pkg in packages/*/; do
   /tmp/weft-ci mod check "$pkg" | grep -q "module $name"
   if compgen -G "${pkg}*_test.weft" > /dev/null || compgen -G "${pkg}test_*.weft" > /dev/null; then
     echo "  mod check $name --tests"
-    # telecom dispatcher test requires concurrent socket I/O via spawn,
-    # which deadlocks in the single-threaded test runner — skip for now
     if [ "$name" = "telecom" ]; then
-      echo "  (skipping --tests: dispatcher needs FreeSWITCH)"
+      # Parser tests are safe in the ordinary package pass. The full suite,
+      # including the local mock TCP dispatcher test, runs in its own job.
+      echo "  mod test $name --run parser"
+      tout=$(/tmp/weft-ci test "$pkg" --run parser -q)
+      echo "$tout" | grep -q "passed"
+      echo "$tout" | grep -Eq "[1-9][0-9]* failed" && { echo "$tout"; exit 1; } || true
       continue
     fi
     tout=$(/tmp/weft-ci mod check "$pkg" --tests -q)

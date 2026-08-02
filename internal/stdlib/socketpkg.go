@@ -3,6 +3,7 @@
 package stdlib
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -83,6 +84,21 @@ func checkDialAddress(address string) error {
 	}
 	host = strings.Trim(host, "[]")
 	return netsafe.CheckHost(host)
+}
+
+func socketDeadlineDuration(args []runtime.Value, name string) (time.Duration, error) {
+	if len(args) != 1 {
+		return 0, fmt.Errorf("conn.%s requires one positive integer number of seconds", name)
+	}
+	seconds, err := runtime.AsInt(args[0])
+	if err != nil || seconds <= 0 {
+		return 0, fmt.Errorf("conn.%s requires a positive integer number of seconds", name)
+	}
+	const maxSeconds = int64((1<<63 - 1) / int64(time.Second))
+	if seconds > maxSeconds {
+		return 0, fmt.Errorf("conn.%s duration is too large", name)
+	}
+	return time.Duration(seconds) * time.Second, nil
 }
 
 func wrapConn(c net.Conn) runtime.Value {
@@ -188,13 +204,6 @@ func wrapConn(c net.Conn) runtime.Value {
 		}
 		buf := make([]byte, n)
 		readMu.Lock()
-		// If the caller set a read deadline, honor it. Otherwise apply a
-		// 60-second default so reads never block indefinitely.
-		deadlineMu.Lock()
-		if readDeadline.IsZero() {
-			_ = c.SetReadDeadline(time.Now().Add(60 * time.Second))
-		}
-		deadlineMu.Unlock()
 		nr, err := c.Read(buf)
 		readMu.Unlock()
 		if err != nil {
@@ -299,26 +308,22 @@ func wrapConn(c net.Conn) runtime.Value {
 		return runtime.Ok(runtime.Unit()), nil
 	})
 	put("set_deadline", 1, func(args []runtime.Value) (runtime.Value, error) {
-		sec := int64(30)
-		if len(args) >= 1 {
-			if n, e := runtime.AsInt(args[0]); e == nil {
-				sec = n
-			}
+		duration, parseErr := socketDeadlineDuration(args, "set_deadline")
+		if parseErr != nil {
+			return errRes(parseErr.Error(), "socket"), nil
 		}
-		err := setDeadline(time.Now().Add(time.Duration(sec) * time.Second))
+		err := setDeadline(time.Now().Add(duration))
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
 		return runtime.Ok(runtime.Unit()), nil
 	})
 	put("set_read_deadline", 1, func(args []runtime.Value) (runtime.Value, error) {
-		sec := int64(30)
-		if len(args) >= 1 {
-			if n, e := runtime.AsInt(args[0]); e == nil {
-				sec = n
-			}
+		duration, parseErr := socketDeadlineDuration(args, "set_read_deadline")
+		if parseErr != nil {
+			return errRes(parseErr.Error(), "socket"), nil
 		}
-		err := setReadDeadline(time.Now().Add(time.Duration(sec) * time.Second))
+		err := setReadDeadline(time.Now().Add(duration))
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
@@ -332,13 +337,11 @@ func wrapConn(c net.Conn) runtime.Value {
 		return runtime.Ok(runtime.Unit()), nil
 	})
 	put("set_write_deadline", 1, func(args []runtime.Value) (runtime.Value, error) {
-		sec := int64(30)
-		if len(args) >= 1 {
-			if n, e := runtime.AsInt(args[0]); e == nil {
-				sec = n
-			}
+		duration, parseErr := socketDeadlineDuration(args, "set_write_deadline")
+		if parseErr != nil {
+			return errRes(parseErr.Error(), "socket"), nil
 		}
-		err := setWriteDeadline(time.Now().Add(time.Duration(sec) * time.Second))
+		err := setWriteDeadline(time.Now().Add(duration))
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
