@@ -88,17 +88,29 @@ func checkDialAddress(address string) error {
 
 func socketDeadlineDuration(args []runtime.Value, name string) (time.Duration, error) {
 	if len(args) != 1 {
-		return 0, fmt.Errorf("conn.%s requires one positive integer number of seconds", name)
+		return 0, fmt.Errorf("conn.%s requires one positive number of seconds", name)
 	}
-	seconds, err := runtime.AsInt(args[0])
-	if err != nil || seconds <= 0 {
-		return 0, fmt.Errorf("conn.%s requires a positive integer number of seconds", name)
+	// Accept both int and float
+	var dur time.Duration
+	if sec, err := runtime.AsInt(args[0]); err == nil {
+		if sec <= 0 {
+			return 0, fmt.Errorf("conn.%s requires a positive number of seconds", name)
+		}
+		const maxSeconds = int64((1<<63 - 1) / int64(time.Second))
+		if sec > maxSeconds {
+			return 0, fmt.Errorf("conn.%s duration is too large", name)
+		}
+		dur = time.Duration(sec) * time.Second
+	} else if args[0].Kind == runtime.KindFloat {
+		f := args[0].F
+		if f <= 0 {
+			return 0, fmt.Errorf("conn.%s requires a positive number of seconds", name)
+		}
+		dur = time.Duration(f * float64(time.Second))
+	} else {
+		return 0, fmt.Errorf("conn.%s requires a positive number of seconds", name)
 	}
-	const maxSeconds = int64((1<<63 - 1) / int64(time.Second))
-	if seconds > maxSeconds {
-		return 0, fmt.Errorf("conn.%s duration is too large", name)
-	}
-	return time.Duration(seconds) * time.Second, nil
+	return dur, nil
 }
 
 func wrapConn(c net.Conn) runtime.Value {
@@ -363,14 +375,14 @@ func wrapConn(c net.Conn) runtime.Value {
 		if nErr != nil || n <= 0 || n >= 1<<20 {
 			return errRes("conn.read_timeout: size must be a positive integer under 1MB", "socket"), nil
 		}
-		sec, sErr := runtime.AsInt(args[1])
-		if sErr != nil || sec <= 0 {
-			return errRes("conn.read_timeout: seconds must be a positive integer", "socket"), nil
+		dur, durErr := socketDeadlineDuration(args[1:], "read_timeout")
+		if durErr != nil {
+			return errRes(durErr.Error(), "socket"), nil
 		}
 		buf := make([]byte, int(n))
 		readMu.Lock()
 		defer readMu.Unlock()
-		previous, version, deadlineErr := temporaryReadDeadline(time.Now().Add(time.Duration(sec) * time.Second))
+		previous, version, deadlineErr := temporaryReadDeadline(time.Now().Add(dur))
 		if deadlineErr != nil {
 			return errRes(deadlineErr.Error(), "socket"), nil
 		}
