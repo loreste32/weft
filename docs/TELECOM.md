@@ -598,6 +598,10 @@ Connect directly to FreeSWITCH via the Event Socket Library for real-time call c
 
 **Safety limits:** Max header block 64KB, max body 10MB, max 128 headers per frame, max 10k queued events, and a parser buffer capped at the 10MB body limit plus 64KB of frame overshoot. These prevent unbounded memory growth from malformed or high-volume FreeSWITCH streams.
 
+**Concurrency model:** After authentication, one reader owns socket reads and a coordinator owns command writes and response/event routing. `command()` and `recv_event()`/`recv_event_timeout()` may be used concurrently; event frames are delivered before command replies, and timed-out event waits are removed from the coordinator queue. Normal connection reads install no hidden deadline, so an idle ESL event stream remains open until the caller closes it or sets a deadline.
+
+**Offline verification:** `weft test packages/telecom -q -run parser` covers framing and validation. CI also runs `TestESLBlackBoxProcess`, which launches the actual Weft CLI against a local mock TCP server and verifies authentication, coalesced frames, event-before-reply routing, concurrent commands, timeout cancellation, and cleanup. This test does not claim live FreeSWITCH compatibility; release validation still requires a real FreeSWITCH/Asterisk environment and SIP scenarios.
+
 ### Inbound mode
 
 ```weft

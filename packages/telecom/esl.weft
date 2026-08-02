@@ -166,7 +166,7 @@ fn _frame_value(frame) {
 }
 
 // The reader is the only function allowed to call conn.read after connect.
-fn _reader_loop(conn, frames, initial_buf) {
+fn reader_loop(conn, frames, initial_buf) {
     let mut buf = initial_buf
     while true {
         result := _read_frame(conn, buf)
@@ -202,7 +202,7 @@ fn _fail_event_waiters(waiters, message) {
 // The coordinator owns command writes and all routing state. The reader and
 // coordinator are deliberately separate: socket reads never compete with a
 // command or event consumer, and event-before-reply ordering is preserved.
-fn _coordinator(conn, frames, requests, event_requests, event_cancels) {
+fn coordinator(conn, frames, requests, event_requests, event_cancels) {
     let mut pending = []
     let mut events = []
     let mut waiters = []
@@ -359,13 +359,24 @@ pub fn connect(host, port, password) -> Result[any] {
     requests := channel(_max_request_queue())
     event_requests := channel(_max_request_queue())
     event_cancels := channel(_max_request_queue())
-    reader_task := spawn(_reader_loop, conn, frames, reply._buf)
-    coordinator_task := spawn(_coordinator, conn, frames, requests, event_requests, event_cancels)
+    let mut initial_remaining = reply._buf
+    let mut initial_events = []
+    initial_frame := parse_frame(reply._buf)
+    if initial_frame.ok {
+        buffered := initial_frame.value
+        buffered_event := {"headers": buffered.headers, "body": buffered.body, "_buf": ""}
+        if _is_event(buffered_event) {
+            initial_events = push(initial_events, buffered_event)
+            initial_remaining = buffered.remaining
+        }
+    }
+    reader_task := spawn(reader_loop, conn, frames, initial_remaining)
+    coordinator_task := spawn(coordinator, conn, frames, requests, event_requests, event_cancels)
 
     Ok({
         "_conn": conn,
-        "_buf": reply._buf,
-        "_events": [],
+        "_buf": initial_remaining,
+        "_events": initial_events,
         "_requests": requests,
         "_event_requests": event_requests,
         "_event_cancels": event_cancels,
@@ -438,17 +449,17 @@ pub fn myevents(e, uuid) -> Result[any] {
 // ──────────────────────────────────────────────
 
 pub fn recv_event(e) -> Result[any] {
+    if len(e._events) > 0 {
+        evt := e._events[0]
+        e._events = _shift_queue(e._events)
+        return Ok(_parse_event_body(evt))
+    }
     if e._event_requests != null {
         reply := channel(1)
         send(e._event_requests, {"reply": reply})
         result := recv(reply)?
         if result.ok { return Ok(result.value) }
         return Err(result.error)
-    }
-    if len(e._events) > 0 {
-        evt := e._events[0]
-        e._events = _shift_queue(e._events)
-        return Ok(_parse_event_body(evt))
     }
     let mut buf = e._buf
     while true {

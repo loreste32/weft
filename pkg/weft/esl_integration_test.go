@@ -14,8 +14,8 @@ import (
 )
 
 // These tests are deliberately named wire fixtures: they validate byte-level
-// ESL framing only. The real Weft parser/dispatcher path is covered by the
-// packages/telecom/esl_blackbox_test.weft suite.
+// ESL framing only. The real Weft parser/dispatcher path is covered by
+// TestESLBlackBoxProcess, which launches the actual Weft client process.
 const wireFixtureTimeout = 2 * time.Second
 
 type wireFrame struct {

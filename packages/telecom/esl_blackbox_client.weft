@@ -1,0 +1,34 @@
+use "./esl.weft" as esl
+
+fn blackbox_command(conn, command) -> Result[any] {
+    esl.api(conn, command)
+}
+
+fn main -> Result[any] {
+    port := env.get("ESL_TEST_PORT", "")
+    conn := esl.connect("127.0.0.1", port, "pw")?
+
+    auth := esl.recv_event(conn)?
+    ensure(auth.Event == "AUTH", "expected AUTH event")?
+
+    one_task := spawn(blackbox_command, conn, "one")
+    two_task := spawn(blackbox_command, conn, "two")
+    first := esl.recv_event(conn)?
+    ensure(first.Event == "FIRST", "expected FIRST event")?
+
+    one := one_task.await()?
+    two := two_task.await()?
+    ensure(one == "one-ok", "unexpected first command reply")?
+    ensure(two == "two-ok", "unexpected second command reply")?
+
+    timed := esl.recv_event_timeout(conn, 0.05)
+    ensure(!timed.ok, "expected event receive timeout")?
+
+    marker := esl.api(conn, "timeout-marker")?
+    ensure(marker == "marker-ok", "unexpected marker reply")?
+    second := esl.recv_event(conn)?
+    ensure(second.Event == "SECOND", "expected SECOND event")?
+
+    esl.close(conn)?
+    Ok(null)
+}

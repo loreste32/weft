@@ -108,9 +108,6 @@ jobs:
     name: telecom-dispatcher
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Keep the Weft VM scheduler deterministic; the fixture still spawns concurrent tasks.
-    env:
-      GOMAXPROCS: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -121,8 +118,8 @@ jobs:
         run: |
           go build -o /tmp/weft-telecom ./cmd/weft
           /tmp/weft-telecom mod check packages/telecom
-          GOTRACEBACK=all timeout --signal=QUIT --kill-after=10s 90s \
-            /tmp/weft-telecom test packages/telecom/esl_blackbox_test.weft
+          WEFT_CLI=/tmp/weft-telecom go test ./pkg/weft \
+            -run '^TestESLBlackBoxProcess$' -count=1 -timeout=120s
 
   # Multi-GOOS compile + full/slim sizes (no cross-run)
   release-smoke:
