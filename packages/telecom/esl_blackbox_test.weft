@@ -6,7 +6,7 @@ fn blackbox_esl_server(listener) -> Result[any] {
     defer conn.close()
     conn.set_read_deadline(2)?
     conn.write("Content-Type: auth/request\n\n")?
-    auth := conn.read()?
+    auth := conn.read_timeout(65536, 2)?
     ensure(str.find(auth, "auth pw") >= 0, "mock server did not receive authentication")?
 
     // Authentication reply and event are deliberately coalesced.
@@ -14,7 +14,7 @@ fn blackbox_esl_server(listener) -> Result[any] {
 
     let mut commands = ""
     while str.find(commands, "api one") < 0 || str.find(commands, "api two") < 0 {
-        commands = commands + conn.read()?
+        commands = commands + conn.read_timeout(65536, 2)?
     }
     conn.clear_read_deadline()?
 
@@ -22,7 +22,7 @@ fn blackbox_esl_server(listener) -> Result[any] {
     conn.write("Content-Type: text/event-json\nContent-Length: 17\n\n{\"Event\":\"FIRST\"}Content-Type: command/reply\nReply-Text: +OK one\nContent-Length: 6\n\none-okContent-Type: command/reply\nReply-Text: +OK two\nContent-Length: 6\n\ntwo-ok")?
 
     conn.set_read_deadline(2)?
-    marker := conn.read()?
+    marker := conn.read_timeout(65536, 2)?
     ensure(str.find(marker, "api timeout-marker") >= 0, "timeout cancellation marker was not received")?
     conn.clear_read_deadline()?
     conn.write("Content-Type: text/event-json\nContent-Length: 18\n\n{\"Event\":\"SECOND\"}Content-Type: command/reply\nReply-Text: +OK marker\nContent-Length: 9\n\nmarker-ok")?
