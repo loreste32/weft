@@ -2,13 +2,15 @@ use "./esl.weft" as esl
 
 fn mock_esl_server(listener) -> Result[any] {
     conn := listener.accept()?
+    defer conn.close()
+    conn.set_read_deadline(2)?
     conn.write("Content-Type: auth/request\n\n")?
-    conn.read()?
+    conn.read_timeout(65536, 2)?
     conn.write("Content-Type: command/reply\nReply-Text: +OK accepted\n\nContent-Type: text/event-json\nContent-Length: 16\n\n{\"Event\":\"AUTH\"}")?
 
     // The first event and command reply are deliberately coalesced. The
     // event must be queued while the command waits for its reply.
-    conn.read()?
+    conn.read_timeout(65536, 2)?
     conn.write("Content-Type: text/event-json\nContent-Length: 17\n\n{\"Event\":\"FIRST\"}Content-Type: command/reply\nReply-Text: +OK status\n\n")?
 
     // Send an event after the client's timeout registration has expired.
