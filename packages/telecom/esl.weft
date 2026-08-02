@@ -11,6 +11,7 @@ fn _max_body_size { 10485760 }
 fn _max_header_count { 128 }
 fn _max_event_queue { 10000 }
 fn _max_request_queue { 256 }
+fn _max_inbox_queue { 10512 }
 
 // ──────────────────────────────────────────────
 // Frame parser
@@ -166,18 +167,17 @@ fn _frame_value(frame) {
 }
 
 // The reader is the only function allowed to call conn.read after connect.
-fn _reader_loop(conn, frames, initial_buf) {
+fn _reader_loop(conn, inbox, initial_buf) {
     let mut buf = initial_buf
     while true {
         result := _read_frame(conn, buf)
         if !result.ok {
-            send(frames, {"kind": "error", "error": "" + result.error})
-            close(frames)
+            send(inbox, {"kind": "error", "error": "" + result.error})
             return
         }
         frame := result.value
         buf = frame._buf
-        send(frames, frame)
+        send(inbox, {"kind": "frame", "frame": frame})
     }
 }
 
@@ -199,10 +199,10 @@ fn _fail_event_waiters(waiters, message) {
     }
 }
 
-// The coordinator owns command writes and all routing state. The reader and
-// coordinator are deliberately separate: socket reads never compete with a
-// command or event consumer, and event-before-reply ordering is preserved.
-fn _coordinator(conn, frames, requests, event_requests, event_cancels) {
+// The reader is the only task that reads the socket. Commands, event waits,
+// cancellations, and frames share one inbox consumed by the coordinator, so
+// socket reads never compete with commands or event consumers.
+fn _coordinator(conn, inbox) {
     let mut pending = []
     let mut events = []
     let mut waiters = []
@@ -211,21 +211,22 @@ fn _coordinator(conn, frames, requests, event_requests, event_cancels) {
     let mut dead_error = "ESL: connection closed"
 
     while true {
-        selected := select_recv([frames, requests, event_requests, event_cancels])
-        if !selected.ok { break }
-        choice := selected.value
+        received := recv(inbox)
+        if !received.ok { break }
+        message := received.value
 
-        if choice.i == 0 {
-            frame := choice.value
-            if frame.kind == "error" {
-                dead = true
-                dead_error = frame.error
-                _fail_pending(pending, dead_error)
-                _fail_event_waiters(waiters, dead_error)
-                pending = []
-                waiters = []
-                continue
-            }
+        if message.kind == "error" {
+            dead = true
+            dead_error = message.error
+            _fail_pending(pending, dead_error)
+            _fail_event_waiters(waiters, dead_error)
+            pending = []
+            waiters = []
+            continue
+        }
+
+        if message.kind == "frame" {
+            frame := message.frame
             if _is_event(frame) {
                 if len(waiters) > 0 {
                     waiter := waiters[0]
@@ -242,8 +243,8 @@ fn _coordinator(conn, frames, requests, event_requests, event_cancels) {
                 pending = _shift_queue(pending)
                 send(request.reply, _reply_ok(_frame_value(frame)))
             }
-        } else if choice.i == 1 {
-            request := choice.value
+        } else if message.kind == "command" {
+            request := message
             if dead {
                 send(request.reply, _reply_err(dead_error))
                 continue
@@ -258,26 +259,24 @@ fn _coordinator(conn, frames, requests, event_requests, event_cancels) {
                 _fail_pending(pending, dead_error)
                 pending = []
             }
-        } else if choice.i == 2 {
-            request := choice.value
-            if dead {
-                send(request.reply, _reply_err(dead_error))
-                if request.ack != null { send(request.ack, {"ok": false, "error": dead_error}) }
-                continue
-            }
+        } else if message.kind == "event_wait" {
+            request := message
             if len(events) > 0 {
                 event := events[0]
                 events = _shift_queue(events)
                 send(request.reply, _reply_ok(_parse_event_body(event)))
                 if request.ack != null { send(request.ack, {"ok": true, "id": -1}) }
+            } else if dead {
+                send(request.reply, _reply_err(dead_error))
+                if request.ack != null { send(request.ack, {"ok": false, "error": dead_error}) }
             } else {
                 id := next_id
                 next_id = next_id + 1
                 waiters = push(waiters, {"id": id, "reply": request.reply})
                 if request.ack != null { send(request.ack, {"ok": true, "id": id}) }
             }
-        } else {
-            cancel := choice.value
+        } else if message.kind == "event_cancel" {
+            cancel := message
             let mut remaining = []
             let mut removed = false
             for waiter in waiters {
@@ -355,20 +354,31 @@ pub fn connect(host, port, password) -> Result[any] {
         return Err("ESL auth failed")
     }
 
-    frames := channel(_max_event_queue())
-    requests := channel(_max_request_queue())
-    event_requests := channel(_max_request_queue())
-    event_cancels := channel(_max_request_queue())
-    spawn(_reader_loop, conn, frames, reply._buf)
-    spawn(_coordinator, conn, frames, requests, event_requests, event_cancels)
+    inbox := channel(_max_inbox_queue())
+    let mut initial_remaining = reply._buf
+    let mut initial_events = []
+    initial_frame := parse_frame(reply._buf)
+    if initial_frame.ok {
+        buffered := initial_frame.value
+        buffered_event := {"headers": buffered.headers, "body": buffered.body, "_buf": ""}
+        if _is_event(buffered_event) {
+            initial_events = push(initial_events, buffered_event)
+            initial_remaining = buffered.remaining
+        }
+    }
+    reader_task := spawn(_reader_loop, conn, inbox, initial_remaining)
+    coordinator_task := spawn(_coordinator, conn, inbox)
 
     Ok({
         "_conn": conn,
-        "_buf": reply._buf,
-        "_events": [],
-        "_requests": requests,
-        "_event_requests": event_requests,
-        "_event_cancels": event_cancels,
+        "_buf": initial_remaining,
+        "_events": initial_events,
+        "_inbox": inbox,
+        "_requests": inbox,
+        "_event_requests": inbox,
+        "_event_cancels": inbox,
+        "_reader_task": reader_task,
+        "_coordinator_task": coordinator_task,
         "_mode": "inbound",
         "host": h,
         "port": p,
@@ -383,7 +393,7 @@ pub fn connect(host, port, password) -> Result[any] {
 pub fn command(e, cmd) -> Result[any] {
     if e._requests != null {
         reply := channel(1)
-        send(e._requests, {"cmd": "$cmd\n\n", "reply": reply})
+        send(e._requests, {"kind": "command", "cmd": "$cmd\n\n", "reply": reply})?
         result := recv(reply)?
         if result.ok { return Ok(result.value) }
         return Err(result.error)
@@ -436,17 +446,17 @@ pub fn myevents(e, uuid) -> Result[any] {
 // ──────────────────────────────────────────────
 
 pub fn recv_event(e) -> Result[any] {
-    if e._event_requests != null {
-        reply := channel(1)
-        send(e._event_requests, {"reply": reply})
-        result := recv(reply)?
-        if result.ok { return Ok(result.value) }
-        return Err(result.error)
-    }
     if len(e._events) > 0 {
         evt := e._events[0]
         e._events = _shift_queue(e._events)
         return Ok(_parse_event_body(evt))
+    }
+    if e._event_requests != null {
+        reply := channel(1)
+        send(e._event_requests, {"kind": "event_wait", "reply": reply, "ack": null})?
+        result := recv(reply)?
+        if result.ok { return Ok(result.value) }
+        return Err(result.error)
     }
     let mut buf = e._buf
     while true {
@@ -464,7 +474,7 @@ pub fn recv_event_timeout(e, timeout_sec) -> Result[any] {
         ensure(timeout_sec != null && timeout_sec > 0, "timeout_sec must be positive")?
         reply := channel(1)
         ack := channel(1)
-        send(e._event_requests, {"reply": reply, "ack": ack})
+        send(e._event_requests, {"kind": "event_wait", "reply": reply, "ack": ack})?
         registered := recv(ack)?
         if !registered.ok { return Err(registered.error) }
         selected := select_recv([reply], timeout_sec * 1000)
@@ -474,7 +484,7 @@ pub fn recv_event_timeout(e, timeout_sec) -> Result[any] {
             return Err(result.error)
         }
         cancel_ack := channel(1)
-        send(e._event_cancels, {"id": registered.id, "ack": cancel_ack})
+        send(e._event_cancels, {"kind": "event_cancel", "id": registered.id, "ack": cancel_ack})?
         recv(cancel_ack)?
         // Delivery and timeout can race. If the coordinator delivered the
         // event just before processing cancellation, preserve that result
@@ -485,7 +495,7 @@ pub fn recv_event_timeout(e, timeout_sec) -> Result[any] {
             if result.ok { return Ok(result.value) }
             return Err(result.error)
         }
-        return Err("ESL: recv_event timeout after " + str(timeout_sec) + "s")
+        return Err("ESL: recv_event timeout")
     }
     if len(e._events) > 0 {
         return recv_event(e)
@@ -515,7 +525,7 @@ pub fn recv_event_timeout(e, timeout_sec) -> Result[any] {
         // Non-event frame: do NOT restart the deadline, it's still running
     }
     e._conn.clear_read_deadline()?
-    Err("ESL: recv_event timeout after " + str(timeout_sec) + "s")
+    Err("ESL: recv_event timeout")
 }
 
 // ──────────────────────────────────────────────

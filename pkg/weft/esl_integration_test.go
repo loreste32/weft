@@ -1,216 +1,340 @@
 package weft_test
 
 import (
+	"bufio"
+	"bytes"
+	"errors"
+	"fmt"
+	"io"
 	"net"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
-// These tests verify the ESL frame protocol at the TCP level, independent
-// of the Weft telecom module. They exercise the exact byte sequences that
-// FreeSWITCH sends and verify correct parsing behavior.
+// These tests are deliberately named wire fixtures: they validate byte-level
+// ESL framing only. The real Weft parser/dispatcher path is covered by
+// TestESLBlackBoxProcess, which launches the actual Weft client process.
+const wireFixtureTimeout = 2 * time.Second
 
-func eslMockAcceptAuth(t *testing.T, ln net.Listener) net.Conn {
+type wireFrame struct {
+	headers map[string]string
+	body    string
+}
+
+func listenWireFixture(t *testing.T) (net.Listener, string) {
 	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ln, ln.Addr().String()
+}
+
+func closeWireFixtureListener(t *testing.T, ln net.Listener) {
+	t.Helper()
+	if err := ln.Close(); err != nil {
+		t.Errorf("close listener: %v", err)
+	}
+}
+
+func runWireFixtureServer(ln net.Listener, handler func(net.Conn) error) (err error) {
 	conn, err := ln.Accept()
 	if err != nil {
-		t.Fatal(err)
+		return fmt.Errorf("accept: %w", err)
 	}
-	// Send auth/request
-	conn.Write([]byte("Content-Type: auth/request\n\n"))
-	// Read auth response
-	buf := make([]byte, 4096)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	conn.Read(buf)
-	// Send auth OK
-	conn.Write([]byte("Content-Type: command/reply\nReply-Text: +OK accepted\n\n"))
-	return conn
+	defer func() {
+		if closeErr := conn.Close(); err == nil && closeErr != nil {
+			err = fmt.Errorf("close connection: %w", closeErr)
+		}
+	}()
+	if err := conn.SetDeadline(time.Now().Add(wireFixtureTimeout)); err != nil {
+		return fmt.Errorf("set server deadline: %w", err)
+	}
+	return handler(conn)
 }
 
-func TestESLFrameContentLength(t *testing.T) {
-	// Verify that Content-Length-based framing works: server sends a body
-	// of exactly N bytes, client parses it correctly.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+func writeWire(conn net.Conn, data []byte) error {
+	n, err := conn.Write(data)
 	if err != nil {
-		t.Fatal(err)
+		return fmt.Errorf("write %d bytes: %w", len(data), err)
 	}
-	defer ln.Close()
-
-	go func() {
-		conn := eslMockAcceptAuth(t, ln)
-		defer conn.Close()
-		// Send an event with Content-Length
-		conn.Write([]byte("Content-Type: text/event-json\nContent-Length: 16\n\n{\"Event\":\"TEST\"}"))
-		time.Sleep(time.Second)
-	}()
-
-	// Client side: connect and read the frame
-	addr := ln.Addr().String()
-	conn, err := net.Dial("tcp", addr)
-	if err != nil {
-		t.Fatal(err)
+	if n != len(data) {
+		return fmt.Errorf("write %d bytes: wrote %d: %w", len(data), n, io.ErrShortWrite)
 	}
-	defer conn.Close()
+	return nil
+}
 
-	// Read auth/request
-	buf := make([]byte, 4096)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	n, _ := conn.Read(buf)
-	if !strings.Contains(string(buf[:n]), "auth/request") {
-		t.Fatal("expected auth/request")
-	}
-
-	// Send auth
-	conn.Write([]byte("auth pw\n\n"))
-
-	// Read auth reply + event
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	var all []byte
-	for {
-		n, err := conn.Read(buf)
-		if n > 0 {
-			all = append(all, buf[:n]...)
-		}
-		// Check if we got the event body
-		if strings.Contains(string(all), `"Event":"TEST"`) {
-			break
-		}
+func readWireBlock(br *bufio.Reader) ([]byte, error) {
+	var block bytes.Buffer
+	for block.Len() <= 64<<10 {
+		line, err := br.ReadBytes('\n')
 		if err != nil {
-			break
+			return nil, err
+		}
+		_, _ = block.Write(line)
+		if bytes.HasSuffix(block.Bytes(), []byte("\n\n")) || bytes.HasSuffix(block.Bytes(), []byte("\r\n\r\n")) {
+			return block.Bytes(), nil
 		}
 	}
-
-	s := string(all)
-	if !strings.Contains(s, "+OK accepted") {
-		t.Fatalf("missing auth OK in: %s", s)
-	}
-	if !strings.Contains(s, `{"Event":"TEST"}`) {
-		t.Fatalf("missing event body in: %s", s)
-	}
+	return nil, errors.New("ESL wire block exceeds 64KB")
 }
 
-func TestESLFrameCRLF(t *testing.T) {
-	// Verify that \r\n\r\n delimiters work (some FreeSWITCH versions use CRLF)
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+func readWireCommand(br *bufio.Reader) (string, error) {
+	block, err := readWireBlock(br)
+	if err != nil {
+		return "", err
+	}
+	return string(block), nil
+}
+
+func readWireFrame(br *bufio.Reader) (wireFrame, error) {
+	block, err := readWireBlock(br)
+	if err != nil {
+		return wireFrame{}, err
+	}
+	text := string(block)
+	if i := strings.Index(text, "\r\n\r\n"); i >= 0 {
+		text = text[:i]
+	} else if i := strings.Index(text, "\n\n"); i >= 0 {
+		text = text[:i]
+	} else {
+		return wireFrame{}, errors.New("ESL wire block has no delimiter")
+	}
+
+	frame := wireFrame{headers: make(map[string]string)}
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			return wireFrame{}, fmt.Errorf("malformed ESL header %q", line)
+		}
+		name := strings.TrimSpace(parts[0])
+		if _, exists := frame.headers[name]; exists {
+			return wireFrame{}, fmt.Errorf("duplicate ESL header %q", name)
+		}
+		frame.headers[name] = strings.TrimSpace(parts[1])
+	}
+
+	bodyLength := 0
+	if rawLength, ok := frame.headers["Content-Length"]; ok {
+		bodyLength, err = strconv.Atoi(rawLength)
+		if err != nil || bodyLength < 0 {
+			return wireFrame{}, fmt.Errorf("invalid Content-Length %q", rawLength)
+		}
+	}
+	body := make([]byte, bodyLength)
+	if _, err := io.ReadFull(br, body); err != nil {
+		return wireFrame{}, err
+	}
+	frame.body = string(body)
+	return frame, nil
+}
+
+func wireReply(body string, crlf bool) []byte {
+	line := "\n"
+	if crlf {
+		line = "\r\n"
+	}
+	frame := "Content-Type: command/reply" + line + "Reply-Text: +OK accepted" + line
+	if body != "" {
+		frame += "Content-Length: " + strconv.Itoa(len(body)) + line
+	}
+	return []byte(frame + line + body)
+}
+
+func wireEvent(body string, crlf bool) []byte {
+	line := "\n"
+	if crlf {
+		line = "\r\n"
+	}
+	return []byte("Content-Type: text/event-json" + line +
+		"Content-Length: " + strconv.Itoa(len(body)) + line + line + body)
+}
+
+func serveWireHandshake(conn net.Conn, crlf bool, afterAuth func(*bufio.Reader, net.Conn) error) error {
+	line := "\n"
+	if crlf {
+		line = "\r\n"
+	}
+	if err := writeWire(conn, []byte("Content-Type: auth/request"+line+line)); err != nil {
+		return err
+	}
+	br := bufio.NewReader(conn)
+	command, err := readWireCommand(br)
+	if err != nil {
+		return fmt.Errorf("read auth command: %w", err)
+	}
+	if strings.TrimSpace(command) != "auth pw" {
+		return fmt.Errorf("unexpected auth command %q", command)
+	}
+	if err := writeWire(conn, wireReply("", crlf)); err != nil {
+		return err
+	}
+	return afterAuth(br, conn)
+}
+
+func dialWireFixture(t *testing.T, address string) (net.Conn, *bufio.Reader) {
+	t.Helper()
+	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
-
-	go func() {
-		conn, _ := ln.Accept()
-		defer conn.Close()
-		// Use CRLF
-		conn.Write([]byte("Content-Type: auth/request\r\n\r\n"))
-		buf := make([]byte, 1024)
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		conn.Read(buf)
-		conn.Write([]byte("Content-Type: command/reply\r\nReply-Text: +OK\r\n\r\n"))
-		time.Sleep(500 * time.Millisecond)
-	}()
-
-	conn, _ := net.Dial("tcp", ln.Addr().String())
-	defer conn.Close()
-
-	buf := make([]byte, 4096)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	n, _ := conn.Read(buf)
-	if !strings.Contains(string(buf[:n]), "auth/request") {
-		t.Fatal("CRLF framing: expected auth/request")
+	br := bufio.NewReader(conn)
+	frame, err := readWireFrame(br)
+	if err != nil {
+		_ = conn.Close()
+		t.Fatalf("read auth request: %v", err)
 	}
-
-	conn.Write([]byte("auth pw\n\n"))
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	n, _ = conn.Read(buf)
-	if !strings.Contains(string(buf[:n]), "+OK") {
-		t.Fatal("CRLF framing: expected +OK")
+	if frame.headers["Content-Type"] != "auth/request" || frame.body != "" {
+		_ = conn.Close()
+		t.Fatalf("unexpected auth request: %#v", frame)
 	}
+	if err := writeWire(conn, []byte("auth pw\n\n")); err != nil {
+		_ = conn.Close()
+		t.Fatalf("write auth command: %v", err)
+	}
+	if frame, err = readWireFrame(br); err != nil {
+		_ = conn.Close()
+		t.Fatalf("read auth reply: %v", err)
+	} else if frame.headers["Reply-Text"] != "+OK accepted" {
+		_ = conn.Close()
+		t.Fatalf("unexpected auth reply: %#v", frame)
+	}
+	return conn, br
 }
 
-func TestESLCoalescedFrames(t *testing.T) {
-	// Server sends multiple frames in one TCP write — client must split them
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-
-	go func() {
-		conn := eslMockAcceptAuth(t, ln)
-		defer conn.Close()
-		// Two events in one write
-		conn.Write([]byte(
-			"Content-Type: text/event-json\nContent-Length: 17\n\n{\"Event\":\"FIRST\"}" +
-				"Content-Type: text/event-json\nContent-Length: 18\n\n{\"Event\":\"SECOND\"}"))
-		time.Sleep(time.Second)
-	}()
-
-	conn, _ := net.Dial("tcp", ln.Addr().String())
-	defer conn.Close()
-
-	buf := make([]byte, 4096)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	conn.Read(buf) // auth/request
-	conn.Write([]byte("auth pw\n\n"))
-
-	// Read everything
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	var all []byte
-	for {
-		n, err := conn.Read(buf)
-		if n > 0 {
-			all = append(all, buf[:n]...)
-		}
-		if strings.Contains(string(all), "SECOND") {
-			break
-		}
+func waitWireFixtureServer(t *testing.T, done <-chan error) {
+	t.Helper()
+	select {
+	case err := <-done:
 		if err != nil {
-			break
+			t.Fatal(err)
 		}
-	}
-
-	s := string(all)
-	if !strings.Contains(s, "FIRST") {
-		t.Fatal("missing FIRST event")
-	}
-	if !strings.Contains(s, "SECOND") {
-		t.Fatal("missing SECOND event")
+	case <-time.After(wireFixtureTimeout):
+		t.Fatal("wire fixture server did not finish")
 	}
 }
 
-func TestESLSocketDeadlineHonored(t *testing.T) {
-	// Verify that a short read deadline causes timeout, not 60-second default
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-
+func TestESLWireFixtureContentLength(t *testing.T) {
+	ln, address := listenWireFixture(t)
+	defer closeWireFixtureListener(t, ln)
+	done := make(chan error, 1)
 	go func() {
-		conn, _ := ln.Accept()
-		defer conn.Close()
-		time.Sleep(10 * time.Second) // never send anything
+		done <- runWireFixtureServer(ln, func(conn net.Conn) error {
+			return serveWireHandshake(conn, false, func(_ *bufio.Reader, conn net.Conn) error {
+				return writeWire(conn, wireEvent(`{"Event":"TEST"}`, false))
+			})
+		})
 	}()
 
-	conn, _ := net.Dial("tcp", ln.Addr().String())
-	defer conn.Close()
+	conn, br := dialWireFixture(t, address)
+	frame, err := readWireFrame(br)
+	if err != nil {
+		t.Fatalf("read event: %v", err)
+	}
+	if frame.headers["Content-Length"] != "16" || frame.body != `{"Event":"TEST"}` {
+		t.Fatalf("unexpected event frame: %#v", frame)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatalf("close client: %v", err)
+	}
+	waitWireFixtureServer(t, done)
+}
 
-	// Set a 500ms deadline
-	conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-	start := time.Now()
-	buf := make([]byte, 1024)
-	_, err = conn.Read(buf)
-	elapsed := time.Since(start)
+func TestESLWireFixtureCRLF(t *testing.T) {
+	ln, address := listenWireFixture(t)
+	defer closeWireFixtureListener(t, ln)
+	done := make(chan error, 1)
+	go func() {
+		done <- runWireFixtureServer(ln, func(conn net.Conn) error {
+			return serveWireHandshake(conn, true, func(_ *bufio.Reader, conn net.Conn) error {
+				return writeWire(conn, wireEvent(`{"Event":"CRLF"}`, true))
+			})
+		})
+	}()
 
+	conn, br := dialWireFixture(t, address)
+	frame, err := readWireFrame(br)
+	if err != nil {
+		t.Fatalf("read CRLF event: %v", err)
+	}
+	if frame.headers["Content-Type"] != "text/event-json" || frame.body != `{"Event":"CRLF"}` {
+		t.Fatalf("unexpected CRLF event frame: %#v", frame)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatalf("close client: %v", err)
+	}
+	waitWireFixtureServer(t, done)
+}
+
+func TestESLWireFixtureCoalescedFrames(t *testing.T) {
+	ln, address := listenWireFixture(t)
+	defer closeWireFixtureListener(t, ln)
+	done := make(chan error, 1)
+	go func() {
+		done <- runWireFixtureServer(ln, func(conn net.Conn) error {
+			return serveWireHandshake(conn, false, func(_ *bufio.Reader, conn net.Conn) error {
+				first := wireEvent(`{"Event":"FIRST"}`, false)
+				second := wireEvent(`{"Event":"SECOND"}`, false)
+				return writeWire(conn, append(first, second...))
+			})
+		})
+	}()
+
+	conn, br := dialWireFixture(t, address)
+	first, err := readWireFrame(br)
+	if err != nil {
+		t.Fatalf("read first coalesced frame: %v", err)
+	}
+	second, err := readWireFrame(br)
+	if err != nil {
+		t.Fatalf("read second coalesced frame: %v", err)
+	}
+	if first.body != `{"Event":"FIRST"}` || second.body != `{"Event":"SECOND"}` {
+		t.Fatalf("coalesced frames were not separated: %#v %#v", first, second)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatalf("close client: %v", err)
+	}
+	waitWireFixtureServer(t, done)
+}
+
+func TestESLWireFixtureDeadlineHonored(t *testing.T) {
+	ln, address := listenWireFixture(t)
+	defer closeWireFixtureListener(t, ln)
+	done := make(chan error, 1)
+	go func() {
+		done <- runWireFixtureServer(ln, func(conn net.Conn) error {
+			return serveWireHandshake(conn, false, func(_ *bufio.Reader, conn net.Conn) error {
+				buffer := make([]byte, 1)
+				_, err := conn.Read(buffer)
+				if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+					return nil
+				}
+				return fmt.Errorf("read after client deadline: %w", err)
+			})
+		})
+	}()
+
+	conn, br := dialWireFixture(t, address)
+	if err := conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+		t.Fatalf("set client deadline: %v", err)
+	}
+	_, err := readWireFrame(br)
 	if err == nil {
-		t.Fatal("expected timeout error")
+		t.Fatal("read unexpectedly succeeded without a frame")
 	}
-	if elapsed > 2*time.Second {
-		t.Fatalf("deadline not honored: took %v (expected ~500ms)", elapsed)
+	var netErr net.Error
+	if !errors.As(err, &netErr) || !netErr.Timeout() {
+		t.Fatalf("expected timeout, got %v", err)
 	}
-	netErr, ok := err.(net.Error)
-	if !ok || !netErr.Timeout() {
-		t.Fatalf("expected timeout error, got: %v", err)
+	if err := conn.Close(); err != nil {
+		t.Fatalf("close client: %v", err)
 	}
+	waitWireFixtureServer(t, done)
 }

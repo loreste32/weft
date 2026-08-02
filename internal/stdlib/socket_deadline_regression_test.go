@@ -3,6 +3,7 @@
 package stdlib
 
 import (
+	"math"
 	"net"
 	"strings"
 	"testing"
@@ -186,12 +187,56 @@ func TestWrappedConnDeadlineSettersRejectInvalidValues(t *testing.T) {
 	defer closeWrappedConn(t, conn)
 
 	for _, name := range []string{"set_deadline", "set_read_deadline", "set_write_deadline"} {
-		for _, arg := range []runtime.Value{runtime.Int(0), runtime.Int(-1), runtime.Str("not-a-duration")} {
+		for _, arg := range []runtime.Value{
+			runtime.Int(0),
+			runtime.Int(-1),
+			runtime.Float(math.NaN()),
+			runtime.Float(math.Inf(1)),
+			runtime.Float(math.Inf(-1)),
+			runtime.Float(1e-12),
+			runtime.Float(1e20),
+			runtime.Str("not-a-duration"),
+		} {
 			result := resultOf(t, callWrappedConn(t, conn, name, arg))
 			if result.Ok {
 				t.Fatalf("conn.%s accepted invalid argument %v", name, arg)
 			}
 		}
+	}
+}
+
+func TestWrappedConnTimeoutHelpersRejectInvalidFloatDurations(t *testing.T) {
+	client, peer := net.Pipe()
+	defer peer.Close()
+	conn := wrapConn(client)
+	defer closeWrappedConn(t, conn)
+
+	invalid := []runtime.Value{
+		runtime.Float(math.NaN()),
+		runtime.Float(math.Inf(1)),
+		runtime.Float(1e-12),
+		runtime.Float(1e20),
+	}
+	for _, arg := range invalid {
+		checks := []struct {
+			name string
+			args []runtime.Value
+		}{
+			{"read_timeout", []runtime.Value{runtime.Int(1), arg}},
+			{"read_all_timeout", []runtime.Value{arg}},
+			{"write_timeout", []runtime.Value{runtime.Str("x"), arg}},
+		}
+		for _, check := range checks {
+			result := resultOf(t, callWrappedConn(t, conn, check.name, check.args...))
+			if result.Ok {
+				t.Fatalf("conn.%s accepted invalid duration %v", check.name, arg)
+			}
+		}
+	}
+
+	valid := resultOf(t, callWrappedConn(t, conn, "set_read_deadline", runtime.Float(0.001)))
+	if !valid.Ok {
+		t.Fatalf("valid sub-second deadline rejected: %s", valid.Err.String())
 	}
 }
 

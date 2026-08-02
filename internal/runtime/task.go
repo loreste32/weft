@@ -21,7 +21,13 @@ func spawnTask(env *Env, fn Value, args []Value) (Value, error) {
 	if fn.Kind != KindFunc && fn.Kind != KindBuiltin {
 		return Null(), fmt.Errorf("spawn: expected function")
 	}
-	if env.Call == nil {
+	call := env.Call
+	if call == nil && fn.Kind == KindFunc {
+		if fnEnv := fn.Obj.(*FuncObj).Env; fnEnv != nil {
+			call = fnEnv.Call
+		}
+	}
+	if call == nil {
 		return Null(), fmt.Errorf("spawn: Call not configured")
 	}
 	// Deep-copy args so tasks do not share mutable collections
@@ -31,7 +37,7 @@ func spawnTask(env *Env, fn Value, args []Value) (Value, error) {
 	}
 	ch := make(chan taskResult, 1)
 	go func() {
-		v, err := env.Call(fn, cp)
+		v, err := call(fn, cp)
 		ch <- taskResult{val: v, err: err}
 	}()
 	// Buffer once so .join and .await can both be called safely (same result).

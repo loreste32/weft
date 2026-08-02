@@ -98,7 +98,7 @@ Server helpers: `serve`, `text`, `json`.
 
 ### socket
 
-`socket.dial(network, address, timeout?)` returns a raw TCP/UDP connection. `conn.read` and `conn.write` do not install hidden deadlines: they honor deadlines set by the caller. Use `conn.set_read_deadline`, `conn.set_write_deadline`, or `conn.set_deadline` for persistent limits. `conn.read_timeout`, `conn.write_timeout`, and `conn.read_all_timeout` apply a temporary limit and restore the previous caller deadline afterward.
+`socket.dial(network, address, timeout?)` returns a raw TCP/UDP connection. An omitted timeout defaults to 30 seconds; a supplied timeout must be a positive finite number of seconds representing at least one nanosecond, or the call returns `Err`. `conn.read` and `conn.write` do not install hidden deadlines: they honor deadlines set by the caller. Use `conn.set_read_deadline`, `conn.set_write_deadline`, or `conn.set_deadline` for persistent limits; these setters accept the same validated duration values. `conn.read_timeout`, `conn.write_timeout`, and `conn.read_all_timeout` apply a temporary limit and restore the previous caller deadline afterward.
 
 `conn.read_all()` is EOF-delimited and can block forever on a live stream. Prefer `conn.read_all_timeout(seconds)` when the peer may remain open. Closing a connection interrupts blocked reads and writes.
 

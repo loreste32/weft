@@ -186,3 +186,26 @@ func TestMakeChannelNegativeBuffer(t *testing.T) {
 		t.Fatal("negative buffer channel")
 	}
 }
+
+func TestSelectRecvWakesAfterSend(t *testing.T) {
+	ch := runtime.MakeChannel(1)
+	done := make(chan error, 1)
+	started := make(chan struct{})
+	go func() {
+		close(started)
+		_, _, err := runtime.SelectRecv([]runtime.Value{ch}, 1000)
+		done <- err
+	}()
+	<-started
+	if err := runtime.ChannelSend(ch, runtime.Int(1)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("select_recv did not wake after send")
+	}
+}

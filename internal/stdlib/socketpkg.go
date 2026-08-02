@@ -5,6 +5,7 @@ package stdlib
 import (
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"strings"
 	"sync"
@@ -28,11 +29,11 @@ func packageSocket(env *runtime.Env) runtime.Value {
 		address := args[1].String()
 		timeout := 30 * time.Second
 		if len(args) >= 3 {
-			if n, e := runtime.AsInt(args[2]); e == nil && n > 0 {
-				timeout = time.Duration(n) * time.Second
-			} else if f, ok := asFloat64(args[2]); ok && f > 0 {
-				timeout = time.Duration(f * float64(time.Second))
+			parsed, parseErr := socketDeadlineDuration(args[2:3], "dial")
+			if parseErr != nil {
+				return errRes(parseErr.Error(), "socket"), nil
 			}
+			timeout = parsed
 		}
 		// netsafe.DialContext resolves and dials only non-blocked IPs (no DNS rebinding).
 		c, err := netsafe.DialContext(env.Context(), network, address, timeout)
@@ -90,9 +91,23 @@ func socketDeadlineDuration(args []runtime.Value, name string) (time.Duration, e
 	if len(args) != 1 {
 		return 0, fmt.Errorf("conn.%s requires one positive number of seconds", name)
 	}
-	// Accept both int and float
+	// Accept both int and float. Check the native kind first: AsInt may
+	// truncate a float such as 0.001 to zero before validation.
 	var dur time.Duration
-	if sec, err := runtime.AsInt(args[0]); err == nil {
+	if args[0].Kind == runtime.KindFloat {
+		f := args[0].F
+		if f <= 0 {
+			return 0, fmt.Errorf("conn.%s requires a positive number of seconds", name)
+		}
+		nanos := f * float64(time.Second)
+		// float64 cannot represent MaxInt64 exactly; step below 2^63 so
+		// converting nanos to time.Duration cannot wrap.
+		maxNanos := math.Nextafter(float64(1<<63), 0)
+		if math.IsNaN(f) || math.IsInf(f, 0) || math.IsNaN(nanos) || math.IsInf(nanos, 0) || nanos < 1 || nanos > maxNanos {
+			return 0, fmt.Errorf("conn.%s requires positive number seconds", name)
+		}
+		dur = time.Duration(nanos)
+	} else if sec, err := runtime.AsInt(args[0]); err == nil {
 		if sec <= 0 {
 			return 0, fmt.Errorf("conn.%s requires a positive number of seconds", name)
 		}
@@ -101,12 +116,6 @@ func socketDeadlineDuration(args []runtime.Value, name string) (time.Duration, e
 			return 0, fmt.Errorf("conn.%s duration is too large", name)
 		}
 		dur = time.Duration(sec) * time.Second
-	} else if args[0].Kind == runtime.KindFloat {
-		f := args[0].F
-		if f <= 0 {
-			return 0, fmt.Errorf("conn.%s requires a positive number of seconds", name)
-		}
-		dur = time.Duration(f * float64(time.Second))
 	} else {
 		return 0, fmt.Errorf("conn.%s requires a positive number of seconds", name)
 	}
@@ -243,13 +252,13 @@ func wrapConn(c net.Conn) runtime.Value {
 	// read_all_timeout is the bounded variant; read_all remains an
 	// intentionally blocking EOF-delimited read for stream callers.
 	put("read_all_timeout", 1, func(args []runtime.Value) (runtime.Value, error) {
-		sec, err := runtime.AsInt(args[0])
-		if err != nil || sec <= 0 {
-			return errRes("conn.read_all_timeout(positive_seconds)", "socket"), nil
+		dur, durErr := socketDeadlineDuration(args, "read_all_timeout")
+		if durErr != nil {
+			return errRes(durErr.Error(), "socket"), nil
 		}
 		readMu.Lock()
 		defer readMu.Unlock()
-		previous, version, err := temporaryReadDeadline(time.Now().Add(time.Duration(sec) * time.Second))
+		previous, version, err := temporaryReadDeadline(time.Now().Add(dur))
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
@@ -285,13 +294,16 @@ func wrapConn(c net.Conn) runtime.Value {
 	// write_timeout makes the temporary deadline explicit and restores the
 	// caller's tracked write deadline unless another writer changed it.
 	put("write_timeout", 2, func(args []runtime.Value) (runtime.Value, error) {
-		sec, err := runtime.AsInt(args[1])
-		if err != nil || sec <= 0 {
-			return errRes("conn.write_timeout(data, positive_seconds)", "socket"), nil
+		if len(args) < 2 {
+			return errRes("conn.write_timeout(data, seconds)", "socket"), nil
+		}
+		dur, durErr := socketDeadlineDuration(args[1:], "write_timeout")
+		if durErr != nil {
+			return errRes(durErr.Error(), "socket"), nil
 		}
 		writeMu.Lock()
 		defer writeMu.Unlock()
-		previous, version, err := temporaryWriteDeadline(time.Now().Add(time.Duration(sec) * time.Second))
+		previous, version, err := temporaryWriteDeadline(time.Now().Add(dur))
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
