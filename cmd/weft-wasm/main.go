@@ -5,86 +5,97 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"fmt"
+	"math"
 	"syscall/js"
 	"time"
-
-	"github.com/loreste/weft/internal/compile"
-	"github.com/loreste/weft/internal/parse"
-	"github.com/loreste/weft/internal/runtime"
-	"github.com/loreste/weft/internal/stdlib"
-	"github.com/loreste/weft/internal/vm"
 )
 
 // weftVersion is set at build time via -ldflags "-X main.weftVersion=..."
 // (see the wasm target in the Makefile, which derives it from pkg/weft.Version).
 var weftVersion = "dev-wasm"
 
+var (
+	runWeftFunc      js.Func
+	runWeftAsyncFunc js.Func
+)
+
 func main() {
-	js.Global().Set("runWeft", js.FuncOf(runWeft))
+	runWeftFunc = js.FuncOf(runWeft)
+	runWeftAsyncFunc = js.FuncOf(runWeftAsync)
+	js.Global().Set("runWeft", runWeftFunc)
+	js.Global().Set("runWeftAsync", runWeftAsyncFunc)
 	js.Global().Set("weftVersion", js.ValueOf(weftVersion))
 	// Keep Go runtime alive for JS callbacks
 	select {}
 }
 
-func runWeft(this js.Value, args []js.Value) any {
+type runRequest struct {
+	code    string
+	timeout time.Duration
+}
+
+func parseRunRequest(args []js.Value) (runRequest, error) {
 	if len(args) < 1 {
-		return jsResult("", "missing code argument")
+		return runRequest{}, fmt.Errorf("missing code argument")
+	}
+	if args[0].Type() != js.TypeString {
+		return runRequest{}, fmt.Errorf("code argument must be a string")
 	}
 	code := args[0].String()
-	if len(code) > 100_000 {
-		return jsResult("", "code too large (max 100KB)")
+	if len(code) > maxSourceBytes {
+		return runRequest{}, fmt.Errorf("code too large (max %d bytes)", maxSourceBytes)
 	}
-	timeoutMs := 5000
-	if len(args) >= 2 && args[1].Type() == js.TypeNumber {
-		timeoutMs = args[1].Int()
-		if timeoutMs <= 0 || timeoutMs > 30_000 {
-			timeoutMs = 5000
+	timeout := defaultTimeout
+	if len(args) >= 2 && args[1].Type() != js.TypeUndefined {
+		if args[1].Type() != js.TypeNumber {
+			return runRequest{}, fmt.Errorf("timeout must be a finite number of milliseconds")
 		}
-	}
-
-	var out bytes.Buffer
-	env := runtime.NewEnv()
-	env.Stdout = &out
-	env.Stderr = &out
-	stdlib.Register(env, stdlib.Options{})
-	env.Call = func(fn runtime.Value, callArgs []runtime.Value) (runtime.Value, error) {
-		switch fn.Kind {
-		case runtime.KindBuiltin:
-			return fn.Obj.(*runtime.BuiltinObj).Fn(callArgs)
-		case runtime.KindFunc:
-			return vm.New(env).RunFunc(fn.Obj.(*runtime.FuncObj), callArgs)
-		default:
-			return runtime.Null(), fmt.Errorf("not callable")
+		milliseconds := args[1].Float()
+		if math.IsNaN(milliseconds) || math.IsInf(milliseconds, 0) ||
+			milliseconds <= 0 || milliseconds > float64(maxTimeout/time.Millisecond) ||
+			math.Trunc(milliseconds) != milliseconds {
+			return runRequest{}, fmt.Errorf("timeout must be an integer from 1 to %d milliseconds", maxTimeout/time.Millisecond)
 		}
+		timeout = time.Duration(milliseconds) * time.Millisecond
 	}
-	env.SetShared("args", runtime.List())
+	return runRequest{code: code, timeout: timeout}, nil
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
-	defer cancel()
-	env.Ctx = ctx
-
-	file, perrs := parse.ParseFile("playground.weft", code)
-	if perrs.HasErrors() {
-		return jsResult(out.String(), perrs.Error())
-	}
-	prog, cerrs := compile.CompileFile(file, env)
-	if cerrs.HasErrors() {
-		return jsResult(out.String(), cerrs.Error())
-	}
-	if prog.Main == nil {
-		return jsResult(out.String(), "no main function")
-	}
-	_, err := vm.New(env).RunFunc(prog.Main, nil)
+func runWeft(this js.Value, args []js.Value) any {
+	request, err := parseRunRequest(args)
 	if err != nil {
-		if ctx.Err() != nil {
-			return jsResult(out.String(), "execution timed out")
-		}
-		return jsResult(out.String(), err.Error())
+		return jsResult("", err.Error())
 	}
-	return jsResult(out.String(), "")
+	output, err := runSource(request.code, request.timeout)
+	if err != nil {
+		return jsResult(output, err.Error())
+	}
+	return jsResult(output, "")
+}
+
+// runWeftAsync keeps CPU-bound programs and browser-backed operations off the
+// JavaScript call stack. It resolves with the same result shape as runWeft.
+func runWeftAsync(this js.Value, args []js.Value) any {
+	request, err := parseRunRequest(args)
+	if err != nil {
+		return jsResult("", err.Error())
+	}
+
+	executor := js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
+		resolve := promiseArgs[0]
+		go func() {
+			output, runErr := runSourceMode(request.code, request.timeout, true)
+			message := ""
+			if runErr != nil {
+				message = runErr.Error()
+			}
+			resolve.Invoke(jsResult(output, message))
+		}()
+		return nil
+	})
+	defer executor.Release()
+	return js.Global().Get("Promise").New(executor)
 }
 
 func jsResult(output, errMsg string) js.Value {

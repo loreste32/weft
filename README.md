@@ -192,7 +192,7 @@ Plus: `weft new module|app|cli <name>`, `weft get`, `weft install`, `weft publis
 - Bytecode validation, lex/parse/compile fuzz, VM concurrency stress
 - Race detector + compat corpus in CI
 - Glue benchmarks vs Python (output parity)
-- Browser Wasm playground (29 network/db packages stubbed)
+- Browser Wasm playground with browser `fetch`, a bounded virtual filesystem, async execution, and explicit errors for host-only packages
 - Slim build (`-tags slim`) for smaller binaries
 - See [docs/STABILITY.md](docs/STABILITY.md)
 

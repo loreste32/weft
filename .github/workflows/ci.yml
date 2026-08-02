@@ -121,6 +121,21 @@ jobs:
           WEFT_CLI=/tmp/weft-telecom go test ./pkg/weft \
             -run '^TestESLBlackBoxProcess$' -count=1 -timeout=120s
 
+  wasm:
+    name: wasm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Host adapter tests
+        run: go test ./cmd/weft-wasm -count=1 -timeout=120s
+      - name: Build and run browser integration tests
+        run: make wasm-test
+
   # Multi-GOOS compile + full/slim sizes (no cross-run)
   release-smoke:
     name: release-smoke

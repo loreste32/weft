@@ -126,7 +126,7 @@ func (vm *VM) run() (runtime.Value, error) {
 		// otherwise spin forever without giving cancellation a chance to be
 		// observed. Check between instructions so RunSource can interrupt
 		// CPU-bound scripts as well as I/O-bound ones.
-		if err := vm.Env.Context().Err(); err != nil {
+		if err := vm.Env.ContextErr(); err != nil {
 			return runtime.Null(), err
 		}
 		if vm.fatal != nil {

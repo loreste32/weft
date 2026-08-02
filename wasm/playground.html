@@ -30,7 +30,7 @@
 </head>
 <body>
   <h1>Weft Playground <span class="muted">(client-side Wasm)</span></h1>
-  <p class="muted">Runs entirely in your browser — no server. Network/fs/db packages are stubs.</p>
+  <p class="muted">Runs entirely in your browser — no server. HTTP uses browser fetch (CORS applies); fs is an in-memory virtual filesystem.</p>
   <div class="row">
     <select id="example">
       <option value="hello">Hello</option>
@@ -103,18 +103,26 @@ fn main {
         outEl.textContent = String(e);
       });
 
-    function run() {
+    async function run() {
       if (!weft) return;
-      outEl.className = "";
-      outEl.textContent = "…";
-      const t0 = performance.now();
-      const r = weft.run(codeEl.value, { timeoutMs: 5000 });
-      const ms = (performance.now() - t0).toFixed(1);
-      if (r.error) {
+      runBtn.disabled = true;
+      try {
+        outEl.className = "";
+        outEl.textContent = "…";
+        const t0 = performance.now();
+        const r = await weft.runAsync(codeEl.value, { timeoutMs: 5000 });
+        const ms = (performance.now() - t0).toFixed(1);
+        if (r.error) {
+          outEl.className = "err";
+          outEl.textContent = (r.output ? r.output + "\n" : "") + r.error + "\n(" + ms + " ms)";
+        } else {
+          outEl.textContent = (r.output || "(no output)") + "\n(" + ms + " ms)";
+        }
+      } catch (error) {
         outEl.className = "err";
-        outEl.textContent = (r.output ? r.output + "\n" : "") + r.error + "\n(" + ms + " ms)";
-      } else {
-        outEl.textContent = (r.output || "(no output)") + "\n(" + ms + " ms)";
+        outEl.textContent = String(error);
+      } finally {
+        runBtn.disabled = false;
       }
     }
     runBtn.addEventListener("click", run);

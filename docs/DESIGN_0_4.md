@@ -77,7 +77,11 @@ All existing code works unchanged. The parser accepts `fn add(a, b)` and `fn add
 
 ## 2. Wasm Target
 
-### Current state
+### Historical proposal (superseded)
+
+The original proposal below is retained for design history. The shipped
+implementation uses stock Go WASM, not TinyGo or a second JavaScript VM; see
+[`wasm/README.md`](../wasm/README.md) for the current contract and tests.
 
 - Weft compiles to **bytecode** (`compile.go` → `opcode.go`) run by a **stack VM** (`vm.go`)
 - The VM is a Go `switch` loop over opcodes — not directly compilable to Wasm
@@ -105,7 +109,7 @@ Rewrite the VM in TypeScript. The compiler stays in Go (server-side), generates 
 | Fast startup | Behavior divergence risk |
 | Browser-native APIs available | Huge effort to replicate all stdlib |
 
-**Recommended: Approach A (TinyGo)**
+**Historical recommendation: Approach A (TinyGo)**
 
 Reason: Weft's VM is ~700 lines of Go. The bytecode, compiler, and type checker are pure Go with no CGo dependencies (SQLite is the only CGo dep). TinyGo can compile it all. We stub out network/db stdlib for the browser build and expose a `say()` → console.log bridge.
 
@@ -120,7 +124,9 @@ Reason: Weft's VM is ~700 lines of Go. The bytecode, compiler, and type checker 
 | 5 | Update playground to use Wasm instead of server API | Small |
 | 6 | Stub network/db stdlib to return errors in Wasm mode | Medium |
 
-**Fallback:** If TinyGo can't compile the full interpreter (dependency issues), we keep the server-side playground and mark Wasm as "experimental."
+**Status:** this plan was superseded. The browser target is now built with
+`GOOS=js GOARCH=wasm`, has browser Fetch and virtual-fs implementations, and
+returns explicit errors for host-only packages.
 
 ---
 
@@ -199,7 +205,7 @@ The VS Code extension registers a debug adapter that spawns `weft debug --dap <f
 
 1. **Type annotations** — highest impact for developer experience, catches bugs before runtime
 2. **DAP** — IDE debugging unlocks serious development workflows
-3. **Wasm** — nice-to-have, the playground already works via server-side execution
+3. **Wasm** — shipped; maintain browser capability parity and integration coverage
 
 ## File map
 

@@ -96,7 +96,7 @@ Plus 4 local ML-stack packages in `packages/` (`dataframe`, `embed`, `experiment
 - Package signatures prove key identity, not human ownership (trust store helps)  
 - DAP `evaluate` resolves identifiers only — no expression evaluation, `setVariable`, or restart yet  
 - Windows `sysinfo` memory/disk return "not implemented"; Unix is full  
-- Browser Wasm playground stubs 29 network/db/LLM packages — it is a pure-language sandbox  
+- Browser Wasm playground supports the language core, browser `fetch`, bounded virtual `fs`, and async execution; host-only packages return explicit capability errors
 - Slim build stubs the db/broker packages (clear runtime error, but no build-time warning)  
 - CI executes on Linux only; macOS/Windows are cross-compiled, never run  
 

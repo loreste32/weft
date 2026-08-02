@@ -18,6 +18,8 @@ All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](ht
 - **Router**: dispatch() extracted for testability; wildcard prefix validation; URL-decoded params; HEAD strips body; OPTIONS includes HEAD+OPTIONS in Allow; 405 includes Allow header
 
 ### Added
+
+- **Browser WASM runtime**: async `runAsync()` execution with direct deadline enforcement, browser Fetch-backed HTTP, bounded virtual filesystem, browser-safe OS helpers, robust loader fallback, and CI-backed Node/WASM integration tests
 - **Go-level ESL wire fixture tests**: Content-Length framing, CRLF support, coalesced frames, deadline honoring, black-box process dispatcher test
 - **Socket regression tests**: deadline honoring (~1s not 60s), concurrent read+write, close interrupts blocked read, clear_read_deadline restores blocking
 - **Crypto limit tests**: Argon2id/PBKDF2 parameter bounds at Go level

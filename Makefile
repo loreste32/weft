@@ -1,5 +1,5 @@
 # Weft — weave agents into code
-.PHONY: build build-slim test ci install clean fmt vet doctor examples wasm wasm-serve race-smoke fuzz-smoke bench bench-glue release-smoke
+.PHONY: build build-slim test ci install clean fmt vet doctor examples wasm wasm-test wasm-serve race-smoke fuzz-smoke bench bench-glue release-smoke
 
 PREFIX ?= $(HOME)/.local
 BIN    ?= weft
@@ -40,7 +40,7 @@ examples: build
 	./$(BIN) check examples/fib.weft
 	./$(BIN) train validate
 
-# Browser Wasm runtime (GOOS=js GOARCH=wasm). Pure stdlib only; network/db/fs stubs.
+# Browser Wasm runtime (GOOS=js GOARCH=wasm). Browser fetch + virtual fs; host-only capabilities return errors.
 wasm:
 	mkdir -p wasm
 	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" wasm/wasm_exec.js 2>/dev/null || \
@@ -48,6 +48,10 @@ wasm:
 	GOOS=js GOARCH=wasm go build -ldflags "-X main.weftVersion=$(VERSION)-wasm" -o wasm/weft.wasm ./cmd/weft-wasm
 	@ls -lah wasm/weft.wasm
 	@echo "Open wasm/playground.html via a local server, e.g.: make wasm-serve"
+
+wasm-test: wasm
+	node wasm/weft_test.js
+	node wasm/integration_test.js
 
 wasm-serve: wasm
 	@echo "Serving ./wasm on http://127.0.0.1:8765/playground.html"

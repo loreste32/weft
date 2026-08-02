@@ -40,7 +40,6 @@ func packageElevenLabs(env *runtime.Env) runtime.Value { return stubPkg("elevenl
 func packageEmail(env *runtime.Env) runtime.Value      { return stubPkg("email") }
 func packageGovernor(env *runtime.Env) runtime.Value   { return stubPkg("governor") }
 func packageGraphQL(env *runtime.Env) runtime.Value    { return stubPkg("graphql") }
-func packageHTTP(env *runtime.Env) runtime.Value       { return stubPkg("http") }
 func packageLLM(env *runtime.Env) runtime.Value        { return stubPkg("llm") }
 func packageMCP(env *runtime.Env) runtime.Value        { return stubPkg("mcp") }
 func packageMigrate(env *runtime.Env) runtime.Value    { return stubPkg("migrate") }
@@ -63,4 +62,3 @@ func packageWebRTC(env *runtime.Env) runtime.Value     { return stubPkg("webrtc"
 func packageWS(env *runtime.Env) runtime.Value         { return stubPkg("ws") }
 func packageDNS() runtime.Value                        { return stubPkg("dns") }
 func packageTLS() runtime.Value                        { return stubPkg("tls") }
-func packageOS() runtime.Value                         { return stubPkg("os") }

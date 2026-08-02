@@ -43,6 +43,13 @@ type Env struct {
 	// Ctx is the active execution context (cancel aborts I/O that respects it).
 	// Nil means context.Background().
 	Ctx context.Context
+	// BrowserAsync is true when a js/wasm host has yielded back to the browser
+	// event loop. Browser-backed async stdlib operations reject synchronous
+	// calls because waiting for a JS Promise would deadlock the main thread.
+	BrowserAsync bool
+	// BrowserWasm enables direct deadline checks needed by the single-threaded
+	// browser VM. Native execution relies on context cancellation notifications.
+	BrowserWasm bool
 
 	// Modules
 	ModuleCache map[string]Value // abs path -> module map
@@ -67,6 +74,23 @@ func (e *Env) Context() context.Context {
 		return context.Background()
 	}
 	return e.Ctx
+}
+
+// ContextErr also observes an expired deadline directly. In js/wasm a tight
+// CPU loop can prevent the event loop from delivering the timer notification
+// that normally updates context.WithTimeout, so checking the deadline itself
+// is required for bounded execution there.
+func (e *Env) ContextErr() error {
+	ctx := e.Context()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if e != nil && e.BrowserWasm {
+		if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+			return context.DeadlineExceeded
+		}
+	}
+	return nil
 }
 
 // NewEnv creates an environment with prelude builtins only.

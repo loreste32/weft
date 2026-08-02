@@ -162,6 +162,9 @@ weft check examples/hello.weft
 make build-slim
 make release-smoke
 
+# browser Wasm build, loader checks, and real Node/WASM integration
+make wasm-test
+
 # reference apps (pinned patterns)
 weft test examples/ref_agent_ops
 weft run examples/ref_agent_ops/main.weft -- status
@@ -183,6 +186,7 @@ Workflow: `.github/workflows/ci.yml`
 | `ci` | every PR/push | full `scripts/ci.sh` (incl. bench pair parity) |
 | `reliability` | every PR/push | race, fuzz, compat, format roundtrip, slim, refs, bench parity |
 | `release-smoke` | every PR/push | full/slim sizes + GOOS compile matrix |
+| `wasm` | every PR/push | browser artifact, adapter tests, loader checks, and Node/WASM integration |
 | `fuzz-deep` | weekly schedule + manual | 2m fuzz each target |
 
 Format roundtrip: `go test ./internal/format/ -run TestCompatFormatRoundTrip`.
