@@ -86,10 +86,8 @@ jobs:
             diff -u "/tmp/w-${name}.out" "/tmp/p-${name}.out"
           done
 
-  # Telecom parser tests run here. The dispatcher test (mock TCP server +
-  # spawn) requires Go-level goroutine concurrency and deadlocks in the
-  # single-threaded Weft test runner. It will be enabled when the VM
-  # supports concurrent spawn I/O or when a Go-level test harness exists.
+# Telecom parser tests run here. The full dispatcher suite, including the
+# local mock TCP server and concurrent Weft client, runs in its own job below.
   telecom:
     name: telecom-parser
     runs-on: ubuntu-latest
@@ -105,6 +103,22 @@ jobs:
           go build -o /tmp/weft-telecom ./cmd/weft
           /tmp/weft-telecom mod check packages/telecom
           /tmp/weft-telecom test packages/telecom -q -run parser
+
+  telecom-dispatcher:
+    name: telecom-dispatcher
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run Weft ESL dispatcher tests
+        run: |
+          go build -o /tmp/weft-telecom ./cmd/weft
+          /tmp/weft-telecom mod check packages/telecom
+          /tmp/weft-telecom test packages/telecom -q
 
   # Multi-GOOS compile + full/slim sizes (no cross-run)
   release-smoke:

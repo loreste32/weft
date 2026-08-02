@@ -1,0 +1,64 @@
+use "./esl.weft" as esl
+use socket
+
+fn blackbox_esl_server(listener) -> Result[any] {
+    conn := listener.accept()?
+    conn.set_read_deadline(2)?
+    conn.write("Content-Type: auth/request\n\n")?
+    auth := conn.read()?
+    ensure(str.find(auth, "auth pw") >= 0, "mock server did not receive authentication")?
+
+    // Authentication reply and event are deliberately coalesced.
+    conn.write("Content-Type: command/reply\nReply-Text: +OK accepted\n\nContent-Type: text/event-json\nContent-Length: 16\n\n{\"Event\":\"AUTH\"}")?
+
+    let mut commands = ""
+    while str.find(commands, "api one") < 0 || str.find(commands, "api two") < 0 {
+        commands = commands + conn.read()?
+    }
+    conn.clear_read_deadline()?
+
+    // FIRST arrives before both command replies in one write.
+    conn.write("Content-Type: text/event-json\nContent-Length: 17\n\n{\"Event\":\"FIRST\"}Content-Type: command/reply\nReply-Text: +OK one\nContent-Length: 6\n\none-okContent-Type: command/reply\nReply-Text: +OK two\nContent-Length: 6\n\ntwo-ok")?
+
+    conn.set_read_deadline(2)?
+    marker := conn.read()?
+    ensure(str.find(marker, "api timeout-marker") >= 0, "timeout cancellation marker was not received")?
+    conn.clear_read_deadline()?
+    conn.write("Content-Type: text/event-json\nContent-Length: 18\n\n{\"Event\":\"SECOND\"}Content-Type: command/reply\nReply-Text: +OK marker\nContent-Length: 9\n\nmarker-ok")?
+    conn.close()?
+    Ok(null)
+}
+
+fn blackbox_command(conn, command) -> Result[any] {
+    esl.api(conn, command)
+}
+
+fn test_dispatcher_blackbox() {
+    listener := socket.listen("tcp", "127.0.0.1:0")?
+    parts := str.split(listener.addr, ":")
+    port := parts[1]
+    server := spawn(blackbox_esl_server, listener)
+    conn := esl.connect("127.0.0.1", port, "pw")?
+
+    auth := esl.recv_event(conn)?
+    test.eq(auth.Event, "AUTH")
+
+    one_task := spawn(blackbox_command, conn, "one")
+    two_task := spawn(blackbox_command, conn, "two")
+    first := esl.recv_event(conn)?
+    test.eq(first.Event, "FIRST")
+    one := one_task.await()?
+    two := two_task.await()?
+    test.eq(one, "one-ok")
+    test.eq(two, "two-ok")
+
+    timed := esl.recv_event_timeout(conn, 0.05)
+    test.is_false(timed.ok)
+    marker := esl.api(conn, "timeout-marker")?
+    test.eq(marker, "marker-ok")
+    second := esl.recv_event(conn)?
+    test.eq(second.Event, "SECOND")
+    esl.close(conn)?
+    server.await()?
+    listener.close()?
+}
