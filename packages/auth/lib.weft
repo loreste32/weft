@@ -19,10 +19,10 @@ pub fn hash_password(password, opts) -> Result[any] {
     mem := if opts != null && opts.memory != null { opts.memory } else { 65536 }
     threads := if opts != null && opts.threads != null { opts.threads } else { 4 }
     key_len := if opts != null && opts.key_len != null { opts.key_len } else { 32 }
-    // bound parameters to prevent DoS
-    ensure(t >= 1 && t <= 100, "argon2id time must be 1-100")?
-    ensure(mem >= 1024 && mem <= 4194304, "argon2id memory must be 1024-4194304 KiB")?
-    ensure(threads >= 1 && threads <= 64, "argon2id threads must be 1-64")?
+    // bounds must match native Go crypto.argon2id limits
+    ensure(t >= 1 && t <= 10, "argon2id time must be 1-10")?
+    ensure(mem >= 8192 && mem <= 262144, "argon2id memory must be 8192-262144 KiB (8-256 MiB)")?
+    ensure(threads >= 1 && threads <= 16, "argon2id threads must be 1-16")?
     ensure(key_len >= 16 && key_len <= 64, "argon2id key_len must be 16-64")?
     hash := crypto.argon2id(password, salt, t, mem, threads, key_len)
     Ok({
@@ -58,6 +58,10 @@ pub fn verify_password(password, record) -> Result[any] {
     ensure(record.hash != null && record.salt != null, "malformed password record")?
     alg := if record.algorithm != null { record.algorithm } else { "argon2id" }
     if alg == "argon2id" {
+        // Validate version
+        if record.version != null {
+            ensure(record.version == 19, "unsupported Argon2 version")?
+        }
         // Bound params before calling native function
         t := if record.time != null { record.time } else { 1 }
         mem := if record.memory != null { record.memory } else { 65536 }
@@ -96,14 +100,20 @@ pub fn verify_password(password, record) -> Result[any] {
 pub fn needs_rehash(record) {
     if record == null { return true }
     if record.algorithm == null { return true }
-    // non-argon2id always needs rehash
     if record.algorithm != "argon2id" { return true }
-    // check all stored params against current defaults
-    if record.version == null || record.version < 19 { return true }
+    // validate all stored params against current policy
+    if record.version == null || record.version != 19 { return true }
     if record.time == null || record.time < 1 { return true }
     if record.memory == null || record.memory < 65536 { return true }
     if record.threads == null || record.threads < 4 { return true }
     if record.key_len == null || record.key_len < 32 { return true }
+    // validate salt and hash exist with expected lengths
+    if record.salt == null || len(record.salt) < 16 { return true }
+    if record.hash == null || len(record.hash) < 32 { return true }
+    // reject excessive params (possible DoS record)
+    if record.time > 10 { return true }
+    if record.memory > 262144 { return true }
+    if record.threads > 16 { return true }
     false
 }
 

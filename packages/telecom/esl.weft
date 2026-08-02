@@ -58,13 +58,23 @@ fn _parse_headers(raw) -> Result[any] {
         ensure(count <= _max_header_count(), "ESL: too many headers")?
         idx := str.find(trimmed, ": ")
         if idx >= 0 {
+            // Normalize header names for case-insensitive matching
             key := str.slice(trimmed, 0, idx)
+            // Use original case for storage but check Content-Length case-insensitively
             val := str.slice(trimmed, idx + 2)
-            // Reject duplicate Content-Length
-            if key == "Content-Length" && headers["Content-Length"] != null {
-                return Err("ESL: duplicate Content-Length header")
+            lower_key := str.lower(key)
+            if lower_key == "content-length" {
+                if headers["Content-Length"] != null {
+                    return Err("ESL: duplicate Content-Length header")
+                }
+                headers["Content-Length"] = val
+            } else if lower_key == "content-type" {
+                headers["Content-Type"] = val
+            } else if lower_key == "reply-text" {
+                headers["Reply-Text"] = val
+            } else {
+                headers[key] = val
             }
-            headers[key] = val
         }
     }
     Ok(headers)
@@ -106,7 +116,8 @@ fn _read_frame(conn, buf) -> Result[any] {
                 return Err("ESL: connection closed while reading body")
             }
             remaining = remaining + chunk
-            ensure(len(remaining) <= _max_body_size() + 4096, "ESL: body buffer overflow")?
+            // Allow buffer up to body size + reasonable TCP overshoot (next frame headers)
+            ensure(len(remaining) <= _max_body_size() + _max_header_size(), "ESL: body buffer overflow")?
         }
         body := str.slice(remaining, 0, needed)
         leftover := str.slice(remaining, needed)
@@ -238,40 +249,35 @@ pub fn recv_event(e) -> Result[any] {
 }
 
 pub fn recv_event_timeout(e, timeout_sec) -> Result[any] {
-    // Return queued event immediately if available
     if len(e._events) > 0 {
         return recv_event(e)
     }
-    // Set a socket read deadline, then try reading frames
+    // Set ONE absolute deadline — do not restart on non-event frames
     e._conn.set_read_deadline(timeout_sec)?
     let mut buf = e._buf
-    while true {
-        // _read_frame will call conn.read() which will timeout via the deadline
+    let mut timed_out = false
+    while !timed_out {
         frame := _read_frame(e._conn, buf)
-        // Check if it's a timeout error
         repr := "" + frame
         if str.contains(repr, "timeout") {
-            // Reset deadline for future reads
-            e._conn.set_read_deadline(60)?
-            return Err("ESL: recv_event timeout after " + str(timeout_sec) + "s")
+            timed_out = true
+            continue
         }
         if !frame.ok {
-            e._conn.set_read_deadline(60)?
+            e._conn.clear_read_deadline()?
             return frame
         }
         f := frame.value
         buf = f._buf
         e._buf = buf
-        // Reset deadline after successful read
-        e._conn.set_read_deadline(60)?
         if _is_event(f) {
+            e._conn.clear_read_deadline()?
             return Ok(_parse_event_body(f))
         }
-        // Non-event frame during timeout wait — discard and retry
-        // Re-set the deadline for remaining time
-        // ponytail: proper remaining-time tracking needs monotonic clock
-        e._conn.set_read_deadline(timeout_sec)?
+        // Non-event frame: do NOT restart the deadline, it's still running
     }
+    e._conn.clear_read_deadline()?
+    Err("ESL: recv_event timeout after " + str(timeout_sec) + "s")
 }
 
 // ──────────────────────────────────────────────

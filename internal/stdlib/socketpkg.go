@@ -86,7 +86,8 @@ func checkDialAddress(address string) error {
 }
 
 func wrapConn(c net.Conn) runtime.Value {
-	var mu sync.Mutex
+	var readMu, writeMu sync.Mutex
+	mu := &readMu // backward compat for deadline ops
 	m := runtime.NewMap()
 	mo := m.Obj.(*runtime.MapObj)
 	put := func(name string, arity int, fn runtime.Builtin) {
@@ -105,20 +106,20 @@ func wrapConn(c net.Conn) runtime.Value {
 			}
 		}
 		buf := make([]byte, n)
-		mu.Lock()
+		readMu.Lock()
 		_ = c.SetReadDeadline(time.Now().Add(60 * time.Second))
 		nr, err := c.Read(buf)
-		mu.Unlock()
+		readMu.Unlock()
 		if err != nil && err != io.EOF {
 			return errRes(err.Error(), "socket"), nil
 		}
 		return runtime.Ok(runtime.Str(string(buf[:nr]))), nil
 	})
 	put("read_all", 0, func(args []runtime.Value) (runtime.Value, error) {
-		mu.Lock()
+		readMu.Lock()
 		_ = c.SetReadDeadline(time.Now().Add(60 * time.Second))
 		b, err := io.ReadAll(io.LimitReader(c, 32<<20))
-		mu.Unlock()
+		readMu.Unlock()
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
@@ -128,24 +129,27 @@ func wrapConn(c net.Conn) runtime.Value {
 		if len(args) < 1 {
 			return errRes("conn.write(data)", "socket"), nil
 		}
-		mu.Lock()
+		writeMu.Lock()
 		_ = c.SetWriteDeadline(time.Now().Add(60 * time.Second))
 		nw, err := c.Write([]byte(args[0].String()))
-		mu.Unlock()
+		writeMu.Unlock()
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
 		return runtime.Ok(runtime.Int(int64(nw))), nil
 	})
 	put("close", 0, func(args []runtime.Value) (runtime.Value, error) {
-		mu.Lock()
+		readMu.Lock()
+		writeMu.Lock()
 		err := c.Close()
-		mu.Unlock()
+		writeMu.Unlock()
+		readMu.Unlock()
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
 		return runtime.Ok(runtime.Unit()), nil
 	})
+	_ = mu // suppress unused
 	put("set_deadline", 1, func(args []runtime.Value) (runtime.Value, error) {
 		sec := int64(30)
 		if len(args) >= 1 {
@@ -153,9 +157,9 @@ func wrapConn(c net.Conn) runtime.Value {
 				sec = n
 			}
 		}
-		mu.Lock()
+		readMu.Lock()
 		err := c.SetDeadline(time.Now().Add(time.Duration(sec) * time.Second))
-		mu.Unlock()
+		readMu.Unlock()
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
@@ -168,9 +172,18 @@ func wrapConn(c net.Conn) runtime.Value {
 				sec = n
 			}
 		}
-		mu.Lock()
+		readMu.Lock()
 		err := c.SetReadDeadline(time.Now().Add(time.Duration(sec) * time.Second))
-		mu.Unlock()
+		readMu.Unlock()
+		if err != nil {
+			return errRes(err.Error(), "socket"), nil
+		}
+		return runtime.Ok(runtime.Unit()), nil
+	})
+	put("clear_read_deadline", 0, func(args []runtime.Value) (runtime.Value, error) {
+		readMu.Lock()
+		err := c.SetReadDeadline(time.Time{})
+		readMu.Unlock()
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
@@ -191,12 +204,11 @@ func wrapConn(c net.Conn) runtime.Value {
 			}
 		}
 		buf := make([]byte, n)
-		mu.Lock()
+		readMu.Lock()
 		_ = c.SetReadDeadline(time.Now().Add(time.Duration(sec) * time.Second))
 		nr, err := c.Read(buf)
-		// restore to no deadline
 		_ = c.SetReadDeadline(time.Time{})
-		mu.Unlock()
+		readMu.Unlock()
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				return errRes("timeout", "socket"), nil

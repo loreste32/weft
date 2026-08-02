@@ -1,0 +1,150 @@
+use "./lib.weft" as auth
+
+fn test_hash_and_verify {
+    record := auth.hash_password("mysecurepassword123", null)?
+    test.eq(record.algorithm, "argon2id")
+    test.eq(record.version, 19)
+    test.is_true(record.time != null)
+    test.is_true(record.memory != null)
+    test.is_true(record.threads != null)
+    test.is_true(record.key_len != null)
+    test.is_true(len(record.hash) > 0)
+    test.is_true(len(record.salt) > 0)
+    // verify should succeed
+    result := auth.verify_password("mysecurepassword123", record)?
+    test.is_true(result)
+    // wrong password should fail
+    wrong := auth.verify_password("wrongpassword1234", record)?
+    test.is_false(wrong)
+}
+
+fn test_hash_pbkdf2 {
+    record := auth.hash_password_pbkdf2("mysecurepassword123", null)?
+    test.eq(record.algorithm, "pbkdf2")
+    test.eq(record.iterations, 100000)
+    result := auth.verify_password("mysecurepassword123", record)?
+    test.is_true(result)
+}
+
+fn test_short_password_rejected {
+    r := auth.hash_password("short", null)
+    test.is_false(r.ok)
+}
+
+fn test_unknown_algorithm_rejected {
+    record := {"hash": "abc", "salt": "def", "algorithm": "scrypt"}
+    r := auth.verify_password("password12345678", record)
+    test.is_false(r.ok)
+}
+
+fn test_malformed_record_rejected {
+    // null hash
+    r1 := auth.verify_password("password12345678", {"hash": null, "salt": "x", "algorithm": "argon2id"})
+    test.is_false(r1.ok)
+    // null salt
+    r2 := auth.verify_password("password12345678", {"hash": "x", "salt": null, "algorithm": "argon2id"})
+    test.is_false(r2.ok)
+    // null record
+    r3 := auth.verify_password("password12345678", null)
+    test.is_false(r3.ok)
+}
+
+fn test_unsupported_argon2_version {
+    record := {
+        "hash": "abc", "salt": "def", "algorithm": "argon2id",
+        "version": 99,
+    }
+    r := auth.verify_password("password12345678", record)
+    test.is_false(r.ok)
+}
+
+fn test_needs_rehash_null {
+    test.is_true(auth.needs_rehash(null))
+}
+
+fn test_needs_rehash_non_argon2 {
+    record := {"algorithm": "pbkdf2", "hash": "x", "salt": "y"}
+    test.is_true(auth.needs_rehash(record))
+}
+
+fn test_needs_rehash_good_record {
+    record := auth.hash_password("mysecurepassword123", null)?
+    test.is_false(auth.needs_rehash(record))
+}
+
+fn test_needs_rehash_low_memory {
+    record := {
+        "algorithm": "argon2id", "version": 19,
+        "hash": "x", "salt": "y1234567890abcdef",
+        "time": 1, "memory": 8192, "threads": 4, "key_len": 32,
+    }
+    test.is_true(auth.needs_rehash(record))
+}
+
+fn test_needs_rehash_excessive_params {
+    record := {
+        "algorithm": "argon2id", "version": 19,
+        "hash": "x", "salt": "y1234567890abcdef",
+        "time": 1, "memory": 999999, "threads": 4, "key_len": 32,
+    }
+    test.is_true(auth.needs_rehash(record))
+}
+
+fn test_needs_rehash_missing_salt {
+    record := {
+        "algorithm": "argon2id", "version": 19,
+        "hash": "x", "salt": null,
+        "time": 1, "memory": 65536, "threads": 4, "key_len": 32,
+    }
+    test.is_true(auth.needs_rehash(record))
+}
+
+fn test_needs_rehash_wrong_version {
+    record := {
+        "algorithm": "argon2id", "version": 18,
+        "hash": "x", "salt": "y1234567890abcdef",
+        "time": 1, "memory": 65536, "threads": 4, "key_len": 32,
+    }
+    test.is_true(auth.needs_rehash(record))
+}
+
+fn test_hmac_sign_verify {
+    sig := auth.hmac_sign("mykey", "mymessage")?
+    test.is_true(len(sig) > 0)
+    ok := auth.hmac_verify("mykey", "mymessage", sig)?
+    test.is_true(ok)
+    bad := auth.hmac_verify("mykey", "mymessage", "fakesig")?
+    test.is_false(bad)
+}
+
+fn test_generate_token {
+    t1 := auth.generate_token(null)
+    t2 := auth.generate_token(null)
+    test.is_true(len(t1) > 0)
+    test.is_true(t1 != t2)
+}
+
+fn test_basic_auth_roundtrip {
+    header := auth.basic_auth_header("alice", "secret")
+    test.is_true(str.starts_with(header, "Basic "))
+    parsed := auth.parse_basic_auth(header)?
+    test.eq(parsed.username, "alice")
+    test.eq(parsed.password, "secret")
+}
+
+fn test_bearer_roundtrip {
+    header := auth.bearer_header("tok123")
+    test.eq(header, "Bearer tok123")
+    parsed := auth.parse_bearer(header)?
+    test.eq(parsed, "tok123")
+}
+
+fn test_parse_basic_auth_invalid {
+    r := auth.parse_basic_auth("NotBasic xxx")
+    test.is_false(r.ok)
+}
+
+fn test_parse_bearer_invalid {
+    r := auth.parse_bearer("NotBearer xxx")
+    test.is_false(r.ok)
+}
