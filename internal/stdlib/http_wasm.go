@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall/js"
 	"time"
@@ -19,6 +20,8 @@ type browserHTTPResponse struct {
 	body    string
 	headers map[string]string
 }
+
+const maxBrowserHTTPBodyBytes = 32 << 20
 
 type browserHTTPResult struct {
 	response browserHTTPResponse
@@ -229,6 +232,7 @@ func browserFetch(ctx context.Context, method, url, body string, headers map[str
 	hasTimeoutFunc := false
 	timedOut := false
 	var textResolve *js.Func
+	var bodyRead *js.Func
 	var resolve js.Func
 	var reject js.Func
 	cleanup := func() {
@@ -243,6 +247,9 @@ func browserFetch(ctx context.Context, method, url, body string, headers map[str
 			reject.Release()
 			if textResolve != nil {
 				textResolve.Release()
+			}
+			if bodyRead != nil {
+				bodyRead.Release()
 			}
 			if hasTimeoutFunc {
 				timeoutFunc.Release()
@@ -287,11 +294,65 @@ func browserFetch(ctx context.Context, method, url, body string, headers map[str
 			jsHeaders.Call("forEach", headerFn)
 			headerFn.Release()
 		}
+		if jsHeaders.Type() != js.TypeUndefined && jsHeaders.Get("get").Type() == js.TypeFunction {
+			contentLength := strings.TrimSpace(jsHeaders.Call("get", "content-length").String())
+			if contentLength != "" {
+				if size, parseErr := strconv.ParseInt(contentLength, 10, 64); parseErr == nil && size > maxBrowserHTTPBodyBytes {
+					send(browserHTTPResult{err: fmt.Errorf("http response body exceeds %d MiB limit", maxBrowserHTTPBodyBytes>>20)})
+					return nil
+				}
+			}
+		}
+		readableBody := response.Get("body")
+		textDecoder := js.Global().Get("TextDecoder")
+		if readableBody.Type() == js.TypeObject && readableBody.Get("getReader").Type() == js.TypeFunction && textDecoder.Type() == js.TypeFunction {
+			reader := readableBody.Call("getReader")
+			decoder := textDecoder.New()
+			decodeOptions := js.Global().Get("Object").New()
+			decodeOptions.Set("stream", true)
+			var bodyText strings.Builder
+			var bytesRead int64
+			var readFn js.Func
+			readFn = js.FuncOf(func(this js.Value, values []js.Value) any {
+				if len(values) < 1 {
+					send(browserHTTPResult{err: fmt.Errorf("http response body read returned no result")})
+					return nil
+				}
+				readResult := values[0]
+				if readResult.Get("done").Bool() {
+					bodyText.WriteString(decoder.Call("decode").String())
+					send(browserHTTPResult{response: browserHTTPResponse{
+						status:  int64(response.Get("status").Int()),
+						body:    bodyText.String(),
+						headers: headersOut,
+					}})
+					return nil
+				}
+				chunk := readResult.Get("value")
+				chunkBytes := int64(chunk.Get("byteLength").Int())
+				if chunkBytes < 0 || bytesRead > maxBrowserHTTPBodyBytes-chunkBytes {
+					_ = reader.Call("cancel")
+					send(browserHTTPResult{err: fmt.Errorf("http response body exceeds %d MiB limit", maxBrowserHTTPBodyBytes>>20)})
+					return nil
+				}
+				bytesRead += chunkBytes
+				bodyText.WriteString(decoder.Call("decode", chunk, decodeOptions).String())
+				reader.Call("read").Call("then", readFn).Call("catch", reject)
+				return nil
+			})
+			bodyRead = &readFn
+			reader.Call("read").Call("then", readFn).Call("catch", reject)
+			return nil
+		}
 		textPromise := response.Call("text")
 		textFn := js.FuncOf(func(this js.Value, values []js.Value) any {
 			bodyText := ""
 			if len(values) > 0 {
 				bodyText = values[0].String()
+			}
+			if len([]byte(bodyText)) > maxBrowserHTTPBodyBytes {
+				send(browserHTTPResult{err: fmt.Errorf("http response body exceeds %d MiB limit", maxBrowserHTTPBodyBytes>>20)})
+				return nil
 			}
 			status := int64(response.Get("status").Int())
 			send(browserHTTPResult{response: browserHTTPResponse{status: status, body: bodyText, headers: headersOut}})

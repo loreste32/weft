@@ -82,6 +82,8 @@ paths := fs.glob("**/*.weft")
 
 Common: `read`, `write`, `append`, `exists`, `list`, `mkdir`, `join`, `base`, `dir`, `ext`, `glob`, `rglob`, `walk`, `temp_file`, `cwd`, `abs`, `rel`.
 
+In browser Wasm, `fs` is an in-memory virtual filesystem. Paths cannot escape its root or exceed 4096 characters. The limits are 16 MiB per file, 64 MiB total file data, 10,000 files, 5,000 directories, and 15,000 combined entries.
+
 ### http
 
 ```weft

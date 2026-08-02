@@ -33,8 +33,8 @@ The global functions `runWeft(code, timeoutMs?)` and `runWeftAsync(code, timeout
 Implemented browser capabilities:
 
 - language core, type annotations, bytecode validation, lists/maps, JSON, strings, math, time, regular expressions, and pure standard-library packages;
-- `http.get`, `post`, `put`, `patch`, `delete`, `request`, `fetch`, and `get_json` through the browser Fetch API when called from `runAsync()`; normal browser CORS and CSP rules apply;
-- `fs` through a process-local virtual filesystem, including read/write/list/stat/walk/temp-file operations; files are not persisted to the user’s disk and are capped at 16 MiB per file and 64 MiB total;
+- `http.get`, `post`, `put`, `patch`, `delete`, `request`, `fetch`, and `get_json` through the browser Fetch API when called from `runAsync()`; normal browser CORS and CSP rules apply, and response bodies are capped at 32 MiB;
+- `fs` through a process-local virtual filesystem, including read/write/list/stat/walk/temp-file operations. Paths are confined to the virtual root and capped at 4096 characters; storage is capped at 16 MiB per file, 64 MiB total, 10,000 files, 5,000 directories, and 15,000 combined entries. Files are not persisted to the user’s disk;
 - browser-safe `os` environment and path helpers. Browser process identity is represented by neutral values.
 
 Host-only packages return explicit capability errors in this target. This includes databases, brokers, raw sockets, DNS/TLS inspection, shell/process control, server listeners, packet capture, supervisor/cluster operations, and external LLM/provider integrations. `web` cannot listen in a browser; use the Fetch API from browser code or the native runtime for servers.
