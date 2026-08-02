@@ -87,7 +87,88 @@ func checkDialAddress(address string) error {
 
 func wrapConn(c net.Conn) runtime.Value {
 	var readMu, writeMu sync.Mutex
-	mu := &readMu // backward compat for deadline ops
+	var deadlineMu sync.Mutex
+	var readDeadline, writeDeadline time.Time
+	var readVersion, writeVersion uint64
+
+	setReadDeadline := func(deadline time.Time) error {
+		deadlineMu.Lock()
+		defer deadlineMu.Unlock()
+		if err := c.SetReadDeadline(deadline); err != nil {
+			return err
+		}
+		readDeadline = deadline
+		readVersion++
+		return nil
+	}
+	setWriteDeadline := func(deadline time.Time) error {
+		deadlineMu.Lock()
+		defer deadlineMu.Unlock()
+		if err := c.SetWriteDeadline(deadline); err != nil {
+			return err
+		}
+		writeDeadline = deadline
+		writeVersion++
+		return nil
+	}
+	setDeadline := func(deadline time.Time) error {
+		deadlineMu.Lock()
+		defer deadlineMu.Unlock()
+		if err := c.SetDeadline(deadline); err != nil {
+			return err
+		}
+		readDeadline = deadline
+		writeDeadline = deadline
+		readVersion++
+		writeVersion++
+		return nil
+	}
+	temporaryReadDeadline := func(deadline time.Time) (time.Time, uint64, error) {
+		deadlineMu.Lock()
+		defer deadlineMu.Unlock()
+		previous := readDeadline
+		if err := c.SetReadDeadline(deadline); err != nil {
+			return time.Time{}, 0, err
+		}
+		readVersion++
+		return previous, readVersion, nil
+	}
+	restoreReadDeadline := func(previous time.Time, version uint64) error {
+		deadlineMu.Lock()
+		defer deadlineMu.Unlock()
+		if readVersion != version {
+			return nil
+		}
+		if err := c.SetReadDeadline(previous); err != nil {
+			return err
+		}
+		readDeadline = previous
+		readVersion++
+		return nil
+	}
+	temporaryWriteDeadline := func(deadline time.Time) (time.Time, uint64, error) {
+		deadlineMu.Lock()
+		defer deadlineMu.Unlock()
+		previous := writeDeadline
+		if err := c.SetWriteDeadline(deadline); err != nil {
+			return time.Time{}, 0, err
+		}
+		writeVersion++
+		return previous, writeVersion, nil
+	}
+	restoreWriteDeadline := func(previous time.Time, version uint64) error {
+		deadlineMu.Lock()
+		defer deadlineMu.Unlock()
+		if writeVersion != version {
+			return nil
+		}
+		if err := c.SetWriteDeadline(previous); err != nil {
+			return err
+		}
+		writeDeadline = previous
+		writeVersion++
+		return nil
+	}
 	m := runtime.NewMap()
 	mo := m.Obj.(*runtime.MapObj)
 	put := func(name string, arity int, fn runtime.Builtin) {
@@ -107,9 +188,13 @@ func wrapConn(c net.Conn) runtime.Value {
 		}
 		buf := make([]byte, n)
 		readMu.Lock()
-		// Do NOT set a deadline here — honor whatever the caller set via
-		// set_read_deadline. If no deadline is set, this blocks indefinitely
-		// (which is correct for ESL event loops and similar long-lived reads).
+		// If the caller set a read deadline, honor it. Otherwise apply a
+		// 60-second default so reads never block indefinitely.
+		deadlineMu.Lock()
+		if readDeadline.IsZero() {
+			_ = c.SetReadDeadline(time.Now().Add(60 * time.Second))
+		}
+		deadlineMu.Unlock()
 		nr, err := c.Read(buf)
 		readMu.Unlock()
 		if err != nil {
@@ -124,19 +209,51 @@ func wrapConn(c net.Conn) runtime.Value {
 	})
 	put("read_all", 0, func(args []runtime.Value) (runtime.Value, error) {
 		readMu.Lock()
-		b, err := io.ReadAll(io.LimitReader(c, 32<<20))
+		b, err := io.ReadAll(io.LimitReader(c, (32<<20)+1))
 		readMu.Unlock()
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
+		if len(b) > 32<<20 {
+			return errRes("conn.read_all exceeded 32MB limit", "socket"), nil
+		}
 		return runtime.Ok(runtime.Str(string(b))), nil
 	})
+	// read_all_timeout is the bounded variant; read_all remains an
+	// intentionally blocking EOF-delimited read for stream callers.
+	put("read_all_timeout", 1, func(args []runtime.Value) (runtime.Value, error) {
+		sec, err := runtime.AsInt(args[0])
+		if err != nil || sec <= 0 {
+			return errRes("conn.read_all_timeout(positive_seconds)", "socket"), nil
+		}
+		readMu.Lock()
+		defer readMu.Unlock()
+		previous, version, err := temporaryReadDeadline(time.Now().Add(time.Duration(sec) * time.Second))
+		if err != nil {
+			return errRes(err.Error(), "socket"), nil
+		}
+		b, readErr := io.ReadAll(io.LimitReader(c, (32<<20)+1))
+		restoreErr := restoreReadDeadline(previous, version)
+		if readErr != nil {
+			if netErr, ok := readErr.(net.Error); ok && netErr.Timeout() {
+				return errRes("timeout", "socket"), nil
+			}
+			return errRes(readErr.Error(), "socket"), nil
+		}
+		if len(b) > 32<<20 {
+			return errRes("conn.read_all_timeout exceeded 32MB limit", "socket"), nil
+		}
+		if restoreErr != nil {
+			return errRes(restoreErr.Error(), "socket"), nil
+		}
+		return runtime.Ok(runtime.Str(string(b))), nil
+	})
+
 	put("write", 1, func(args []runtime.Value) (runtime.Value, error) {
 		if len(args) < 1 {
 			return errRes("conn.write(data)", "socket"), nil
 		}
 		writeMu.Lock()
-		_ = c.SetWriteDeadline(time.Now().Add(60 * time.Second))
 		nw, err := c.Write([]byte(args[0].String()))
 		writeMu.Unlock()
 		if err != nil {
@@ -144,6 +261,33 @@ func wrapConn(c net.Conn) runtime.Value {
 		}
 		return runtime.Ok(runtime.Int(int64(nw))), nil
 	})
+	// write_timeout makes the temporary deadline explicit and restores the
+	// caller's tracked write deadline unless another writer changed it.
+	put("write_timeout", 2, func(args []runtime.Value) (runtime.Value, error) {
+		sec, err := runtime.AsInt(args[1])
+		if err != nil || sec <= 0 {
+			return errRes("conn.write_timeout(data, positive_seconds)", "socket"), nil
+		}
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		previous, version, err := temporaryWriteDeadline(time.Now().Add(time.Duration(sec) * time.Second))
+		if err != nil {
+			return errRes(err.Error(), "socket"), nil
+		}
+		nw, writeErr := c.Write([]byte(args[0].String()))
+		restoreErr := restoreWriteDeadline(previous, version)
+		if writeErr != nil {
+			if netErr, ok := writeErr.(net.Error); ok && netErr.Timeout() {
+				return errRes("timeout", "socket"), nil
+			}
+			return errRes(writeErr.Error(), "socket"), nil
+		}
+		if restoreErr != nil {
+			return errRes(restoreErr.Error(), "socket"), nil
+		}
+		return runtime.Ok(runtime.Int(int64(nw))), nil
+	})
+
 	put("close", 0, func(args []runtime.Value) (runtime.Value, error) {
 		// net.Conn.Close is safe to call concurrently — it interrupts
 		// blocked reads/writes. Do NOT hold readMu (would deadlock if
@@ -154,7 +298,6 @@ func wrapConn(c net.Conn) runtime.Value {
 		}
 		return runtime.Ok(runtime.Unit()), nil
 	})
-	_ = mu // suppress unused
 	put("set_deadline", 1, func(args []runtime.Value) (runtime.Value, error) {
 		sec := int64(30)
 		if len(args) >= 1 {
@@ -162,8 +305,7 @@ func wrapConn(c net.Conn) runtime.Value {
 				sec = n
 			}
 		}
-		// SetDeadline is safe to call concurrently on net.Conn
-		err := c.SetDeadline(time.Now().Add(time.Duration(sec) * time.Second))
+		err := setDeadline(time.Now().Add(time.Duration(sec) * time.Second))
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
@@ -176,15 +318,34 @@ func wrapConn(c net.Conn) runtime.Value {
 				sec = n
 			}
 		}
-		// Safe to call concurrently on net.Conn
-		err := c.SetReadDeadline(time.Now().Add(time.Duration(sec) * time.Second))
+		err := setReadDeadline(time.Now().Add(time.Duration(sec) * time.Second))
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
 		return runtime.Ok(runtime.Unit()), nil
 	})
 	put("clear_read_deadline", 0, func(args []runtime.Value) (runtime.Value, error) {
-		err := c.SetReadDeadline(time.Time{})
+		err := setReadDeadline(time.Time{})
+		if err != nil {
+			return errRes(err.Error(), "socket"), nil
+		}
+		return runtime.Ok(runtime.Unit()), nil
+	})
+	put("set_write_deadline", 1, func(args []runtime.Value) (runtime.Value, error) {
+		sec := int64(30)
+		if len(args) >= 1 {
+			if n, e := runtime.AsInt(args[0]); e == nil {
+				sec = n
+			}
+		}
+		err := setWriteDeadline(time.Now().Add(time.Duration(sec) * time.Second))
+		if err != nil {
+			return errRes(err.Error(), "socket"), nil
+		}
+		return runtime.Ok(runtime.Unit()), nil
+	})
+	put("clear_write_deadline", 0, func(args []runtime.Value) (runtime.Value, error) {
+		err := setWriteDeadline(time.Time{})
 		if err != nil {
 			return errRes(err.Error(), "socket"), nil
 		}
@@ -206,10 +367,13 @@ func wrapConn(c net.Conn) runtime.Value {
 		}
 		buf := make([]byte, n)
 		readMu.Lock()
-		_ = c.SetReadDeadline(time.Now().Add(time.Duration(sec) * time.Second))
+		defer readMu.Unlock()
+		previous, version, deadlineErr := temporaryReadDeadline(time.Now().Add(time.Duration(sec) * time.Second))
+		if deadlineErr != nil {
+			return errRes(deadlineErr.Error(), "socket"), nil
+		}
 		nr, err := c.Read(buf)
-		_ = c.SetReadDeadline(time.Time{})
-		readMu.Unlock()
+		restoreErr := restoreReadDeadline(previous, version)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				return errRes("timeout", "socket"), nil
@@ -217,6 +381,9 @@ func wrapConn(c net.Conn) runtime.Value {
 			if err != io.EOF {
 				return errRes(err.Error(), "socket"), nil
 			}
+		}
+		if restoreErr != nil {
+			return errRes(restoreErr.Error(), "socket"), nil
 		}
 		return runtime.Ok(runtime.Str(string(buf[:nr]))), nil
 	})

@@ -1,5 +1,20 @@
 // auth — authentication utilities for web applications and APIs.
 
+fn _is_hex(s) {
+    if s == null || len(s) == 0 { return false }
+    let mut i = 0
+    while i < len(s) {
+        ch := str.lower(str.slice(s, i, i + 1))
+        if !str.contains("0123456789abcdef", ch) { return false }
+        i = i + 1
+    }
+    true
+}
+
+fn _is_hex_len(s, n) {
+    s != null && len(s) == n && _is_hex(s)
+}
+
 pub fn hmac_sign(key, message) -> Result[any] {
     ensure(len(key) > 0, "key must not be empty")?
     ensure(len(message) > 0, "message must not be empty")?
@@ -71,6 +86,8 @@ pub fn verify_password(password, record) -> Result[any] {
         ensure(mem >= 8192 && mem <= 262144, "argon2id memory out of safe range (8-256 MiB)")?
         ensure(threads >= 1 && threads <= 16, "argon2id threads out of safe range (1-16)")?
         ensure(key_len >= 16 && key_len <= 64, "argon2id key_len out of safe range")?
+        ensure(_is_hex_len(record.salt, 32), "argon2id salt must be exactly 16-byte hexadecimal")?
+        ensure(_is_hex_len(record.hash, key_len * 2), "argon2id hash length/encoding is invalid")?
         expected := crypto.argon2id(password, record.salt, t, mem, threads, key_len)
         return Ok(crypto.equal(expected, record.hash))
     }
@@ -78,11 +95,16 @@ pub fn verify_password(password, record) -> Result[any] {
         iter := if record.iterations != null { record.iterations } else { 100000 }
         ensure(iter >= 10000 && iter <= 10000000, "pbkdf2 iterations out of safe range")?
         key_len := if record.key_len != null { record.key_len } else { 32 }
+        ensure(key_len >= 16 && key_len <= 64, "pbkdf2 key_len out of safe range")?
+        ensure(_is_hex_len(record.salt, 32), "pbkdf2 salt must be exactly 16-byte hexadecimal")?
+        ensure(_is_hex_len(record.hash, key_len * 2), "pbkdf2 hash length/encoding is invalid")?
         expected := crypto.pbkdf2(password, record.salt, iter, key_len)
         return Ok(crypto.equal(expected, record.hash))
     }
     if alg == "sha256-10k" {
         // Legacy format — verify but flag for rehash
+        ensure(_is_hex_len(record.salt, 32), "legacy salt must be exactly 16-byte hexadecimal")?
+        ensure(_is_hex_len(record.hash, 64), "legacy hash must be exactly 32-byte hexadecimal")?
         let mut hash = record.salt + password
         rounds := if record.rounds != null { record.rounds } else { 10000 }
         ensure(rounds >= 1 && rounds <= 100000, "sha256-10k rounds out of range")?
@@ -106,10 +128,10 @@ pub fn needs_rehash(record) {
     if record.time == null || record.time < 1 { return true }
     if record.memory == null || record.memory < 65536 { return true }
     if record.threads == null || record.threads < 4 { return true }
-    if record.key_len == null || record.key_len < 32 { return true }
+    if record.key_len == null || record.key_len < 32 || record.key_len > 64 { return true }
     // validate salt and hash exist with expected lengths
-    if record.salt == null || len(record.salt) < 16 { return true }
-    if record.hash == null || len(record.hash) < 32 { return true }
+    if !_is_hex_len(record.salt, 32) { return true }
+    if !_is_hex_len(record.hash, record.key_len * 2) { return true }
     // reject excessive params (possible DoS record)
     if record.time > 10 { return true }
     if record.memory > 262144 { return true }

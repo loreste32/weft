@@ -10,6 +10,7 @@ fn _max_header_size { 65536 }
 fn _max_body_size { 10485760 }
 fn _max_header_count { 128 }
 fn _max_event_queue { 10000 }
+fn _max_request_queue { 256 }
 
 // ──────────────────────────────────────────────
 // Frame parser
@@ -33,6 +34,7 @@ fn _read_until_delimiter(conn, buf) -> Result[any] {
     while true {
         found := _find_delimiter(b)
         if found != null {
+            ensure(found.idx <= _max_header_size(), "ESL: header block exceeds 64KB limit")?
             before := str.slice(b, 0, found.idx)
             after := str.slice(b, found.idx + found.dlen)
             return Ok({"before": before, "after": after})
@@ -56,12 +58,13 @@ fn _parse_headers(raw) -> Result[any] {
         if trimmed == "" { continue }
         count = count + 1
         ensure(count <= _max_header_count(), "ESL: too many headers")?
-        idx := str.find(trimmed, ": ")
-        if idx >= 0 {
+        idx := str.find(trimmed, ":")
+        ensure(idx > 0, "ESL: malformed header line")?
+        {
             // Normalize header names for case-insensitive matching
-            key := str.slice(trimmed, 0, idx)
+            key := str.trim(str.slice(trimmed, 0, idx))
             // Use original case for storage but check Content-Length case-insensitively
-            val := str.slice(trimmed, idx + 2)
+            val := str.trim(str.slice(trimmed, idx + 1))
             lower_key := str.lower(key)
             if lower_key == "content-length" {
                 if headers["Content-Length"] != null {
@@ -94,10 +97,7 @@ fn _parse_content_length(cl_str) -> Result[any] {
         }
         i = i + 1
     }
-    // Parse via json.parse (safe for digit-only strings)
-    r := json.parse(trimmed)
-    ensure(r.ok, "ESL: invalid Content-Length")?
-    val := r.value
+    val := int.parse(trimmed)?
     ensure(val >= 0 && val <= _max_body_size(), "ESL: Content-Length out of range")?
     Ok(val)
 }
@@ -149,6 +149,173 @@ fn _parse_event_body(frame) {
     frame
 }
 
+fn _reply_ok(value) {
+    {"ok": true, "value": value}
+}
+
+fn _reply_err(message) {
+    {"ok": false, "error": message}
+}
+
+fn _frame_value(frame) {
+    if frame.body != "" && str.contains("" + frame.headers["Content-Type"], "json") {
+        parsed := json.parse(frame.body)
+        if parsed.ok { return parsed.value }
+    }
+    frame.body
+}
+
+// The reader is the only function allowed to call conn.read after connect.
+fn _reader_loop(conn, frames, initial_buf) {
+    let mut buf = initial_buf
+    while true {
+        result := _read_frame(conn, buf)
+        if !result.ok {
+            send(frames, {"kind": "error", "error": "" + result.error})
+            close(frames)
+            return
+        }
+        frame := result.value
+        buf = frame._buf
+        send(frames, frame)
+    }
+}
+
+fn _fail_pending(pending, message) {
+    let mut rest = pending
+    while len(rest) > 0 {
+        request := rest[0]
+        rest = _shift_queue(rest)
+        send(request.reply, _reply_err(message))
+    }
+}
+
+fn _fail_event_waiters(waiters, message) {
+    let mut rest = waiters
+    while len(rest) > 0 {
+        waiter := rest[0]
+        rest = _shift_queue(rest)
+        send(waiter.reply, _reply_err(message))
+    }
+}
+
+// The coordinator owns command writes and all routing state. The reader and
+// coordinator are deliberately separate: socket reads never compete with a
+// command or event consumer, and event-before-reply ordering is preserved.
+fn _coordinator(conn, frames, requests, event_requests, event_cancels) {
+    let mut pending = []
+    let mut events = []
+    let mut waiters = []
+    let mut next_id = 1
+    let mut dead = false
+    let mut dead_error = "ESL: connection closed"
+
+    while true {
+        selected := select_recv([frames, requests, event_requests, event_cancels])
+        if !selected.ok { break }
+        choice := selected.value
+
+        if choice.i == 0 {
+            frame := choice.value
+            if frame.kind == "error" {
+                dead = true
+                dead_error = frame.error
+                _fail_pending(pending, dead_error)
+                _fail_event_waiters(waiters, dead_error)
+                pending = []
+                waiters = []
+                continue
+            }
+            if _is_event(frame) {
+                if len(waiters) > 0 {
+                    waiter := waiters[0]
+                    waiters = _shift_queue(waiters)
+                    send(waiter.reply, _reply_ok(_parse_event_body(frame)))
+                } else {
+                    if len(events) >= _max_event_queue() {
+                        events = _shift_queue(events)
+                    }
+                    events = push(events, frame)
+                }
+            } else if len(pending) > 0 {
+                request := pending[0]
+                pending = _shift_queue(pending)
+                send(request.reply, _reply_ok(_frame_value(frame)))
+            }
+        } else if choice.i == 1 {
+            request := choice.value
+            if dead {
+                send(request.reply, _reply_err(dead_error))
+                continue
+            }
+            pending = push(pending, request)
+            written := conn.write(request.cmd)
+            if !written.ok {
+                pending = _shift_queue(pending)
+                dead = true
+                dead_error = "ESL: write failed: " + written.error
+                send(request.reply, _reply_err(dead_error))
+                _fail_pending(pending, dead_error)
+                pending = []
+            }
+        } else if choice.i == 2 {
+            request := choice.value
+            if dead {
+                send(request.reply, _reply_err(dead_error))
+                if request.ack != null { send(request.ack, {"ok": false, "error": dead_error}) }
+                continue
+            }
+            if len(events) > 0 {
+                event := events[0]
+                events = _shift_queue(events)
+                send(request.reply, _reply_ok(_parse_event_body(event)))
+                if request.ack != null { send(request.ack, {"ok": true, "id": -1}) }
+            } else {
+                id := next_id
+                next_id = next_id + 1
+                waiters = push(waiters, {"id": id, "reply": request.reply})
+                if request.ack != null { send(request.ack, {"ok": true, "id": id}) }
+            }
+        } else {
+            cancel := choice.value
+            let mut remaining = []
+            let mut removed = false
+            for waiter in waiters {
+                if waiter.id == cancel.id {
+                    removed = true
+                } else {
+                    remaining = push(remaining, waiter)
+                }
+            }
+            waiters = remaining
+            send(cancel.ack, {"ok": true, "removed": removed})
+        }
+    }
+}
+
+// parse_frame parses exactly one complete frame from an in-memory buffer.
+// It is useful for protocol tests and for callers that already own a read
+// buffer. The unconsumed suffix is returned as `remaining`.
+pub fn parse_frame(raw) -> Result[any] {
+    found := _find_delimiter(raw)
+    if found == null { return Err("ESL: incomplete header block") }
+    ensure(found.idx <= _max_header_size(), "ESL: header block exceeds 64KB limit")?
+    before := str.slice(raw, 0, found.idx)
+    let mut remaining = str.slice(raw, found.idx + found.dlen)
+    headers := _parse_headers(before)?
+    let mut body = ""
+    content_length := headers["Content-Length"]
+    if content_length != null {
+        needed := _parse_content_length(content_length)?
+        if len(remaining) < needed {
+            return Err("ESL: incomplete frame body")
+        }
+        body = str.slice(remaining, 0, needed)
+        remaining = str.slice(remaining, needed)
+    }
+    Ok({"headers": headers, "body": body, "remaining": remaining})
+}
+
 // ──────────────────────────────────────────────
 // Connection
 // ──────────────────────────────────────────────
@@ -159,19 +326,49 @@ pub fn connect(host, port, password) -> Result[any] {
     pw := if password != null { password } else { "ClueCon" }
     conn := socket.dial("tcp", "$h:$p")?
 
-    frame := _read_frame(conn, "")?
+    frame_result := _read_frame(conn, "")
+    if !frame_result.ok {
+        conn.close()
+        return Err(frame_result.error)
+    }
+    frame := frame_result.value
     ct := frame.headers["Content-Type"]
-    ensure(ct != null && ct == "auth/request", "expected auth/request from FreeSWITCH")?
+    if ct == null || ct != "auth/request" {
+        conn.close()
+        return Err("expected auth/request from FreeSWITCH")
+    }
 
-    conn.write("auth $pw\n\n")?
-    reply := _read_frame(conn, frame._buf)?
+    auth_write := conn.write("auth $pw\n\n")
+    if !auth_write.ok {
+        conn.close()
+        return Err(auth_write.error)
+    }
+    reply_result := _read_frame(conn, frame._buf)
+    if !reply_result.ok {
+        conn.close()
+        return Err(reply_result.error)
+    }
+    reply := reply_result.value
     reply_text := reply.headers["Reply-Text"]
-    ensure(reply_text != null && str.starts_with(reply_text, "+OK"), "ESL auth failed")?
+    if reply_text == null || !str.starts_with(reply_text, "+OK") {
+        conn.close()
+        return Err("ESL auth failed")
+    }
+
+    frames := channel(_max_event_queue())
+    requests := channel(_max_request_queue())
+    event_requests := channel(_max_request_queue())
+    event_cancels := channel(_max_request_queue())
+    spawn(_reader_loop, conn, frames, reply._buf)
+    spawn(_coordinator, conn, frames, requests, event_requests, event_cancels)
 
     Ok({
         "_conn": conn,
         "_buf": reply._buf,
         "_events": [],
+        "_requests": requests,
+        "_event_requests": event_requests,
+        "_event_cancels": event_cancels,
         "_mode": "inbound",
         "host": h,
         "port": p,
@@ -184,6 +381,13 @@ pub fn connect(host, port, password) -> Result[any] {
 // ──────────────────────────────────────────────
 
 pub fn command(e, cmd) -> Result[any] {
+    if e._requests != null {
+        reply := channel(1)
+        send(e._requests, {"cmd": "$cmd\n\n", "reply": reply})
+        result := recv(reply)?
+        if result.ok { return Ok(result.value) }
+        return Err(result.error)
+    }
     e._conn.write("$cmd\n\n")?
     let mut buf = e._buf
     let mut events = e._events
@@ -232,6 +436,13 @@ pub fn myevents(e, uuid) -> Result[any] {
 // ──────────────────────────────────────────────
 
 pub fn recv_event(e) -> Result[any] {
+    if e._event_requests != null {
+        reply := channel(1)
+        send(e._event_requests, {"reply": reply})
+        result := recv(reply)?
+        if result.ok { return Ok(result.value) }
+        return Err(result.error)
+    }
     if len(e._events) > 0 {
         evt := e._events[0]
         e._events = _shift_queue(e._events)
@@ -249,6 +460,33 @@ pub fn recv_event(e) -> Result[any] {
 }
 
 pub fn recv_event_timeout(e, timeout_sec) -> Result[any] {
+    if e._event_requests != null {
+        ensure(timeout_sec != null && timeout_sec > 0, "timeout_sec must be positive")?
+        reply := channel(1)
+        ack := channel(1)
+        send(e._event_requests, {"reply": reply, "ack": ack})
+        registered := recv(ack)?
+        if !registered.ok { return Err(registered.error) }
+        selected := select_recv([reply], timeout_sec * 1000)
+        if selected.ok {
+            result := selected.value.value
+            if result.ok { return Ok(result.value) }
+            return Err(result.error)
+        }
+        cancel_ack := channel(1)
+        send(e._event_cancels, {"id": registered.id, "ack": cancel_ack})
+        recv(cancel_ack)?
+        // Delivery and timeout can race. If the coordinator delivered the
+        // event just before processing cancellation, preserve that result
+        // instead of reporting a false timeout or losing the event.
+        delivered := try_recv(reply)?
+        if delivered.ok {
+            result := delivered.value
+            if result.ok { return Ok(result.value) }
+            return Err(result.error)
+        }
+        return Err("ESL: recv_event timeout after " + str(timeout_sec) + "s")
+    }
     if len(e._events) > 0 {
         return recv_event(e)
     }

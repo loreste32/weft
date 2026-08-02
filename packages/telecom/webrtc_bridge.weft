@@ -1,3 +1,5 @@
+use "./esl.weft" as esl_mod
+
 pub fn signal_server(port, opts) {
     p := if port != null { port } else { 8443 }
     say("WebRTC signaling server on :$p")
@@ -94,9 +96,8 @@ fn originate_sip_leg(esl, dial_string, opts) -> Result[any] {
 
 
 fn esl_api(esl, cmd) -> Result[any] {
-    if esl != null && esl._conn != null {
-        esl._conn.write("api $cmd\n\n")?
-        Ok(esl._conn.read()?)
+    if esl != null && esl._requests != null {
+        esl_mod.api(esl, cmd)
     } else { esl(cmd) }
 }
 
@@ -179,4 +180,3 @@ pub fn click_to_call(originate_fn, from_ep, to_ep, opts) -> Result[any] {
         "status": "originating",
     })
 }
-

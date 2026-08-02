@@ -18,6 +18,10 @@ func TestMemberCatalogMatchesStdlib(t *testing.T) {
 			t.Errorf("bad catalog key %q", key)
 			continue
 		}
+		// conn.* entries are connection object methods, not stdlib packages
+		if pkg == "conn" {
+			continue
+		}
 		if !stdlib.IsPackage(pkg) {
 			t.Errorf("%s: unknown package %q", key, pkg)
 			continue

@@ -108,6 +108,43 @@ fn test_needs_rehash_wrong_version {
     test.is_true(auth.needs_rehash(record))
 }
 
+fn test_stored_argon_encoding_is_strict {
+    good_salt := "00000000000000000000000000000000"
+    bad_hash := "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+    record := {
+        "algorithm": "argon2id",
+        "version": 19,
+        "salt": good_salt,
+        "hash": bad_hash,
+        "time": 1,
+        "memory": 8192,
+        "threads": 1,
+        "key_len": 32,
+    }
+    invalid_hex := auth.verify_password("password12345678", record)
+    test.is_false(invalid_hex.ok)
+
+    record.hash = "00"
+    invalid_length := auth.verify_password("password12345678", record)
+    test.is_false(invalid_length.ok)
+
+    invalid_legacy := auth.verify_password("password12345678", {
+        "algorithm": "sha256-10k",
+        "salt": "x",
+        "hash": "x",
+    })
+    test.is_false(invalid_legacy.ok)
+
+    invalid_pbkdf2 := auth.verify_password("password12345678", {
+        "algorithm": "pbkdf2",
+        "salt": good_salt,
+        "hash": bad_hash,
+        "iterations": 100000,
+        "key_len": 100000,
+    })
+    test.is_false(invalid_pbkdf2.ok)
+}
+
 fn test_hmac_sign_verify {
     sig := auth.hmac_sign("mykey", "mymessage")?
     test.is_true(len(sig) > 0)

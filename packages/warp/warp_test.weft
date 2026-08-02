@@ -471,9 +471,7 @@ fn test_solve_validation_mismatch {
     a := warp.array([1, 2, 3, 4], [2, 2])
     b := warp.array([1, 2, 3], [3])  // wrong size
     r := warp.solve(a, b)
-    // either error or wrong result — b.shape doesn't match
-    // solve checks len(bd) == n, this has 3 != 2, falls to matrix path
-    // matrix path checks b.shape[0] == n which should fail
+    test.is_false(r.ok)
 }
 
 fn test_solve_matrix_rhs {

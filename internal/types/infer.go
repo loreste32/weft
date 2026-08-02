@@ -226,8 +226,9 @@ func (inf *inferrer) installPrelude() {
 	inf.globals["channel"] = tyFn([]*Type{tyAny()}, tyChannel()) // channel() | channel(buf)
 	inf.globals["send"] = tyFn([]*Type{tyChannel(), tyAny()}, tyResult(tyUnit()))
 	inf.globals["recv"] = tyFn([]*Type{tyChannel()}, tyResult(tyAny()))
+	inf.globals["try_recv"] = tyFn([]*Type{tyChannel()}, tyResult(tyAny()))
 	inf.globals["close"] = tyFn([]*Type{tyChannel()}, tyResult(tyUnit()))
-	inf.globals["select_recv"] = tyFn([]*Type{tyList(tyChannel())}, tyResult(tyNamed("select")))
+	inf.globals["select_recv"] = tyFn([]*Type{tyList(tyChannel()), tyAny()}, tyResult(tyNamed("select")))
 }
 
 func importName(d *ast.ImportDecl) string {

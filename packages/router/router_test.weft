@@ -41,3 +41,76 @@ fn test_not_found_handler {
     r = router.not_found(r, fn(req) { {"status": 404, "body": "custom 404"} })
     test.is_true(r.not_found_handler != null)
 }
+
+fn test_dispatch_decodes_params_and_runs_middleware_in_order {
+    let mut r = router.new(null)
+    r = router.use_middleware(r, fn(req, next) {
+        req.trace = push(req.trace, "outer-before")
+        response := next(req)
+        response.trace = push(response.trace, "outer-after")
+        response
+    })
+    r = router.use_middleware(r, fn(req, next) {
+        req.trace = push(req.trace, "inner-before")
+        response := next(req)
+        response.trace = push(response.trace, "inner-after")
+        response
+    })
+    r = router.get(r, "/users/:id", fn(req) {
+        {"status": 200, "body": req.params.id, "trace": req.trace}
+    })
+
+    response := router.dispatch(r, {"method": "GET", "path": "/users/A%20B?verbose=1", "trace": []})?
+    test.eq(response.status, 200)
+    test.eq(response.body, "A B")
+    test.eq(response.trace, ["outer-before", "inner-before", "inner-after", "outer-after"])
+}
+
+fn test_dispatch_head_options_405_allow_and_not_found {
+    let mut r = router.new(null)
+    r = router.get(r, "/health", fn(req) { {"status": 200, "body": "ok"} })
+    r = router.not_found(r, fn(req) { {"status": 404, "body": "custom"} })
+
+    head := router.dispatch(r, {"method": "HEAD", "path": "/health"})?
+    test.eq(head.status, 200)
+    test.eq(head.body, "")
+
+    options := router.dispatch(r, {"method": "OPTIONS", "path": "/health"})?
+    test.eq(options.status, 204)
+    test.is_true(str.contains(options.headers.Allow, "GET"))
+    test.is_true(str.contains(options.headers.Allow, "HEAD"))
+    test.is_true(str.contains(options.headers.Allow, "OPTIONS"))
+
+    method := router.dispatch(r, {"method": "POST", "path": "/health"})?
+    test.eq(method.status, 405)
+    test.is_true(str.contains(method.headers.Allow, "GET"))
+
+    missing := router.dispatch(r, {"method": "GET", "path": "/missing"})?
+    test.eq(missing.status, 404)
+    test.eq(missing.body, "custom")
+}
+
+fn test_dispatch_middleware_can_short_circuit {
+    let mut r := router.new(null)
+    r = router.use_middleware(r, fn(req, next) {
+        {"status": 401, "body": "blocked"}
+    })
+    r = router.get(r, "/private", fn(req) { {"status": 200, "body": "secret"} })
+
+    response := router.dispatch(r, {"method": "GET", "path": "/private"})?
+    test.eq(response.status, 401)
+    test.eq(response.body, "blocked")
+}
+
+fn setup_api_routes(r) {
+    router.get(r, "/files/*path", fn(req) {
+        {"status": 200, "body": req.params.path}
+    })
+}
+
+fn test_dispatch_group_and_wildcard {
+    r := router.group(router.new(null), "/api", setup_api_routes)
+    response := router.dispatch(r, {"method": "GET", "path": "/api/files/a%20b/c"})?
+    test.eq(response.status, 200)
+    test.eq(response.body, "a b/c")
+}

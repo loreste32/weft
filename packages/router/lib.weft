@@ -67,9 +67,85 @@ pub fn not_found(r, handler) {
     r
 }
 
+fn _allowed_methods(r, path) {
+    let mut allowed = []
+    for route in r.routes {
+        if !_path_matches(route.path, path) { continue }
+        if !contains(allowed, route.method) { allowed = push(allowed, route.method) }
+        // HEAD is served by the GET handler, so it is part of the public
+        // method contract even when no explicit HEAD route was registered.
+        if route.method == "GET" && !contains(allowed, "HEAD") {
+            allowed = push(allowed, "HEAD")
+        }
+    }
+    allowed
+}
+
+// dispatch applies the same routing rules as serve without opening a socket.
+// Keeping this seam public makes routing behavior directly testable and lets
+// adapters reuse the router with non-HTTP transports.
+pub fn dispatch(r, req) -> Result[any] {
+    let mut path = req.path
+    qidx := str.find(path, "?")
+    if qidx >= 0 { path = str.slice(path, 0, qidx) }
+    decoded := url.path_unescape(path)
+    if !decoded.ok { return Ok({"status": 400, "body": "bad request path"}) }
+    path = decoded.value
+    if len(path) > 1 && str.ends_with(path, "/") {
+        path = str.slice(path, 0, len(path) - 1)
+    }
+    req.path = path
+
+    effective_method := if req.method == "HEAD" { "GET" } else { req.method }
+    if req.method == "OPTIONS" {
+        let mut allowed = _allowed_methods(r, path)
+        if len(allowed) > 0 {
+            if !contains(allowed, "OPTIONS") { allowed = push(allowed, "OPTIONS") }
+            return Ok({"status": 204, "headers": {"Allow": str.join(allowed, ", ")}})
+        }
+    }
+
+    let mut path_matched = false
+    for route in r.routes {
+        if !_path_matches(route.path, path) { continue }
+        path_matched = true
+        if route.method != effective_method { continue }
+        req.params = extract_params(route.path, path)
+        let mut handler = route.handler
+        let mut mws = route.middleware
+        let mut mi = len(mws) - 1
+        while mi >= 0 {
+            mw := mws[mi]
+            inner := handler
+            handler = fn(rq) { mw(rq, inner) }
+            mi = mi - 1
+        }
+        let mut result := handler(req)
+        if !is_ok(result) && !is_err(result) { result = Ok(result) }
+        if req.method == "HEAD" && result.ok {
+            response := result.value
+            response.body = ""
+            return Ok(response)
+        }
+        return result
+    }
+
+    if path_matched {
+        let mut allowed = _allowed_methods(r, path)
+        return Ok({"status": 405, "body": "method not allowed", "headers": {"Allow": str.join(allowed, ", ")}})
+    }
+    if r.not_found_handler != null {
+        result := r.not_found_handler(req)
+        if !is_ok(result) && !is_err(result) { return Ok(result) }
+        return result
+    }
+    Ok({"status": 404, "body": "not found"})
+}
+
 pub fn serve(r, addr) -> Result[any] {
-    web.serve(addr, fn(req) {
-        // Strip query string from path for matching
+	web.serve(addr, fn(req) {
+		return dispatch(r, req)
+		// Strip query string from path for matching
         let mut path = req.path
         qidx := str.find(path, "?")
         if qidx >= 0 { path = str.slice(path, 0, qidx) }

@@ -424,6 +424,18 @@ func init() {
 	memberCatalog["socket.dial"] = memberHelp{"socket.dial(network, addr, timeout?) -> Result[conn]", "TCP/UDP connection (SSRF-guarded)"}
 	memberCatalog["socket.listen"] = memberHelp{"socket.listen(network, addr) -> Result[listener]", "bind TCP/UDP listener"}
 	memberCatalog["socket.resolve"] = memberHelp{"socket.resolve(host) -> Result[[str]]", "DNS lookup → IPs"}
+	memberCatalog["conn.read"] = memberHelp{"conn.read(size) -> Result[str]", "read up to size bytes; honors the caller's read deadline"}
+	memberCatalog["conn.read_all"] = memberHelp{"conn.read_all() -> Result[str]", "read until EOF; may block indefinitely"}
+	memberCatalog["conn.read_all_timeout"] = memberHelp{"conn.read_all_timeout(seconds) -> Result[str]", "read until EOF with a temporary timeout"}
+	memberCatalog["conn.read_timeout"] = memberHelp{"conn.read_timeout(size, seconds) -> Result[str]", "read with a temporary timeout"}
+	memberCatalog["conn.write"] = memberHelp{"conn.write(data) -> Result[int]", "write data using the caller's write deadline"}
+	memberCatalog["conn.write_timeout"] = memberHelp{"conn.write_timeout(data, seconds) -> Result[int]", "write with a temporary timeout"}
+	memberCatalog["conn.set_deadline"] = memberHelp{"conn.set_deadline(seconds) -> Result[unit]", "set both read and write deadlines"}
+	memberCatalog["conn.set_read_deadline"] = memberHelp{"conn.set_read_deadline(seconds) -> Result[unit]", "set the read deadline"}
+	memberCatalog["conn.clear_read_deadline"] = memberHelp{"conn.clear_read_deadline() -> Result[unit]", "remove the read deadline"}
+	memberCatalog["conn.set_write_deadline"] = memberHelp{"conn.set_write_deadline(seconds) -> Result[unit]", "set the write deadline"}
+	memberCatalog["conn.clear_write_deadline"] = memberHelp{"conn.clear_write_deadline() -> Result[unit]", "remove the write deadline"}
+	memberCatalog["conn.close"] = memberHelp{"conn.close() -> Result[unit]", "close the connection; blocked I/O returns an error"}
 
 	// pcap
 	memberCatalog["pcap.ethernet"] = memberHelp{"pcap.ethernet(opts) -> bytes", "build Ethernet frame"}

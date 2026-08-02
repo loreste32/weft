@@ -96,6 +96,12 @@ http.serve(":8080", fn(req) {
 Client: `get`, `get_json`, `post`, `put`, `patch`, `delete`, `fetch`, `post_form`.  
 Server helpers: `serve`, `text`, `json`.
 
+### socket
+
+`socket.dial(network, address, timeout?)` returns a raw TCP/UDP connection. `conn.read` and `conn.write` do not install hidden deadlines: they honor deadlines set by the caller. Use `conn.set_read_deadline`, `conn.set_write_deadline`, or `conn.set_deadline` for persistent limits. `conn.read_timeout`, `conn.write_timeout`, and `conn.read_all_timeout` apply a temporary limit and restore the previous caller deadline afterward.
+
+`conn.read_all()` is EOF-delimited and can block forever on a live stream. Prefer `conn.read_all_timeout(seconds)` when the peer may remain open. Closing a connection interrupts blocked reads and writes.
+
 ### json
 
 ```weft
