@@ -2,6 +2,19 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
+## [0.4.10] — 2026-08-03
+
+### Added
+- **Browser WASM runtime** — async execution, browser Fetch HTTP, virtual filesystem, browser-safe OS helpers
+- **WASM filesystem hardening** — path traversal returns explicit errors (not silent alias), 4096-char path limit, 10k file cap, 5k dir cap, 15k total entry limit
+- **Browser CI** — Playwright-based integration tests with Chromium and Firefox
+- **Module tests** — 63 new Weft test cases across 12 previously untested modules (cache, color, config, http_router, jwt, logger, metrics, queue, retry, semver, template, validate)
+
+### Fixed
+- **8 module source bugs found by new tests**: logger/queue/config empty-map field access crashes, queue/config list append with `+` operator, semver parameter reassignment, retry immutable bindings, color nonexistent `re.replace_all`
+- **WASM path traversal** — `../secret` now returns error instead of silently becoming root
+- **Deep fuzz** — cache cleaned between targets to prevent baseline timeout
+
 ## [0.4.9] — 2026-08-02
 
 ### Changed
