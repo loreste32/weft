@@ -14,7 +14,7 @@ pub fn new(opts) {
     }
 }
 
-pub fn push(q, job) {
+pub fn enqueue(q, job) {
     let mut items = q.items
     items = push(items, {"payload": job, "attempts": 0, "id": uuid.v4()})
     q.items = items

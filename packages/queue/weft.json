@@ -5,7 +5,7 @@
   "type": "module",
   "entry": "lib.weft",
   "exports": [
-    "new", "push", "process", "stats",
+    "new", "enqueue", "process", "stats",
     "retry_dead", "dead_letter", "drain"
   ],
   "maturity": "experimental",

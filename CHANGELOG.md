@@ -8,7 +8,7 @@ All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](ht
 - **Browser WASM runtime** — async execution, browser Fetch HTTP, virtual filesystem, browser-safe OS helpers
 - **WASM filesystem hardening** — path traversal returns explicit errors (not silent alias), 4096-char path limit, 10k file cap, 5k dir cap, 15k total entry limit
 - **Browser CI** — Playwright-based integration tests with Chromium and Firefox
-- **Module tests** — 63 new Weft test cases across 12 previously untested modules (cache, color, config, http_router, jwt, logger, metrics, queue, retry, semver, template, validate)
+- **Module tests** — 259 total Weft test cases across 22 modules (12 previously untested: cache, color, config, http_router, jwt, logger, metrics, queue, retry, semver, template, validate)
 
 ### Security
 - **Self-update checksum verification** — `weft update` downloads `checksums.txt` and verifies SHA-256 before replacing the binary; rejects mismatches with "possible tampering" error

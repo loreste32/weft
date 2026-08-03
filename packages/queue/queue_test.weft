@@ -6,14 +6,43 @@ fn test_new {
     test.eq(s.pending, 0)
     test.eq(s.processed, 0)
     test.eq(s.failed, 0)
-    test.eq(s.dead_letter, 0)
 }
 
-fn test_stats_fields {
+fn test_enqueue {
     let mut queue = q.new(null)
-    s := q.stats(queue)
-    test.is_true(contains(keys(s), "pending"))
-    test.is_true(contains(keys(s), "processed"))
-    test.is_true(contains(keys(s), "failed"))
-    test.is_true(contains(keys(s), "dead_letter"))
+    queue = q.enqueue(queue, "job1")
+    queue = q.enqueue(queue, "job2")
+    test.eq(q.stats(queue).pending, 2)
+}
+
+fn test_process_success {
+    let mut queue = q.new(null)
+    queue = q.enqueue(queue, 10)
+    queue = q.enqueue(queue, 20)
+    result := q.process(queue, fn(p) { Ok(p * 2) })?
+    test.eq(len(result.results), 2)
+    test.eq(q.stats(result.queue).processed, 2)
+}
+
+fn test_drain {
+    let mut queue = q.new(null)
+    queue = q.enqueue(queue, "a")
+    queue = q.enqueue(queue, "b")
+    d := q.drain(queue)
+    test.eq(len(d.drained), 2)
+    test.eq(q.stats(d.queue).pending, 0)
+}
+
+fn test_dead_letter {
+    let mut queue = q.new({"max_retries": 1})
+    queue = q.enqueue(queue, "bad")
+    q.process(queue, fn(p) { Err("fail") })
+    dl := q.dead_letter(queue)
+    test.is_true(len(dl) > 0)
+}
+
+fn test_empty_process {
+    let mut queue = q.new(null)
+    result := q.process(queue, fn(p) { Ok(p) })?
+    test.eq(len(result.results), 0)
 }

@@ -171,25 +171,33 @@ func SelfUpdate() error {
 }
 
 // fetchExpectedChecksum downloads checksums.txt and extracts the SHA-256 for the given binary.
+// This is fail-closed: if checksums cannot be fetched or the binary is not listed,
+// the update is refused. Use WEFT_SKIP_CHECKSUM=1 to override (not recommended).
 func fetchExpectedChecksum(binaryName string) (string, error) {
+	skipVerify := os.Getenv("WEFT_SKIP_CHECKSUM") == "1"
+
 	url := updateBaseURL + "/dl/checksums.txt"
 	client := netsafe.SafeHTTPClient(10 * time.Second)
 	resp, err := client.Get(url)
 	if err != nil {
-		// checksums unavailable — warn but don't block (graceful degradation)
-		fmt.Fprintf(os.Stderr, "warning: could not fetch checksums: %v\n", err)
-		return "", nil
+		if skipVerify {
+			fmt.Fprintf(os.Stderr, "warning: checksum fetch failed (WEFT_SKIP_CHECKSUM=1): %v\n", err)
+			return "", nil
+		}
+		return "", fmt.Errorf("checksum fetch failed (set WEFT_SKIP_CHECKSUM=1 to override): %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		fmt.Fprintf(os.Stderr, "warning: checksums HTTP %d\n", resp.StatusCode)
-		return "", nil
+		if skipVerify {
+			fmt.Fprintf(os.Stderr, "warning: checksums HTTP %d (WEFT_SKIP_CHECKSUM=1)\n", resp.StatusCode)
+			return "", nil
+		}
+		return "", fmt.Errorf("checksums HTTP %d (set WEFT_SKIP_CHECKSUM=1 to override)", resp.StatusCode)
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		// Format: <hash>  <filename>
 		parts := strings.Fields(line)
 		if len(parts) >= 2 && parts[1] == binaryName {
 			hash := strings.ToLower(parts[0])
@@ -199,8 +207,11 @@ func fetchExpectedChecksum(binaryName string) (string, error) {
 			return hash, nil
 		}
 	}
-	fmt.Fprintf(os.Stderr, "warning: no checksum found for %s\n", binaryName)
-	return "", nil
+	if skipVerify {
+		fmt.Fprintf(os.Stderr, "warning: no checksum for %s (WEFT_SKIP_CHECKSUM=1)\n", binaryName)
+		return "", nil
+	}
+	return "", fmt.Errorf("no checksum found for %s in checksums.txt (set WEFT_SKIP_CHECKSUM=1 to override)", binaryName)
 }
 
 func copyFile(src, dst string) error {

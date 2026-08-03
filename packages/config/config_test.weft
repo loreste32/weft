@@ -33,3 +33,19 @@ fn test_from_env {
     m := cfg.from_env(["PATH"])
     test.is_true(len(keys(m)) >= 0)
 }
+
+fn test_get_nested {
+    m := {"db": {"host": "localhost", "port": 5432}}
+    test.eq(cfg.get(m, "db.host"), "localhost")
+    test.eq(cfg.get(m, "db.port"), 5432)
+}
+
+fn test_get_nested_missing {
+    m := {"a": 1}
+    test.eq(cfg.get(m, "a.b"), null)
+}
+
+fn test_get_deep_missing {
+    m := {"x": {"y": 1}}
+    test.eq(cfg.get(m, "x.y.z"), null)
+}

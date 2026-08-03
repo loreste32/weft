@@ -63,6 +63,13 @@ pub fn get(cfg, key) {
         if current == null {
             return null
         }
+        // only traverse maps — return null for non-map intermediates
+        if len(keys(current)) == 0 && current != {} {
+            return null
+        }
+        if !contains(keys(current), part) {
+            return null
+        }
         current = current[part]
     }
     current
