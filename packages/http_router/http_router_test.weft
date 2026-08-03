@@ -1,9 +1,27 @@
 use "./lib.weft" as r
 
-fn test_new { app := r.new()
-    test.is_true(app != null) }
-fn test_routes {
+fn test_new {
+    app := r.new()
+    test.is_true(app != null)
+}
+
+fn test_add_get_route {
     let mut app = r.new()
-    app = r.get(app, "/health", fn(req) { {"status": 200, "body": "ok"} })
+    app = r.get(app, "/health", fn(req) { {"status": 200} })
+    test.is_true(app != null)
+}
+
+fn test_add_post_route {
+    let mut app = r.new()
+    app = r.post(app, "/users", fn(req) { {"status": 201} })
+    test.is_true(app != null)
+}
+
+fn test_add_multiple_routes {
+    let mut app = r.new()
+    app = r.get(app, "/a", fn(req) { {"status": 200} })
+    app = r.post(app, "/b", fn(req) { {"status": 201} })
+    app = r.put(app, "/c", fn(req) { {"status": 200} })
+    app = r.delete(app, "/d", fn(req) { {"status": 204} })
     test.is_true(app != null)
 }

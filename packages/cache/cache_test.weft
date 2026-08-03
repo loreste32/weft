@@ -1,26 +1,72 @@
 use "./lib.weft" as cache
 
-fn test_new { c := cache.new(null)
-    test.eq(cache.size(c), 0) }
-fn test_set_get { c := cache.new(null)
-    cache.set(c, "k", "v", null)
-    test.eq(cache.get(c, "k"), "v") }
-fn test_has { c := cache.new(null)
+fn test_new_empty {
+    c := cache.new(null)
+    test.eq(cache.size(c), 0)
+}
+
+fn test_set_and_get {
+    c := cache.new(null)
+    cache.set(c, "key1", "value1", null)
+    test.eq(cache.get(c, "key1"), "value1")
+}
+
+fn test_overwrite {
+    c := cache.new(null)
+    cache.set(c, "k", "v1", null)
+    cache.set(c, "k", "v2", null)
+    test.eq(cache.get(c, "k"), "v2")
+    
+}
+
+fn test_has {
+    c := cache.new(null)
     cache.set(c, "a", 1, null)
     test.is_true(cache.has(c, "a"))
-    test.is_false(cache.has(c, "b")) }
-fn test_delete { c := cache.new(null)
-    cache.set(c, "a", 1, null)
-    cache.delete(c, "a")
-    test.is_false(cache.has(c, "a")) }
-fn test_clear { c := cache.new(null)
+    test.is_false(cache.has(c, "b"))
+}
+
+fn test_delete {
+    c := cache.new(null)
     cache.set(c, "a", 1, null)
     cache.set(c, "b", 2, null)
+    cache.delete(c, "a")
+    test.is_false(cache.has(c, "a"))
+    test.is_true(cache.has(c, "b"))
+    test.eq(cache.size(c), 1)
+}
+
+fn test_clear {
+    c := cache.new(null)
+    cache.set(c, "a", 1, null)
+    cache.set(c, "b", 2, null)
+    cache.set(c, "c", 3, null)
     cache.clear(c)
-    test.eq(cache.size(c), 0) }
-fn test_keys { c := cache.new(null)
+    test.eq(cache.size(c), 0)
+    test.is_false(cache.has(c, "a"))
+}
+
+fn test_get_missing_returns_null {
+    c := cache.new(null)
+    test.eq(cache.get(c, "nonexistent"), null)
+}
+
+fn test_multiple_types {
+    c := cache.new(null)
+    cache.set(c, "str", "hello", null)
+    cache.set(c, "num", 42, null)
+    cache.set(c, "bool", true, null)
+    cache.set(c, "list", [1, 2, 3], null)
+    test.eq(cache.get(c, "str"), "hello")
+    test.eq(cache.get(c, "num"), 42)
+    test.eq(cache.get(c, "bool"), true)
+    test.eq(len(cache.get(c, "list")), 3)
+}
+
+fn test_keys {
+    c := cache.new(null)
     cache.set(c, "x", 1, null)
     cache.set(c, "y", 2, null)
-    test.eq(cache.size(c), 2) }
-fn test_get_missing { c := cache.new(null)
-    test.eq(cache.get(c, "nope"), null) }
+    k := cache.keys(c)
+    test.eq(len(k), 2)
+}

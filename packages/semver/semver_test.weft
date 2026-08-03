@@ -2,5 +2,44 @@ use "./lib.weft" as sv
 
 fn test_valid {
     test.is_true(sv.valid("1.2.3"))
+    test.is_true(sv.valid("0.0.1"))
     test.is_false(sv.valid(""))
+    test.is_false(sv.valid("abc"))
+}
+
+fn test_parse {
+    v := sv.parse("1.2.3")?
+    test.eq(v.major, 1)
+    test.eq(v.minor, 2)
+    test.eq(v.patch, 3)
+}
+
+fn test_gt {
+    test.is_true(sv.gt("2.0.0", "1.0.0")?)
+    test.is_false(sv.gt("1.0.0", "2.0.0")?)
+}
+
+fn test_lt {
+    test.is_true(sv.lt("1.0.0", "2.0.0")?)
+    test.is_false(sv.lt("2.0.0", "1.0.0")?)
+}
+
+fn test_eq {
+    test.is_true(sv.eq("1.2.3", "1.2.3")?)
+    test.is_false(sv.eq("1.2.3", "1.2.4")?)
+}
+
+fn test_gte {
+    test.is_true(sv.gte("2.0.0", "1.0.0")?)
+    test.is_true(sv.gte("1.0.0", "1.0.0")?)
+}
+
+fn test_lte {
+    test.is_true(sv.lte("1.0.0", "2.0.0")?)
+    test.is_true(sv.lte("1.0.0", "1.0.0")?)
+}
+
+fn test_format {
+    v := sv.parse("1.2.3")?
+    test.eq(sv.format(v), "1.2.3")
 }

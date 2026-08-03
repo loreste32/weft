@@ -1,6 +1,19 @@
 use "./lib.weft" as q
 
 fn test_new {
-    queue := q.new(null)
-    test.eq(q.stats(queue).pending, 0)
+    let mut queue = q.new(null)
+    s := q.stats(queue)
+    test.eq(s.pending, 0)
+    test.eq(s.processed, 0)
+    test.eq(s.failed, 0)
+    test.eq(s.dead_letter, 0)
+}
+
+fn test_stats_fields {
+    let mut queue = q.new(null)
+    s := q.stats(queue)
+    test.is_true(contains(keys(s), "pending"))
+    test.is_true(contains(keys(s), "processed"))
+    test.is_true(contains(keys(s), "failed"))
+    test.is_true(contains(keys(s), "dead_letter"))
 }

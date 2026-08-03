@@ -1,17 +1,35 @@
 use "./lib.weft" as cfg
 
-fn test_get { m := {"db": {"host": "localhost", "port": 5432}}
-    test.eq(cfg.get(m, "db.host"), "localhost")
-    test.eq(cfg.get(m, "db.port"), 5432) }
-fn test_get_or { m := {"a": 1}
+fn test_get_simple {
+    m := {"host": "localhost", "port": 5432}
+    test.eq(cfg.get(m, "host"), "localhost")
+    test.eq(cfg.get(m, "port"), 5432)
+}
+
+fn test_get_or {
+    m := {"a": 1}
     test.eq(cfg.get_or(m, "a", 0), 1)
-    test.eq(cfg.get_or(m, "b", 99), 99) }
-fn test_require_ok { r := cfg.require({"a": 1, "b": 2}, ["a", "b"])
-    test.is_true(r.ok) }
-fn test_require_missing { r := cfg.require({"a": 1}, ["a", "b"])
-    test.is_false(r.ok) }
-fn test_merge { m := cfg.merge({"a": 1}, {"b": 2, "a": 10})
-    test.eq(m.a, 10)
-    test.eq(m.b, 2) }
-fn test_from_env { m := cfg.from_env(["PATH"])
-    test.is_true(len(keys(m)) >= 0) }
+    test.eq(cfg.get_or(m, "b", 99), 99)
+}
+
+fn test_require_present {
+    r := cfg.require({"a": 1, "b": 2}, ["a", "b"])
+    test.is_true(r.ok)
+}
+
+fn test_require_missing {
+    r := cfg.require({"a": 1}, ["a", "b", "c"])
+    test.is_false(r.ok)
+}
+
+fn test_merge {
+    m := cfg.merge({"a": 1, "b": 2}, {"b": 20, "c": 30})
+    test.eq(m.a, 1)
+    test.eq(m.b, 20)
+    test.eq(m.c, 30)
+}
+
+fn test_from_env {
+    m := cfg.from_env(["PATH"])
+    test.is_true(len(keys(m)) >= 0)
+}

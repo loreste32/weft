@@ -1,6 +1,6 @@
 use "./lib.weft" as log
 
-fn test_new {
+fn test_new_defaults {
     l := log.new(null)
     test.eq(l.level, "info")
     test.eq(l.format, "text")
@@ -16,4 +16,31 @@ fn test_json_format {
     l := log.new(null)
     l2 := log.json_format(l)
     test.eq(l2.format, "json")
+}
+
+fn test_text_format {
+    l := log.new(null)
+    l2 := log.json_format(l)
+    l3 := log.text_format(l2)
+    test.eq(l3.format, "text")
+}
+
+fn test_child {
+    l := log.new(null)
+    c := log.child(l, "db")
+    test.eq(c.fields.logger, "db")
+}
+
+fn test_with_fields {
+    l := log.new(null)
+    l2 := log.with(l, {"req_id": "abc", "user": "alice"})
+    test.eq(l2.fields.req_id, "abc")
+    test.eq(l2.fields.user, "alice")
+}
+
+fn test_with_preserves_level {
+    l := log.new(null)
+    l2 := log.set_level(l, "error")
+    l3 := log.with(l2, {"x": 1})
+    test.eq(l3.level, "error")
 }

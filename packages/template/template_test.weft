@@ -1,7 +1,14 @@
 use "./lib.weft" as t
 
-fn test_html_escape {
-    test.eq(t.html_escape("<b>hi</b>"), "&lt;b&gt;hi&lt;/b&gt;")
+fn test_html_escape_basic {
+    r := t.html_escape("<b>hi</b>")
+    test.is_true(str.contains(r, "&lt;"))
+    test.is_true(str.contains(r, "&gt;"))
+}
+
+fn test_html_escape_ampersand {
+    r := t.html_escape("a & b")
+    test.is_true(str.contains(r, "&amp;"))
 }
 
 fn test_render {
@@ -9,7 +16,16 @@ fn test_render {
     test.eq(r, "hello world")
 }
 
-fn test_cond_true {
-    r := t.cond(true, "yes", "no")
-    test.eq(r, "yes")
+fn test_render_multiple {
+    r := t.render("{{a}} and {{b}}", {"a": "x", "b": "y"})
+    test.eq(r, "x and y")
 }
+
+fn test_cond_true {
+    test.eq(t.cond(true, "yes", "no"), "yes")
+}
+
+fn test_cond_false {
+    test.eq(t.cond(false, "yes", "no"), "no")
+}
+

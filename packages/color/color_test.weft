@@ -1,16 +1,37 @@
 use "./lib.weft" as c
 
 fn test_red {
-    r := c.red("hi")
-    test.is_true(len(r) > 2)
+    r := c.red("error")
+    test.is_true(len(r) > len("error"))
+    test.is_true(str.contains(r, "error"))
+}
+
+fn test_green {
+    g := c.green("ok")
+    test.is_true(len(g) > len("ok"))
 }
 
 fn test_bold {
-    b := c.bold("hi")
-    test.is_true(len(b) > 2)
+    b := c.bold("important")
+    test.is_true(len(b) > len("important"))
 }
 
-fn test_ok {
+fn test_ok_format {
     o := c.ok("done")
     test.is_true(str.contains(o, "done"))
+}
+
+fn test_fail_format {
+    f := c.fail("err")
+    test.is_true(str.contains(f, "err"))
+}
+
+fn test_warn_format {
+    w := c.warn("caution")
+    test.is_true(str.contains(w, "caution"))
+}
+
+fn test_info_format {
+    i := c.info("note")
+    test.is_true(str.contains(i, "note"))
 }
