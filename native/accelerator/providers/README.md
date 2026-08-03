@@ -5,7 +5,9 @@ ABI. They are deliberately separate shared libraries: the Weft executable does
 not link CUDA, ROCm, or MLX, and a provider must only advertise hardware and
 operations it actually supports.
 
-All three providers implement the same bounded JSON operation:
+All three providers implement the same bounded JSON `matmul` operation and
+the binary `tensor_matmul` operation. The binary operation is the required path
+for large batches; JSON remains a diagnostic/reference path:
 
 ```json
 {

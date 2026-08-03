@@ -299,8 +299,71 @@ pub fn series_value_counts(s) {
     counts
 }
 
+pub fn series_reindex(s, labels, fill_value) {
+    if !_is_series(s) { return Err("dataframe.series_reindex expects a Series") }
+    if _kind(labels) != "list" { return Err("dataframe.series_reindex expects a label list") }
+    let mut values = []
+    for label in labels {
+        found := _series_lookup(s, label)
+        values = push(values, if found.found { found.value } else { fill_value })
+    }
+    series(values, s.name, labels)
+}
+
+pub fn series_add(left, right, fill_value) { _series_binary(left, right, fill_value, fn(a, b) { a + b }) }
+
+pub fn series_sub(left, right, fill_value) { _series_binary(left, right, fill_value, fn(a, b) { a - b }) }
+
+pub fn series_mul(left, right, fill_value) { _series_binary(left, right, fill_value, fn(a, b) { a * b }) }
+
+pub fn series_div(left, right, fill_value) { _series_binary(left, right, fill_value, fn(a, b) { a / b }) }
+
 pub fn index(t) {
     if t._index == null { _range(len(t.rows)) } else { t._index }
+}
+
+pub fn index_name(t) { if t._index_name == null { null } else { t._index_name } }
+
+pub fn loc_labels(t, labels) {
+    if _kind(labels) != "list" { return Err("dataframe.loc_labels expects a label list") }
+    idx := index(t)
+    let mut selected = []
+    let mut selected_index = []
+    for label in labels {
+        let mut i = 0
+        while i < len(t.rows) {
+            if _value_key(idx[i]) == _value_key(label) {
+                selected = push(selected, t.rows[i])
+                selected_index = push(selected_index, idx[i])
+            }
+            i = i + 1
+        }
+    }
+    {"_df": true, "columns": t.columns, "rows": selected, "_index": selected_index, "_index_name": t._index_name}
+}
+
+pub fn reindex(t, labels, fill_value) {
+    if _kind(labels) != "list" { return Err("dataframe.reindex expects a label list") }
+    idx := index(t)
+    let mut result = []
+    for label in labels {
+        let mut matched = false
+        let mut i = 0
+        while i < len(t.rows) {
+            if _value_key(idx[i]) == _value_key(label) {
+                result = push(result, t.rows[i])
+                matched = true
+                break
+            }
+            i = i + 1
+        }
+        if !matched {
+            let mut row = {}
+            for c in t.columns { row[c] = fill_value }
+            result = push(result, row)
+        }
+    }
+    {"_df": true, "columns": t.columns, "rows": result, "_index": labels, "_index_name": t._index_name}
 }
 
 pub fn set_index(t, column, drop) {
@@ -1441,6 +1504,49 @@ fn _series_dtype(values) {
         }
     }
     if found == "null" { "object" } else { found }
+}
+
+fn _series_lookup(s, label) {
+    let mut i = 0
+    while i < len(s.index) {
+        if _value_key(s.index[i]) == _value_key(label) {
+            return {"found": true, "value": s.values[i]}
+        }
+        i = i + 1
+    }
+    {"found": false, "value": null}
+}
+
+fn _series_union_index(left, right) {
+    let mut result = []
+    let mut seen = {}
+    for label in left.index {
+        key := _value_key(label)
+        if seen[key] == null { seen[key] = true result = push(result, label) }
+    }
+    for label in right.index {
+        key := _value_key(label)
+        if seen[key] == null { seen[key] = true result = push(result, label) }
+    }
+    result
+}
+
+fn _series_binary(left, right, fill_value, op) {
+    if !_is_series(left) || !_is_series(right) { return Err("dataframe series arithmetic expects two Series") }
+    labels := _series_union_index(left, right)
+    let mut values = []
+    for label in labels {
+        lv := _series_lookup(left, label)
+        rv := _series_lookup(right, label)
+        if lv.found && rv.found {
+            values = push(values, op(lv.value, rv.value))
+        } else if fill_value != null {
+            values = push(values, op(if lv.found { lv.value } else { fill_value }, if rv.found { rv.value } else { fill_value }))
+        } else {
+            values = push(values, null)
+        }
+    }
+    series(values, left.name, labels)
 }
 
 fn _with_columns(t, rows) {

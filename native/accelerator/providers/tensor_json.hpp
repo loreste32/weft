@@ -77,8 +77,8 @@ inline bool parse_matrix(const char* json, const char* data_key,
   }
   result.rows = static_cast<size_t>(shape[0]);
   result.cols = static_cast<size_t>(shape[1]);
-  if (result.rows > 1 << 20 || result.cols > 1 << 20 ||
-      result.rows != 0 && result.cols > (1 << 26) / result.rows ||
+    if (result.rows > 1 << 20 || result.cols > 1 << 20 ||
+        (result.rows != 0 && result.cols > (1 << 26) / result.rows) ||
       values.size() != result.rows * result.cols) {
     error = std::string("data and shape do not agree for ") + data_key;
     return false;

@@ -30,7 +30,7 @@ jobs:
       - name: Run provider conformance test
         env:
           WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_cuda.so
-        run: go test ./internal/accelerator -run '^TestExternalProvider$' -count=1 -timeout=120s
+        run: go test ./internal/accelerator -run '^TestExternalProvider(Tensor)?$' -count=1 -timeout=120s
 
   rocm:
     name: ROCm provider conformance
@@ -52,7 +52,7 @@ jobs:
       - name: Run provider conformance test
         env:
           WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_rocm.so
-        run: go test ./internal/accelerator -run '^TestExternalProvider$' -count=1 -timeout=120s
+        run: go test ./internal/accelerator -run '^TestExternalProvider(Tensor)?$' -count=1 -timeout=120s
 
   mlx:
     name: MLX provider conformance
@@ -79,4 +79,4 @@ jobs:
         env:
           WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_mlx.dylib
           DYLD_LIBRARY_PATH: ${{ vars.MLX_C_PREFIX }}/lib
-        run: go test ./internal/accelerator -run '^TestExternalProvider$' -count=1 -timeout=120s
+        run: go test ./internal/accelerator -run '^TestExternalProvider(Tensor)?$' -count=1 -timeout=120s

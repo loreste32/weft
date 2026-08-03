@@ -24,7 +24,8 @@ static void fail(const char *message) { last_error = message; }
 const char *weft_accel_manifest(void) {
     return "{\"name\":\"weft-example\",\"version\":\"1.1.0\","
            "\"abi\":1,\"vendors\":[\"example\"],"
-           "\"operations\":[\"health\",\"identity\",\"matmul\"]}";
+           "\"operations\":[\"health\",\"identity\",\"matmul\",\"tensor_matmul\"],"
+           "\"metadata\":{\"tensor_abi\":\"1\",\"dtype\":\"float64\"}}";
 }
 
 const char *weft_accel_last_error(void) { return last_error; }
@@ -240,3 +241,102 @@ int weft_accel_run(const char *operation, const char *input_json,
 }
 
 void weft_accel_free(char *output_json) { free(output_json); }
+
+static int tensor_c_contiguous(const weft_accel_tensor_input *input) {
+    int64_t expected = 1;
+    int rank;
+    if (input == NULL || input->shape == NULL || input->strides == NULL) return 0;
+    rank = (int)input->rank;
+    while (rank > 0) {
+        rank--;
+        if (input->strides[rank] != expected) return 0;
+        if (input->shape[rank] < 0) return 0;
+        if (input->shape[rank] != 0 && expected > INT64_MAX / input->shape[rank]) return 0;
+        expected *= input->shape[rank];
+    }
+    return 1;
+}
+
+int weft_accel_run_tensor(const char *operation,
+                          const weft_accel_tensor_input *inputs,
+                          size_t input_count,
+                          weft_accel_tensor_output *output) {
+    const double *a;
+    const double *b;
+    double *result;
+    size_t rows;
+    size_t inner;
+    size_t cols;
+    size_t row;
+    size_t col;
+    size_t k;
+    size_t bytes;
+    if (operation == NULL || inputs == NULL || output == NULL || input_count != 2) {
+        fail("tensor operation requires two inputs and an output");
+        return 1;
+    }
+    memset(output, 0, sizeof(*output));
+    if (strcmp(operation, "tensor_matmul") != 0) {
+        fail("unsupported tensor operation");
+        return 1;
+    }
+    if (inputs[0].dtype != WEFT_TENSOR_FLOAT64 || inputs[1].dtype != WEFT_TENSOR_FLOAT64 ||
+        inputs[0].rank != 2 || inputs[1].rank != 2 ||
+        !tensor_c_contiguous(&inputs[0]) || !tensor_c_contiguous(&inputs[1])) {
+        fail("reference tensor matmul requires contiguous float64 matrices");
+        return 1;
+    }
+    rows = (size_t)inputs[0].shape[0];
+    inner = (size_t)inputs[0].shape[1];
+    if (inputs[1].shape[0] != (int64_t)inner) {
+        fail("tensor matmul inner dimensions do not agree");
+        return 1;
+    }
+    cols = (size_t)inputs[1].shape[1];
+    if (rows != 0 && inner > SIZE_MAX / rows) {
+        fail("tensor matmul shape is too large");
+        return 1;
+    }
+    if (rows * inner != inputs[0].bytes / sizeof(double) ||
+        (inner != 0 && cols > SIZE_MAX / inner) ||
+        inner * cols != inputs[1].bytes / sizeof(double) ||
+        (rows != 0 && cols > SIZE_MAX / rows) ||
+        rows * cols > SIZE_MAX / sizeof(double)) {
+        fail("tensor matmul byte lengths do not match shapes");
+        return 1;
+    }
+    bytes = rows * cols * sizeof(double);
+    output->dtype = WEFT_TENSOR_FLOAT64;
+    output->rank = 2;
+    output->shape = (int64_t *)calloc(2, sizeof(int64_t));
+    output->strides = (int64_t *)calloc(2, sizeof(int64_t));
+    output->data = malloc(bytes);
+    if (output->shape == NULL || output->strides == NULL || (bytes != 0 && output->data == NULL)) {
+        fail("tensor matmul output allocation failed");
+        return 1;
+    }
+    output->shape[0] = (int64_t)rows;
+    output->shape[1] = (int64_t)cols;
+    output->strides[0] = (int64_t)cols;
+    output->strides[1] = 1;
+    output->bytes = bytes;
+    a = (const double *)inputs[0].data;
+    b = (const double *)inputs[1].data;
+    result = (double *)output->data;
+    for (row = 0; row < rows; row++) {
+        for (col = 0; col < cols; col++) {
+            double value = 0.0;
+            for (k = 0; k < inner; k++) value += a[row * inner + k] * b[k * cols + col];
+            result[row * cols + col] = value;
+        }
+    }
+    return 0;
+}
+
+void weft_accel_free_tensor(weft_accel_tensor_output *output) {
+    if (output == NULL) return;
+    free(output->shape);
+    free(output->strides);
+    free(output->data);
+    memset(output, 0, sizeof(*output));
+}

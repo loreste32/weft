@@ -1,7 +1,7 @@
 {
   "name": "dataframe",
- "version": "0.6.0",
- "description": "Pandas-inspired DataFrames with Series, explicit indexes, null-aware stats, joins, rolling, and CSV/JSON I/O",
+ "version": "0.7.0",
+ "description": "Pandas-inspired DataFrames with aligned Series, explicit indexes, null-aware stats, joins, rolling, and CSV/JSON I/O",
   "type": "module",
   "entry": "lib.weft",
   "exports": [
@@ -10,7 +10,7 @@
 
     "columns", "rows", "nrows", "ncols", "shape", "dtypes", "info",
 
- "col", "series", "series_from", "as_series", "series_values", "series_name", "series_index", "series_shape", "series_dtype", "series_map", "series_apply", "series_fillna", "series_dropna", "series_unique", "series_value_counts", "index", "set_index", "reset_index", "head", "tail", "iloc", "loc", "select_", "drop",
+ "col", "series", "series_from", "as_series", "series_values", "series_name", "series_index", "series_shape", "series_dtype", "series_map", "series_apply", "series_fillna", "series_dropna", "series_unique", "series_value_counts", "series_reindex", "series_add", "series_sub", "series_mul", "series_div", "index", "index_name", "set_index", "reset_index", "loc_labels", "reindex", "head", "tail", "iloc", "loc", "select_", "drop",
 
     "filter_", "query", "isin", "between", "notnull",
 

@@ -84,9 +84,13 @@ Series when the column needs a name and explicit labels:
 | `series_map` / `series_apply` | Apply a scalar function while preserving labels |
 | `series_fillna` / `series_dropna` | Null handling while preserving surviving labels |
 | `series_unique` / `series_value_counts` | Stable unique values or typed count map |
+| `series_reindex` | Reorder or add labeled values with an explicit fill value |
+| `series_add` / `series_sub` / `series_mul` / `series_div` | Label-align two Series; optional fill value handles missing labels |
 | `index(t)` | Read the DataFrame index, defaulting to `0..n-1` |
+| `index_name(t)` | Read the explicit index name, if present |
 | `set_index(t, column, drop?)` | Move a column into explicit index metadata; drop defaults to true |
 | `reset_index(t, name?)` | Materialize the index as a column; name defaults to `index` |
+| `loc_labels(t, labels)` / `reindex(t, labels, fill?)` | Select or align rows by explicit labels |
 
 The index model is explicit and single-level. `loc` remains positional
 half-open slicing; label selection and MultiIndex semantics are not claimed.
@@ -308,5 +312,5 @@ df.write_csv(t, "output.csv", null)?
 
 ## API count
 
-95 exported functions, including the Series and explicit single-level index
-APIs. The package currently has 80 regression tests.
+103 exported functions, including aligned Series and explicit single-level
+index APIs. The package currently has 82 regression tests.

@@ -19,6 +19,8 @@ an optional native accelerator ABI.
   zero-dimensional array; negative axes are normalized where supported.
 - `sum_axis`, `mean_axis`, `min_axis`, and `max_axis` accept negative axes and
   arbitrary rank, returning a scalar when a rank-1 axis is reduced.
+- `sum_axis_opts`, `mean_axis_opts`, `min_axis_opts`, and `max_axis_opts` add
+  explicit `keepdims` behavior for shape-stable reduction pipelines.
 - `transpose`, `concatenate`, `stack`, equal-section `split`, and `take` use
   row-major shape-preserving semantics.
 - `repeat_axis` and `flip_axis` provide explicit multidimensional axis
@@ -57,7 +59,7 @@ fn main -> Result {
 The package manifest exports the complete public surface: creation,
 shape/indexing, element-wise math, comparisons, reductions, statistics,
 linear algebra, manipulation, masking, inspection, and native dispatch.
-Run `weft mod check packages/warp --tests` to verify the manifest and its 85
+Run `weft mod check packages/warp --tests` to verify the manifest and its 86
 regression tests.
 
 ## Deliberate limits

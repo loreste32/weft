@@ -109,6 +109,18 @@ fn test_series_null_and_counts {
     test.eq(counts["null:null"], 1)
 }
 
+fn test_series_alignment_and_reindex {
+    left := df.series([10, 20], "value", ["a", "b"])
+    right := df.series([1, 3], "other", ["b", "c"])
+    added := df.series_add(left, right, null)
+    test.eq(df.series_index(added), ["a", "b", "c"])
+    test.eq(df.series_values(added), [null, 21, null])
+    filled := df.series_add(left, right, 0)
+    test.eq(df.series_values(filled), [10, 21, 3])
+    reordered := df.series_reindex(left, ["b", "x", "a"], -1)
+    test.eq(df.series_values(reordered), [20, -1, 10])
+}
+
 fn test_set_and_reset_index {
     t := _sample_df()
     invalid_drop := df.set_index(t, "name", 1)
@@ -120,6 +132,16 @@ fn test_set_and_reset_index {
     test.eq(df.columns(restored)[0], "index")
     test.eq(df.col(restored, "index")[0], "Alice")
     test.eq(df.col(restored, "dept")[2], "sales")
+}
+
+fn test_label_selection_and_reindex {
+    t := df.set_index(_sample_df(), "name", null)
+    selected := df.loc_labels(t, ["Eve", "Alice"])
+    test.eq(df.index(selected), ["Eve", "Alice"])
+    test.eq(df.col(selected, "age"), [32, 30])
+    filled := df.reindex(t, ["Bob", "Missing"], null)
+    test.eq(df.index(filled), ["Bob", "Missing"])
+    test.eq(df.col(filled, "age"), [25, null])
 }
 
 fn test_head_tail {

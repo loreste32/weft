@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/loreste/weft/internal/tensor"
 )
 
 const (
@@ -19,6 +21,8 @@ const (
 	ABI = 1
 	// MaxResultBytes prevents a faulty provider from allocating unbounded data.
 	MaxResultBytes = 256 << 20
+	// MaxTensorInputs bounds descriptor allocation in native providers.
+	MaxTensorInputs = 1024
 )
 
 var ErrUnavailable = errors.New("native accelerator plugins are unavailable in this build")
@@ -37,6 +41,10 @@ type nativePlugin interface {
 	manifest() ([]byte, error)
 	run(op string, input []byte) ([]byte, error)
 	close() error
+}
+
+type nativeTensorPlugin interface {
+	runTensor(operation string, inputs []*tensor.Tensor) (*tensor.Tensor, error)
 }
 
 // Plugin is a loaded, validated native provider.
@@ -156,6 +164,57 @@ func (p *Plugin) RunJSON(op string, input []byte) ([]byte, error) {
 		return nil, errors.New("accelerator returned invalid JSON")
 	}
 	return out, nil
+}
+
+// RunTensor executes an optional binary tensor operation. Providers must
+// advertise the operation in their manifest and implement the binary ABI;
+// JSON-only providers fail explicitly instead of silently copying large
+// tensors through the compatibility path.
+func (p *Plugin) RunTensor(op string, inputs ...*tensor.Tensor) (*tensor.Tensor, error) {
+	if p == nil || p.native == nil {
+		return nil, errors.New("accelerator plugin is not loaded")
+	}
+	if strings.TrimSpace(op) == "" {
+		return nil, errors.New("accelerator operation required")
+	}
+	if !supportsOperation(p.manifest.Operations, op) {
+		return nil, fmt.Errorf("accelerator operation %q is not declared by provider", op)
+	}
+	if len(inputs) == 0 {
+		return nil, errors.New("accelerator tensor operation requires at least one input")
+	}
+	if len(inputs) > MaxTensorInputs {
+		return nil, fmt.Errorf("accelerator tensor operation accepts at most %d inputs", MaxTensorInputs)
+	}
+	prepared := make([]*tensor.Tensor, len(inputs))
+	for i, input := range inputs {
+		if input == nil {
+			return nil, errors.New("accelerator tensor operation received a nil input")
+		}
+		contiguous, err := input.Contiguous()
+		if err != nil {
+			return nil, fmt.Errorf("prepare accelerator tensor input %d: %w", i, err)
+		}
+		if len(contiguous.Bytes()) > MaxResultBytes {
+			return nil, fmt.Errorf("accelerator tensor input exceeds %d bytes", MaxResultBytes)
+		}
+		prepared[i] = contiguous
+	}
+	provider, ok := p.native.(nativeTensorPlugin)
+	if !ok {
+		return nil, errors.New("accelerator provider does not implement binary tensor ABI")
+	}
+	output, err := provider.runTensor(op, prepared)
+	if err != nil {
+		return nil, fmt.Errorf("accelerator tensor %s: %w", op, err)
+	}
+	if output == nil {
+		return nil, errors.New("accelerator tensor operation returned no result")
+	}
+	if len(output.Bytes()) > MaxResultBytes {
+		return nil, fmt.Errorf("accelerator tensor result exceeds %d bytes", MaxResultBytes)
+	}
+	return output, nil
 }
 
 func supportsOperation(operations []string, operation string) bool {

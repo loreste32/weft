@@ -614,6 +614,26 @@ pub fn max_axis(a, axis) {
     _reduce_axis_nd(a, axis, fn(acc, x) { if x > acc { x } else { acc } }, -1e308)
 }
 
+pub fn sum_axis_opts(a, axis, keepdims) {
+    _reduce_axis_nd_opts(a, axis, fn(acc, x) { acc + x }, 0.0, keepdims)
+}
+
+pub fn mean_axis_opts(a, axis, keepdims) {
+    if !_is_arr(a) { return Err("warp.mean_axis_opts expects an array") }
+    normalized := _normalize_axis(axis, len(a.shape), false)
+    if normalized == null { return Err("warp.mean_axis_opts axis is out of range") }
+    result := sum_axis_opts(a, normalized, keepdims)
+    div(result, a.shape[normalized])
+}
+
+pub fn min_axis_opts(a, axis, keepdims) {
+    _reduce_axis_nd_opts(a, axis, fn(acc, x) { if x < acc { x } else { acc } }, 1e308, keepdims)
+}
+
+pub fn max_axis_opts(a, axis, keepdims) {
+    _reduce_axis_nd_opts(a, axis, fn(acc, x) { if x > acc { x } else { acc } }, -1e308, keepdims)
+}
+
 // ──────────────────────────────────────────────
 // Linear algebra
 // ──────────────────────────────────────────────
@@ -1708,6 +1728,10 @@ fn _insert_axis_index(index, axis, value) {
 }
 
 fn _reduce_axis_nd(a, axis, op, init) {
+    _reduce_axis_nd_opts(a, axis, op, init, false)
+}
+
+fn _reduce_axis_nd_opts(a, axis, op, init, keepdims) {
     if !_is_arr(a) { return Err("warp reduction expects an array") }
     normalized := _normalize_axis(axis, len(a.shape), false)
     if normalized == null { return Err("warp reduction axis is out of range") }
@@ -1728,5 +1752,9 @@ fn _reduce_axis_nd(a, axis, op, init) {
         d = push(d, acc)
         flat = flat + 1
     }
-    if len(out_shape) == 0 { d[0] } else { array(d, out_shape) }
+    if keepdims {
+        kept_shape := _copy(a.shape)
+        kept_shape[normalized] = 1
+        array(d, kept_shape)
+    } else if len(out_shape) == 0 { d[0] } else { array(d, out_shape) }
 }

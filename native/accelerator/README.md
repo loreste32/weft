@@ -5,6 +5,21 @@ This directory defines the optional native provider boundary used by
 Providers are explicitly selected shared libraries and must declare the
 operations they implement.
 
+## Optional binary tensor transport
+
+Providers may additionally export `weft_accel_run_tensor` and
+`weft_accel_free_tensor` and declare the operation in their manifest. Tensor
+descriptors carry dtype (`bool`, `int64`, `float32`, or `float64`), rank,
+shape, element strides, byte length, and data. Inputs are borrowed for the
+duration of the call; output storage remains provider-owned until the free
+callback. The host validates dtype, rank, shape, byte length, and the 256 MiB
+boundary before constructing a Weft tensor. The initial host contract requires
+C-contiguous output; providers may reject unsupported layouts explicitly.
+
+The reference provider implements float64 `tensor_matmul`. Vendor providers
+must implement the binary symbols and publish their supported dtype/layout
+matrix before being used for large training batches.
+
 ## ABI v1
 
 Every provider exports:
@@ -55,6 +70,7 @@ be compiled or hardware-tested on hosts without their SDK/device; ordinary CI
 tests the portable provider, loader, manifest contract, and shared tensor
 adapter. Vendor-specific CI must run on CUDA, ROCm, and Apple Silicon runners.
 
-The JSON adapter is a correctness and ABI reference, not the final high-volume
-transport. A production provider should add a binary tensor path before moving
-large training batches across the plugin boundary.
+The JSON adapter remains a correctness and ABI reference for diagnostics. The
+reference, CUDA, ROCm/HIP, and MLX providers now declare the binary tensor
+operation; vendor hardware jobs must still validate it on real devices before
+large training batches are considered release-ready.
