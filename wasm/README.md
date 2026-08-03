@@ -36,7 +36,7 @@ The global functions `runWeft(code, timeoutMs?)` and `runWeftAsync(code, timeout
 Implemented browser capabilities:
 
 - language core, type annotations, bytecode validation, lists/maps, JSON, strings, math, time, regular expressions, and pure standard-library packages;
-- `http.get`, `post`, `put`, `patch`, `delete`, `request`, `fetch`, and `get_json` through the browser Fetch API when called from `runAsync()`; normal browser CORS and CSP rules apply, and request/response bodies are capped at 32 MiB. Responses without a readable stream must provide a valid non-negative `Content-Length` or are rejected;
+- `http.get`, `post`, `put`, `patch`, `delete`, `request`, `fetch`, and `get_json` through the browser Fetch API when called from `runAsync()`; normal browser CORS and CSP rules apply, and request/response bodies are capped at 32 MiB. Body-bearing responses without a readable stream are rejected; `Content-Length` is never trusted as the memory bound;
 - `fs` through a process-local virtual filesystem, including read/write/list/stat/walk/temp-file operations. Paths are confined to the virtual root and capped at 4096 characters; storage is capped at 16 MiB per file, 64 MiB total, 10,000 files, 5,000 directories, and 15,000 combined entries. Files are not persisted to the user’s disk;
 - browser-safe `os` environment and path helpers. Browser process identity is represented by neutral values.
 

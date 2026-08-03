@@ -297,12 +297,10 @@ func browserFetch(ctx context.Context, method, url, body string, headers map[str
 			jsHeaders.Call("forEach", headerFn)
 			headerFn.Release()
 		}
-		contentLengthKnown := false
 		if jsHeaders.Type() != js.TypeUndefined && jsHeaders.Get("get").Type() == js.TypeFunction {
 			contentLength := strings.TrimSpace(jsHeaders.Call("get", "content-length").String())
 			if contentLength != "" {
 				if size, parseErr := strconv.ParseInt(contentLength, 10, 64); parseErr == nil && size >= 0 {
-					contentLengthKnown = true
 					if size > maxBrowserHTTPBodyBytes {
 						send(browserHTTPResult{err: fmt.Errorf("http response body exceeds %d MiB limit", maxBrowserHTTPBodyBytes>>20)})
 						return nil
@@ -351,12 +349,10 @@ func browserFetch(ctx context.Context, method, url, body string, headers map[str
 			reader.Call("read").Call("then", readFn).Call("catch", reject)
 			return nil
 		}
-		if !contentLengthKnown {
-			status := response.Get("status").Int()
-			if method != "HEAD" && status != 204 && status != 205 && status != 304 {
-				send(browserHTTPResult{err: fmt.Errorf("http response body size cannot be bounded without a readable stream or valid Content-Length")})
-				return nil
-			}
+		status := response.Get("status").Int()
+		if method != "HEAD" && status != 204 && status != 205 && status != 304 {
+			send(browserHTTPResult{err: fmt.Errorf("http response body size cannot be bounded without a readable stream")})
+			return nil
 		}
 		textPromise := response.Call("text")
 		textFn := js.FuncOf(func(this js.Value, values []js.Value) any {

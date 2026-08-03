@@ -131,7 +131,7 @@ async function main() {
   globalThis.fetch = async () => ({
     status: 200,
     headers: {
-      get: () => null,
+      get: () => "1",
     },
     text: async () => {
       unboundedBodyRead = true;
