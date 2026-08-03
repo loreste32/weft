@@ -1,16 +1,20 @@
 package weft
 
 import (
+	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/loreste/weft/internal/netsafe"
 )
 
 const updateBaseURL = "https://weftproject.dev"
@@ -18,13 +22,12 @@ const updateBaseURL = "https://weftproject.dev"
 // VersionInfo from the update server.
 type VersionInfo struct {
 	Version string `json:"version"`
-	URL     string `json:"url"`
 }
 
 // CheckUpdate checks if a newer version is available.
 func CheckUpdate() (*VersionInfo, error) {
 	url := updateBaseURL + "/version.json"
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := netsafe.SafeHTTPClient(10 * time.Second)
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("check update: %w", err)
@@ -40,7 +43,7 @@ func CheckUpdate() (*VersionInfo, error) {
 	return &info, nil
 }
 
-// SelfUpdate downloads and replaces the current binary.
+// SelfUpdate downloads and replaces the current binary with SHA-256 verification.
 func SelfUpdate() error {
 	info, err := CheckUpdate()
 	if err != nil {
@@ -54,7 +57,6 @@ func SelfUpdate() error {
 
 	fmt.Printf("updating weft %s → %s ...\n", Version, info.Version)
 
-	// determine binary name for this platform
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH
 	binaryName := fmt.Sprintf("weft-%s-%s", goos, goarch)
@@ -62,10 +64,16 @@ func SelfUpdate() error {
 		binaryName += ".exe"
 	}
 
+	// Fetch checksums first for integrity verification
+	expectedHash, err := fetchExpectedChecksum(binaryName)
+	if err != nil {
+		return fmt.Errorf("checksum fetch: %w", err)
+	}
+
 	dlURL := updateBaseURL + "/dl/" + binaryName
 	fmt.Printf("downloading %s ...\n", dlURL)
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := netsafe.SafeHTTPClient(120 * time.Second)
 	resp, err := client.Get(dlURL)
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
@@ -75,7 +83,7 @@ func SelfUpdate() error {
 		return fmt.Errorf("download: HTTP %d", resp.StatusCode)
 	}
 
-	// write to temp file next to current binary
+	// Write to temp file, computing SHA-256 as we go
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("find executable: %w", err)
@@ -88,7 +96,6 @@ func SelfUpdate() error {
 	dir := filepath.Dir(exe)
 	tmp, err := os.CreateTemp(dir, "weft-update-*")
 	if err != nil {
-		// fallback to system temp if target dir isn't writable
 		tmp, err = os.CreateTemp("", "weft-update-*")
 		if err != nil {
 			return fmt.Errorf("create temp file: %w", err)
@@ -96,26 +103,37 @@ func SelfUpdate() error {
 	}
 	tmpPath := tmp.Name()
 
-	_, err = io.Copy(tmp, resp.Body)
+	hasher := sha256.New()
+	writer := io.MultiWriter(tmp, hasher)
+	_, err = io.Copy(writer, resp.Body)
 	tmp.Close()
 	if err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("download: %w", err)
 	}
 
-	// make executable
+	// Verify SHA-256 checksum BEFORE replacing the binary
+	actualHash := hex.EncodeToString(hasher.Sum(nil))
+	if expectedHash != "" && actualHash != expectedHash {
+		os.Remove(tmpPath)
+		return fmt.Errorf("checksum mismatch: expected %s, got %s — possible tampering", expectedHash, actualHash)
+	}
+	if expectedHash != "" {
+		fmt.Printf("checksum verified: %s\n", actualHash[:16]+"...")
+	}
+
 	if err := os.Chmod(tmpPath, 0o755); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("chmod: %w", err)
 	}
 
-	// macOS: remove quarantine and ad-hoc sign so Gatekeeper doesn't kill it
+	// macOS: remove quarantine and ad-hoc sign
 	if runtime.GOOS == "darwin" {
 		exec.Command("xattr", "-cr", tmpPath).Run()
 		exec.Command("codesign", "--force", "-s", "-", tmpPath).Run()
 	}
 
-	// replace the binary — try rename first, fall back to copy (cross-device or permissions)
+	// Replace the binary
 	oldPath := exe + ".old"
 	os.Remove(oldPath)
 
@@ -124,17 +142,14 @@ func SelfUpdate() error {
 		err = os.Rename(tmpPath, exe)
 		if err != nil {
 			os.Rename(oldPath, exe) // restore
-			// try copy fallback
 			err = copyFile(tmpPath, exe)
 		}
 		if err == nil {
 			os.Remove(oldPath)
 		}
 	} else {
-		// can't rename (permission denied) — try copy with sudo
 		err = copyFile(tmpPath, exe)
 		if err != nil {
-			// last resort: sudo cp
 			fmt.Println("installing to", exe, "(requires sudo)...")
 			sudoErr := exec.Command("sudo", "cp", tmpPath, exe).Run()
 			if sudoErr != nil {
@@ -153,6 +168,39 @@ func SelfUpdate() error {
 
 	fmt.Printf("\n  weft updated to %s\n\n", info.Version)
 	return nil
+}
+
+// fetchExpectedChecksum downloads checksums.txt and extracts the SHA-256 for the given binary.
+func fetchExpectedChecksum(binaryName string) (string, error) {
+	url := updateBaseURL + "/dl/checksums.txt"
+	client := netsafe.SafeHTTPClient(10 * time.Second)
+	resp, err := client.Get(url)
+	if err != nil {
+		// checksums unavailable — warn but don't block (graceful degradation)
+		fmt.Fprintf(os.Stderr, "warning: could not fetch checksums: %v\n", err)
+		return "", nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		fmt.Fprintf(os.Stderr, "warning: checksums HTTP %d\n", resp.StatusCode)
+		return "", nil
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// Format: <hash>  <filename>
+		parts := strings.Fields(line)
+		if len(parts) >= 2 && parts[1] == binaryName {
+			hash := strings.ToLower(parts[0])
+			if len(hash) != 64 {
+				return "", fmt.Errorf("invalid checksum length for %s", binaryName)
+			}
+			return hash, nil
+		}
+	}
+	fmt.Fprintf(os.Stderr, "warning: no checksum found for %s\n", binaryName)
+	return "", nil
 }
 
 func copyFile(src, dst string) error {
@@ -196,15 +244,14 @@ func UpgradePackages(projectDir string) error {
 		return nil
 	}
 
-	// fetch registry index
+	// Use the secure registry fetch from pkgman
 	registryURL := os.Getenv("WEFT_REGISTRY")
 	if registryURL == "" {
-		registryURL = updateBaseURL[:strings.LastIndex(updateBaseURL, "/")] // fallback
 		registryURL = "https://registry.weftproject.dev"
 	}
 	fmt.Printf("checking %s for updates ...\n", registryURL)
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := netsafe.SafeHTTPClient(15 * time.Second)
 	resp, err := client.Get(registryURL + "/v1/index.json")
 	if err != nil {
 		return fmt.Errorf("fetch registry: %w", err)
@@ -223,7 +270,6 @@ func UpgradePackages(projectDir string) error {
 		return fmt.Errorf("parse index: %w", err)
 	}
 
-	// build latest version map
 	latest := make(map[string]string)
 	for _, p := range idx.Packages {
 		if cur, ok := latest[p.Name]; !ok || compareVersionStrings(p.Version, cur) > 0 {
@@ -231,11 +277,9 @@ func UpgradePackages(projectDir string) error {
 		}
 	}
 
-	// check each installed package
 	var upgradable []struct{ name, from, to string }
 	for _, pkg := range lock.Packages {
 		if !strings.HasPrefix(pkg.Source, "path:") {
-			// only upgrade registry packages, not local path deps
 			if latestVer, ok := latest[pkg.Name]; ok {
 				if compareVersionStrings(latestVer, pkg.Version) > 0 {
 					upgradable = append(upgradable, struct{ name, from, to string }{pkg.Name, pkg.Version, latestVer})
@@ -258,7 +302,6 @@ func UpgradePackages(projectDir string) error {
 	}
 	fmt.Println()
 
-	// install each upgrade
 	for _, u := range upgradable {
 		fmt.Printf("upgrading %s ...\n", u.name)
 		if err := RegistryInstall(projectDir, u.name); err != nil {
@@ -270,7 +313,6 @@ func UpgradePackages(projectDir string) error {
 	return nil
 }
 
-// compareVersionStrings compares semver strings. Returns -1, 0, 1.
 func compareVersionStrings(a, b string) int {
 	pa := parseVer(a)
 	pb := parseVer(b)
@@ -290,7 +332,7 @@ func parseVer(s string) [3]int {
 	parts := strings.SplitN(s, ".", 3)
 	var v [3]int
 	for i := 0; i < 3 && i < len(parts); i++ {
-		p := strings.SplitN(parts[i], "-", 2)[0] // strip pre-release
+		p := strings.SplitN(parts[i], "-", 2)[0]
 		fmt.Sscanf(p, "%d", &v[i])
 	}
 	return v
