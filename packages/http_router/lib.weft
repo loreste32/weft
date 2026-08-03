@@ -62,7 +62,7 @@ pub fn handle(r, req) {
         params := match_path(route.path, req.path)
         if params != null {
             req.params = params
-            handler := route.handler
+            let mut handler = route.handler
             mut i := len(r._middleware) - 1
             while i >= 0 {
                 mw := r._middleware[i]
@@ -99,9 +99,9 @@ fn match_path(pattern, actual) {
 
 
 pub fn cors(opts) {
-    origin := "*"
-    methods := "GET, POST, PUT, DELETE, PATCH, OPTIONS"
-    headers := "Content-Type, Authorization"
+    let mut origin = "*"
+    let mut methods = "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+    let mut headers = "Content-Type, Authorization"
     if opts != null {
         if opts.origin != null {
             origin = opts.origin

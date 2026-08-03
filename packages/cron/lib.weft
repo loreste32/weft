@@ -1,5 +1,5 @@
 pub fn every(interval_sec, f) {
-    job := {
+    let mut job = {
         "interval": interval_sec,
         "fn": f,
         "running": true,
@@ -27,7 +27,7 @@ pub fn every(interval_sec, f) {
 
 
 pub fn at(hour, minute, f) {
-    job := {
+    let mut job = {
         "running": true,
         "runs": 0,
         "last_run": null,

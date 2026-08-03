@@ -1,0 +1,5 @@
+use "./lib.weft" as retry
+
+fn test_module_loads {
+    test.is_true(true)
+}

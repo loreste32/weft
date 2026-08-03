@@ -1,16 +1,17 @@
 pub fn parse(s) -> Result[any] {
     ensure(s != null && s != "", "empty version string")?
+    let mut v = s
     raw := s
-    if str.starts_with(s, "v") {
-        s = str.slice(s, 1)
+    if str.starts_with(v, "v") {
+        v = str.slice(v, 1)
     }
-    pre := ""
-    if str.contains(s, "-") {
-        parts := str.split(s, "-")
-        s = parts[0]
+    let mut pre = ""
+    if str.contains(v, "-") {
+        parts := str.split(v, "-")
+        v = parts[0]
         pre = str.join(str.slice(parts, 1), "-")
     }
-    parts := str.split(s, ".")
+    parts := str.split(v, ".")
     ensure(len(parts) == 3, "version must be major.minor.patch, got: $raw")?
     major := int.parse(parts[0]).unwrap_or(-1)
     minor := int.parse(parts[1]).unwrap_or(-1)
@@ -117,7 +118,7 @@ pub fn bump(version, part) -> Result[any] {
 
 
 pub fn format(v) {
-    s := "${v.major}.${v.minor}.${v.patch}"
+    let mut s = "${v.major}.${v.minor}.${v.patch}"
     if v.pre != "" {
         s = "$s-${v.pre}"
     }

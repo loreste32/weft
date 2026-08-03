@@ -1,0 +1,6 @@
+use "./lib.weft" as sv
+
+fn test_valid {
+    test.is_true(sv.valid("1.2.3"))
+    test.is_false(sv.valid(""))
+}

@@ -1,0 +1,16 @@
+use "./lib.weft" as v
+
+fn test_email {
+    test.is_true(v.email("a@b.com"))
+    test.is_false(v.email("notanemail"))
+}
+
+fn test_in_range {
+    test.is_true(v.in_range(5, 1, 10))
+    test.is_false(v.in_range(11, 1, 10))
+}
+
+fn test_length {
+    test.is_true(v.length("abc", 1, 5))
+    test.is_false(v.length("", 1, 5))
+}

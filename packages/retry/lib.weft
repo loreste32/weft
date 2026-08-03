@@ -1,9 +1,9 @@
 pub fn run(f, opts) -> Result[any] {
-    max := 3
-    delay := 200
-    bk := 2.0
-    max_delay := 30000
-    on_retry := null
+    let mut max = 3
+    let mut delay = 200
+    let mut bk = 2.0
+    let mut max_delay = 30000
+    let mut on_retry = null
     if opts != null {
         if opts.max_attempts != null {
             max = opts.max_attempts
@@ -45,7 +45,7 @@ pub fn run(f, opts) -> Result[any] {
 
 
 pub fn linear(f, attempts, delay_ms) -> Result[any] {
-    max := if attempts != null { attempts } else { 3 }
+    let mut max = if attempts != null { attempts } else { 3 }
     d := if delay_ms != null { delay_ms } else { 500 }
     run(f, {
         "max_attempts": max,
@@ -59,10 +59,10 @@ pub fn once(f) -> Result[any] { run(f, {"max_attempts": 2, "delay_ms": 100}) }
 
 
 pub fn with_timeout(f, timeout_sec, opts) -> Result[any] {
-    max := 1000
-    delay := 200
-    bk := 1.5
-    max_delay := 5000
+    let mut max = 1000
+    let mut delay = 200
+    let mut bk = 1.5
+    let mut max_delay = 5000
     if opts != null {
         if opts.delay_ms != null {
             delay = opts.delay_ms

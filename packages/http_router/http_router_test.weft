@@ -1,0 +1,9 @@
+use "./lib.weft" as r
+
+fn test_new { app := r.new()
+    test.is_true(app != null) }
+fn test_routes {
+    let mut app = r.new()
+    app = r.get(app, "/health", fn(req) { {"status": 200, "body": "ok"} })
+    test.is_true(app != null)
+}

@@ -10,12 +10,15 @@ fn level_num(level) {
 }
 
 pub fn new(opts) {
-    o := if opts != null { opts } else { {} }
-    {
-        "level": if o.level != null { o.level } else { "info" },
-        "format": if o.format != null { o.format } else { "text" },
-        "fields": if o.fields != null { o.fields } else { {} },
+    let mut level = "info"
+    let mut format = "text"
+    let mut fields = {}
+    if opts != null {
+        if contains(keys(opts), "level") { level = opts["level"] }
+        if contains(keys(opts), "format") { format = opts["format"] }
+        if contains(keys(opts), "fields") { fields = opts["fields"] }
     }
+    {"level": level, "format": format, "fields": fields}
 }
 
 fn should_log(logger, level) {

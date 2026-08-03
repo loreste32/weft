@@ -1,0 +1,15 @@
+use "./lib.weft" as t
+
+fn test_html_escape {
+    test.eq(t.html_escape("<b>hi</b>"), "&lt;b&gt;hi&lt;/b&gt;")
+}
+
+fn test_render {
+    r := t.render("hello {{name}}", {"name": "world"})
+    test.eq(r, "hello world")
+}
+
+fn test_cond_true {
+    r := t.cond(true, "yes", "no")
+    test.eq(r, "yes")
+}

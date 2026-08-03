@@ -1,0 +1,6 @@
+use "./lib.weft" as m
+
+fn test_accuracy { test.eq(m.accuracy([1,0,1,1], [1,0,1,0]), 0.75) }
+fn test_mse { test.eq(m.mse([1,2,3], [1,2,3]), 0) }
+fn test_mae { test.eq(m.mae([1,2,3], [2,3,4]), 1) }
+fn test_cosine { test.approx(m.cosine([1,0], [1,0]), 1.0, 0.001) }

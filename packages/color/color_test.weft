@@ -1,0 +1,16 @@
+use "./lib.weft" as c
+
+fn test_red {
+    r := c.red("hi")
+    test.is_true(len(r) > 2)
+}
+
+fn test_bold {
+    b := c.bold("hi")
+    test.is_true(len(b) > 2)
+}
+
+fn test_ok {
+    o := c.ok("done")
+    test.is_true(str.contains(o, "done"))
+}

@@ -49,7 +49,7 @@ pub fn bg_yellow(s) { "\\x1b[43m$s\\x1b[0m" }
 pub fn bg_blue(s) { "\\x1b[44m$s\\x1b[0m" }
 
 
-pub fn strip(s) { re.replace_all(s, `\x1b\[[0-9;]*m`, "") }
+pub fn strip(s) { re.replace(`\x1b\[[0-9;]*m`, "") }
 
 
 pub fn ok(msg) { green("✓") + " " + msg }

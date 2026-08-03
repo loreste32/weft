@@ -1,19 +1,22 @@
 // queue — in-process job queue with workers, retries, and dead-letter.
 
 pub fn new(opts) {
-    o := if opts != null { opts } else { {} }
+    let mut max_retries = 3
+    if opts != null && contains(keys(opts), "max_retries") {
+        max_retries = opts["max_retries"]
+    }
     {
         "items": [],
         "dead": [],
         "processed": 0,
         "failed": 0,
-        "max_retries": if o.max_retries != null { o.max_retries } else { 3 },
+        "max_retries": max_retries,
     }
 }
 
 pub fn push(q, job) {
     let mut items = q.items
-    items = items + [{"payload": job, "attempts": 0, "id": uuid.v4()}]
+    items = push(items, {"payload": job, "attempts": 0, "id": uuid.v4()})
     q.items = items
     q
 }
@@ -28,15 +31,15 @@ pub fn process(q, handler) {
         result := handler(item.payload)
         // handler returns Ok(v) or Err(e) — check .ok field
         if result.ok != null && result.ok == true {
-            results = results + [{"id": item.id, "status": "ok"}]
+            results = push(results, {"id": item.id, "status": "ok"})
             processed = processed + 1
         } else {
             let mut att = item.attempts + 1
             if att >= q.max_retries {
-                dead = dead + [{"id": item.id, "payload": item.payload, "attempts": att}]
+                dead = push(dead, {"id": item.id, "payload": item.payload, "attempts": att})
                 failed = failed + 1
             } else {
-                remaining = remaining + [{"payload": item.payload, "attempts": att, "id": item.id}]
+                remaining = push(remaining, {"payload": item.payload, "attempts": att, "id": item.id})
             }
         }
     }
@@ -59,7 +62,7 @@ pub fn stats(q) {
 pub fn retry_dead(q, handler) {
     let mut items = q.items
     for item in q.dead {
-        items = items + [{"payload": item.payload, "attempts": 0, "id": item.id}]
+        items = push(items, {"payload": item.payload, "attempts": 0, "id": item.id})
     }
     q.items = items
     q.dead = []

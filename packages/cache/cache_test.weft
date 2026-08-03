@@ -1,0 +1,26 @@
+use "./lib.weft" as cache
+
+fn test_new { c := cache.new(null)
+    test.eq(cache.size(c), 0) }
+fn test_set_get { c := cache.new(null)
+    cache.set(c, "k", "v", null)
+    test.eq(cache.get(c, "k"), "v") }
+fn test_has { c := cache.new(null)
+    cache.set(c, "a", 1, null)
+    test.is_true(cache.has(c, "a"))
+    test.is_false(cache.has(c, "b")) }
+fn test_delete { c := cache.new(null)
+    cache.set(c, "a", 1, null)
+    cache.delete(c, "a")
+    test.is_false(cache.has(c, "a")) }
+fn test_clear { c := cache.new(null)
+    cache.set(c, "a", 1, null)
+    cache.set(c, "b", 2, null)
+    cache.clear(c)
+    test.eq(cache.size(c), 0) }
+fn test_keys { c := cache.new(null)
+    cache.set(c, "x", 1, null)
+    cache.set(c, "y", 2, null)
+    test.eq(cache.size(c), 2) }
+fn test_get_missing { c := cache.new(null)
+    test.eq(cache.get(c, "nope"), null) }

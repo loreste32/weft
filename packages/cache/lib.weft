@@ -1,6 +1,6 @@
 pub fn new(opts) {
-    ttl := 300
-    max_size := 1000
+    let mut ttl = 300
+    let mut max_size = 1000
     if opts != null {
         if opts.ttl_sec != null {
             ttl = opts.ttl_sec
@@ -33,7 +33,7 @@ pub fn get(c, key) {
 
 
 pub fn set(c, key, value, ttl_sec) {
-    ttl := if ttl_sec != null { ttl_sec } else { c._ttl }
+    let mut ttl = if ttl_sec != null { ttl_sec } else { c._ttl }
     c._entries[key] = {"value": value, "_expires": time.now() + ttl}
     push(c._order, key)
     if len(c._order) > c._max {

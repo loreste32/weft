@@ -1,0 +1,19 @@
+use "./lib.weft" as log
+
+fn test_new {
+    l := log.new(null)
+    test.eq(l.level, "info")
+    test.eq(l.format, "text")
+}
+
+fn test_set_level {
+    l := log.new(null)
+    l2 := log.set_level(l, "debug")
+    test.eq(l2.level, "debug")
+}
+
+fn test_json_format {
+    l := log.new(null)
+    l2 := log.json_format(l)
+    test.eq(l2.format, "json")
+}

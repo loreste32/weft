@@ -1,0 +1,29 @@
+use "./lib.weft" as jwt
+
+fn _tok { "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c" }
+
+fn test_decode {
+    d := jwt.decode(_tok())?
+    test.eq(d.header.alg, "HS256")
+    test.eq(d.payload.name, "John Doe")
+}
+
+fn test_claims {
+    c := jwt.claims(_tok())?
+    test.eq(c.sub, "1234567890")
+}
+
+fn test_subject {
+    s := jwt.subject(_tok())?
+    test.eq(s, "1234567890")
+}
+
+fn test_has_claim {
+    test.is_true(jwt.has_claim(_tok(), "name")?)
+    test.is_false(jwt.has_claim(_tok(), "nope")?)
+}
+
+fn test_invalid {
+    r := jwt.decode("not.a.jwt")
+    test.is_false(r.ok)
+}
