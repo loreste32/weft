@@ -389,6 +389,58 @@ fn test_where {
     test.eq(warp.to_list(warp.where(cond, x, y)), [10, 200, 30])
 }
 
+fn test_numpy_shape_contracts {
+    a := warp.array([1, 2, 3, 4, 5, 6], [2, 3])
+    inferred := warp.reshape(a, [-1, 2])
+    test.eq(warp.shape(inferred), [3, 2])
+    singleton := warp.squeeze(warp.array([7], [1]))
+    test.eq(warp.shape(singleton), [])
+    expanded := warp.expand_dims(a, -1)
+    test.eq(warp.shape(expanded), [2, 3, 1])
+    test.eq(warp.to_list(warp.diag([1, 2])), [1, 0, 0, 2])
+}
+
+fn test_transpose_and_concatenate {
+    a := warp.array([1, 2, 3, 4], [2, 2])
+    b := warp.array([5, 6, 7, 8], [2, 2])
+    test.eq(warp.to_list(warp.transpose(a, [1, 0])), [1, 3, 2, 4])
+    rows := warp.concatenate([a, b], 0)
+    test.eq(warp.shape(rows), [4, 2])
+    test.eq(warp.to_list(rows), [1, 2, 3, 4, 5, 6, 7, 8])
+    cols := warp.concatenate([a, b], 1)
+    test.eq(warp.shape(cols), [2, 4])
+    test.eq(warp.to_list(cols), [1, 2, 5, 6, 3, 4, 7, 8])
+    stacked := warp.stack([a, b], 0)
+    test.eq(warp.shape(stacked), [2, 2, 2])
+    test.eq(warp.get(stacked, [1, 0, 1]), 6)
+}
+
+fn test_split_take_and_axis_manipulation {
+    a := warp.array([1, 2, 3, 4, 5, 6], [2, 3])
+    parts := warp.split(a, 3, 1)
+    test.eq(len(parts), 3)
+    test.eq(warp.to_list(parts[1]), [2, 5])
+    taken := warp.take(a, [2, 0], 1)
+    test.eq(warp.shape(taken), [2, 2])
+    test.eq(warp.to_list(taken), [3, 1, 6, 4])
+    tiled := warp.tile(a, [2, 1])
+    test.eq(warp.shape(tiled), [4, 3])
+    test.eq(warp.to_list(tiled), [1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6])
+    repeated := warp.repeat_axis(a, 2, 1)
+    test.eq(warp.to_list(repeated), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6])
+    flipped := warp.flip_axis(a, 0)
+    test.eq(warp.to_list(flipped), [4, 5, 6, 1, 2, 3])
+}
+
+fn test_manipulation_rejects_invalid_shapes {
+    a := warp.array([1, 2, 3, 4], [2, 2])
+    test.is_false(warp.reshape(a, [-1, -1]).ok)
+    test.is_false(warp.transpose(a, [0, 0]).ok)
+    test.is_false(warp.concatenate([a, warp.array([1, 2, 3], [3])], 0).ok)
+    test.is_false(warp.split(a, 3, 0).ok)
+    test.is_false(warp.take(a, [2], 0).ok)
+}
+
 fn test_all_any {
     a := warp.array([1, 1, 1], [3])
     test.is_true(warp.all_(a))

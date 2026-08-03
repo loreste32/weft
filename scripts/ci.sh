@@ -23,6 +23,15 @@ go test ./...
 echo "== native accelerator ABI =="
 # Compiles the checked-in C provider and exercises the real dlopen ABI.
 go test ./internal/accelerator/ -count=1
+echo "== native provider adapter =="
+if command -v c++ >/dev/null 2>&1; then
+  c++ -std=c++17 -I native/accelerator/providers \
+    native/accelerator/providers/tensor_json_test.cpp \
+    -o /tmp/weft-tensor-json-test
+  /tmp/weft-tensor-json-test
+else
+  echo "c++ missing — skip optional provider adapter smoke test"
+fi
 echo "== race smoke =="
 # Concurrency-sensitive packages only (full -race ./... is too slow for every PR)
 go test ./internal/vm/ -race -count=1 -timeout 120s -run 'Parallel|Concurrent|Stack|NoPanic'

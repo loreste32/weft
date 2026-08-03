@@ -11,18 +11,26 @@ an optional native accelerator ABI.
   error.
 - Binary operations support scalars, equal shapes, and NumPy-style trailing
   broadcasting. Incompatible shapes return `Err`.
+- `reshape` accepts one inferred `-1` dimension; `squeeze` can produce a
+  zero-dimensional array; negative axes are normalized where supported.
+- `transpose`, `concatenate`, `stack`, equal-section `split`, and `take` use
+  row-major shape-preserving semantics.
+- `repeat_axis` and `flip_axis` provide explicit multidimensional axis
+  operations while preserving the fixed-arity `repeat` and `flip` APIs.
 - `matmul` and `dot` support 1D×1D, 2D×1D, 1D×2D, and 2D×2D forms.
 - `set` returns a copy and does not mutate the source array.
 - Empty statistics return `null` where a numeric identity is undefined;
   `sum([])` is `0` and `prod([])` is `1`.
-- `sort` and `argsort` use a stable merge sort, so they are O(n log n) rather
-  than the previous quadratic insertion sort.
+- `sort` and `argsort` use stable merge sort, so they are O(n log n).
 
 ## Native backends
 
 Native libraries are never loaded implicitly. A program must have the
 `accelerator` capability and call `warp.accelerator_load(path)`. The provider
-ABI is documented in [`native/accelerator`](../native/accelerator):
+ABI is documented in [`native/accelerator`](../native/accelerator). CUDA,
+ROCm/HIP, and MLX are separate provider implementations; each provider must
+declare its actual vendor, supported operations, dtypes, layouts, and device
+constraints. The checked-in example library is only an ABI smoke test.
 
 ```weft
 use warp
@@ -38,22 +46,18 @@ fn main -> Result {
 }
 ```
 
-CUDA, ROCm/HIP, and MLX are separate provider implementations. A provider
-must declare its actual vendor and supported operations; the example library
-is only an ABI smoke test.
-
 ## API surface
 
-The package manifest is authoritative and exports the full public surface:
-constructors, shape/indexing, element-wise math, comparisons, reductions,
-statistics, linear algebra, manipulation, masking, inspection, and native
-dispatch. Run `weft mod check packages/warp --tests` to verify the manifest and
-the 79 regression tests.
+The package manifest exports the complete public surface: creation,
+shape/indexing, element-wise math, comparisons, reductions, statistics,
+linear algebra, manipulation, masking, inspection, and native dispatch.
+Run `weft mod check packages/warp --tests` to verify the manifest and its 83
+regression tests.
 
 ## Deliberate limits
 
-`warp` is not a complete binary-compatible NumPy replacement. It does not yet
-implement every dtype, memory order, sparse matrix, masked array, FFT,
+`warp` is not yet a complete binary-compatible NumPy replacement. It does not
+yet implement every dtype, memory order, sparse matrix, masked array, FFT,
 autodiff, or ufunc protocol. The CPU implementation is pure Weft and does not
 promise BLAS/SIMD performance. Use native providers for large GPU workloads
 and validate numerical equivalence for the operations you rely on.

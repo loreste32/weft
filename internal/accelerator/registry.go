@@ -99,6 +99,30 @@ func validateManifest(m Manifest) error {
 	if len(m.Vendors) == 0 {
 		return errors.New("accelerator manifest must declare at least one vendor")
 	}
+	if len(m.Operations) == 0 {
+		return errors.New("accelerator manifest must declare at least one operation")
+	}
+	if err := validateNames("vendor", m.Vendors); err != nil {
+		return err
+	}
+	if err := validateNames("operation", m.Operations); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateNames(kind string, values []string) error {
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return fmt.Errorf("accelerator manifest contains an empty %s", kind)
+		}
+		if _, ok := seen[value]; ok {
+			return fmt.Errorf("accelerator manifest contains duplicate %s %q", kind, value)
+		}
+		seen[value] = struct{}{}
+	}
 	return nil
 }
 
@@ -115,6 +139,9 @@ func (p *Plugin) RunJSON(op string, input []byte) ([]byte, error) {
 	if strings.TrimSpace(op) == "" {
 		return nil, errors.New("accelerator operation is required")
 	}
+	if !supportsOperation(p.manifest.Operations, op) {
+		return nil, fmt.Errorf("accelerator operation %q is not declared by the provider", op)
+	}
 	if len(input) > MaxResultBytes {
 		return nil, fmt.Errorf("accelerator input exceeds %d bytes", MaxResultBytes)
 	}
@@ -129,6 +156,15 @@ func (p *Plugin) RunJSON(op string, input []byte) ([]byte, error) {
 		return nil, errors.New("accelerator returned invalid JSON")
 	}
 	return out, nil
+}
+
+func supportsOperation(operations []string, operation string) bool {
+	for _, declared := range operations {
+		if declared == operation {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Plugin) Close() error {

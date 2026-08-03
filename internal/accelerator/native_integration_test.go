@@ -45,12 +45,30 @@ func TestExampleSharedLibrary(t *testing.T) {
 	if err != nil {
 		t.Fatal("health: ", err)
 	}
-	var healthValue map[string]bool
-	if err := json.Unmarshal(health, &healthValue); err != nil || !healthValue["ok"] {
+	var healthValue struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.Unmarshal(health, &healthValue); err != nil || !healthValue.OK {
 		t.Fatalf("health result = %s, %v", health, err)
 	}
 	identity, err := plugin.RunJSON("identity", []byte(`{"value":7}`))
 	if err != nil || string(identity) != `{"value":7}` {
 		t.Fatalf("identity result = %s, %v", identity, err)
+	}
+	matmul, err := plugin.RunJSON("matmul", []byte(`{"a":[1,2,3,4],"a_shape":[2,2],"b":[5,6,7,8],"b_shape":[2,2]}`))
+	if err != nil {
+		t.Fatal("matmul: ", err)
+	}
+	var matrix struct {
+		Data  []float64 `json:"data"`
+		Shape []int     `json:"shape"`
+	}
+	if err := json.Unmarshal(matmul, &matrix); err != nil {
+		t.Fatalf("matmul JSON = %s: %v", matmul, err)
+	}
+	if len(matrix.Shape) != 2 || matrix.Shape[0] != 2 || matrix.Shape[1] != 2 ||
+		len(matrix.Data) != 4 || matrix.Data[0] != 19 || matrix.Data[1] != 22 ||
+		matrix.Data[2] != 43 || matrix.Data[3] != 50 {
+		t.Fatalf("matmul result = %+v", matrix)
 	}
 }
