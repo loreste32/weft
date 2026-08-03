@@ -263,6 +263,10 @@ Weft is **host-power** for your scripts (like a shell + HTTP toolkit), not a mul
 | `Secret` | Prints as `***`; use `secrets.unwrap` at the edge |
 | `os.remove` | Single file only; `os.remove_tree` guards against `/` and `.` |
 | `os.mkdir` | Permissions capped at 0755 |
+| `weft update` | SHA-256 checksum verified before binary replacement |
+| `install.sh` | SHA-256 verified before installing |
+| Update/registry HTTP | Uses `netsafe.SafeHTTPClient` (SSRF protection) |
+| WASM filesystem | Path traversal blocked; 16MB/file, 64MB total, 10k file cap |
 
 Operator checklist: **[SECURITY.md](../SECURITY.md)** · Production habits: [PRODUCTION.md](PRODUCTION.md).
 

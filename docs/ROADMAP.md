@@ -106,7 +106,7 @@ In one line: **useful for agents, telecom, and ops scripts when versions are pin
 
 The **0.3.x line is complete** (0.3.31–0.4.10). Everything shipped.
 
-**Completed in 0.3.x:** changelog page, `weft doc`, `weft lint`, `weft build`, `weft test --race/--mem/--timeout`, `cluster`/`governor`/`supervisor` stdlib, `deepgram`/`elevenlabs`/`mlinfer`, MCP, telecom with FreeSWITCH/Asterisk, website with 36 doc pages. (0.4.0 then added the `http_router`, `template`, `validate`, `cron` registry modules — 14 total.)
+**Completed in 0.3.x:** changelog page, `weft doc`, `weft lint`, `weft build`, `weft test --race/--mem/--timeout`, `cluster`/`governor`/`supervisor` stdlib, `deepgram`/`elevenlabs`/`mlinfer`, MCP, telecom with FreeSWITCH/Asterisk, website with 36 doc pages. (0.4.0 then added the `http_router`, `template`, `validate`, `cron` registry modules — 23 total.)
 
 ## 0.4.x — make it solid
 

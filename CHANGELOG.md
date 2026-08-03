@@ -10,6 +10,12 @@ All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](ht
 - **Browser CI** — Playwright-based integration tests with Chromium and Firefox
 - **Module tests** — 63 new Weft test cases across 12 previously untested modules (cache, color, config, http_router, jwt, logger, metrics, queue, retry, semver, template, validate)
 
+### Security
+- **Self-update checksum verification** — `weft update` downloads `checksums.txt` and verifies SHA-256 before replacing the binary; rejects mismatches with "possible tampering" error
+- **Install script checksum verification** — `install.sh` verifies SHA-256 using sha256sum/shasum before installing
+- **netsafe HTTP client** — all update and registry HTTP uses `netsafe.SafeHTTPClient` with SSRF protection (was raw `http.Client`)
+- **Removed unused URL field** from `VersionInfo` struct (prevented future server-controlled download URL misuse)
+
 ### Fixed
 - **8 module source bugs found by new tests**: logger/queue/config empty-map field access crashes, queue/config list append with `+` operator, semver parameter reassignment, retry immutable bindings, color nonexistent `re.replace_all`
 - **WASM path traversal** — `../secret` now returns error instead of silently becoming root

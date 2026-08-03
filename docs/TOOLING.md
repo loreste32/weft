@@ -25,7 +25,7 @@ Small set of commands for day-to-day work. Nothing here replaces a full IDE or p
 | `weft test --mem` | Track memory allocations per test. |
 | `weft test --timeout N` | Per-test timeout in seconds. |
 | `weft mcp serve <file>` | Run Weft functions as MCP tools (for AI assistants). |
-| `weft update` | Self-update weft binary to latest version. |
+| `weft update` | Self-update with SHA-256 checksum verification. |
 | `weft upgrade` | Upgrade installed packages to latest registry versions. |
 | `weft lsp` | Language server: diagnostics, completion, hover, definition, symbols, **format**. |
 | `weft eval [dir]` | Smoke-run scripts that have `fn main`. |

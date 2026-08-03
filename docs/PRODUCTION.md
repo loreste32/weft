@@ -33,6 +33,9 @@ Stack + trust map: [ECOSYSTEM.md](ECOSYSTEM.md) · full threat model: [SECURITY.
 | DNS health | `dns.lookup` / `dns.srv` — service discovery checks |
 | System metrics | `sysinfo.memory` / `disk` / `loadavg` — monitoring hooks |
 | Standalone deploy | `weft build -o myapp` — single executable, no weft needed on target |
+| Self-update integrity | `weft update` verifies SHA-256 checksums before replacing the binary |
+| Install script integrity | `install.sh` verifies SHA-256 before installing (sha256sum/shasum) |
+| SSRF protection | All HTTP in update/registry uses `netsafe.SafeHTTPClient` |
 
 Full threat model: [SECURITY.md](../SECURITY.md).
 

@@ -178,7 +178,7 @@ Browse all: [registry.weftproject.dev](https://registry.weftproject.dev)
 | `weft notebook [-o out.html]` | Run `.weft` as cells, output HTML |
 | `weft mcp serve <file>` | Expose functions as MCP tools |
 | `weft lsp` | Language server (completion, hover, rename, diagnostics) |
-| `weft update` | Self-update weft binary |
+| `weft update` | Self-update with SHA-256 verification |
 | `weft upgrade` | Upgrade installed packages |
 | `weft outdated` | Check for newer package versions |
 | `weft stdlib [pkg[.member]]` | Browse stdlib (live probe on zero-arg functions) |
@@ -192,9 +192,21 @@ Plus: `weft new module|app|cli <name>`, `weft get`, `weft install`, `weft publis
 - Bytecode validation, lex/parse/compile fuzz, VM concurrency stress
 - Race detector + compat corpus in CI
 - Glue benchmarks vs Python (output parity)
-- Browser Wasm playground with browser `fetch`, a bounded virtual filesystem, async execution, and explicit errors for host-only packages
+- Browser WASM: async execution, Fetch HTTP, bounded virtual filesystem (path traversal blocked, 16MB/file, 64MB total, 10k file cap)
 - Slim build (`-tags slim`) for smaller binaries
+- 1410 Go tests, 22 of 23 registry modules tested
 - See [docs/STABILITY.md](docs/STABILITY.md)
+
+### Security
+
+- `weft update` verifies SHA-256 checksums before replacing binaries
+- Install script (`install.sh`) verifies SHA-256 before installing
+- All update/registry HTTP uses `netsafe.SafeHTTPClient` (SSRF protection)
+- Package registry: mandatory ed25519 signatures, version immutability
+- Capability sandboxing for third-party vendor packages
+- Argon2id/PBKDF2 with parameter bounds enforced at the Go level
+- WASM filesystem: path traversal returns errors, entry limits enforced
+- See [SECURITY.md](SECURITY.md)
 
 ## Examples
 
