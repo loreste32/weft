@@ -71,6 +71,26 @@ t := df.read_jsonl("data.jsonl")?
 | `select_(t, [cols])` | Keep only listed columns |
 | `drop(t, [cols])` | Remove listed columns |
 
+### Series and labels
+
+`col(t, name)` remains the compatibility API and returns a plain list. Use a
+Series when the column needs a name and explicit labels:
+
+| Function | Meaning |
+|----------|---------|
+| `series(values, name, index?)` | Construct a labeled Series; omitted index is `0..n-1` |
+| `series_from(t, name)` / `as_series(t, name)` | Convert a DataFrame column to a Series |
+| `series_values`, `series_name`, `series_index`, `series_shape`, `series_dtype` | Inspect Series metadata |
+| `series_map` / `series_apply` | Apply a scalar function while preserving labels |
+| `series_fillna` / `series_dropna` | Null handling while preserving surviving labels |
+| `series_unique` / `series_value_counts` | Stable unique values or typed count map |
+| `index(t)` | Read the DataFrame index, defaulting to `0..n-1` |
+| `set_index(t, column, drop?)` | Move a column into explicit index metadata; drop defaults to true |
+| `reset_index(t, name?)` | Materialize the index as a column; name defaults to `index` |
+
+The index model is explicit and single-level. `loc` remains positional
+half-open slicing; label selection and MultiIndex semantics are not claimed.
+
 ```weft
 names := df.col(t, "name")       // ["Alice", "Bob", ...]
 top5 := df.head(t, 5)
@@ -278,11 +298,15 @@ df.write_csv(t, "output.csv", null)?
 
 - Pure Weft — row-list storage, not columnar. No universal row-count limit is promised; benchmark your workload.
 - Sort uses the runtime comparator and is covered by the package scale tests.
-- There is no label/index or multi-index model; `loc` is positional.
+- Indexes are single-level metadata; operations that construct a new frame may
+  return a default positional index. `loc` is positional, not label-based.
+- There is no MultiIndex, categorical dtype, timezone-aware datetime, or
+  pandas extension-array protocol.
 - `pivot` rejects duplicate index/column pairs; use an explicit aggregation before reshaping.
 - No datetime parsing (use `time.*` stdlib manually).
 - `corr`/`cov` are pairwise, not correlation matrices, and use pairwise non-null numeric rows.
 
 ## API count
 
-78 exported functions across creation (9), shape (7), selection (7), filtering (5), sorting (4), column ops (8), missing data (4), duplicates (2), grouping (4), statistics (4), joins (3), reshaping (3), windows (7), sampling (2), output (9), display (1). The package currently has 76 regression tests.
+95 exported functions, including the Series and explicit single-level index
+APIs. The package currently has 80 regression tests.

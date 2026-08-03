@@ -76,3 +76,7 @@ requirements, error behavior, numerical tolerances, and benchmark results.
 The reference providers are not a claim that every host has the corresponding
 SDK or GPU; ordinary CI tests the ABI and CPU reference provider, while
 vendor-hardware jobs must compile and run each provider on its own runner.
+
+## Hardware CI
+
+`.github/workflows/native-accelerators.yml` is a scheduled/manual conformance workflow. It is separate from pull-request CI because it requires self-hosted runners labeled `cuda`, `rocm`, and `mlx`. The CUDA runner needs `nvcc` and a working NVIDIA device; the ROCm runner needs `hipcc` and a working AMD device; the MLX runner needs Apple Silicon plus an `mlx-c` installation and repository variable `MLX_C_PREFIX`. Each job compiles the checked-in provider, loads it through Weft's `dlopen` ABI, and runs health plus 2×2 matmul checks. A green compile alone is not sufficient provider validation.

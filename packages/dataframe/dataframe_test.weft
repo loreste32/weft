@@ -84,6 +84,44 @@ fn test_col {
     test.eq(names[0], "Alice")
 }
 
+fn test_series_contract {
+    t := _sample_df()
+    s := df.series_from(t, "age")
+    test.eq(df.series_name(s), "age")
+    test.eq(df.series_values(s), [30, 25, 35, 28, 32])
+    test.eq(df.series_index(s), [0, 1, 2, 3, 4])
+    test.eq(df.series_shape(s), [5])
+    test.eq(df.series_dtype(s), "int")
+    doubled := df.series_map(s, fn(v) { v * 2 })
+    test.eq(df.series_values(doubled), [60, 50, 70, 56, 64])
+}
+
+fn test_series_null_and_counts {
+    s := df.series([1, null, 1, 2], "x", ["a", "b", "c", "d"])
+    filled := df.series_fillna(s, 0)
+    test.eq(df.series_values(filled), [1, 0, 1, 2])
+    dropped := df.series_dropna(s)
+    test.eq(df.series_values(dropped), [1, 1, 2])
+    test.eq(df.series_index(dropped), ["a", "c", "d"])
+    test.eq(df.series_unique(s), [1, null, 2])
+    counts := df.series_value_counts(s)
+    test.eq(counts["int:1"], 2)
+    test.eq(counts["null:null"], 1)
+}
+
+fn test_set_and_reset_index {
+    t := _sample_df()
+    invalid_drop := df.set_index(t, "name", 1)
+    test.is_false(invalid_drop.ok)
+    indexed := df.set_index(t, "name", null)
+    test.eq(df.index(indexed), ["Alice", "Bob", "Carol", "Dan", "Eve"])
+    test.is_false(contains(df.columns(indexed), "name"))
+    restored := df.reset_index(indexed, null)
+    test.eq(df.columns(restored)[0], "index")
+    test.eq(df.col(restored, "index")[0], "Alice")
+    test.eq(df.col(restored, "dept")[2], "sales")
+}
+
 fn test_head_tail {
     t := _sample_df()
     h := df.head(t, 2)

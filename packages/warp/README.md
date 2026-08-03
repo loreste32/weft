@@ -29,15 +29,16 @@ backend.
 
 ## API groups
 
-- Creation: `array`, `from_list`, `zeros`, `ones`, `full`, `arange`,
+- Creation: `array`, `array_typed`, `astype`, `dtype`, typed constructors,
+  `from_list`, `zeros`, `ones`, `full`, `arange`,
   `linspace`, `eye`, `diag`, `rand`, `randn`, `randint`.
 - Shape/indexing: `shape`, `size`, `ndim`, `reshape` (including one `-1`),
   `flatten`, `ravel`, `squeeze`, `expand_dims`, `transpose`, `T`, `get`,
   `set`, `row`, `col`, `slice`.
 - Element-wise math: arithmetic, comparisons, `where`, trigonometric,
   exponential, logarithmic, rounding, clipping, and sign operations.
-- Statistics: reductions, cumulative operations, percentiles, axis reductions,
-  `allclose`, `isnan`, `isinf`, and `nan_to_num`.
+- Statistics: reductions, cumulative operations, percentiles, arbitrary-rank
+  axis reductions, logical/finite predicates, `allclose`, and `nan_to_num`.
 - Linear algebra: 1D/2D `dot` and `matmul`, norms, `outer`, `cross`, `trace`,
   `det`, `inv`, and `solve`.
 - Manipulation: `concat`, axis-aware `concatenate`, `stack`, equal-section
@@ -53,7 +54,7 @@ constructor parameters return errors instead of silently truncating data.
 
 The CPU path is designed for scripting, ETL, classical ML, and moderate arrays.
 LU-based matrix inversion/solving remains O(n³). This package does not claim
-complete NumPy API, dtype, memory-layout, sparse-array, autodiff, or
-native-kernel compatibility. Use validated CUDA, ROCm, or MLX providers for
+complete NumPy API, full casting-table or packed dtype semantics,
+memory-layout, sparse-array, autodiff, or native-kernel compatibility. Use validated CUDA, ROCm, or MLX providers for
 large GPU workloads and compare results against the CPU path on representative
 tolerances.

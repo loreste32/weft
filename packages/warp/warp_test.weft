@@ -24,6 +24,18 @@ fn test_full {
     test.eq(warp.to_list(a), [7, 7, 7, 7])
 }
 
+fn test_logical_dtypes {
+    ints := warp.array([1, 2, 3], [3])
+    test.eq(warp.dtype(ints), "int64")
+    floats := warp.array_typed([1, 0, 2], [3], "float32")
+    test.eq(warp.dtype(floats), "float32")
+    test.eq(warp.to_list(warp.astype(floats, "int64")), [1, 0, 2])
+    test.eq(warp.dtype(warp.reshape(floats, [3, 1])), "float32")
+    flags := warp.array_typed([0, 2, 0], [3], "bool")
+    test.eq(warp.to_list(flags), [false, true, false])
+    test.eq(warp.dtype(warp.zeros_dtype([2], "float64")), "float64")
+}
+
 fn test_arange {
     a := warp.arange(0, 5, null)
     test.eq(warp.to_list(a), [0, 1, 2, 3, 4])
@@ -178,6 +190,18 @@ fn test_sum_axis {
     // sum axis 1 (across rows): [1+2+3, 4+5+6] → [6, 15]
     r1 := warp.sum_axis(a, 1)
     test.eq(warp.to_list(r1), [6.0, 15.0])
+}
+
+fn test_sum_axis_nd_and_negative_axis {
+    a := warp.array([1, 2, 3, 4, 5, 6, 7, 8], [2, 2, 2])
+    r0 := warp.sum_axis(a, 0)
+    test.eq(warp.shape(r0), [2, 2])
+    test.eq(warp.to_list(r0), [6.0, 8.0, 10.0, 12.0])
+    rn := warp.sum_axis(a, -1)
+    test.eq(warp.shape(rn), [2, 2])
+    test.eq(warp.to_list(rn), [3.0, 7.0, 11.0, 15.0])
+    scalar := warp.mean_axis(warp.array([2, 4, 6], [3]), 0)
+    test.eq(scalar, 4)
 }
 
 fn test_dot {

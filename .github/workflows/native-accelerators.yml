@@ -1,0 +1,82 @@
+name: Native accelerators
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Hardware validation is intentionally separate from ordinary PR CI.
+    - cron: "0 5 1 * *"
+
+permissions:
+  contents: read
+
+jobs:
+  cuda:
+    name: CUDA provider conformance
+    runs-on: [self-hosted, linux, x64, cuda]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Compile CUDA provider
+        run: |
+          nvcc --version
+          nvcc -std=c++17 -shared -Xcompiler -fPIC \
+            -I native/accelerator/providers \
+            -I native/accelerator \
+            native/accelerator/providers/cuda_matmul.cu \
+            -o "$RUNNER_TEMP/weft_accel_cuda.so"
+      - name: Run provider conformance test
+        env:
+          WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_cuda.so
+        run: go test ./internal/accelerator -run '^TestExternalProvider$' -count=1 -timeout=120s
+
+  rocm:
+    name: ROCm provider conformance
+    runs-on: [self-hosted, linux, x64, rocm]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Compile ROCm provider
+        run: |
+          hipcc --version
+          hipcc -std=c++17 -shared -fPIC \
+            -I native/accelerator/providers \
+            -I native/accelerator \
+            native/accelerator/providers/rocm_matmul.hip \
+            -o "$RUNNER_TEMP/weft_accel_rocm.so"
+      - name: Run provider conformance test
+        env:
+          WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_rocm.so
+        run: go test ./internal/accelerator -run '^TestExternalProvider$' -count=1 -timeout=120s
+
+  mlx:
+    name: MLX provider conformance
+    runs-on: [self-hosted, macos, arm64, mlx]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Compile MLX provider
+        env:
+          MLX_C_PREFIX: ${{ vars.MLX_C_PREFIX }}
+        run: |
+          : "${MLX_C_PREFIX:?Configure the runner MLX_C_PREFIX variable to the mlx-c installation prefix}"
+          c++ -std=c++17 -dynamiclib \
+            -I "$MLX_C_PREFIX/include" \
+            -I native/accelerator/providers \
+            -I native/accelerator \
+            native/accelerator/providers/mlx_matmul.cpp \
+            -L "$MLX_C_PREFIX/lib" -lmlxc -lmlx \
+            -o "$RUNNER_TEMP/weft_accel_mlx.dylib"
+      - name: Run provider conformance test
+        env:
+          WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_mlx.dylib
+          DYLD_LIBRARY_PATH: ${{ vars.MLX_C_PREFIX }}/lib
+        run: go test ./internal/accelerator -run '^TestExternalProvider$' -count=1 -timeout=120s

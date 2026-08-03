@@ -1,18 +1,18 @@
 {
   "name": "warp",
-  "version": "0.6.0",
-  "description": "Validated NumPy-style N-dimensional arrays with CPU math and opt-in native accelerator dispatch",
+  "version": "0.7.0",
+  "description": "Validated NumPy-style arrays with logical dtypes, N-dimensional reductions, CPU math, and opt-in native accelerator dispatch",
   "type": "module",
   "entry": "lib.weft",
   "exports": [
-    "array", "zeros", "ones", "full", "arange", "linspace", "eye", "diag", "from_list", "rand", "randn", "randint",
+    "array", "array_typed", "astype", "dtype", "zeros", "ones", "full", "zeros_dtype", "ones_dtype", "full_dtype", "arange", "linspace", "eye", "diag", "from_list", "rand", "randn", "randint",
     "shape", "size", "ndim", "reshape", "flatten", "ravel", "squeeze", "expand_dims", "transpose", "T", "get", "set", "row", "col", "slice",
     "add", "sub", "mul", "div", "mod_", "neg", "abs_", "pow_", "round_", "floor_", "ceil_", "clip", "sign", "sqrt", "exp", "log_", "log2", "log10", "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sinh", "cosh", "tanh",
     "equal", "not_equal", "less", "less_equal", "greater", "greater_equal", "where", "all_", "any_",
     "sum", "prod", "mean", "var_", "std_", "min_", "max_", "argmin", "argmax", "cumsum", "cumprod", "median", "percentile", "sum_axis", "mean_axis", "min_axis", "max_axis",
     "dot", "matmul", "norm", "norm_l1", "normalize", "trace", "det", "inv", "solve", "outer", "cross",
     "concat", "concatenate", "stack", "split", "take", "vstack", "hstack", "tile", "repeat", "repeat_axis", "flip", "flip_axis", "sort", "argsort", "unique",
-    "apply", "apply2", "mask", "count_nonzero", "to_list", "print_", "describe", "allclose", "isnan", "isinf", "nan_to_num",
+    "apply", "apply2", "mask", "count_nonzero", "to_list", "print_", "describe", "allclose", "isnan", "isinf", "isfinite", "maximum", "minimum", "logical_and", "logical_or", "logical_not", "nan_to_num",
     "accelerator_supported", "accelerator_load", "accelerator_run", "accelerator_close"
   ],
   "maturity": "experimental",

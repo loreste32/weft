@@ -1,18 +1,24 @@
 # warp — validated NumPy-style arrays
 
-`warp` provides row-major arrays represented as `{_warp: true, data, shape}`.
+`warp` provides row-major arrays represented as `{_warp: true, data, shape,
+_dtype}`. Dtypes are logical metadata over ordinary Weft values, not a claim
+of packed native storage.
 It is a portable CPU numerical layer for Weft with explicit error handling and
 an optional native accelerator ABI.
 
 ## Contracts
 
 - `array(data, shape)` requires a flat list and an exact element count.
+- `array_typed`, `astype`, `dtype`, and typed constructors support `bool`,
+  `int64`, `float32`, `float64`, and `object` with validated numeric casts.
 - `from_list` accepts 1D lists or rectangular 2D lists; ragged input is an
   error.
 - Binary operations support scalars, equal shapes, and NumPy-style trailing
   broadcasting. Incompatible shapes return `Err`.
 - `reshape` accepts one inferred `-1` dimension; `squeeze` can produce a
   zero-dimensional array; negative axes are normalized where supported.
+- `sum_axis`, `mean_axis`, `min_axis`, and `max_axis` accept negative axes and
+  arbitrary rank, returning a scalar when a rank-1 axis is reduced.
 - `transpose`, `concatenate`, `stack`, equal-section `split`, and `take` use
   row-major shape-preserving semantics.
 - `repeat_axis` and `flip_axis` provide explicit multidimensional axis
@@ -51,13 +57,14 @@ fn main -> Result {
 The package manifest exports the complete public surface: creation,
 shape/indexing, element-wise math, comparisons, reductions, statistics,
 linear algebra, manipulation, masking, inspection, and native dispatch.
-Run `weft mod check packages/warp --tests` to verify the manifest and its 83
+Run `weft mod check packages/warp --tests` to verify the manifest and its 85
 regression tests.
 
 ## Deliberate limits
 
 `warp` is not yet a complete binary-compatible NumPy replacement. It does not
 yet implement every dtype, memory order, sparse matrix, masked array, FFT,
-autodiff, or ufunc protocol. The CPU implementation is pure Weft and does not
+autodiff, or ufunc protocol. The logical dtype layer does not provide packed
+memory or NumPy's full casting table. The CPU implementation is pure Weft and does not
 promise BLAS/SIMD performance. Use native providers for large GPU workloads
 and validate numerical equivalence for the operations you rely on.

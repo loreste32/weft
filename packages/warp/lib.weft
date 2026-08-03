@@ -13,7 +13,36 @@ pub fn array(data, shape) {
     s := if shape == null { [len(data)] } else { shape }
     if !_valid_shape(s) { return Err("warp.array expects non-negative integer dimensions") }
     if _prod(s) != len(data) { return Err("warp.array data length does not match shape") }
-    {"_warp": true, "data": data, "shape": s}
+    {"_warp": true, "data": data, "shape": s, "_dtype": _infer_dtype(data)}
+}
+
+// Logical dtypes follow NumPy's common scalar names. Values remain ordinary
+// Weft values; this metadata does not claim packed storage or SIMD execution.
+pub fn array_typed(data, shape, dtype_name) {
+    if _wkind(data) != "list" { return Err("warp.array_typed expects a flat data list") }
+    s := if shape == null { [len(data)] } else { shape }
+    if !_valid_shape(s) { return Err("warp.array_typed expects non-negative integer dimensions") }
+    if _prod(s) != len(data) { return Err("warp.array_typed data length does not match shape") }
+    if !_valid_dtype(dtype_name) { return Err("warp.array_typed received unsupported dtype") }
+    let mut casted = []
+    for value in data {
+        kind := _wkind(value)
+        if dtype_name != "object" && (value == null || (kind != "bool" && kind != "int" && kind != "float")) {
+            return Err("warp.array_typed expects numeric values for this dtype")
+        }
+        casted = push(casted, _cast_value(value, dtype_name))
+    }
+    {"_warp": true, "data": casted, "shape": s, "_dtype": dtype_name}
+}
+
+pub fn astype(a, dtype_name) {
+    if !_is_arr(a) { return Err("warp.astype expects an array") }
+    array_typed(a.data, a.shape, dtype_name)
+}
+
+pub fn dtype(a) {
+    if !_is_arr(a) { return _infer_dtype([a]) }
+    if a._dtype == null { _infer_dtype(a.data) } else { a._dtype }
 }
 
 pub fn zeros(shape) { full(shape, 0.0) }
@@ -28,6 +57,21 @@ pub fn full(shape, value) {
     while i < n { d = push(d, value)
         i = i + 1 }
     array(d, shape)
+}
+
+pub fn zeros_dtype(shape, dtype_name) { full_dtype(shape, 0, dtype_name) }
+
+pub fn ones_dtype(shape, dtype_name) { full_dtype(shape, 1, dtype_name) }
+
+pub fn full_dtype(shape, value, dtype_name) {
+    if !_valid_shape(shape) { return Err("warp.full_dtype expects non-negative integer dimensions") }
+    if !_valid_dtype(dtype_name) { return Err("warp.full_dtype received unsupported dtype") }
+    n := _prod(shape)
+    let mut d = []
+    let mut i = 0
+    while i < n { d = push(d, _cast_value(value, dtype_name))
+        i = i + 1 }
+    array_typed(d, shape, dtype_name)
 }
 
 pub fn arange(start_or_stop, stop_arg, step_arg) {
@@ -191,17 +235,17 @@ pub fn reshape(a, new_shape) {
     if !_valid_shape(target) || _prod(target) != len(a.data) {
         return Err("warp.reshape shape must preserve the number of elements")
     }
-    array(a.data, target)
+    _array_like(a.data, target, a)
 }
 
-pub fn flatten(a) { array(a.data, [len(a.data)]) }
+pub fn flatten(a) { _array_like(a.data, [len(a.data)], a) }
 
 pub fn ravel(a) { flatten(a) }
 
 pub fn squeeze(a) {
     let mut s = []
     for dim in a.shape { if dim != 1 { s = push(s, dim) } }
-    array(a.data, s)
+    _array_like(a.data, s, a)
 }
 
 pub fn expand_dims(a, axis) {
@@ -214,7 +258,7 @@ pub fn expand_dims(a, axis) {
         if i < len(a.shape) { s = push(s, a.shape[i]) }
         i = i + 1
     }
-    array(a.data, s)
+    _array_like(a.data, s, a)
 }
 
 pub fn transpose(a, axes) {
@@ -251,7 +295,7 @@ pub fn transpose(a, axes) {
         d = push(d, a.data[_flat_index(source_index, a.shape)])
         i = i + 1
     }
-    array(d, out_shape)
+    _array_like(d, out_shape, a)
 }
 
 pub fn T(a) {
@@ -546,29 +590,28 @@ pub fn percentile(a, p) {
     else { data[int(lo)] * (hi - k) + data[int(hi)] * (k - lo) }
 }
 
-// Axis-based reductions for 2D arrays
+// Axis-based reductions. Negative axes are accepted and reductions work for
+// every rank, including a rank-1 reduction to a scalar.
 
 pub fn sum_axis(a, axis) {
-    if !_valid_axis_2d(a, axis) { return Err("warp.sum_axis expects a 2D array and axis 0 or 1") }
-    _reduce_axis(a, axis, fn(acc, x) { acc + x }, 0.0)
+    _reduce_axis_nd(a, axis, fn(acc, x) { acc + x }, 0.0)
 }
 
 pub fn mean_axis(a, axis) {
-    if !_valid_axis_2d(a, axis) { return Err("warp.mean_axis expects a 2D array and axis 0 or 1") }
-    s := a.shape
-    result := sum_axis(a, axis)
-    n := s[axis]
+    if !_is_arr(a) { return Err("warp.mean_axis expects an array") }
+    normalized := _normalize_axis(axis, len(a.shape), false)
+    if normalized == null { return Err("warp.mean_axis axis is out of range") }
+    result := sum_axis(a, normalized)
+    n := a.shape[normalized]
     div(result, n)
 }
 
 pub fn min_axis(a, axis) {
-    if !_valid_axis_2d(a, axis) { return Err("warp.min_axis expects a 2D array and axis 0 or 1") }
-    _reduce_axis(a, axis, fn(acc, x) { if x < acc { x } else { acc } }, 1e308)
+    _reduce_axis_nd(a, axis, fn(acc, x) { if x < acc { x } else { acc } }, 1e308)
 }
 
 pub fn max_axis(a, axis) {
-    if !_valid_axis_2d(a, axis) { return Err("warp.max_axis expects a 2D array and axis 0 or 1") }
-    _reduce_axis(a, axis, fn(acc, x) { if x > acc { x } else { acc } }, -1e308)
+    _reduce_axis_nd(a, axis, fn(acc, x) { if x > acc { x } else { acc } }, -1e308)
 }
 
 // ──────────────────────────────────────────────
@@ -1256,6 +1299,18 @@ pub fn isnan(a) { _unaryop(a, fn(x) { if x != x { 1 } else { 0 } }) }
 
 pub fn isinf(a) { _unaryop(a, fn(x) { if x == 1.0/0.0 || x == -1.0/0.0 { 1 } else { 0 } }) }
 
+pub fn isfinite(a) { _unaryop(a, fn(x) { if x == x && x != 1.0/0.0 && x != -1.0/0.0 { 1 } else { 0 } }) }
+
+pub fn maximum(a, b) { _binop(a, b, fn(x, y) { if x > y { x } else { y } }) }
+
+pub fn minimum(a, b) { _binop(a, b, fn(x, y) { if x < y { x } else { y } }) }
+
+pub fn logical_and(a, b) { _binop(a, b, fn(x, y) { if x != 0 && y != 0 { 1 } else { 0 } }) }
+
+pub fn logical_or(a, b) { _binop(a, b, fn(x, y) { if x != 0 || y != 0 { 1 } else { 0 } }) }
+
+pub fn logical_not(a) { _unaryop(a, fn(x) { if x == 0 { 1 } else { 0 } }) }
+
 pub fn nan_to_num(a, nan_val, posinf, neginf) {
     nv := if nan_val == null { 0.0 } else { nan_val }
     pi := if posinf == null { 1e308 } else { posinf }
@@ -1346,6 +1401,47 @@ fn _copy(data) {
 }
 
 fn _data(a) { if _is_arr(a) { a.data } else { a } }
+
+fn _array_like(data, shape, source) {
+    if _is_arr(source) {
+        {"_warp": true, "data": data, "shape": shape, "_dtype": dtype(source)}
+    } else {
+        array(data, shape)
+    }
+}
+
+fn _valid_dtype(dtype_name) {
+    dtype_name == "bool" || dtype_name == "int64" || dtype_name == "float32" || dtype_name == "float64" || dtype_name == "object"
+}
+
+fn _infer_dtype(data) {
+    if _wkind(data) != "list" || len(data) == 0 { return "float64" }
+    let mut found = "bool"
+    for value in data {
+        kind := _wkind(value)
+        if kind == "null" || kind == "str" || kind == "list" || kind == "map" {
+            return "object"
+        }
+        if kind == "float" {
+            found = "float64"
+        } else if kind == "int" && found == "bool" {
+            found = "int64"
+        }
+    }
+    found
+}
+
+fn _cast_value(value, dtype_name) {
+    if dtype_name == "object" { return value }
+    if value == null { return Err("warp dtype conversion does not accept null") }
+    kind := _wkind(value)
+    if kind != "bool" && kind != "int" && kind != "float" {
+        return Err("warp dtype conversion expects numeric values")
+    }
+    if dtype_name == "bool" { value != 0 }
+    else if dtype_name == "int64" { if value < 0 { math.ceil(value) } else { math.floor(value) } }
+    else { value + 0.0 }
+}
 
 fn _validate_2d(a) -> Result[any] {
     ensure(a != null && _is_arr(a), "expected warp array")?
@@ -1588,4 +1684,49 @@ fn _reduce_axis(a, axis, op, init) {
         }
         array(d, [rows])
     }
+}
+
+fn _remove_axis(shape, axis) {
+    let mut result = []
+    let mut i = 0
+    while i < len(shape) {
+        if i != axis { result = push(result, shape[i]) }
+        i = i + 1
+    }
+    result
+}
+
+fn _insert_axis_index(index, axis, value) {
+    let mut result = []
+    let mut i = 0
+    while i <= len(index) {
+        if i == axis { result = push(result, value) }
+        if i < len(index) { result = push(result, index[i]) }
+        i = i + 1
+    }
+    result
+}
+
+fn _reduce_axis_nd(a, axis, op, init) {
+    if !_is_arr(a) { return Err("warp reduction expects an array") }
+    normalized := _normalize_axis(axis, len(a.shape), false)
+    if normalized == null { return Err("warp reduction axis is out of range") }
+    if a.shape[normalized] == 0 { return Err("warp reduction cannot reduce an empty axis") }
+    out_shape := _remove_axis(a.shape, normalized)
+    output_size := _prod(out_shape)
+    let mut d = []
+    let mut flat = 0
+    while flat < output_size {
+        output_index := _unravel(flat, out_shape)
+        let mut acc = init
+        let mut k = 0
+        while k < a.shape[normalized] {
+            source_index := _insert_axis_index(output_index, normalized, k)
+            acc = op(acc, a.data[_flat_index(source_index, a.shape)])
+            k = k + 1
+        }
+        d = push(d, acc)
+        flat = flat + 1
+    }
+    if len(out_shape) == 0 { d[0] } else { array(d, out_shape) }
 }

@@ -201,6 +201,146 @@ pub fn col(t, name) {
     vals
 }
 
+// Series is the column-oriented companion to DataFrame. The existing col()
+// function intentionally remains a plain-list API for compatibility.
+pub fn series(values, name, index_values) {
+    if _kind(values) != "list" { return Err("dataframe.series expects a value list") }
+    if name != null && _kind(name) != "str" { return Err("dataframe.series name must be a string or null") }
+    idx := if index_values == null { _range(len(values)) } else { index_values }
+    if _kind(idx) != "list" || len(idx) != len(values) {
+        return Err("dataframe.series index must have the same length as values")
+    }
+    {"_series": true, "values": values, "name": name, "index": idx}
+}
+
+pub fn series_from(t, name) {
+    series(col(t, name), name, null)
+}
+
+pub fn as_series(t, name) { series_from(t, name) }
+
+pub fn series_values(s) {
+    if !_is_series(s) { return Err("dataframe.series_values expects a Series") }
+    s.values
+}
+
+pub fn series_name(s) {
+    if !_is_series(s) { return Err("dataframe.series_name expects a Series") }
+    s.name
+}
+
+pub fn series_index(s) {
+    if !_is_series(s) { return Err("dataframe.series_index expects a Series") }
+    s.index
+}
+
+pub fn series_shape(s) {
+    if !_is_series(s) { return Err("dataframe.series_shape expects a Series") }
+    [len(s.values)]
+}
+
+pub fn series_dtype(s) {
+    if !_is_series(s) { return Err("dataframe.series_dtype expects a Series") }
+    _series_dtype(s.values)
+}
+
+pub fn series_map(s, f) {
+    if !_is_series(s) { return Err("dataframe.series_map expects a Series") }
+    let mut values = []
+    for value in s.values { values = push(values, f(value)) }
+    series(values, s.name, s.index)
+}
+
+pub fn series_apply(s, f) { series_map(s, f) }
+
+pub fn series_fillna(s, value) {
+    if !_is_series(s) { return Err("dataframe.series_fillna expects a Series") }
+    let mut values = []
+    for item in s.values { values = push(values, if item == null { value } else { item }) }
+    series(values, s.name, s.index)
+}
+
+pub fn series_dropna(s) {
+    if !_is_series(s) { return Err("dataframe.series_dropna expects a Series") }
+    let mut values = []
+    let mut idx = []
+    let mut i = 0
+    while i < len(s.values) {
+        if s.values[i] != null {
+            values = push(values, s.values[i])
+            idx = push(idx, s.index[i])
+        }
+        i = i + 1
+    }
+    series(values, s.name, idx)
+}
+
+pub fn series_unique(s) {
+    if !_is_series(s) { return Err("dataframe.series_unique expects a Series") }
+    let mut values = []
+    let mut seen = {}
+    for value in s.values {
+        key := _value_key(value)
+        if seen[key] == null {
+            seen[key] = true
+            values = push(values, value)
+        }
+    }
+    values
+}
+
+pub fn series_value_counts(s) {
+    if !_is_series(s) { return Err("dataframe.series_value_counts expects a Series") }
+    let mut counts = {}
+    for value in s.values {
+        key := _value_key(value)
+        counts[key] = if counts[key] == null { 1 } else { counts[key] + 1 }
+    }
+    counts
+}
+
+pub fn index(t) {
+    if t._index == null { _range(len(t.rows)) } else { t._index }
+}
+
+pub fn set_index(t, column, drop) {
+    if !contains(t.columns, column) { return Err("dataframe.set_index: unknown column " + column) }
+    remove := if drop == null { true } else { drop }
+    if _kind(remove) != "bool" { return Err("dataframe.set_index drop must be boolean or null") }
+    let mut new_columns = []
+    for c in t.columns {
+        if !remove || c != column { new_columns = push(new_columns, c) }
+    }
+    let mut new_rows = []
+    let mut new_index = []
+    for row in t.rows {
+        new_index = push(new_index, row[column])
+        let mut next = {}
+        for c in new_columns { next[c] = row[c] }
+        new_rows = push(new_rows, next)
+    }
+    {"_df": true, "columns": new_columns, "rows": new_rows, "_index": new_index, "_index_name": column}
+}
+
+pub fn reset_index(t, name) {
+    index_name := if name == null { "index" } else { name }
+    if _kind(index_name) != "str" { return Err("dataframe.reset_index name must be a string or null") }
+    if contains(t.columns, index_name) { return Err("dataframe.reset_index: index name conflicts with a column") }
+    idx := index(t)
+    let mut new_columns = [index_name]
+    for c in t.columns { new_columns = push(new_columns, c) }
+    let mut new_rows = []
+    let mut i = 0
+    while i < len(t.rows) {
+        let mut next = {}
+        next[index_name] = idx[i]
+        for c in t.columns { next[c] = t.rows[i][c] }
+        new_rows = push(new_rows, next)
+        i = i + 1
+    }
+    {"_df": true, "columns": new_columns, "rows": new_rows}
+}
+
 pub fn head(t, n) {
     let mut cnt = if n == null { 5 } else { n }
     if _kind(cnt) != "int" || cnt < 0 { return Err("dataframe.head requires a non-negative integer row count") }
@@ -1275,6 +1415,32 @@ fn _sum_list(vals) {
     let mut s = 0.0
     for x in vals { s = s + x }
     s
+}
+
+fn _is_series(v) {
+    v != null && _kind(v) == "map" && v._series == true && _kind(v.values) == "list" && _kind(v.index) == "list"
+}
+
+fn _range(n) {
+    let mut result = []
+    let mut i = 0
+    while i < n { result = push(result, i) i = i + 1 }
+    result
+}
+
+fn _series_dtype(values) {
+    if len(values) == 0 { return "object" }
+    let mut found = "null"
+    for value in values {
+        kind := _kind(value)
+        if kind == "null" { continue }
+        if found == "null" { found = kind }
+        else if found != kind {
+            if (found == "int" && kind == "float") || (found == "float" && kind == "int") { found = "float" }
+            else { found = "mixed" }
+        }
+    }
+    if found == "null" { "object" } else { found }
 }
 
 fn _with_columns(t, rows) {
