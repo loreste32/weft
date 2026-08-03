@@ -6,6 +6,7 @@ package accelerator
 #include <dlfcn.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 typedef void *weft_accel_handle;
 typedef const char *(*weft_accel_manifest_fn)(void);
