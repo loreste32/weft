@@ -191,10 +191,15 @@ jobs:
           cache: true
       - name: Deep fuzz (5m each)
         run: |
+          # Clean between targets so accumulated corpus from one doesn't
+          # cause baseline-gathering timeouts in the next
           go clean -fuzzcache
           go test ./internal/lex/ -fuzz=FuzzLex -fuzztime=5m -timeout=600s
+          go clean -fuzzcache
           go test ./internal/parse/ -fuzz=FuzzParseFile -fuzztime=5m -timeout=600s
+          go clean -fuzzcache
           go test ./internal/compile/ -fuzz=FuzzCompileValidate -fuzztime=5m -timeout=600s
+          go clean -fuzzcache
           go test ./internal/vm/ -fuzz=FuzzCompileAndRun -fuzztime=5m -timeout=600s
 
   # Benchmark results — runs on every push to main, publishes as artifact
