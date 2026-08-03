@@ -74,7 +74,7 @@ Ship a **small, honest language**: excellent at scripts, agents, JSON, HTTP clie
 ### Non-Goals (explicitly out of v1 and near-term)
 
 - Full foreign-language syntax or bytecode compatibility
-- Scientific/numeric stack (arrays, dataframes, GPU kernels)
+- Complete NumPy/pandas compatibility and vendor-specific kernels in core (use `warp`, `dataframe`, and explicit native accelerator plugins)
 - Browser/WASM story as a deliverable
 - JIT or LLVM native codegen in v1
 - Full OOP inheritance hierarchies / metaclasses

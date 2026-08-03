@@ -10,6 +10,18 @@ fn _sample_df {
     ])
 }
 
+fn _columns(data) {
+    result := df.from_columns(data)
+    test.is_true(result.ok)
+    result.value
+}
+
+fn _csv(text, sep) {
+    result := df.from_csv(text, sep)
+    test.is_true(result.ok)
+    result.value
+}
+
 // === Creation ===
 
 fn test_from_rows {
@@ -19,14 +31,14 @@ fn test_from_rows {
 }
 
 fn test_from_columns {
-    t := df.from_columns({"x": [1, 2, 3], "y": [4, 5, 6]})
+    t := _columns({"x": [1, 2, 3], "y": [4, 5, 6]})
     test.eq(df.nrows(t), 3)
     test.eq(df.col(t, "x"), [1, 2, 3])
 }
 
 fn test_from_csv {
     csv_text := "name,age,score\nAlice,30,95\nBob,25,87\n"
-    t := df.from_csv(csv_text, null)
+    t := _csv(csv_text, null)
     test.eq(df.nrows(t), 2)
     test.eq(df.columns(t), ["name", "age", "score"])
     test.eq(df.col(t, "name"), ["Alice", "Bob"])
@@ -36,7 +48,7 @@ fn test_from_csv {
 
 fn test_from_csv_with_nulls {
     csv_text := "a,b\n1,null\n,3\n"
-    t := df.from_csv(csv_text, null)
+    t := _csv(csv_text, null)
     test.eq(df.nrows(t), 2)
     r := df.rows(t)
     test.eq(r[0].b, null)
@@ -186,7 +198,7 @@ fn test_add_column {
 }
 
 fn test_assign {
-    t := df.from_columns({"x": [1, 2, 3]})
+    t := _columns({"x": [1, 2, 3]})
     t2 := df.assign(t, {"double": fn(r) { r.x * 2 }, "triple": fn(r) { r.x * 3 }})
     test.eq(df.ncols(t2), 3)
     test.eq(df.col(t2, "double"), [2, 4, 6])
@@ -194,25 +206,25 @@ fn test_assign {
 }
 
 fn test_rename {
-    t := df.from_columns({"old_name": [1, 2]})
+    t := _columns({"old_name": [1, 2]})
     t2 := df.rename(t, {"old_name": "new_name"})
     test.eq(df.columns(t2), ["new_name"])
 }
 
 fn test_apply {
-    t := df.from_columns({"x": [1, 2, 3]})
+    t := _columns({"x": [1, 2, 3]})
     t2 := df.apply_(t, "x", fn(v) { v * 10 })
     test.eq(df.col(t2, "x"), [10, 20, 30])
 }
 
 fn test_replace {
-    t := df.from_columns({"status": ["active", "inactive", "active"]})
+    t := _columns({"status": ["active", "inactive", "active"]})
     t2 := df.replace(t, "status", "inactive", "disabled")
     test.eq(df.col(t2, "status"), ["active", "disabled", "active"])
 }
 
 fn test_clip {
-    t := df.from_columns({"x": [1, 5, 10, 15]})
+    t := _columns({"x": [1, 5, 10, 15]})
     t2 := df.clip_(t, "x", 3, 12)
     test.eq(df.col(t2, "x"), [3, 5, 10, 12])
 }
@@ -312,7 +324,7 @@ fn test_describe {
 }
 
 fn test_corr {
-    t := df.from_columns({"x": [1, 2, 3, 4, 5], "y": [2, 4, 6, 8, 10]})
+    t := _columns({"x": [1, 2, 3, 4, 5], "y": [2, 4, 6, 8, 10]})
     c := df.corr(t, "x", "y")
     test.approx(c, 1.0, 1e-6)
 }
@@ -383,13 +395,13 @@ fn test_crosstab {
 // === Window / rolling ===
 
 fn test_shift {
-    t := df.from_columns({"x": [10, 20, 30, 40]})
+    t := _columns({"x": [10, 20, 30, 40]})
     s := df.shift(t, "x", 1)
     test.eq(df.col(s, "x"), [null, 10, 20, 30])
 }
 
 fn test_diff {
-    t := df.from_columns({"x": [10, 15, 25, 40]})
+    t := _columns({"x": [10, 15, 25, 40]})
     d := df.diff(t, "x", 1)
     vals := df.col(d, "x")
     test.eq(vals[0], null)
@@ -399,7 +411,7 @@ fn test_diff {
 }
 
 fn test_pct_change {
-    t := df.from_columns({"x": [100, 110, 99]})
+    t := _columns({"x": [100, 110, 99]})
     p := df.pct_change(t, "x", 1)
     vals := df.col(p, "x")
     test.eq(vals[0], null)
@@ -407,7 +419,7 @@ fn test_pct_change {
 }
 
 fn test_rolling_mean {
-    t := df.from_columns({"x": [1, 2, 3, 4, 5]})
+    t := _columns({"x": [1, 2, 3, 4, 5]})
     r := df.rolling(t, "x", 3, "mean")
     vals := df.col(r, "x")
     test.eq(vals[0], null)
@@ -416,13 +428,13 @@ fn test_rolling_mean {
 }
 
 fn test_cumsum {
-    t := df.from_columns({"x": [1, 2, 3, 4]})
+    t := _columns({"x": [1, 2, 3, 4]})
     c := df.cumsum_(t, "x")
     test.eq(df.col(c, "x"), [1.0, 3.0, 6.0, 10.0])
 }
 
 fn test_rank {
-    t := df.from_columns({"x": [30, 10, 20]})
+    t := _columns({"x": [30, 10, 20]})
     r := df.rank(t, "x")
     test.is_true(contains(df.columns(r), "x_rank"))
 }
@@ -444,7 +456,7 @@ fn test_shuffle {
 // === Output ===
 
 fn test_to_csv {
-    t := df.from_columns({"a": [1, 2], "b": [3, 4]})
+    t := _columns({"a": [1, 2], "b": [3, 4]})
     csv := df.to_csv(t, null)
     test.is_true(str.contains(csv, "a,b"))
     test.is_true(str.contains(csv, "1,3"))
@@ -471,7 +483,7 @@ fn test_to_records {
 }
 
 fn test_to_dict {
-    t := df.from_columns({"x": [1, 2], "y": [3, 4]})
+    t := _columns({"x": [1, 2], "y": [3, 4]})
     d := df.to_dict(t)
     test.eq(d.x, [1, 2])
     test.eq(d.y, [3, 4])
@@ -480,10 +492,176 @@ fn test_to_dict {
 // === CSV roundtrip ===
 
 fn test_csv_roundtrip {
-    t := df.from_columns({"name": ["Alice", "Bob"], "score": [95, 87]})
+    t := _columns({"name": ["Alice", "Bob"], "score": [95, 87]})
     csv := df.to_csv(t, null)
-    t2 := df.from_csv(csv, null)
+    t2 := _csv(csv, null)
     test.eq(df.nrows(t2), 2)
     test.eq(df.col(t2, "name"), ["Alice", "Bob"])
     test.eq(df.col(t2, "score"), [95, 87])
+}
+
+// === Regression and contract coverage ===
+
+fn test_dtypes_scan_all_rows {
+    t := df.from_rows([
+        {"i": 1, "f": 1.5, "b": true, "s": "x", "n": null},
+        {"i": 2, "f": 2, "b": false, "s": "y", "n": null},
+    ])
+    d := df.dtypes(t)
+    test.eq(d.i, "int")
+    test.eq(d.f, "float")
+    test.eq(d.b, "bool")
+    test.eq(d.s, "str")
+    test.eq(d.n, "null")
+}
+
+fn test_schema_union_and_empty_results {
+    t := df.from_rows([{"a": 1}, {"b": 2}])
+    test.eq(df.columns(t), ["a", "b"])
+    test.eq(df.col(t, "b"), [null, 2])
+    empty := df.filter_(t, fn(r) { false })
+    test.eq(df.columns(empty), ["a", "b"])
+    test.eq(df.shape(empty), [0, 2])
+}
+
+fn test_from_columns_rejects_mismatched_lengths {
+    r := df.from_columns({"a": [1, 2], "b": [3]})
+    test.is_false(r.ok)
+}
+
+fn test_csv_quotes_crlf_and_empty_string {
+    csv := "name,note,empty\r\n\"A,B\",\"say \"\"hi\"\"\",\"\"\r\n"
+    r := df.from_csv(csv, null)
+    test.is_true(r.ok)
+    t := r.value
+    row := df.iloc(t, 0)
+    test.eq(row.name, "A,B")
+    test.eq(row.note, "say \"hi\"")
+    test.eq(row.empty, "")
+    roundtrip := _csv(df.to_csv(t, null), null)
+    test.eq(df.iloc(roundtrip, 0).note, "say \"hi\"")
+}
+
+fn test_csv_rejects_bad_rows_and_headers {
+    bad_row := df.from_csv("a,b\n1\n", null)
+    test.is_false(bad_row.ok)
+    bad_header := df.from_csv("a,a\n1,2\n", null)
+    test.is_false(bad_header.ok)
+}
+
+fn test_null_aware_group_aggregation {
+    t := df.from_rows([
+        {"g": "x", "v": 1},
+        {"g": "x", "v": null},
+        {"g": "y", "v": null},
+    ])
+    grouped := df.group_by(t, "g", {
+        "total": {"col": "v", "op": "sum"},
+        "average": {"col": "v", "op": "mean"},
+        "count": {"col": "v", "op": "count"},
+    })
+    x := df.iloc(grouped, 0)
+    y := df.iloc(grouped, 1)
+    test.eq(x.total, 1)
+    test.eq(x.average, 1)
+    test.eq(x.count, 1)
+    test.eq(y.total, 0)
+    test.is_null(y.average)
+    test.eq(y.count, 0)
+}
+
+fn test_describe_uses_sample_std {
+    t := _columns({"x": [1, 2, 3]})
+    d := df.describe(t, "x")
+    test.approx(d.std, 1.0, 1e-6)
+}
+
+fn test_corr_uses_pairwise_rows {
+    t := df.from_rows([
+        {"a": 1, "b": 10},
+        {"a": 2, "b": null},
+        {"a": null, "b": 30},
+        {"a": 4, "b": 40},
+    ])
+    test.approx(df.corr(t, "a", "b"), 1.0, 1e-6)
+}
+
+fn test_join_suffixes_and_outer_merge {
+    left := df.from_rows([{"id": 1, "value": "left"}])
+    right := df.from_rows([{"id": 1, "value": "right"}])
+    joined := df.join(left, right, "id", "inner")
+    test.eq(df.iloc(joined, 0).value, "left")
+    test.eq(df.iloc(joined, 0).value_right, "right")
+
+    users := df.from_rows([{"user_id": 1, "name": "A"}])
+    orders := df.from_rows([{"order_user": 2, "total": 9}])
+    merged := df.merge(users, orders, "user_id", "order_user", "outer")
+    test.eq(df.nrows(merged), 2)
+    test.eq(df.iloc(merged, 1).user_id, 2)
+    test.eq(df.iloc(merged, 1).total, 9)
+}
+
+fn test_typed_duplicate_keys {
+    t := df.from_rows([{"v": 1}, {"v": "1"}, {"v": "a|b"}, {"v": "a|b"}])
+    unique := df.drop_duplicates(t, ["v"])
+    test.eq(df.nrows(unique), 3)
+    counts := df.value_counts(t, "v")
+    test.eq(counts["1"], 1)
+    test.eq(counts["1 (str)"], 1)
+}
+
+fn test_pivot_rejects_duplicate_pairs {
+    t := df.from_rows([
+        {"i": "a", "p": "x", "v": 1},
+        {"i": "a", "p": "x", "v": 2},
+    ])
+    result := df.pivot(t, "i", "p", "v")
+    test.is_false(result.ok)
+}
+
+fn test_sampling_seed_and_shuffle {
+    t := _columns({"id": [0, 1, 2, 3, 4]})
+    a := df.sample(t, 3, 77)
+    b := df.sample(t, 3, 77)
+    test.eq(df.col(a, "id"), df.col(b, "id"))
+    shuffled := df.shuffle(t)
+    test.eq(df.nrows(shuffled), 5)
+    test.eq(df.ncols(shuffled), 1)
+    zero := df.sample(t, 0, 77)
+    test.eq(df.columns(zero), ["id"])
+    too_many := df.sample(t, 6, 77)
+    test.is_false(too_many.ok)
+}
+
+fn test_rolling_and_cumsum_preserve_nulls {
+    t := df.from_rows([{"x": 1}, {"x": null}, {"x": 3}])
+    r := df.rolling(t, "x", 2, "mean")
+    test.eq(df.col(r, "x"), [null, null, null])
+    c := df.cumsum_(t, "x")
+    test.eq(df.col(c, "x"), [1.0, null, 4.0])
+    bad := df.rolling(t, "x", 0, "mean")
+    test.is_false(bad.ok)
+}
+
+fn test_rank_averages_ties_and_apply_adds_column {
+    t := _columns({"x": [30, 10, 10]})
+    ranked := df.rank(t, "x")
+    test.eq(df.col(ranked, "x_rank"), [3.0, 1.5, 1.5])
+    added := df.apply_(t, "new", fn(v) { 1 })
+    test.is_true(contains(df.columns(added), "new"))
+}
+
+fn test_100k_row_frame_operations {
+    let mut values = []
+    let mut i = 0
+    while i < 100000 {
+        values = push(values, 100000 - i)
+        i = i + 1
+    }
+    t := _columns({"value": values})
+    test.eq(df.nrows(t), 100000)
+    filtered := df.filter_(t, fn(row) { row.value <= 100 })
+    test.eq(df.nrows(filtered), 100)
+    preview := df.head(t, 5)
+    test.eq(df.nrows(preview), 5)
 }

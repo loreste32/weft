@@ -283,7 +283,7 @@ func FormatValidate(r *ValidateReport) string {
 		fmt.Fprintf(&b, "             weft test %s\n", base)
 		fmt.Fprintf(&b, "             weft mod pack %s\n", base)
 		fmt.Fprintf(&b, "             # monorepo catalog: add to packages/index.json then weft packages get %s\n", r.Name)
-		fmt.Fprintf(&b, "  expand:    modules add APIs — pure .weft (no native plugins)\n")
+		fmt.Fprintf(&b, "  expand:    modules add APIs — native acceleration uses the explicit accelerator ABI\n")
 	}
 	return b.String()
 }

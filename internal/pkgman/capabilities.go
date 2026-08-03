@@ -11,38 +11,39 @@ import (
 // Includes shell/credentials, outbound I/O, LLM keys, and data-plane connectors
 // that can exfiltrate or mutate infrastructure if a malicious module is installed.
 var RestrictedByDefault = []string{
-	"sh",         // process execution
-	"secrets",    // credential material
-	"cli",        // process exit / argv takeover
-	"env",        // process environment (defeats secrets if open)
-	"fs",         // full filesystem
-	"http",       // outbound HTTP (exfil / SSRF surface)
-	"llm",        // model calls + env API keys
-	"ollama",     // local model HTTP
-	"vllm",       // local model HTTP
-	"web",        // HTTP server bind / static
-	"archive",    // extract to disk
-	"graphql",    // outbound GraphQL
-	"db",         // SQL databases
-	"redis",      // key-value / pubsub
-	"mongo",      // document store
-	"nats",       // messaging
-	"amqp",       // messaging
-	"socket",     // raw network
-	"email",      // outbound SMTP
-	"pickle",     // arbitrary deserialize
-	"sysinfo",    // system metrics (memory, disk, interfaces)
-	"proc",       // process list / kill
-	"netutil",    // network diagnostics (port scan, DNS)
-	"mcp",        // MCP client/server (process spawn, network)
-	"deepgram",   // Deepgram STT (API keys, network)
-	"elevenlabs", // ElevenLabs TTS (API keys, network)
-	"mlinfer",    // ML inference (network, API keys)
-	"cluster",    // distributed state (Redis, locks)
-	"dns",        // DNS lookups (network)
-	"tls",        // TLS connections (network)
-	"os",         // OS operations (env, filesystem, processes)
-	"compress",   // compression (file I/O)
+	"sh",          // process execution
+	"secrets",     // credential material
+	"cli",         // process exit / argv takeover
+	"env",         // process environment (defeats secrets if open)
+	"fs",          // full filesystem
+	"http",        // outbound HTTP (exfil / SSRF surface)
+	"llm",         // model calls + env API keys
+	"ollama",      // local model HTTP
+	"vllm",        // local model HTTP
+	"web",         // HTTP server bind / static
+	"archive",     // extract to disk
+	"graphql",     // outbound GraphQL
+	"db",          // SQL databases
+	"redis",       // key-value / pubsub
+	"mongo",       // document store
+	"nats",        // messaging
+	"amqp",        // messaging
+	"socket",      // raw network
+	"email",       // outbound SMTP
+	"pickle",      // arbitrary deserialize
+	"sysinfo",     // system metrics (memory, disk, interfaces)
+	"proc",        // process list / kill
+	"netutil",     // network diagnostics (port scan, DNS)
+	"mcp",         // MCP client/server (process spawn, network)
+	"deepgram",    // Deepgram STT (API keys, network)
+	"elevenlabs",  // ElevenLabs TTS (API keys, network)
+	"mlinfer",     // ML inference (network, API keys)
+	"accelerator", // explicitly loaded native CUDA/ROCm/MLX providers
+	"cluster",     // distributed state (Redis, locks)
+	"dns",         // DNS lookups (network)
+	"tls",         // TLS connections (network)
+	"os",          // OS operations (env, filesystem, processes)
+	"compress",    // compression (file I/O)
 }
 
 // CapsAll is the grant-everything token.

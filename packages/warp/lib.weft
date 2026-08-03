@@ -1,11 +1,18 @@
 use math
+use accelerator
+
+// ndarray-compatible numerical arrays for Weft. Arrays are immutable values:
+// operations return a new array and never mutate the caller's data.
 
 // ──────────────────────────────────────────────
 // Creation
 // ──────────────────────────────────────────────
 
 pub fn array(data, shape) {
+    if _wkind(data) != "list" { return Err("warp.array expects a flat data list") }
     s := if shape == null { [len(data)] } else { shape }
+    if !_valid_shape(s) { return Err("warp.array expects non-negative integer dimensions") }
+    if _prod(s) != len(data) { return Err("warp.array data length does not match shape") }
     {"_warp": true, "data": data, "shape": s}
 }
 
@@ -14,6 +21,7 @@ pub fn zeros(shape) { full(shape, 0.0) }
 pub fn ones(shape) { full(shape, 1.0) }
 
 pub fn full(shape, value) {
+    if !_valid_shape(shape) { return Err("warp.full expects non-negative integer dimensions") }
     n := _prod(shape)
     let mut d = []
     let mut i = 0
@@ -29,6 +37,7 @@ pub fn arange(start_or_stop, stop_arg, step_arg) {
     if s1 == null { s1 = s0
         s0 = 0 }
     if st == null { st = 1 }
+    if st == 0 { return Err("warp.arange step cannot be zero") }
     let mut d = []
     let mut v = s0
     if st > 0 {
@@ -42,7 +51,8 @@ pub fn arange(start_or_stop, stop_arg, step_arg) {
 }
 
 pub fn linspace(start, stop, n) {
-    if n < 2 { return array([start + 0.0], [1]) }
+    if _wkind(n) != "int" || n < 1 { return Err("warp.linspace requires a positive integer count") }
+    if n == 1 { return array([start + 0.0], [1]) }
     step := (stop - start + 0.0) / (n - 1)
     let mut d = []
     let mut i = 0
@@ -52,6 +62,7 @@ pub fn linspace(start, stop, n) {
 }
 
 pub fn eye(n) {
+    if _wkind(n) != "int" || n < 0 { return Err("warp.eye requires a non-negative integer size") }
     let mut d = []
     let mut r = 0
     while r < n {
@@ -67,6 +78,18 @@ pub fn eye(n) {
 
 pub fn diag(a) {
     data := _data(a)
+    if len(a.shape) == 2 {
+        rows := a.shape[0]
+        cols := a.shape[1]
+        n := if rows < cols { rows } else { cols }
+        let mut d = []
+        let mut i = 0
+        while i < n {
+            d = push(d, a.data[i * cols + i])
+            i = i + 1
+        }
+        return array(d, [n])
+    }
     n := len(data)
     let mut d = []
     let mut r = 0
@@ -83,19 +106,22 @@ pub fn diag(a) {
 
 pub fn from_list(nested) {
     // [[1,2],[3,4]] → array([1,2,3,4], [2,2])
+    if _wkind(nested) != "list" { return Err("warp.from_list expects a list") }
     if len(nested) == 0 { return array([], [0]) }
     first := nested[0]
-    if first == null { return array(nested, [len(nested)]) }
+    if _wkind(first) != "list" { return array(nested, [len(nested)]) }
     // check if first element is a list (2D)
     let mut flat = []
     cols := len(first)
     for row in nested {
+        if _wkind(row) != "list" || len(row) != cols { return Err("warp.from_list requires rectangular nested lists") }
         for v in row { flat = push(flat, v) }
     }
     array(flat, [len(nested), cols])
 }
 
 pub fn rand(shape) {
+    if !_valid_shape(shape) { return Err("warp.rand expects non-negative integer dimensions") }
     n := _prod(shape)
     let mut d = []
     let mut i = 0
@@ -105,6 +131,7 @@ pub fn rand(shape) {
 }
 
 pub fn randn(shape) {
+    if !_valid_shape(shape) { return Err("warp.randn expects non-negative integer dimensions") }
     // Box-Muller for normal distribution
     n := _prod(shape)
     let mut d = []
@@ -120,6 +147,8 @@ pub fn randn(shape) {
 }
 
 pub fn randint(low, high, shape) {
+    if high <= low { return Err("warp.randint requires high greater than low") }
+    if !_valid_shape(shape) { return Err("warp.randint expects non-negative integer dimensions") }
     n := _prod(shape)
     let mut d = []
     let mut i = 0
@@ -138,9 +167,35 @@ pub fn size(a) { len(a.data) }
 
 pub fn ndim(a) { len(a.shape) }
 
-pub fn reshape(a, new_shape) { array(a.data, new_shape) }
+pub fn reshape(a, new_shape) {
+    if !_valid_shape(new_shape) || _prod(new_shape) != len(a.data) {
+        return Err("warp.reshape shape must preserve the number of elements")
+    }
+    array(a.data, new_shape)
+}
 
 pub fn flatten(a) { array(a.data, [len(a.data)]) }
+
+pub fn ravel(a) { flatten(a) }
+
+pub fn squeeze(a) {
+    let mut s = []
+    for dim in a.shape { if dim != 1 { s = push(s, dim) } }
+    if len(s) == 0 { s = [1] }
+    array(a.data, s)
+}
+
+pub fn expand_dims(a, axis) {
+    if axis < 0 || axis > len(a.shape) { return Err("warp.expand_dims axis is out of range") }
+    let mut s = []
+    let mut i = 0
+    while i <= len(a.shape) {
+        if i == axis { s = push(s, 1) }
+        if i < len(a.shape) { s = push(s, a.shape[i]) }
+        i = i + 1
+    }
+    array(a.data, s)
+}
 
 pub fn T(a) {
     s := a.shape
@@ -160,11 +215,13 @@ pub fn T(a) {
 
 pub fn get(a, indices) {
     // get(a, [1, 2]) → element at row 1, col 2
+    if len(indices) != len(a.shape) { return Err("warp.get requires one index per dimension") }
     s := a.shape
     let mut idx = 0
     let mut stride = len(a.data)
     let mut i = 0
     while i < len(indices) {
+        if indices[i] < 0 || indices[i] >= s[i] { return Err("warp.get index is out of range") }
         stride = stride / s[i]
         idx = idx + indices[i] * stride
         i = i + 1
@@ -173,21 +230,24 @@ pub fn get(a, indices) {
 }
 
 pub fn set(a, indices, value) {
+    if len(indices) != len(a.shape) { return Err("warp.set requires one index per dimension") }
     s := a.shape
     let mut idx = 0
     let mut stride = len(a.data)
     let mut i = 0
     while i < len(indices) {
+        if indices[i] < 0 || indices[i] >= s[i] { return Err("warp.set index is out of range") }
         stride = stride / s[i]
         idx = idx + indices[i] * stride
         i = i + 1
     }
-    let mut d = a.data
+    let mut d = _copy(a.data)
     d[idx] = value
     array(d, s)
 }
 
 pub fn row(a, r) {
+    if len(a.shape) != 2 || r < 0 || r >= a.shape[0] { return Err("warp.row expects a valid 2D row") }
     cols := a.shape[1]
     let mut d = []
     let mut c = 0
@@ -197,6 +257,7 @@ pub fn row(a, r) {
 }
 
 pub fn col(a, c) {
+    if len(a.shape) != 2 || c < 0 || c >= a.shape[1] { return Err("warp.col expects a valid 2D column") }
     rows := a.shape[0]
     cols := a.shape[1]
     let mut d = []
@@ -208,9 +269,11 @@ pub fn col(a, c) {
 
 pub fn slice(a, start, stop) {
     data := a.data
+    s := if stop == null { len(data) } else { stop }
+    if start < 0 || start > len(data) { return Err("warp.slice start is out of range") }
+    if s < start || s > len(data) { return Err("warp.slice stop is out of range") }
     let mut d = []
     let mut i = start
-    s := if stop == null { len(data) } else { stop }
     while i < s { d = push(d, data[i])
         i = i + 1 }
     array(d, [len(d)])
@@ -281,16 +344,23 @@ pub fn greater(a, b) { _binop(a, b, fn(x, y) { if x > y { 1 } else { 0 } }) }
 pub fn greater_equal(a, b) { _binop(a, b, fn(x, y) { if x >= y { 1 } else { 0 } }) }
 
 pub fn where(cond, x, y) {
-    cd := _data(cond)
-    xd := _data(x)
-    yd := _data(y)
+    cs := _operand_shape(cond)
+    xs := _operand_shape(x)
+    ys := _operand_shape(y)
+    shape := _broadcast_shape(_broadcast_shape(cs, xs), ys)
+    if shape == null { return Err("warp.where operands could not be broadcast together") }
     let mut d = []
     let mut i = 0
-    while i < len(cd) {
-        d = push(d, if cd[i] != 0 { xd[i] } else { yd[i] })
+    n := _prod(shape)
+    while i < n {
+        index := _unravel(i, shape)
+        cv := _operand_value(cond, index, shape)
+        xv := _operand_value(x, index, shape)
+        yv := _operand_value(y, index, shape)
+        d = push(d, if cv != 0 { xv } else { yv })
         i = i + 1
     }
-    array(d, cond.shape)
+    array(d, shape)
 }
 
 pub fn all_(a) {
@@ -319,20 +389,30 @@ pub fn prod(a) {
     s
 }
 
-pub fn mean(a) { sum(a) / len(_data(a)) }
+pub fn mean(a) {
+    data := _data(a)
+    if len(data) == 0 { return null }
+    sum(a) / len(data)
+}
 
 pub fn var_(a) {
     data := _data(a)
+    if len(data) == 0 { return null }
     m := mean(a)
     let mut s = 0.0
     for x in data { s = s + (x - m) * (x - m) }
     s / len(data)
 }
 
-pub fn std_(a) { math.sqrt(var_(a)) }
+pub fn std_(a) {
+    value := var_(a)
+    if value == null { return null }
+    math.sqrt(value)
+}
 
 pub fn min_(a) {
     data := _data(a)
+    if len(data) == 0 { return null }
     let mut m = data[0]
     let mut i = 1
     while i < len(data) { if data[i] < m { m = data[i] }
@@ -342,6 +422,7 @@ pub fn min_(a) {
 
 pub fn max_(a) {
     data := _data(a)
+    if len(data) == 0 { return null }
     let mut m = data[0]
     let mut i = 1
     while i < len(data) { if data[i] > m { m = data[i] }
@@ -351,6 +432,7 @@ pub fn max_(a) {
 
 pub fn argmin(a) {
     data := _data(a)
+    if len(data) == 0 { return null }
     let mut mi = 0
     let mut i = 1
     while i < len(data) { if data[i] < data[mi] { mi = i }
@@ -360,6 +442,7 @@ pub fn argmin(a) {
 
 pub fn argmax(a) {
     data := _data(a)
+    if len(data) == 0 { return null }
     let mut mi = 0
     let mut i = 1
     while i < len(data) { if data[i] > data[mi] { mi = i }
@@ -386,6 +469,7 @@ pub fn cumprod(a) {
 }
 
 pub fn median(a) {
+    if len(_data(a)) == 0 { return null }
     sorted := sort(a)
     data := sorted.data
     n := len(data)
@@ -394,6 +478,8 @@ pub fn median(a) {
 }
 
 pub fn percentile(a, p) {
+    if len(_data(a)) == 0 { return null }
+    if p < 0 || p > 100 { return Err("warp.percentile requires p between 0 and 100") }
     sorted := sort(a)
     data := sorted.data
     n := len(data)
@@ -407,10 +493,12 @@ pub fn percentile(a, p) {
 // Axis-based reductions for 2D arrays
 
 pub fn sum_axis(a, axis) {
+    if !_valid_axis_2d(a, axis) { return Err("warp.sum_axis expects a 2D array and axis 0 or 1") }
     _reduce_axis(a, axis, fn(acc, x) { acc + x }, 0.0)
 }
 
 pub fn mean_axis(a, axis) {
+    if !_valid_axis_2d(a, axis) { return Err("warp.mean_axis expects a 2D array and axis 0 or 1") }
     s := a.shape
     result := sum_axis(a, axis)
     n := s[axis]
@@ -418,10 +506,12 @@ pub fn mean_axis(a, axis) {
 }
 
 pub fn min_axis(a, axis) {
+    if !_valid_axis_2d(a, axis) { return Err("warp.min_axis expects a 2D array and axis 0 or 1") }
     _reduce_axis(a, axis, fn(acc, x) { if x < acc { x } else { acc } }, 1e308)
 }
 
 pub fn max_axis(a, axis) {
+    if !_valid_axis_2d(a, axis) { return Err("warp.max_axis expects a 2D array and axis 0 or 1") }
     _reduce_axis(a, axis, fn(acc, x) { if x > acc { x } else { acc } }, -1e308)
 }
 
@@ -430,31 +520,75 @@ pub fn max_axis(a, axis) {
 // ──────────────────────────────────────────────
 
 pub fn dot(a, b) {
-    ad := _data(a)
-    bd := _data(b)
-    let mut s = 0.0
-    let mut i = 0
-    while i < len(ad) { s = s + ad[i] * bd[i]
-        i = i + 1 }
-    s
+    matmul(a, b)
 }
 
 pub fn matmul(a, b) {
     sa := a.shape
     sb := b.shape
+    if len(sa) == 1 && len(sb) == 1 {
+        if sa[0] != sb[0] { return Err("warp.matmul vector lengths do not match") }
+        let mut result = 0.0
+        let mut i = 0
+        while i < sa[0] {
+            result = result + a.data[i] * b.data[i]
+            i = i + 1
+        }
+        return result
+    }
+    if len(sa) == 2 && len(sb) == 1 {
+        if sa[1] != sb[0] { return Err("warp.matmul inner dimensions do not match") }
+        rows := sa[0]
+        cols := sa[1]
+        let mut d = []
+        let mut r = 0
+        while r < rows {
+            let mut result = 0.0
+            let mut j = 0
+            while j < cols {
+                result = result + a.data[r * cols + j] * b.data[j]
+                j = j + 1
+            }
+            d = push(d, result)
+            r = r + 1
+        }
+        return array(d, [rows])
+    }
+    if len(sa) == 1 && len(sb) == 2 {
+        if sa[0] != sb[0] { return Err("warp.matmul inner dimensions do not match") }
+        rows := sb[0]
+        cols := sb[1]
+        let mut d = []
+        let mut c = 0
+        while c < cols {
+            let mut result = 0.0
+            let mut i = 0
+            while i < rows {
+                result = result + a.data[i] * b.data[i * cols + c]
+                i = i + 1
+            }
+            d = push(d, result)
+            c = c + 1
+        }
+        return array(d, [cols])
+    }
+    if len(sa) != 2 || len(sb) != 2 { return Err("warp.matmul supports only 1D and 2D arrays") }
     m := sa[0]
     k := sa[1]
+    if k != sb[0] { return Err("warp.matmul inner dimensions do not match") }
     n := sb[1]
     let mut d = []
     let mut r = 0
     while r < m {
         let mut c = 0
         while c < n {
-            let mut s = 0.0
+            let mut result = 0.0
             let mut j = 0
-            while j < k { s = s + a.data[r * k + j] * b.data[j * n + c]
-        j = j + 1 }
-            d = push(d, s)
+            while j < k {
+                result = result + a.data[r * k + j] * b.data[j * n + c]
+                j = j + 1
+            }
+            d = push(d, result)
             c = c + 1
         }
         r = r + 1
@@ -717,20 +851,49 @@ pub fn concat(a, b) {
 }
 
 pub fn vstack(arrays) {
+    if len(arrays) == 0 { return Err("warp.vstack requires at least one array") }
     let mut all_data = []
-    cols := len(arrays[0].data)
+    first_shape := arrays[0].shape
+    if len(first_shape) != 1 && len(first_shape) != 2 { return Err("warp.vstack supports 1D or 2D arrays") }
+    cols := if len(first_shape) == 1 { first_shape[0] } else { first_shape[1] }
+    let mut rows = 0
     for a in arrays {
+        if len(a.shape) != len(first_shape) { return Err("warp.vstack arrays must have equal dimensions") }
+        if len(first_shape) == 1 && a.shape[0] != cols { return Err("warp.vstack vectors must have equal lengths") }
+        if len(first_shape) == 2 && a.shape[1] != cols { return Err("warp.vstack matrices must have equal columns") }
+        rows = rows + if len(first_shape) == 1 { 1 } else { a.shape[0] }
         for x in a.data { all_data = push(all_data, x) }
     }
-    array(all_data, [len(arrays), cols])
+    if len(first_shape) == 1 { array(all_data, [len(arrays), cols]) }
+    else { array(all_data, [rows, cols]) }
 }
 
 pub fn hstack(arrays) {
+    if len(arrays) == 0 { return Err("warp.hstack requires at least one array") }
     let mut all_data = []
-    for a in arrays {
-        for x in a.data { all_data = push(all_data, x) }
+    first_shape := arrays[0].shape
+    if len(first_shape) != 1 && len(first_shape) != 2 { return Err("warp.hstack supports 1D or 2D arrays") }
+    if len(first_shape) == 1 {
+        for a in arrays { for x in a.data { all_data = push(all_data, x) } }
+        return array(all_data, [len(all_data)])
     }
-    array(all_data, [len(all_data)])
+    rows := first_shape[0]
+    let mut cols = 0
+    for a in arrays {
+        if len(a.shape) != 2 || a.shape[0] != rows { return Err("warp.hstack matrices must have equal rows") }
+        cols = cols + a.shape[1]
+    }
+    let mut r = 0
+    while r < rows {
+        for a in arrays {
+            start := r * a.shape[1]
+            stop := start + a.shape[1]
+            let mut c = start
+            while c < stop { all_data = push(all_data, a.data[c]) c = c + 1 }
+        }
+        r = r + 1
+    }
+    array(all_data, [rows, cols])
 }
 
 pub fn tile(a, reps) {
@@ -764,22 +927,8 @@ pub fn flip(a) {
 }
 
 pub fn sort(a) {
-    // Simple sort (insertion sort — fine for small arrays)
-    let mut data = a.data
-    let mut d = []
-    for x in data { d = push(d, x) }
-    let mut i = 1
-    while i < len(d) {
-        key := d[i]
-        let mut j = i - 1
-        while j >= 0 && d[j] > key {
-            d[j + 1] = d[j]
-            j = j - 1
-        }
-        d[j + 1] = key
-        i = i + 1
-    }
-    array(d, a.shape)
+    // Stable merge sort keeps large array sorting O(n log n).
+    array(_merge_sort_values(a.data), a.shape)
 }
 
 pub fn argsort(a) {
@@ -788,22 +937,11 @@ pub fn argsort(a) {
     let mut i = 0
     while i < len(data) { indices = push(indices, i)
         i = i + 1 }
-    // insertion sort on indices
-    let mut i = 1
-    while i < len(indices) {
-        key := indices[i]
-        let mut j = i - 1
-        while j >= 0 && data[indices[j]] > data[key] {
-            indices[j + 1] = indices[j]
-            j = j - 1
-        }
-        indices[j + 1] = key
-        i = i + 1
-    }
-    array(indices, a.shape)
+    array(_merge_sort_indices(indices, data), a.shape)
 }
 
 pub fn unique(a) {
+    if len(a.data) == 0 { return array([], [0]) }
     sorted := sort(a)
     data := sorted.data
     let mut d = [data[0]]
@@ -891,9 +1029,10 @@ pub fn allclose(a, b, atol) {
     ad := _data(a)
     bd := _data(b)
     if len(ad) != len(bd) { return false }
+    if _is_arr(a) && _is_arr(b) && a.shape != b.shape { return false }
     let mut i = 0
     while i < len(ad) {
-        if math.abs(ad[i] - bd[i]) > tol { return false }
+        if math.abs(ad[i] - bd[i]) > tol + tol * math.abs(bd[i]) { return false }
         i = i + 1
     }
     true
@@ -915,9 +1054,46 @@ pub fn nan_to_num(a, nan_val, posinf, neginf) {
     })
 }
 
+// Native execution is opt-in. The provider may target CUDA, ROCm, or MLX;
+// the operation/input contract is defined by that provider's manifest.
+pub fn accelerator_supported() { accelerator.supported() }
+
+pub fn accelerator_load(path) -> Result[any] { accelerator.load(path) }
+
+pub fn accelerator_run(plugin, operation, input) -> Result[any] {
+    accelerator.run(plugin, operation, input)
+}
+
+pub fn accelerator_close(plugin) { accelerator.close(plugin) }
+
 // ──────────────────────────────────────────────
 // Internals
 // ──────────────────────────────────────────────
+
+fn _wkind(v) {
+    if v == null { return "null" }
+    s := json.stringify(v)
+    if s == "true" || s == "false" { return "bool" }
+    if str.starts_with(s, "\"") { return "str" }
+    if str.starts_with(s, "[") { return "list" }
+    if str.starts_with(s, "{") { return "map" }
+    if str.contains(s, ".") || str.contains(s, "e") || str.contains(s, "E") { return "float" }
+    "int"
+}
+
+fn _valid_shape(shape) {
+    if _wkind(shape) != "list" || len(shape) == 0 { return false }
+    for dim in shape {
+        if _wkind(dim) != "int" || dim < 0 { return false }
+    }
+    true
+}
+
+fn _copy(data) {
+    let mut result = []
+    for value in data { result = push(result, value) }
+    result
+}
 
 fn _data(a) { if _is_arr(a) { a.data } else { a } }
 
@@ -934,6 +1110,10 @@ fn _validate_square(a) -> Result[any] {
     Ok(null)
 }
 
+fn _valid_axis_2d(a, axis) {
+    a != null && _is_arr(a) && len(a.shape) == 2 && (axis == 0 || axis == 1)
+}
+
 fn _is_arr(a) { a != null && len(keys(a)) > 0 && contains(keys(a), "_warp") }
 
 fn _prod(shape) {
@@ -944,37 +1124,187 @@ fn _prod(shape) {
 
 fn _binop(a, b, op) {
     if _is_arr(a) && _is_arr(b) {
-        ad := a.data
-        bd := b.data
+        shape := _broadcast_shape(a.shape, b.shape)
+        if shape == null { return Err("warp operands could not be broadcast together") }
         let mut d = []
         let mut i = 0
-        while i < len(ad) { d = push(d, op(ad[i], bd[i]))
-        i = i + 1 }
-        array(d, a.shape)
+        n := _prod(shape)
+        while i < n {
+            index := _unravel(i, shape)
+            d = push(d, op(_broadcast_value(a, index, shape), _broadcast_value(b, index, shape)))
+            i = i + 1
+        }
+        array(d, shape)
     } else if _is_arr(a) {
-        ad := a.data
         let mut d = []
         let mut i = 0
-        while i < len(ad) { d = push(d, op(ad[i], b))
+        while i < len(a.data) { d = push(d, op(a.data[i], b))
         i = i + 1 }
         array(d, a.shape)
     } else if _is_arr(b) {
-        bd := b.data
         let mut d = []
         let mut i = 0
-        while i < len(bd) { d = push(d, op(a, bd[i]))
+        while i < len(b.data) { d = push(d, op(a, b.data[i]))
         i = i + 1 }
         array(d, b.shape)
     } else { op(a, b) }
 }
 
 fn _unaryop(a, op) {
-    data := _data(a)
+    if !_is_arr(a) { return op(a) }
+    data := a.data
     let mut d = []
     let mut i = 0
     while i < len(data) { d = push(d, op(data[i]))
         i = i + 1 }
     array(d, a.shape)
+}
+
+fn _operand_shape(value) {
+    if _is_arr(value) { value.shape } else { [1] }
+}
+
+fn _broadcast_shape(left, right) {
+    if left == null || right == null { return null }
+    let mut result = []
+    let mut li = len(left) - 1
+    let mut ri = len(right) - 1
+    while li >= 0 || ri >= 0 {
+        ld := if li >= 0 { left[li] } else { 1 }
+        rd := if ri >= 0 { right[ri] } else { 1 }
+        if ld != rd && ld != 1 && rd != 1 { return null }
+        result = push(result, if ld > rd { ld } else { rd })
+        li = li - 1
+        ri = ri - 1
+    }
+    _reverse_values(result)
+}
+
+fn _unravel(flat_index, shape) {
+    let mut result = []
+    let mut remaining = flat_index
+    let mut i = 0
+    while i < len(shape) {
+        stride := _prod(_tail(shape, i + 1))
+        coord := if stride == 0 { 0 } else { remaining / stride }
+        remaining = if stride == 0 { 0 } else { remaining % stride }
+        result = push(result, coord)
+        i = i + 1
+    }
+    result
+}
+
+fn _tail(values, start) {
+    let mut result = []
+    let mut i = start
+    while i < len(values) {
+        result = push(result, values[i])
+        i = i + 1
+    }
+    result
+}
+
+fn _reverse_values(values) {
+    let mut result = []
+    let mut i = len(values) - 1
+    while i >= 0 {
+        result = push(result, values[i])
+        i = i - 1
+    }
+    result
+}
+
+fn _list_range(values, start, stop) {
+    let mut result = []
+    let mut i = start
+    while i < stop {
+        result = push(result, values[i])
+        i = i + 1
+    }
+    result
+}
+
+fn _merge_sort_values(values) {
+    if len(values) <= 1 { return _copy(values) }
+    mid := len(values) / 2
+    left := _merge_sort_values(_list_range(values, 0, mid))
+    right := _merge_sort_values(_list_range(values, mid, len(values)))
+    _merge_values(left, right)
+}
+
+fn _merge_values(left, right) {
+    let mut result = []
+    let mut li = 0
+    let mut ri = 0
+    while li < len(left) && ri < len(right) {
+        if left[li] <= right[ri] {
+            result = push(result, left[li])
+            li = li + 1
+        } else {
+            result = push(result, right[ri])
+            ri = ri + 1
+        }
+    }
+    while li < len(left) {
+        result = push(result, left[li])
+        li = li + 1
+    }
+    while ri < len(right) {
+        result = push(result, right[ri])
+        ri = ri + 1
+    }
+    result
+}
+
+fn _merge_sort_indices(indices, values) {
+    if len(indices) <= 1 { return _copy(indices) }
+    mid := len(indices) / 2
+    left := _merge_sort_indices(_list_range(indices, 0, mid), values)
+    right := _merge_sort_indices(_list_range(indices, mid, len(indices)), values)
+    _merge_index_values(left, right, values)
+}
+
+fn _merge_index_values(left, right, values) {
+    let mut result = []
+    let mut li = 0
+    let mut ri = 0
+    while li < len(left) && ri < len(right) {
+        if values[left[li]] <= values[right[ri]] {
+            result = push(result, left[li])
+            li = li + 1
+        } else {
+            result = push(result, right[ri])
+            ri = ri + 1
+        }
+    }
+    while li < len(left) {
+        result = push(result, left[li])
+        li = li + 1
+    }
+    while ri < len(right) {
+        result = push(result, right[ri])
+        ri = ri + 1
+    }
+    result
+}
+
+fn _broadcast_value(a, output_index, output_shape) {
+    offset := len(output_shape) - len(a.shape)
+    let mut flat_index = 0
+    let mut i = 0
+    while i < len(a.shape) {
+        dim := a.shape[i]
+        coord := if dim == 1 { 0 } else { output_index[i + offset] }
+        stride := _prod(_tail(a.shape, i + 1))
+        flat_index = flat_index + coord * stride
+        i = i + 1
+    }
+    a.data[flat_index]
+}
+
+fn _operand_value(value, output_index, output_shape) {
+    if _is_arr(value) { _broadcast_value(value, output_index, output_shape) }
+    else { value }
 }
 
 fn _reduce_axis(a, axis, op, init) {

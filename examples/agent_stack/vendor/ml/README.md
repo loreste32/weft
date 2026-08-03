@@ -1,77 +1,51 @@
-# ml — Weft ML module (not core)
+# ml — Weft ML module
 
-**Optional module** — pure `.weft`, not baked into the `weft` binary.  
-Stack map: [docs/ECOSYSTEM.md](../../docs/ECOSYSTEM.md) · guide: [docs/ML.md](../../docs/ML.md).
-
-| In scope | Out of scope (stay external) |
-|----------|------------------------------|
-| Embeddings via OpenAI-compat / Ollama | Heavy tensor / array frameworks |
-| Cosine search, JSON vector index | Full training loops / GPU kernels |
-| Accuracy / MSE / train-test split | Full dataframe / ML toolkits |
-| Glue to `llm` + `weft train` | In-process deep-learning training |
-
-## Install
-
-```bash
-# from this monorepo
-weft registry install ml
-weft install
-
-# or path relative to your app
-weft registry install ml
-```
+`ml` covers vector/embedding workflows and deterministic classical model
+training without leaving the Weft program. It includes minibatch linear and
+logistic regression, predictions, scores, standardization, metrics, train/test
+splitting, embeddings, and a small JSON vector index.
 
 ```weft
 use ml
 
 fn main -> Result {
-    // offline vectors (no API)
-    q := [1.0, 0.0, 0.0]
-    docs := [
-        {"id": "a", "vec": [1.0, 0.0, 0.0], "meta": {"t": "alpha"}},
-        {"id": "b", "vec": [0.0, 1.0, 0.0], "meta": {"t": "beta"}},
-    ]
-    say(ml.topk(q, docs, 1))
-
-    // live embeddings (optional — needs Ollama embed model or OpenAI key)
-    // v := ml.embed("hello weft")?
-    // say(len(v))
+    model := ml.linear_fit([[0.0], [1.0], [2.0]], [1.0, 3.0, 5.0], {
+        "epochs": 300, "learning_rate": 0.05, "batch_size": 64,
+    })?
+    say(ml.predict(model, [[4.0]])?)
 }
 ```
 
-## API
+## Training API
 
-| Call | Role |
-|------|------|
-| `ml.cosine(a,b)` `ml.dot` `ml.norm` | vector math; mismatched dimensions return `Err` |
-| `ml.topk(q, items, k)` | similarity ranking; every item must contain a same-size `vec` |
-| `ml.embed(text)?` | embedding (`WEFT_PROVIDER` / Ollama / OpenAI-compat) |
-| `ml.embed_with(text, {model, base_url, api_key, headers})?` | override host |
-| `ml.embed_many([…])?` | batch (one OpenAI-compat call when possible) |
-| `ml.index()` · `index_add` · `index_search` · `index_save` · `index_load` | tiny RAG store |
-| `ml.accuracy` `ml.mse` `ml.split` | eval helpers |
-| `ml.provider()` | detected provider string |
+- `linear_fit(features, targets, opts)` trains a minibatch least-squares
+  model.
+- `logistic_fit(features, targets, opts)` trains binary logistic regression;
+  targets are `0`/`1`.
+- `fit(kind, features, targets, opts)` and `train(...)` dispatch either model.
+- `predict(model, features)` returns values or probabilities.
+- `predict_classes(model, features, threshold?)` returns binary classes.
+- `score(model, features, targets)` returns MSE for linear models and accuracy
+  for logistic models.
+- `standardize(features)` returns standardized values plus mean and scale.
 
-Env (embeddings):
+Options are validated and bounded: `epochs`, `batch_size`, `learning_rate`,
+and `l2`. The implementation uses minibatches and has a regression test that
+trains over 100,000 rows. It is a classical CPU model layer, not a complete
+deep-learning/autodiff framework.
 
-| Variable | Role |
-|----------|------|
-| `WEFT_PROVIDER` | `ollama` / `vllm` / `openai` (any OpenAI-compat host) |
-| `WEFT_EMBED_MODEL` | e.g. `nomic-embed-text`, `text-embedding-3-small` |
-| `OLLAMA_HOST` | default `http://127.0.0.1:11434` |
-| `OPENAI_BASE_URL` / `WEFT_API_BASE` | host or `…/v1` — `/embeddings` path is normalized |
-| `OPENAI_API_KEY` / `WEFT_API_KEY` | Bearer + Azure-style `api-key` header |
-| `OPENAI_API_KEY` / `WEFT_API_KEY` | cloud embeddings |
+## Other APIs
 
-Vector metrics require equal-length inputs. `accuracy` and `mse` reject
-different-length prediction/label arrays instead of silently scoring only the
-shared prefix. `split` is deterministic and preserves input order; its ratio
-must be between `0` and `1`.
+`cosine`, `dot`, `norm`, `topk`, `accuracy`, `mse`, `split`, embedding
+providers, and the JSON vector index are available from the package entry.
+Embedding calls use the configured OpenAI-compatible/Ollama provider and may
+require network capabilities.
 
-## Training
+## GPU and native training
 
-Weights still use **`weft train finetune --private`** (optional TRL on your GPU). This module does not reimplement training — it closes the **inference/RAG/eval scripting** gap.
-
-## Design
-
-Core language stays small. Heavy or optional domains ship as **modules** under `packages/`. See [docs/ML.md](../../docs/ML.md) and [docs/ROADMAP.md](../../docs/ROADMAP.md).
+For GPU tensor operations or deep models, use `warp` with an explicit native
+CUDA, ROCm/HIP, or Apple MLX provider through the versioned accelerator ABI.
+The provider owns device memory and kernels; `ml` owns model/data contracts and
+validation. Real vendor providers must publish supported dtypes, layouts,
+operations, limits, and numerical checks. No package claims that its pure
+Weft CPU implementation is equivalent to vendor libraries.

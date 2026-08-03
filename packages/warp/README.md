@@ -1,112 +1,75 @@
-# warp
+# warp — NumPy-style arrays for Weft
 
-N-dimensional array math for Weft. Pure `.weft` — no native deps, no Go, no C.
-
-The warp threads of a loom: structured, tensioned, ready for work.
-
-## Install
-
-```bash
-weft registry install warp
-# or from git:
-# weft registry install warp
-```
-
-## Quick start
+`warp` is a validated, row-major N-dimensional array module. It provides a
+portable pure-Weft CPU path, broadcasting for common array shapes, reductions,
+sorting, linear algebra, and explicit dispatch into a native accelerator
+plugin. It is NumPy-inspired, not a drop-in replacement for every NumPy API.
 
 ```weft
 use warp
 
-fn main {
-    a := warp.array([1, 2, 3, 4, 5, 6], [2, 3])
-    b := warp.ones([2, 3])
-    c := warp.add(a, b)
-    warp.print_(c)
-    // [2, 3, 4]
-    // [5, 6, 7]
-
-    say("sum:", warp.sum(c))
-    say("mean:", warp.mean(c))
-
-    // matrix multiply
-    x := warp.array([1, 2, 3, 4], [2, 2])
-    y := warp.eye(2)
-    say(warp.to_list(warp.matmul(x, y)))
+fn main -> Result {
+    a := warp.from_list([[1, 2, 3], [4, 5, 6]])
+    b := warp.array([10, 20, 30], [3])
+    say(warp.to_list(warp.add(a, b)))
+    // [11, 22, 33, 14, 25, 36]
+    say(warp.shape(warp.matmul(a, warp.array([1, 1, 1], [3]))))
+    // [2]
 }
 ```
 
-## API
+## Execution backends
 
-### Constructors
-
-| Function | Description |
-|----------|-------------|
-| `array(data, shape?)` | Create from flat list + shape |
-| `zeros(shape)` | All zeros |
-| `ones(shape)` | All ones |
-| `full(shape, value)` | Fill with value |
-| `arange(start, stop?, step?)` | Range like `0, 1, 2, ...` |
-| `linspace(start, stop, n)` | n evenly spaced values |
-| `eye(n)` | n×n identity matrix |
-| `diag(array)` | Diagonal matrix from 1d array |
-
-### Properties
-
-| Function | Returns |
-|----------|---------|
-| `shape(a)` | Dimension list `[rows, cols, ...]` |
-| `size(a)` | Total element count |
-| `ndim(a)` | Number of dimensions |
-
-### Arithmetic (element-wise, scalar broadcast)
-
-`add`, `sub`, `mul`, `div`, `neg`, `abs_`, `sqrt`, `exp`, `log_`, `pow_`, `round_`, `clip`
+The CPU implementation is always available. Native execution is explicit and
+capability-gated:
 
 ```weft
-warp.add(a, b)       // element-wise
-warp.mul(a, 2)       // scalar broadcast
-warp.clip(a, 0, 1)   // clamp values
+use warp
+
+fn main -> Result {
+    plugin := warp.accelerator_load("/opt/weft/libweft_accel_mlx.dylib")?
+    result := warp.accelerator_run(plugin, "matmul", {
+        "a": [1.0, 2.0, 3.0, 4.0], "a_shape": [2, 2],
+        "b": [5.0, 6.0, 7.0, 8.0], "b_shape": [2, 2],
+    })?
+    say(result)
+    warp.accelerator_close(plugin)?
+}
 ```
 
-### Reductions
+Provider libraries implement the versioned ABI in
+[`native/accelerator`](../../native/accelerator). CUDA, ROCm/HIP, and Apple
+MLX are separate provider builds; the manifest must report the actual vendor,
+supported operations, dtypes, layouts, and device constraints. The included
+example provider only validates loading and JSON ownership—it is not a GPU
+backend.
 
-`sum`, `mean`, `var_`, `std_`, `min_`, `max_`, `argmin`, `argmax`
+## API groups
 
-### Linear algebra
+- Creation: `array`, `from_list`, `zeros`, `ones`, `full`, `arange`,
+  `linspace`, `eye`, `diag`, `rand`, `randn`, `randint`.
+- Shape/indexing: `shape`, `size`, `ndim`, `reshape`, `flatten`, `ravel`,
+  `squeeze`, `expand_dims`, `T`, `get`, `set`, `row`, `col`, `slice`.
+- Element-wise math: arithmetic, comparisons, `where`, trigonometric,
+  exponential, logarithmic, rounding, clipping, and sign operations.
+- Statistics: reductions, cumulative operations, percentiles, axis reductions,
+  `allclose`, `isnan`, `isinf`, and `nan_to_num`.
+- Linear algebra: NumPy-style 1D/2D `dot` and `matmul`, norms, `outer`,
+  `cross`, `trace`, `det`, `inv`, and `solve`.
+- Manipulation: `concat`, validated `vstack`/`hstack`, `tile`, `repeat`,
+  `flip`, stable O(n log n) `sort`/`argsort`, `unique`, and masking.
+- Native dispatch: `accelerator_supported`, `accelerator_load`,
+  `accelerator_run`, `accelerator_close`.
 
-| Function | Description |
-|----------|-------------|
-| `dot(a, b)` | Dot product (1d) |
-| `matmul(a, b)` | Matrix multiply (2d × 2d) |
-| `T(a)` | Transpose (2d) |
+Arrays are immutable values: `set` and every arithmetic operation return new
+arrays. Shape mismatches, ragged nested lists, invalid indices, and invalid
+constructor parameters return errors instead of silently truncating data.
 
-### Comparisons
+## Boundaries
 
-`equal`, `less`, `greater` — return 0/1 arrays.
-
-`where(cond, x, y)` — element-wise ternary.
-
-### Shape ops
-
-`reshape`, `flatten`, `T`
-
-### Utility
-
-`to_list`, `print_`
-
-## Design
-
-- Arrays are `{_warp: true, data: [...], shape: [...]}` — plain Weft maps
-- Flat data + shape metadata (row-major)
-- Scalar broadcast on binary ops
-- No mutation — all ops return new arrays
-- Trailing `_` on names that clash with Weft builtins (`abs_`, `min_`, `var_`)
-
-## Limits
-
-This is a scripting-weight array library, not BLAS. Good for:
-- Small data transforms in agent scripts
-- Prototyping math before calling real services
-- Learning linear algebra interactively
-
-Not good for: large datasets, GPU compute, training neural networks. For those, orchestrate external tools from Weft.
+The CPU path is designed for scripting, ETL, classical ML, and moderate arrays.
+LU-based matrix inversion/solving remains O(n³). For very large workloads,
+use a validated CUDA, ROCm, or MLX provider and compare results against the
+CPU path on representative tolerances. This package does not claim complete
+NumPy API, dtype, memory-layout, sparse-array, autodiff, or native-kernel
+compatibility.

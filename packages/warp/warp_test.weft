@@ -331,6 +331,27 @@ fn test_vstack {
     test.eq(warp.to_list(c), [1, 2, 3, 4, 5, 6])
 }
 
+fn test_stack_2d_and_validation {
+    a := warp.array([1, 2, 3, 4], [2, 2])
+    b := warp.array([5, 6, 7, 8], [2, 2])
+    vertical := warp.vstack([a, b])
+    test.eq(warp.shape(vertical), [4, 2])
+    horizontal := warp.hstack([a, b])
+    test.eq(warp.shape(horizontal), [2, 4])
+    test.eq(warp.to_list(horizontal), [1, 2, 5, 6, 3, 4, 7, 8])
+    bad := warp.vstack([warp.array([1, 2], [2]), warp.array([1, 2, 3], [3])])
+    test.is_false(bad.ok)
+}
+
+fn test_empty_and_axis_validation {
+    empty := warp.array([], [0])
+    test.is_null(warp.mean(empty))
+    test.is_null(warp.min_(empty))
+    test.eq(warp.sum(empty), 0.0)
+    bad := warp.sum_axis(warp.ones([2, 2]), 2)
+    test.is_false(bad.ok)
+}
+
 fn test_flip {
     a := warp.array([1, 2, 3], [3])
     test.eq(warp.to_list(warp.flip(a)), [3, 2, 1])
@@ -472,6 +493,32 @@ fn test_solve_validation_mismatch {
     b := warp.array([1, 2, 3], [3])  // wrong size
     r := warp.solve(a, b)
     test.is_false(r.ok)
+}
+
+fn test_array_validation_and_broadcast {
+    bad := warp.array([1, 2], [3])
+    test.is_false(bad.ok)
+    left := warp.array([1, 2], [2, 1])
+    right := warp.array([10, 20, 30], [3])
+    result := warp.add(left, right)
+    test.eq(warp.shape(result), [2, 3])
+    test.eq(warp.to_list(result), [11, 21, 31, 12, 22, 32])
+}
+
+fn test_matmul_vector_forms {
+    a := warp.array([1, 2], [2])
+    b := warp.array([3, 4], [2])
+    test.eq(warp.matmul(a, b), 11.0)
+    matrix := warp.array([1, 2, 3, 4], [2, 2])
+    test.eq(warp.to_list(warp.matmul(matrix, b)), [11.0, 25.0])
+    test.eq(warp.to_list(warp.matmul(a, matrix)), [7.0, 10.0])
+}
+
+fn test_invalid_broadcast_is_error {
+    a := warp.array([1, 2], [2])
+    b := warp.array([1, 2, 3], [3])
+    result := warp.add(a, b)
+    test.is_false(result.ok)
 }
 
 fn test_solve_matrix_rhs {

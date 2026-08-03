@@ -1,6 +1,6 @@
-# dataframe — pandas-style tabular data for Weft
+# dataframe — pandas-inspired tabular data for Weft
 
-Pure `.weft` module, no native dependencies. Row-list storage with column-oriented operations, grouping, joins, pivoting, rolling windows, and I/O.
+Pure `.weft` module, no native dependencies. It uses row-list storage with an explicit ordered schema, null-aware aggregation, grouping, joins, pivoting, rolling windows, and I/O. It is designed for lightweight ETL and analysis, not drop-in pandas compatibility.
 
 ```bash
 weft get dataframe
@@ -23,9 +23,9 @@ fn main -> Result {
 
 | Function | What it does |
 |----------|-------------|
-| `from_rows([{…}, …])` | From list of maps |
-| `from_columns({"col": [vals]})` | From column map |
-| `from_csv(text, sep?)` | Parse CSV string (auto-detects numbers, booleans, nulls) |
+| `from_rows([{…}, …])` | Row maps; derives the union schema in first-seen order |
+| `from_columns({"col": [vals]})` | Column map → `Result`; all columns must have equal lengths |
+| `from_csv(text, sep?)` | Parse quoted CSV with CRLF/LF support → `Result` |
 | `from_json(text)` | Parse JSON array → Result |
 | `from_jsonl(text)` | Parse newline-delimited JSON → Result |
 | `read_csv(path, sep?)` | Read CSV file → Result |
@@ -41,7 +41,7 @@ t := df.from_rows([
 ])
 
 // from CSV string
-t := df.from_csv("name,age\nAlice,30\nBob,25\n", null)
+t := df.from_csv("name,age\nAlice,30\nBob,25\n", null)?
 
 // from file
 t := df.read_csv("data.csv", null)?
@@ -56,8 +56,8 @@ t := df.read_jsonl("data.jsonl")?
 | `rows(t)` | Raw row list |
 | `nrows(t)` / `ncols(t)` | Row / column count |
 | `shape(t)` | `[rows, cols]` |
-| `dtypes(t)` | Column type map |
-| `info(t)` | Summary map (rows, columns, memory est) |
+| `dtypes(t)` | Type map (`null`, `bool`, `int`, `float`, `str`, or `mixed`) scanned across all rows |
+| `info(t)` | Summary map with row/column counts and approximate `memory_est_bytes` |
 
 ## Selection & indexing
 
@@ -67,7 +67,7 @@ t := df.read_jsonl("data.jsonl")?
 | `head(t, n?)` | First n rows (default 5) |
 | `tail(t, n?)` | Last n rows (default 5) |
 | `iloc(t, idx)` | Single row by position |
-| `loc(t, start, stop?)` | Row range by position |
+| `loc(t, start, stop?)` | Half-open row range by position; this is not label-based pandas `.loc` |
 | `select_(t, [cols])` | Keep only listed columns |
 | `drop(t, [cols])` | Remove listed columns |
 
@@ -158,7 +158,7 @@ filled := df.fillna(t, {"age": 0, "dept": "unknown"})
 | `value_counts(t, col)` | Count occurrences per value |
 | `nunique(t, col)` | Count unique values |
 
-Aggregation ops: `"sum"`, `"mean"`, `"count"`, `"min"`, `"max"`, `"first"`, `"last"`, `"std"`.
+Aggregation ops: `"sum"`, `"mean"`, `"count"`, `"min"`, `"max"`, `"first"`, `"last"`, `"std"`. Nulls are skipped; `count` counts non-null values and `std` uses sample standard deviation.
 
 ```weft
 summary := df.group_by(t, "dept", {
@@ -189,8 +189,8 @@ r := df.corr(t, "age", "salary")  // 0.72
 
 | Function | |
 |----------|--|
-| `join(left, right, on, how?)` | Join on same column name. how: `"inner"`, `"left"`, `"outer"` |
-| `merge(left, right, left_on, right_on, how?)` | Join on different column names |
+| `join(left, right, on, how?)` | Join on same column name. `how`: `"inner"`, `"left"`, `"outer"`; overlapping right columns receive `_right` suffixes |
+| `merge(left, right, left_on, right_on, how?)` | Join on different column names; supports `"inner"`, `"left"`, and `"outer"` |
 | `concat_df([df1, df2, …])` | Concatenate vertically |
 
 ```weft
@@ -225,7 +225,7 @@ m := df.melt(wide, ["name"], null, "subject", "score")
 | `shift(t, col, periods?)` | Shift column values down (null fill) |
 | `diff(t, col, periods?)` | Difference from previous row |
 | `pct_change(t, col, periods?)` | Percentage change from previous |
-| `rolling(t, col, window, op)` | Rolling window aggregation |
+| `rolling(t, col, window, op)` | Full-window aggregation; windows containing nulls return null |
 | `expanding(t, col, op)` | Expanding (cumulative) aggregation |
 | `rank(t, col)` | Add rank column |
 | `cumsum_(t, col)` | Cumulative sum |
@@ -245,7 +245,7 @@ cumulative := df.cumsum_(sales, "revenue")
 
 | Function | |
 |----------|--|
-| `sample(t, n?, seed?)` | Random sample of n rows |
+| `sample(t, n?, seed?)` | Random sample of n rows; seed makes the result reproducible |
 | `shuffle(t)` | Randomly reorder all rows |
 
 ## Output
@@ -276,12 +276,13 @@ df.write_csv(t, "output.csv", null)?
 
 ## Limitations
 
-- Pure Weft — row-list storage, not columnar. Fine for datasets up to ~50k rows.
-- Sort uses insertion sort — O(n²).
-- `pivot`/`melt`/`crosstab` are basic (no multi-index).
+- Pure Weft — row-list storage, not columnar. No universal row-count limit is promised; benchmark your workload.
+- Sort uses the runtime comparator and is covered by the package scale tests.
+- There is no label/index or multi-index model; `loc` is positional.
+- `pivot` rejects duplicate index/column pairs; use an explicit aggregation before reshaping.
 - No datetime parsing (use `time.*` stdlib manually).
-- `corr`/`cov` are pairwise, not correlation matrix.
+- `corr`/`cov` are pairwise, not correlation matrices, and use pairwise non-null numeric rows.
 
 ## API count
 
-73 exported functions across creation (9), shape (7), selection (7), filtering (5), sorting (4), column ops (8), missing data (4), duplicates (2), grouping (4), statistics (4), joins (3), reshaping (3), windows (7), sampling (2), output (9), display (1).
+78 exported functions across creation (9), shape (7), selection (7), filtering (5), sorting (4), column ops (8), missing data (4), duplicates (2), grouping (4), statistics (4), joins (3), reshaping (3), windows (7), sampling (2), output (9), display (1). The package currently has 76 regression tests.

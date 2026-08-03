@@ -30,7 +30,7 @@ What we keep vs won’t: **[STDLIB_GAPS.md](STDLIB_GAPS.md)**.
 | Data tables | `csv`, `table`, `db`, `redis`, `mongo` |
 | Messaging | `nats`, `amqp`, `email`, `socket` |
 | LLM | `llm`, `ollama`, `vllm` |
-| AI integration | `mcp` (Model Context Protocol), `deepgram` (streaming STT), `elevenlabs` (streaming TTS), `mlinfer` (ONNX/Triton/HF inference) |
+| AI integration | `mcp` (Model Context Protocol), `deepgram` (streaming STT), `elevenlabs` (streaming TTS), `mlinfer` (ONNX/Triton/HF inference), `accelerator` (explicit native CUDA/ROCm/MLX plugin ABI) |
 | Collections helpers | `iter`, `collections`, `heap`, `bisect`, `pipe`, `functools` |
 | System info | `sysinfo` (CPU, memory, disk, uptime, interfaces) |
 | Process mgmt | `proc` (list, find, kill, exists) |
@@ -347,6 +347,24 @@ result := mlinfer.hf("facebook/bart-large-mnli", {"inputs": "classify this"})?
 label := mlinfer.classify("http://localhost:8080/classify", "refund my order")?
 vec := mlinfer.embed("http://localhost:8080/embed", "search query")?
 results := mlinfer.batch("http://localhost:8080/classify", ["text1", "text2"])?
+
+### accelerator
+
+`accelerator` loads an explicitly selected shared library implementing the
+versioned ABI in [`native/accelerator`](../native/accelerator). It is restricted
+by capability and unavailable in browser WASM. Providers are separate builds
+for CUDA, ROCm/HIP, or Apple MLX; the host does not claim vendor support merely
+because a library loads.
+
+```weft
+use accelerator
+
+fn main -> Result {
+    plugin := accelerator.load("/opt/weft/libweft_accel_cuda.so")?
+    say(accelerator.run(plugin, "health", {})?)
+    accelerator.close(plugin)?
+}
+```
 ```
 
 Members: `predict`, `onnx`, `onnx_health`, `onnx_models`, `triton`, `triton_health`, `triton_models`, `hf`, `classify`, `embed`, `detect`, `batch`.

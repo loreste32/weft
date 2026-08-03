@@ -373,6 +373,12 @@ func init() {
 	memberCatalog["elevenlabs.speak"] = memberHelp{"elevenlabs.speak(text, opts?) -> Result[map]", "synthesize audio (REST)"}
 	memberCatalog["elevenlabs.voices"] = memberHelp{"elevenlabs.voices() -> Result[[map]]", "list available voices"}
 
+	// accelerator
+	memberCatalog["accelerator.supported"] = memberHelp{"accelerator.supported() -> bool", "Whether native accelerator shared-library loading is available on this host"}
+	memberCatalog["accelerator.load"] = memberHelp{"accelerator.load(path) -> Result[any]", "Load an explicitly selected CUDA, ROCm, or MLX provider"}
+	memberCatalog["accelerator.run"] = memberHelp{"accelerator.run(plugin, operation, input) -> Result[any]", "Run one bounded JSON operation through a native provider"}
+	memberCatalog["accelerator.close"] = memberHelp{"accelerator.close(plugin) -> Result[bool]", "Unload a native accelerator provider"}
+
 	// mlinfer
 	memberCatalog["mlinfer.predict"] = memberHelp{"mlinfer.predict(url, input, opts?) -> Result[any]", "POST JSON to an HTTP(S) endpoint; opts supports timeout, headers, api_key"}
 	memberCatalog["mlinfer.onnx"] = memberHelp{"mlinfer.onnx(base, model, input) -> Result[any]", "ONNX Runtime Server v1 inference; input must be a map"}

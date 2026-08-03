@@ -137,15 +137,15 @@ Install with `weft get <name>` — or just `use auth` and it auto-fetches from t
 | [http_router](packages/http_router/) | Routing with path params, middleware, groups, CORS |
 | [validate](packages/validate/) | Data validation for forms/APIs |
 | [mold](packages/mold/) | Structured LLM JSON, validation, tool params |
-| [ml](packages/ml/) | Embeddings, vectors, RAG index |
+| [ml](packages/ml/) | Embeddings, vectors, RAG index, classical minibatch training |
 | [tokensave](packages/tokensave/) | Context thrift, memory, train data |
 | [retry](packages/retry/) | Exponential backoff with jitter and circuit breaker |
 | [cache](packages/cache/) | In-memory LRU cache with TTL |
 | [cron](packages/cron/) | Recurring task scheduler |
 | [semver](packages/semver/) | Semver parsing, comparison, constraints |
 | [color](packages/color/) | ANSI terminal colors for CLI tools |
-| [warp](packages/warp/) | N-dimensional array math |
-| [dataframe](packages/dataframe/) | Tabular data: filter, group, join, pivot |
+| [warp](packages/warp/) | Validated NumPy-style arrays with native accelerator dispatch |
+| [dataframe](packages/dataframe/) | Validated tabular data: null-aware stats, joins, rolling, CSV/JSON |
 | [embed](packages/embed/) | Embeddings client + vector store |
 | [experiment](packages/experiment/) | Experiment tracking: runs, params, metrics |
 | [metrics](packages/metrics/) | ML metrics: accuracy, F1, precision, recall |

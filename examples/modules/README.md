@@ -1,6 +1,9 @@
 # Expanding Weft with modules
 
-Third parties grow Weft’s surface with **pure `.weft` packages** — not native plugins or foreign package formats.
+Third parties grow Weft’s package surface with portable `.weft` packages. This
+example covers package composition and transitive installation; native
+acceleration is a separate, explicitly capability-gated concern handled by the
+versioned `accelerator` ABI in [`native/accelerator`](../../native/accelerator).
 
 ```text
 examples/modules/

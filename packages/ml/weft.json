@@ -1,31 +1,18 @@
 {
   "name": "ml",
-  "version": "0.3.0",
-  "description": "Agent stack: embeddings, vectors, RAG index, metrics",
+  "version": "0.4.0",
+  "description": "Weft ML module: vectors, embeddings, classical minibatch training, evaluation, and RAG indexing",
   "type": "module",
   "entry": "lib.weft",
   "exports": [
-    "cosine",
-    "dot",
-    "norm",
-    "topk",
-    "embed",
-    "embed_with",
-    "embed_many",
-    "index",
-    "index_add",
-    "index_search",
-    "index_save",
-    "index_load",
-    "accuracy",
-    "mse",
-    "split",
-    "provider"
+    "cosine", "dot", "norm", "topk", "embed", "embed_with", "embed_many",
+    "index", "index_add", "index_search", "index_save", "index_load",
+    "accuracy", "mse", "split", "provider",
+    "linear_fit", "logistic_fit", "fit", "train", "predict", "predict_classes", "score", "standardize"
   ],
   "maturity": "experimental",
   "license": "Apache-2.0",
-  "keywords": ["agent-stack", "ml", "embeddings", "rag", "metrics", "vectors"],
+  "keywords": ["agent-stack", "ml", "embeddings", "rag", "metrics", "vectors", "training", "linear-models"],
   "capability_profile": "agent",
-  "capabilities": ["fs", "env"],
-  "deps": {}
+  "capabilities": ["fs", "env"]
 }

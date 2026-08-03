@@ -1,20 +1,46 @@
-// dataframe — pandas-style tabular data for Weft.
-// Column-oriented maps over row-list storage.
+// dataframe — pandas-inspired tabular data for Weft.
+// Row-list storage with explicit column order and predictable null handling.
 
 // ──────────────────────────────────────────────
 // Creation
 // ──────────────────────────────────────────────
 
 pub fn from_rows(rows) {
+    if _kind(rows) != "list" { return Err("dataframe.from_rows expects a list of row maps") }
+    for row in rows {
+        if _kind(row) != "map" { return Err("dataframe.from_rows expects a list of row maps") }
+    }
     if len(rows) == 0 {
         return {"_df": true, "columns": [], "rows": []}
     }
-    {"_df": true, "columns": keys(rows[0]), "rows": rows}
+
+    // Derive a stable union schema instead of silently dropping fields that
+    // appear after the first row.
+    let mut columns = []
+    let mut seen = {}
+    for row in rows {
+        for c in keys(row) {
+            if seen[c] == null {
+                seen[c] = true
+                columns = push(columns, c)
+            }
+        }
+    }
+    {"_df": true, "columns": columns, "rows": rows}
 }
 
-pub fn from_columns(col_map) {
+pub fn from_columns(col_map) -> Result[any] {
+    if _kind(col_map) != "map" { return Err("dataframe.from_columns expects a column map") }
     cols := keys(col_map)
     n := if len(cols) > 0 { len(col_map[cols[0]]) } else { 0 }
+    for c in cols {
+        if _kind(col_map[c]) != "list" {
+            return Err("dataframe.from_columns column '" + c + "' must be a list")
+        }
+        if len(col_map[c]) != n {
+            return Err("dataframe.from_columns columns must have equal lengths")
+        }
+    }
     let mut rows = []
     let mut i = 0
     while i < n {
@@ -25,38 +51,55 @@ pub fn from_columns(col_map) {
         rows = push(rows, row)
         i = i + 1
     }
-    {"_df": true, "columns": cols, "rows": rows}
+    Ok({"_df": true, "columns": cols, "rows": rows})
 }
 
-pub fn from_csv(text, sep) {
+pub fn from_csv(text, sep) -> Result[any] {
     delimiter := if sep == null { "," } else { sep }
-    lines := str.split(text, "\n")
-    if len(lines) == 0 { return from_rows([]) }
-    cols := str.split(str.trim(lines[0]), delimiter)
+    if _kind(text) != "str" || _kind(delimiter) != "str" || len(delimiter) != 1 {
+        return Err("dataframe.from_csv expects a string and a one-character separator")
+    }
+    records := _csv_records(text, delimiter)?
+    if len(records) == 0 { return Ok(empty([])) }
+    headers := records[0]
+    let mut cols = []
+    let mut seen_cols = {}
+    for cell in headers {
+        name := str.trim(cell.text)
+        if name == "" { return Err("dataframe.from_csv header names cannot be empty") }
+        if seen_cols[name] != null { return Err("dataframe.from_csv has duplicate column: " + name) }
+        seen_cols[name] = true
+        cols = push(cols, name)
+    }
     let mut rows = []
     let mut i = 1
-    while i < len(lines) {
-        line := str.trim(lines[i])
-        if line == "" {
+    while i < len(records) {
+        record := records[i]
+        if len(record) == 1 && record[0].text == "" && record[0].quoted == false {
             i = i + 1
             continue
         }
-        vals := str.split(line, delimiter)
+        if len(record) != len(cols) {
+            return Err("dataframe.from_csv row " + (i + 1) + " has " + len(record) + " fields; expected " + len(cols))
+        }
         let mut row = {}
         let mut j = 0
         while j < len(cols) {
-            v := if j < len(vals) { _parse_value(str.trim(vals[j])) } else { null }
-            row[cols[j]] = v
+            row[cols[j]] = _csv_value(record[j])
             j = j + 1
         }
         rows = push(rows, row)
         i = i + 1
     }
-    {"_df": true, "columns": cols, "rows": rows}
+    Ok({"_df": true, "columns": cols, "rows": rows})
 }
 
 pub fn from_json(text) -> Result[any] {
     data := json.parse(text)?
+    if _kind(data) != "list" { return Err("dataframe.from_json expects a JSON array") }
+    for row in data {
+        if _kind(row) != "map" { return Err("dataframe.from_json expects an array of objects") }
+    }
     Ok(from_rows(data))
 }
 
@@ -67,6 +110,7 @@ pub fn from_jsonl(text) -> Result[any] {
         trimmed := str.trim(line)
         if trimmed == "" { continue }
         row := json.parse(trimmed)?
+        if _kind(row) != "map" { return Err("dataframe.from_jsonl expects one JSON object per line") }
         rows = push(rows, row)
     }
     Ok(from_rows(rows))
@@ -74,7 +118,7 @@ pub fn from_jsonl(text) -> Result[any] {
 
 pub fn read_csv(path, sep) -> Result[any] {
     text := fs.read(path)?
-    Ok(from_csv(text, sep))
+    from_csv(text, sep)
 }
 
 pub fn read_json(path) -> Result[any] {
@@ -106,28 +150,43 @@ pub fn ncols(t) { len(t.columns) }
 pub fn shape(t) { [len(t.rows), len(t.columns)] }
 
 pub fn dtypes(t) {
-    if len(t.rows) == 0 { return {} }
     let mut result = {}
-    row := t.rows[0]
     for c in t.columns {
-        v := row[c]
-        if v == null { result[c] = "null" }
-        else if v == true || v == false { result[c] = "bool" }
-        else {
-            // check if numeric
-            let mut is_num = true
-            result[c] = "str"
+        let mut found = "null"
+        for r in t.rows {
+            v := r[c]
+            if v == null { continue }
+            k := _kind(v)
+            if found == "null" {
+                found = k
+            } else if found != k {
+                if (found == "int" && k == "float") || (found == "float" && k == "int") {
+                    found = "float"
+                } else {
+                    found = "mixed"
+                }
+            }
         }
+        result[c] = found
     }
     result
 }
 
 pub fn info(t) {
+    let mut memory = len(t.rows) * len(t.columns) * 8 + len(t.rows) * 24 + len(t.columns) * 16
+    for c in t.columns { memory = memory + len(c) }
+    for r in t.rows {
+        for c in t.columns {
+            v := r[c]
+            if _kind(v) == "str" { memory = memory + len(v) }
+        }
+    }
     {
         "rows": len(t.rows),
         "columns": len(t.columns),
         "column_names": t.columns,
-        "memory_est": len(t.rows) * len(t.columns) * 8,
+        "memory_est": memory,
+        "memory_est_bytes": memory,
     }
 }
 
@@ -136,6 +195,7 @@ pub fn info(t) {
 // ──────────────────────────────────────────────
 
 pub fn col(t, name) {
+    if !contains(t.columns, name) { return Err("dataframe.col: unknown column " + name) }
     let mut vals = []
     for r in t.rows { vals = push(vals, r[name]) }
     vals
@@ -143,6 +203,7 @@ pub fn col(t, name) {
 
 pub fn head(t, n) {
     let mut cnt = if n == null { 5 } else { n }
+    if _kind(cnt) != "int" || cnt < 0 { return Err("dataframe.head requires a non-negative integer row count") }
     if cnt > len(t.rows) { cnt = len(t.rows) }
     let mut rows = []
     let mut i = 0
@@ -150,11 +211,12 @@ pub fn head(t, n) {
         rows = push(rows, t.rows[i])
         i = i + 1
     }
-    from_rows(rows)
+    _with_columns(t, rows)
 }
 
 pub fn tail(t, n) {
     let mut cnt = if n == null { 5 } else { n }
+    if _kind(cnt) != "int" || cnt < 0 { return Err("dataframe.tail requires a non-negative integer row count") }
     let mut start = len(t.rows) - cnt
     if start < 0 { start = 0 }
     let mut rows = []
@@ -163,7 +225,7 @@ pub fn tail(t, n) {
         rows = push(rows, t.rows[i])
         i = i + 1
     }
-    from_rows(rows)
+    _with_columns(t, rows)
 }
 
 pub fn iloc(t, idx) {
@@ -173,17 +235,20 @@ pub fn iloc(t, idx) {
 
 pub fn loc(t, start, stop) {
     // Row range by position
+    if _kind(start) != "int" || start < 0 || start > len(t.rows) { return Err("dataframe.loc start must be a valid row position") }
     let mut rows = []
     let mut i = start
     s := if stop == null { len(t.rows) } else { stop }
+    if _kind(s) != "int" || s < start || s > len(t.rows) { return Err("dataframe.loc stop must be a valid row position") }
     while i < s {
         rows = push(rows, t.rows[i])
         i = i + 1
     }
-    from_rows(rows)
+    _with_columns(t, rows)
 }
 
 pub fn select_(t, cols) {
+    if !_has_columns(t, cols) { return Err("dataframe.select_: unknown column") }
     let mut new_rows = []
     for r in t.rows {
         let mut nr = {}
@@ -210,10 +275,11 @@ pub fn filter_(t, pred) {
     for r in t.rows {
         if pred(r) { rows = push(rows, r) }
     }
-    from_rows(rows)
+    _with_columns(t, rows)
 }
 
 pub fn query(t, column, op, value) {
+    if !contains(t.columns, column) { return Err("dataframe.query: unknown column " + column) }
     // query(df, "age", ">", 30) — string-based for simple filters
     filter_(t, fn(r) {
         v := r[column]
@@ -231,10 +297,12 @@ pub fn query(t, column, op, value) {
 }
 
 pub fn isin(t, column, values) {
+    if !contains(t.columns, column) { return Err("dataframe.isin: unknown column " + column) }
     filter_(t, fn(r) { contains(values, r[column]) })
 }
 
 pub fn between(t, column, low, high) {
+    if !contains(t.columns, column) { return Err("dataframe.between: unknown column " + column) }
     filter_(t, fn(r) {
         v := r[column]
         v != null && v >= low && v <= high
@@ -242,6 +310,7 @@ pub fn between(t, column, low, high) {
 }
 
 pub fn notnull(t, column) {
+    if !contains(t.columns, column) { return Err("dataframe.notnull: unknown column " + column) }
     filter_(t, fn(r) { r[column] != null })
 }
 
@@ -250,54 +319,25 @@ pub fn notnull(t, column) {
 // ──────────────────────────────────────────────
 
 pub fn sort_by(t, column, desc) {
-    // insertion sort — Weft's builtin sort ignores comparator for maps
-    let mut d = []
-    for r in t.rows { d = push(d, r) }
-    let mut i = 1
-    while i < len(d) {
-        key := d[i]
-        let mut j = i - 1
-        if desc {
-            while j >= 0 && d[j][column] < key[column] {
-                d[j + 1] = d[j]
-                j = j - 1
-            }
-        } else {
-            while j >= 0 && d[j][column] > key[column] {
-                d[j + 1] = d[j]
-                j = j - 1
-            }
-        }
-        d[j + 1] = key
-        i = i + 1
-    }
-    from_rows(d)
+    if !contains(t.columns, column) { return Err("dataframe.sort_by: unknown column " + column) }
+    // Stable merge sort keeps large-frame sorting O(n log n).
+    sorted := _merge_sort_rows(t.rows, column, desc)
+    _with_columns(t, sorted)
 }
 
 pub fn sort_by_multi(t, columns_list, desc_list) {
-    sorted := sort(t.rows, fn(a, b) {
-        let mut i = 0
-        while i < len(columns_list) {
-            col_name := columns_list[i]
-            descending := if i < len(desc_list) { desc_list[i] } else { false }
-            av := a[col_name]
-            bv := b[col_name]
-            if av != bv {
-                if descending { return av < bv }
-                else { return av > bv }
-            }
-            i = i + 1
-        }
-        false
-    })
-    from_rows(sorted)
+    if !_has_columns(t, columns_list) { return Err("dataframe.sort_by_multi: unknown column") }
+    sorted := _merge_sort_rows_multi(t.rows, columns_list, desc_list)
+    _with_columns(t, sorted)
 }
 
 pub fn nlargest(t, n, column) {
+    if !contains(t.columns, column) { return Err("dataframe.nlargest: unknown column " + column) }
     sort_by(t, column, true) |> head(n)
 }
 
 pub fn nsmallest(t, n, column) {
+    if !contains(t.columns, column) { return Err("dataframe.nsmallest: unknown column " + column) }
     sort_by(t, column, false) |> head(n)
 }
 
@@ -307,8 +347,9 @@ pub fn nsmallest(t, n, column) {
 
 pub fn add_column(t, name, f) {
     let mut new_cols = []
+    let exists = contains(t.columns, name)
     for c in t.columns { new_cols = push(new_cols, c) }
-    new_cols = push(new_cols, name)
+    if !exists { new_cols = push(new_cols, name) }
     let mut new_rows = []
     for r in t.rows {
         let mut nr = {}
@@ -333,6 +374,7 @@ pub fn rename(t, mapping) {
     let mut new_cols = []
     for c in t.columns {
         nc := if mapping[c] != null { mapping[c] } else { c }
+        if contains(new_cols, nc) { return Err("dataframe.rename would create duplicate column: " + nc) }
         new_cols = push(new_cols, nc)
     }
     let mut new_rows = []
@@ -356,7 +398,10 @@ pub fn apply_(t, column, f) {
         nr[column] = f(r[column])
         new_rows = push(new_rows, nr)
     }
-    {"_df": true, "columns": t.columns, "rows": new_rows}
+    let mut cols = []
+    for c in t.columns { cols = push(cols, c) }
+    if !contains(cols, column) { cols = push(cols, column) }
+    {"_df": true, "columns": cols, "rows": new_rows}
 }
 
 pub fn apply_row(t, f) {
@@ -426,12 +471,11 @@ pub fn count_na(t, column) {
 
 pub fn drop_duplicates(t, subset) {
     check_cols := if subset == null { t.columns } else { subset }
+    if !_has_columns(t, check_cols) { return Err("dataframe.drop_duplicates: unknown column") }
     let mut seen = {}
     let mut rows = []
     for r in t.rows {
-        let mut parts = []
-        for c in check_cols { parts = push(parts, "" + r[c]) }
-        key := str.join(parts, "|")
+        key := _row_key(r, check_cols)
         if seen[key] == null {
             seen[key] = true
             rows = push(rows, r)
@@ -442,12 +486,11 @@ pub fn drop_duplicates(t, subset) {
 
 pub fn duplicated(t, subset) {
     check_cols := if subset == null { t.columns } else { subset }
+    if !_has_columns(t, check_cols) { return Err("dataframe.duplicated: unknown column") }
     let mut seen = {}
     let mut result = []
     for r in t.rows {
-        let mut parts = []
-        for c in check_cols { parts = push(parts, "" + r[c]) }
-        key := str.join(parts, "|")
+        key := _row_key(r, check_cols)
         if seen[key] != null {
             result = push(result, true)
         } else {
@@ -463,16 +506,23 @@ pub fn duplicated(t, subset) {
 // ──────────────────────────────────────────────
 
 pub fn group_by(t, group_col, aggs) {
+    if !contains(t.columns, group_col) { return Err("dataframe.group_by: unknown group column " + group_col) }
+    for agg_name in keys(aggs) {
+        if !contains(t.columns, aggs[agg_name].col) { return Err("dataframe.group_by: unknown aggregation column") }
+        if !_valid_agg(aggs[agg_name].op) { return Err("dataframe.group_by: unknown aggregation") }
+    }
     let mut groups = {}
+    let mut group_order = []
     for r in t.rows {
-        k := "" + r[group_col]
+        k := _value_key(r[group_col])
         if groups[k] == null {
             groups[k] = {"key": r[group_col], "rows": []}
+            group_order = push(group_order, k)
         }
         groups[k] = {"key": groups[k].key, "rows": push(groups[k].rows, r)}
     }
     let mut result = []
-    for gk in keys(groups) {
+    for gk in group_order {
         g := groups[gk]
         let mut row = {}
         row[group_col] = g.key
@@ -493,6 +543,7 @@ pub fn agg(t, aggs) {
     let mut row = {}
     for agg_name in keys(aggs) {
         spec := aggs[agg_name]
+        if !contains(t.columns, spec.col) || !_valid_agg(spec.op) { return Err("dataframe.agg: invalid aggregation") }
         vals := _col_vals(t.rows, spec.col)
         row[agg_name] = _agg(spec.op, vals)
     }
@@ -501,19 +552,38 @@ pub fn agg(t, aggs) {
 
 pub fn value_counts(t, column) {
     let mut counts = {}
+    let mut values = {}
+    let mut order = []
     for r in t.rows {
-        k := "" + r[column]
-        if counts[k] == null { counts[k] = 0 }
+        k := _value_key(r[column])
+        if counts[k] == null {
+            counts[k] = 0
+            values[k] = r[column]
+            order = push(order, k)
+        }
         counts[k] = counts[k] + 1
     }
-    counts
+    let mut result = {}
+    for k in order {
+        let mut display = "" + values[k]
+        if result[display] != null {
+            display = display + " (" + _kind(values[k]) + ")"
+            let mut suffix = 2
+            while result[display] != null {
+                display = "" + values[k] + " (" + _kind(values[k]) + ")" + str(suffix)
+                suffix = suffix + 1
+            }
+        }
+        result[display] = counts[k]
+    }
+    result
 }
 
 pub fn nunique(t, column) {
     let mut seen = {}
     let mut n = 0
     for r in t.rows {
-        k := "" + r[column]
+        k := _value_key(r[column])
         if seen[k] == null {
             seen[k] = true
             n = n + 1
@@ -527,6 +597,7 @@ pub fn nunique(t, column) {
 // ──────────────────────────────────────────────
 
 pub fn describe(t, column) {
+    if !contains(t.columns, column) { return Err("dataframe.describe: unknown column " + column) }
     vals := _numeric_col(t, column)
     n := len(vals)
     if n == 0 { return {"count": 0} }
@@ -535,10 +606,11 @@ pub fn describe(t, column) {
     mn := s / n
     let mut var_sum = 0.0
     for x in vals { var_sum = var_sum + (x - mn) * (x - mn) }
+    std := if n < 2 { null } else { math.sqrt(var_sum / (n - 1)) }
     {
         "count": n,
         "mean": mn,
-        "std": math.sqrt(var_sum / n),
+        "std": std,
         "min": sorted[0],
         "25%": _percentile(sorted, 25),
         "50%": _percentile(sorted, 50),
@@ -560,10 +632,12 @@ pub fn describe_all(t) {
 }
 
 pub fn corr(t, col_a, col_b) {
-    va := _numeric_col(t, col_a)
-    vb := _numeric_col(t, col_b)
+    if !contains(t.columns, col_a) || !contains(t.columns, col_b) { return Err("dataframe.corr: unknown column") }
+    pairs := _numeric_pairs(t, col_a, col_b)
+    va := pairs.a
+    vb := pairs.b
     n := len(va)
-    if n < 2 { return 0 }
+    if n < 2 { return null }
     ma := _sum_list(va) / n
     mb := _sum_list(vb) / n
     let mut cov = 0.0
@@ -579,14 +653,16 @@ pub fn corr(t, col_a, col_b) {
         i = i + 1
     }
     denom := math.sqrt(sa) * math.sqrt(sb)
-    if denom == 0 { 0 } else { cov / denom }
+    if denom == 0 { null } else { cov / denom }
 }
 
 pub fn cov(t, col_a, col_b) {
-    va := _numeric_col(t, col_a)
-    vb := _numeric_col(t, col_b)
+    if !contains(t.columns, col_a) || !contains(t.columns, col_b) { return Err("dataframe.cov: unknown column") }
+    pairs := _numeric_pairs(t, col_a, col_b)
+    va := pairs.a
+    vb := pairs.b
     n := len(va)
-    if n < 2 { return 0 }
+    if n < 2 { return null }
     ma := _sum_list(va) / n
     mb := _sum_list(vb) / n
     let mut c = 0.0
@@ -604,16 +680,21 @@ pub fn cov(t, col_a, col_b) {
 
 pub fn join(left, right, on, how) {
     join_type := if how == null { "inner" } else { how }
+    if !contains(left.columns, on) || !contains(right.columns, on) { return Err("dataframe.join: join column is missing") }
+    if join_type != "inner" && join_type != "left" && join_type != "outer" {
+        return Err("dataframe.join supports inner, left, and outer joins")
+    }
     let mut idx = {}
     for r in right.rows {
-        k := "" + r[on]
+        k := _value_key(r[on])
         if idx[k] == null { idx[k] = [] }
         idx[k] = push(idx[k], r)
     }
     let mut result = []
     let mut right_matched = {}
+    right_names := _right_column_names(left, right, on)
     for lr in left.rows {
-        k := "" + lr[on]
+        k := _value_key(lr[on])
         matches := idx[k]
         if matches != null {
             right_matched[k] = true
@@ -621,7 +702,7 @@ pub fn join(left, right, on, how) {
                 let mut merged = {}
                 for c in left.columns { merged[c] = lr[c] }
                 for c in right.columns {
-                    if c != on { merged[c] = rr[c] }
+                    if c != on { merged[right_names[c]] = rr[c] }
                 }
                 result = push(result, merged)
             }
@@ -629,7 +710,7 @@ pub fn join(left, right, on, how) {
             let mut merged = {}
             for c in left.columns { merged[c] = lr[c] }
             for c in right.columns {
-                if c != on { merged[c] = null }
+                if c != on { merged[right_names[c]] = null }
             }
             result = push(result, merged)
         }
@@ -637,14 +718,17 @@ pub fn join(left, right, on, how) {
     // For outer join, add unmatched right rows
     if join_type == "outer" {
         for rr in right.rows {
-            k := "" + rr[on]
+            k := _value_key(rr[on])
             if right_matched[k] == null {
                 let mut merged = {}
                 for c in left.columns {
                     if c == on { merged[c] = rr[on] }
                     else { merged[c] = null }
                 }
-                for c in right.columns { merged[c] = rr[c] }
+                for c in right.columns {
+                    if c == on { merged[c] = rr[c] }
+                    else { merged[right_names[c]] = rr[c] }
+                }
                 result = push(result, merged)
             }
         }
@@ -652,7 +736,7 @@ pub fn join(left, right, on, how) {
     let mut all_cols = []
     for c in left.columns { all_cols = push(all_cols, c) }
     for c in right.columns {
-        if c != on && !contains(all_cols, c) { all_cols = push(all_cols, c) }
+        if c != on { all_cols = push(all_cols, right_names[c]) }
     }
     {"_df": true, "columns": all_cols, "rows": result}
 }
@@ -660,10 +744,19 @@ pub fn join(left, right, on, how) {
 pub fn concat_df(dfs) {
     // Concatenate dataframes vertically
     if len(dfs) == 0 { return from_rows([]) }
-    cols := dfs[0].columns
+    let mut cols = []
+    for df in dfs {
+        for c in df.columns {
+            if !contains(cols, c) { cols = push(cols, c) }
+        }
+    }
     let mut rows = []
     for df in dfs {
-        for r in df.rows { rows = push(rows, r) }
+        for r in df.rows {
+            let mut nr = {}
+            for c in cols { nr[c] = r[c] }
+            rows = push(rows, nr)
+        }
     }
     {"_df": true, "columns": cols, "rows": rows}
 }
@@ -671,38 +764,61 @@ pub fn concat_df(dfs) {
 pub fn merge(left, right, left_on, right_on, how) {
     // Merge on different column names
     join_type := if how == null { "inner" } else { how }
+    if !contains(left.columns, left_on) || !contains(right.columns, right_on) { return Err("dataframe.merge: join column is missing") }
+    if join_type != "inner" && join_type != "left" && join_type != "outer" {
+        return Err("dataframe.merge supports inner, left, and outer joins")
+    }
     let mut idx = {}
     for r in right.rows {
-        k := "" + r[right_on]
+        k := _value_key(r[right_on])
         if idx[k] == null { idx[k] = [] }
         idx[k] = push(idx[k], r)
     }
     let mut result = []
+    let mut right_matched = {}
+    right_names := _right_column_names(left, right, right_on)
     for lr in left.rows {
-        k := "" + lr[left_on]
+        k := _value_key(lr[left_on])
         matches := idx[k]
         if matches != null {
+            right_matched[k] = true
             for rr in matches {
                 let mut merged = {}
                 for c in left.columns { merged[c] = lr[c] }
                 for c in right.columns {
-                    if c != right_on { merged[c] = rr[c] }
+                    if c != right_on { merged[right_names[c]] = rr[c] }
                 }
                 result = push(result, merged)
             }
-        } else if join_type == "left" {
+        } else if join_type == "left" || join_type == "outer" {
             let mut merged = {}
             for c in left.columns { merged[c] = lr[c] }
             for c in right.columns {
-                if c != right_on { merged[c] = null }
+                if c != right_on { merged[right_names[c]] = null }
             }
             result = push(result, merged)
+        }
+    }
+    if join_type == "outer" {
+        for rr in right.rows {
+            k := _value_key(rr[right_on])
+            if right_matched[k] == null {
+                let mut merged = {}
+                for c in left.columns {
+                    if c == left_on { merged[c] = rr[right_on] }
+                    else { merged[c] = null }
+                }
+                for c in right.columns {
+                    if c != right_on { merged[right_names[c]] = rr[c] }
+                }
+                result = push(result, merged)
+            }
         }
     }
     let mut all_cols = []
     for c in left.columns { all_cols = push(all_cols, c) }
     for c in right.columns {
-        if c != right_on && !contains(all_cols, c) { all_cols = push(all_cols, c) }
+        if c != right_on { all_cols = push(all_cols, right_names[c]) }
     }
     {"_df": true, "columns": all_cols, "rows": result}
 }
@@ -713,31 +829,44 @@ pub fn merge(left, right, left_on, right_on, how) {
 
 pub fn pivot(t, index_col, pivot_col, value_col) {
     // Pivot: rows become columns
+    if !contains(t.columns, index_col) || !contains(t.columns, pivot_col) || !contains(t.columns, value_col) {
+        return Err("dataframe.pivot: unknown column")
+    }
     let mut pivot_vals = []
     let mut seen = {}
     for r in t.rows {
-        k := "" + r[pivot_col]
+        k := _value_key(r[pivot_col])
         if seen[k] == null {
             seen[k] = true
             pivot_vals = push(pivot_vals, r[pivot_col])
         }
     }
     let mut groups = {}
+    let mut index_order = []
+    let mut seen_pairs = {}
     for r in t.rows {
-        k := "" + r[index_col]
-        if groups[k] == null { groups[k] = {"_idx": r[index_col]} }
-        pv := "" + r[pivot_col]
+        k := _value_key(r[index_col])
+        if groups[k] == null {
+            groups[k] = {"_idx": r[index_col]}
+            index_order = push(index_order, k)
+        }
+        pv := _value_key(r[pivot_col])
+        pair := k + "\u001f" + pv
+        if seen_pairs[pair] != null {
+            return Err("dataframe.pivot found duplicate index/column pair")
+        }
+        seen_pairs[pair] = true
         groups[k][pv] = r[value_col]
     }
     let mut cols = [index_col]
     for pv in pivot_vals { cols = push(cols, "" + pv) }
     let mut rows = []
-    for gk in keys(groups) {
+    for gk in index_order {
         let mut row = {}
         row[index_col] = groups[gk]._idx
         for pv in pivot_vals {
-            pk := "" + pv
-            row[pk] = groups[gk][pk]
+            pk := _value_key(pv)
+            row["" + pv] = groups[gk][pk]
         }
         rows = push(rows, row)
     }
@@ -774,24 +903,39 @@ pub fn melt(t, id_cols, value_cols, var_name, val_name) {
 
 pub fn crosstab(t, row_col, col_col) {
     // Cross-tabulation (frequency table)
+    if !contains(t.columns, row_col) || !contains(t.columns, col_col) { return Err("dataframe.crosstab: unknown column") }
     let mut ct = {}
+    let mut row_vals = {}
+    let mut seen_rows = {}
+    let mut row_order = []
     let mut col_vals = {}
+    let mut seen_cols = {}
+    let mut col_order = []
     for r in t.rows {
-        rk := "" + r[row_col]
-        ck := "" + r[col_col]
-        col_vals[ck] = true
+        rk := _value_key(r[row_col])
+        ck := _value_key(r[col_col])
+        if seen_rows[rk] == null {
+            seen_rows[rk] = true
+            row_vals[rk] = r[row_col]
+            row_order = push(row_order, rk)
+        }
+        if seen_cols[ck] == null {
+            seen_cols[ck] = true
+            col_vals[ck] = r[col_col]
+            col_order = push(col_order, ck)
+        }
         if ct[rk] == null { ct[rk] = {} }
         if ct[rk][ck] == null { ct[rk][ck] = 0 }
         ct[rk][ck] = ct[rk][ck] + 1
     }
     let mut cols = [row_col]
-    for c in keys(col_vals) { cols = push(cols, c) }
+    for c in col_order { cols = push(cols, "" + col_vals[c]) }
     let mut rows = []
-    for rk in keys(ct) {
+    for rk in row_order {
         let mut row = {}
-        row[row_col] = rk
-        for ck in keys(col_vals) {
-            row[ck] = if ct[rk][ck] != null { ct[rk][ck] } else { 0 }
+        row[row_col] = row_vals[rk]
+        for ck in col_order {
+            row["" + col_vals[ck]] = if ct[rk][ck] != null { ct[rk][ck] } else { 0 }
         }
         rows = push(rows, row)
     }
@@ -804,6 +948,8 @@ pub fn crosstab(t, row_col, col_col) {
 
 pub fn shift(t, column, periods) {
     n := if periods == null { 1 } else { periods }
+    if !contains(t.columns, column) { return Err("dataframe.shift: unknown column " + column) }
+    if _kind(n) != "int" || n < 0 { return Err("dataframe.shift periods must be a non-negative integer") }
     let mut new_rows = []
     let mut i = 0
     while i < len(t.rows) {
@@ -819,6 +965,8 @@ pub fn shift(t, column, periods) {
 
 pub fn diff(t, column, periods) {
     n := if periods == null { 1 } else { periods }
+    if !contains(t.columns, column) { return Err("dataframe.diff: unknown column " + column) }
+    if _kind(n) != "int" || n < 0 { return Err("dataframe.diff periods must be a non-negative integer") }
     let mut new_rows = []
     let mut i = 0
     while i < len(t.rows) {
@@ -838,6 +986,8 @@ pub fn diff(t, column, periods) {
 
 pub fn pct_change(t, column, periods) {
     n := if periods == null { 1 } else { periods }
+    if !contains(t.columns, column) { return Err("dataframe.pct_change: unknown column " + column) }
+    if _kind(n) != "int" || n < 0 { return Err("dataframe.pct_change periods must be a non-negative integer") }
     let mut new_rows = []
     let mut i = 0
     while i < len(t.rows) {
@@ -856,6 +1006,9 @@ pub fn pct_change(t, column, periods) {
 }
 
 pub fn rolling(t, column, window, op) {
+    if !contains(t.columns, column) { return Err("dataframe.rolling: unknown column " + column) }
+    if _kind(window) != "int" || window <= 0 { return Err("dataframe.rolling window must be a positive integer") }
+    if !_valid_agg(op) { return Err("dataframe.rolling has an unknown aggregation: " + op) }
     let mut new_rows = []
     let mut i = 0
     while i < len(t.rows) {
@@ -868,7 +1021,8 @@ pub fn rolling(t, column, window, op) {
                 vals = push(vals, t.rows[j][column])
                 j = j + 1
             }
-            nr[column] = _agg(op, vals)
+            clean := _non_null(vals)
+            nr[column] = if len(clean) == window { _agg(op, vals) } else { null }
         } else {
             nr[column] = null
         }
@@ -879,6 +1033,8 @@ pub fn rolling(t, column, window, op) {
 }
 
 pub fn expanding(t, column, op) {
+    if !contains(t.columns, column) { return Err("dataframe.expanding: unknown column " + column) }
+    if !_valid_agg(op) { return Err("dataframe.expanding has an unknown aggregation: " + op) }
     let mut new_rows = []
     let mut i = 0
     while i < len(t.rows) {
@@ -898,25 +1054,34 @@ pub fn expanding(t, column, op) {
 }
 
 pub fn rank(t, column) {
+    if !contains(t.columns, column) { return Err("dataframe.rank: unknown column " + column) }
     vals := col(t, column)
     sorted := sort(vals)
     let mut ranks = {}
     let mut i = 0
     while i < len(sorted) {
-        ranks["" + sorted[i]] = i + 1
-        i = i + 1
+        value := sorted[i]
+        let mut j = i
+        while j < len(sorted) && sorted[j] == value { j = j + 1 }
+        ranks[_value_key(value)] = (i + 1 + j) / 2.0
+        i = j
     }
-    add_column(t, column + "_rank", fn(r) { ranks["" + r[column]] })
+    add_column(t, column + "_rank", fn(r) { ranks[_value_key(r[column])] })
 }
 
 pub fn cumsum_(t, column) {
+    if !contains(t.columns, column) { return Err("dataframe.cumsum_: unknown column " + column) }
     let mut s = 0.0
     let mut new_rows = []
     for r in t.rows {
         let mut nr = {}
         for c in t.columns { nr[c] = r[c] }
-        if r[column] != null { s = s + r[column] }
-        nr[column] = s
+        if r[column] != null {
+            s = s + r[column]
+            nr[column] = s
+        } else {
+            nr[column] = null
+        }
         new_rows = push(new_rows, nr)
     }
     {"_df": true, "columns": t.columns, "rows": new_rows}
@@ -928,7 +1093,9 @@ pub fn cumsum_(t, column) {
 
 pub fn sample(t, n, seed) {
     let mut cnt = if n == null { 1 } else { n }
-    if cnt >= len(t.rows) { return t }
+    if _kind(cnt) != "int" || cnt < 0 { return Err("dataframe.sample n must be a non-negative integer") }
+    if cnt > len(t.rows) { return Err("dataframe.sample n cannot exceed the number of rows") }
+    if seed != null { random.seed(seed) }
     // Fisher-Yates shuffle then take first n
     let mut indices = []
     let mut i = 0
@@ -950,7 +1117,7 @@ pub fn sample(t, n, seed) {
         rows = push(rows, t.rows[indices[i]])
         i = i + 1
     }
-    from_rows(rows)
+    _with_columns(t, rows)
 }
 
 pub fn shuffle(t) {
@@ -963,12 +1130,14 @@ pub fn shuffle(t) {
 
 pub fn to_csv(t, sep) {
     delimiter := if sep == null { "," } else { sep }
-    let mut lines = [str.join(t.columns, delimiter)]
+    let mut header = []
+    for c in t.columns { header = push(header, _csv_escape(c, delimiter)) }
+    let mut lines = [str.join(header, delimiter)]
     for r in t.rows {
         let mut vals = []
         for c in t.columns {
             v := r[c]
-            vals = push(vals, if v == null { "" } else { _csv_escape("" + v, delimiter) })
+            vals = push(vals, _csv_encode(v, delimiter))
         }
         lines = push(lines, str.join(vals, delimiter))
     }
@@ -1056,23 +1225,32 @@ pub fn print_(t, n) {
 // ──────────────────────────────────────────────
 
 fn _agg(op, vals) {
+    clean := _non_null(vals)
+    if op == "count" { return len(clean) }
+    if len(clean) == 0 {
+        if op == "sum" { return 0 }
+        return null
+    }
+    if (op == "sum" || op == "mean" || op == "std") && !_all_numeric(clean) {
+        return null
+    }
     match op {
-        "sum" { reduce(vals, 0, fn(a, x) { a + x }) }
+        "sum" { reduce(clean, 0, fn(a, x) { a + x }) }
         "mean" {
-            s := reduce(vals, 0, fn(a, x) { a + x })
-            s / len(vals)
+            s := reduce(clean, 0, fn(a, x) { a + x })
+            s / len(clean)
         }
-        "count" { len(vals) }
-        "min" { reduce(vals, vals[0], fn(a, x) { if x < a { x } else { a } }) }
-        "max" { reduce(vals, vals[0], fn(a, x) { if x > a { x } else { a } }) }
-        "first" { vals[0] }
-        "last" { vals[len(vals) - 1] }
+        "min" { reduce(clean, clean[0], fn(a, x) { if x < a { x } else { a } }) }
+        "max" { reduce(clean, clean[0], fn(a, x) { if x > a { x } else { a } }) }
+        "first" { clean[0] }
+        "last" { clean[len(clean) - 1] }
         "std" {
-            n := len(vals)
-            m := reduce(vals, 0, fn(a, x) { a + x }) / n
+            n := len(clean)
+            if n < 2 { return null }
+            m := reduce(clean, 0, fn(a, x) { a + x }) / n
             let mut s = 0.0
-            for x in vals { s = s + (x - m) * (x - m) }
-            math.sqrt(s / n)
+            for x in clean { s = s + (x - m) * (x - m) }
+            math.sqrt(s / (n - 1))
         }
         _ { null }
     }
@@ -1088,13 +1266,7 @@ fn _numeric_col(t, col_name) {
     let mut vals = []
     for r in t.rows {
         v := r[col_name]
-        if v == null { continue }
-        if v == true || v == false { continue }
-        // check if numeric by trying arithmetic
-        check := json.parse("" + v)
-        if check.ok {
-            vals = push(vals, check.value + 0.0)
-        }
+        if _kind(v) == "int" || _kind(v) == "float" { vals = push(vals, v + 0.0) }
     }
     vals
 }
@@ -1103,6 +1275,180 @@ fn _sum_list(vals) {
     let mut s = 0.0
     for x in vals { s = s + x }
     s
+}
+
+fn _with_columns(t, rows) {
+    {"_df": true, "columns": t.columns, "rows": rows}
+}
+
+fn _has_columns(t, cols) {
+    for c in cols {
+        if !contains(t.columns, c) { return false }
+    }
+    true
+}
+
+fn _kind(v) {
+    if v == null { return "null" }
+    s := json.stringify(v)
+    if s == "true" || s == "false" { return "bool" }
+    if str.starts_with(s, "\"") { return "str" }
+    if str.starts_with(s, "[") { return "list" }
+    if str.starts_with(s, "{") { return "map" }
+    if str.contains(s, ".") || str.contains(s, "e") || str.contains(s, "E") { return "float" }
+    "int"
+}
+
+fn _value_key(v) {
+    _kind(v) + ":" + json.stringify(v)
+}
+
+fn _row_key(row, cols) {
+    let mut values = []
+    for c in cols { values = push(values, row[c]) }
+    json.stringify(values)
+}
+
+fn _non_null(vals) {
+    let mut result = []
+    for v in vals { if v != null { result = push(result, v) } }
+    result
+}
+
+fn _all_numeric(vals) {
+    for v in vals {
+        if _kind(v) != "int" && _kind(v) != "float" { return false }
+    }
+    true
+}
+
+fn _valid_agg(op) {
+    contains(["sum", "mean", "count", "min", "max", "first", "last", "std"], op)
+}
+
+fn _numeric_pairs(t, col_a, col_b) {
+    let mut va = []
+    let mut vb = []
+    for r in t.rows {
+        a := r[col_a]
+        b := r[col_b]
+        if (_kind(a) == "int" || _kind(a) == "float") && (_kind(b) == "int" || _kind(b) == "float") {
+            va = push(va, a + 0.0)
+            vb = push(vb, b + 0.0)
+        }
+    }
+    {"a": va, "b": vb}
+}
+
+fn _comes_after(a, b, desc) {
+    // Nulls sort last in both ascending and descending order.
+    if a == null { return b != null }
+    if b == null { return false }
+    if desc { a < b } else { a > b }
+}
+
+fn _comes_before(a, b, desc) {
+    if a == null { return false }
+    if b == null { return true }
+    if desc { a > b } else { a < b }
+}
+
+fn _copy_rows(rows) {
+    let mut result = []
+    for row in rows { result = push(result, row) }
+    result
+}
+
+fn _merge_sort_rows(rows, column, desc) {
+    if len(rows) <= 1 { return _copy_rows(rows) }
+    mid := len(rows) / 2
+    left := _merge_sort_rows(_row_range(rows, 0, mid), column, desc)
+    right := _merge_sort_rows(_row_range(rows, mid, len(rows)), column, desc)
+    _merge_rows(left, right, column, desc)
+}
+
+fn _merge_rows(left, right, column, desc) {
+    let mut result = []
+    let mut li = 0
+    let mut ri = 0
+    while li < len(left) && ri < len(right) {
+        if _comes_after(left[li][column], right[ri][column], desc) {
+            result = push(result, right[ri])
+            ri = ri + 1
+        } else {
+            result = push(result, left[li])
+            li = li + 1
+        }
+    }
+    while li < len(left) { result = push(result, left[li]) li = li + 1 }
+    while ri < len(right) { result = push(result, right[ri]) ri = ri + 1 }
+    result
+}
+
+fn _merge_sort_rows_multi(rows, columns_list, desc_list) {
+    if len(rows) <= 1 { return _copy_rows(rows) }
+    mid := len(rows) / 2
+    left := _merge_sort_rows_multi(_row_range(rows, 0, mid), columns_list, desc_list)
+    right := _merge_sort_rows_multi(_row_range(rows, mid, len(rows)), columns_list, desc_list)
+    let mut result = []
+    let mut li = 0
+    let mut ri = 0
+    while li < len(left) && ri < len(right) {
+        if _row_comes_after(left[li], right[ri], columns_list, desc_list) {
+            result = push(result, right[ri])
+            ri = ri + 1
+        } else {
+            result = push(result, left[li])
+            li = li + 1
+        }
+    }
+    while li < len(left) { result = push(result, left[li]) li = li + 1 }
+    while ri < len(right) { result = push(result, right[ri]) ri = ri + 1 }
+    result
+}
+
+fn _row_comes_after(a, b, columns_list, desc_list) {
+    let mut i = 0
+    while i < len(columns_list) {
+        col_name := columns_list[i]
+        descending := if i < len(desc_list) { desc_list[i] } else { false }
+        av := a[col_name]
+        bv := b[col_name]
+        if av != bv { return _comes_after(av, bv, descending) }
+        i = i + 1
+    }
+    false
+}
+
+fn _row_range(rows, start, stop) {
+    let mut result = []
+    let mut i = start
+    while i < stop { result = push(result, rows[i]) i = i + 1 }
+    result
+}
+
+fn _right_column_names(left, right, key_col) {
+    let mut used = {}
+    for c in left.columns { used[c] = true }
+    let mut result = {}
+    for c in right.columns {
+        if c == key_col {
+            result[c] = c
+            continue
+        }
+        let mut name = c
+        if used[name] != null {
+            name = c + "_right"
+            let mut suffix = 2
+            while used[name] != null {
+                name = c + "_right" + str(suffix)
+                suffix = suffix + 1
+            }
+        }
+        used[name] = true
+        result[c] = name
+    }
+    result
 }
 
 fn _percentile(sorted, p) {
@@ -1134,8 +1480,91 @@ fn _parse_value(s) {
     if r.ok { r.value } else { s }
 }
 
+fn _csv_records(text, delimiter) -> Result[any] {
+    if text == "" { return Ok([]) }
+    let mut records = []
+    let mut row = []
+    let mut field = ""
+    let mut quoted = false
+    let mut after_quote = false
+    let mut field_quoted = false
+    let mut i = 0
+    while i < len(text) {
+        ch := str.slice(text, i, i + 1)
+        if quoted {
+            if ch == "\"" {
+                if i + 1 < len(text) && str.slice(text, i + 1, i + 2) == "\"" {
+                    field = field + "\""
+                    i = i + 2
+                    continue
+                }
+                quoted = false
+                after_quote = true
+            } else {
+                field = field + ch
+            }
+            i = i + 1
+            continue
+        }
+        if after_quote {
+            if ch == delimiter {
+                row = push(row, {"text": field, "quoted": true})
+                field = ""
+                field_quoted = false
+                after_quote = false
+            } else if ch == "\n" || ch == "\r" {
+                row = push(row, {"text": field, "quoted": true})
+                records = push(records, row)
+                row = []
+                field = ""
+                field_quoted = false
+                after_quote = false
+                if ch == "\r" && i + 1 < len(text) && str.slice(text, i + 1, i + 2) == "\n" { i = i + 1 }
+            } else if ch != " " && ch != "\t" {
+                return Err("dataframe.from_csv has characters after a quoted field")
+            }
+            i = i + 1
+            continue
+        }
+        if ch == "\"" {
+            if str.trim(field) != "" { return Err("dataframe.from_csv quote must start a field") }
+            field = ""
+            field_quoted = true
+            quoted = true
+        } else if ch == delimiter {
+            row = push(row, {"text": field, "quoted": field_quoted})
+            field = ""
+            field_quoted = false
+        } else if ch == "\n" || ch == "\r" {
+            row = push(row, {"text": field, "quoted": field_quoted})
+            records = push(records, row)
+            row = []
+            field = ""
+            field_quoted = false
+            if ch == "\r" && i + 1 < len(text) && str.slice(text, i + 1, i + 2) == "\n" { i = i + 1 }
+        } else {
+            field = field + ch
+        }
+        i = i + 1
+    }
+    if quoted { return Err("dataframe.from_csv has an unterminated quoted field") }
+    row = push(row, {"text": field, "quoted": field_quoted})
+    records = push(records, row)
+    Ok(records)
+}
+
+fn _csv_value(cell) {
+    if cell.quoted { cell.text } else { _parse_value(str.trim(cell.text)) }
+}
+
+fn _csv_encode(v, delimiter) {
+    if v == null { "" }
+    else if _kind(v) == "str" { _csv_escape(v, delimiter) }
+    else { _csv_escape("" + v, delimiter) }
+}
+
 fn _csv_escape(s, delimiter) {
-    if str.contains(s, delimiter) || str.contains(s, "\"") || str.contains(s, "\n") {
+    if s == "" || str.contains(s, delimiter) || str.contains(s, "\"") || str.contains(s, "\n") || str.contains(s, "\r") {
         "\"" + str.replace(s, "\"", "\"\"") + "\""
     } else { s }
 }

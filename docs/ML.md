@@ -1,109 +1,91 @@
-# ML in Weft — module, not core
+# ML in Weft
 
-**Balance:** close the *scripting* ML gap (embeddings, RAG, metrics, private train glue) without turning Weft into a full numeric / deep-learning stack.
+Weft now has two explicit ML layers: `packages/ml` for portable classical
+models and `packages/warp` for validated numerical arrays. Native CUDA,
+ROCm/HIP, and Apple MLX providers are loaded through the capability-gated
+`accelerator` ABI in [`native/accelerator`](../native/accelerator).
 
-How this fits with `llm`, `mold`, and `tokensave`: **[ECOSYSTEM.md](ECOSYSTEM.md)**.
+## Package layers
 
-| Layer | Where | Role |
-|-------|--------|------|
-| **Core binary** | `llm` · `ollama` · `vllm` · `weft train` | chat, local providers, fine-tune orchestration |
-| **`packages/ml`** | installable Weft module | light vectors / embeddings / metrics for RAG |
-| **Sibling modules** | `mold` · `tokensave` | structured JSON / tool params · context thrift |
-| **External** | GPU train (TRL), heavy science | optional training toolchains, notebooks, remote services |
+| Layer | Role |
+|---|---|
+| `packages/ml` | vectors, embeddings, metrics, standardization, minibatch linear/logistic training |
+| `packages/warp` | N-dimensional CPU arrays, broadcasting, reductions, linear algebra, native dispatch |
+| `accelerator` | explicit shared-library loading and bounded JSON operation dispatch |
+| `mlinfer` | remote ONNX Runtime, Triton, HuggingFace, and custom HTTP inference |
+| `weft train` | fine-tune orchestration for external/private training workflows |
 
-## Why a separate module?
-
-1. **Core stays small** — agent/HTTP/ops scripts do not pay for ML surface area.  
-2. **Same extension path as everyone else** — `weft get` / `vendor/` / lock / capabilities.  
-3. **Evolve independently** — version `packages/ml` without shipping a new `weft` binary.  
-4. **Honest scope** — pure Weft is fine for RAG-scale vectors; it is *not* a BLAS.
-
-## Install
-
-```bash
-weft get ml          # monorepo
-# or: weft get ml
-weft install
-```
+## Classical training
 
 ```weft
 use ml
 
 fn main -> Result {
-    hits := ml.topk(q, docs, 5)
-    // v := ml.embed("query")?   // needs Ollama embed model or API key
+    model := ml.fit("linear", [[0.0], [1.0], [2.0]], [1.0, 3.0, 5.0], {
+        "epochs": 300,
+        "learning_rate": 0.05,
+        "batch_size": 64,
+    })?
+    say(ml.predict(model, [[4.0]])?)
+    say(ml.score(model, [[4.0]], [9.0])?)
 }
 ```
 
-Demo (offline):
+`linear_fit` uses minibatch least squares. `logistic_fit` uses minibatch
+binary cross-entropy. Options are bounded, input matrices are validated, and
+the test suite trains a model over 100,000 rows. This is a deterministic
+classical CPU implementation—not autograd, a tensor compiler, or a complete
+deep-learning framework.
 
-```bash
-cd examples/ml_demo && weft install && weft run main.weft
+## Native GPU/provider execution
+
+```weft
+use warp
+
+fn main -> Result {
+    plugin := warp.accelerator_load("/opt/weft/libweft_accel_rocm.so")?
+    result := warp.accelerator_run(plugin, "matmul", {
+        "a": [1.0, 2.0, 3.0, 4.0], "a_shape": [2, 2],
+        "b": [5.0, 6.0, 7.0, 8.0], "b_shape": [2, 2],
+    })?
+    say(result)
+    warp.accelerator_close(plugin)?
+}
 ```
 
-## What ships in `packages/ml`
+The host ABI is vendor-neutral and does not link vendor SDKs into the main
+binary. A CUDA provider uses the CUDA Runtime API; a ROCm provider may use HIP
+or rocBLAS; an Apple provider may use MLX. They are separate binaries and must
+declare their actual vendor, supported operations, dtypes, layouts, device
+constraints, and numerical guarantees. The checked-in example provider is a
+loader smoke test only.
 
-- **Vectors:** `cosine` `dot` `norm` `topk`  
-- **Embeddings:** `embed` / `embed_with` / `embed_many` (HTTP → Ollama or OpenAI-compat)  
-- **Index:** in-memory + `index_save` / `index_load` JSON  
-- **Metrics:** `accuracy` `mse` `split`
+Native loading is explicit because shared libraries execute host code and may
+access device memory, drivers, or files. The `accelerator` capability must be
+granted in a package manifest, and browser WASM reports native loading as
+unavailable.
 
-## Contracts and limits
+## Remote inference
 
-Vector operations require equal dimensions. `topk` requires every item to
-have a `vec` with the same dimension as the query. `accuracy` and `mse` require
-prediction and label arrays of equal length; invalid inputs return `Err` rather
-than being silently truncated. `split` is deterministic, preserves input
-order, and accepts ratios from `0` through `1`.
+For models already served by ONNX Runtime or Triton, use `mlinfer` and keep
+weights/drivers outside Weft:
 
-Embedding responses must contain a vector field recognized by the provider
-adapter. `embed_many` uses one batch request for OpenAI-compatible
-providers when the response shape is valid, then falls back to individual
-requests when the provider cannot handle batching. No model weights are loaded
-inside Weft.
+```weft
+use mlinfer
 
-Training **weights** remains:
-
-```bash
-weft train finetune --private --preset qwen-7b
+fn main -> Result {
+    result := mlinfer.triton("http://gpu-box:8000", "model", {
+        "inputs": [{"name": "input", "shape": [1, 3], "datatype": "FP32", "data": [1, 2, 3]}],
+    })?
+    say(result)
+}
 ```
 
-See [`docs/FINETUNE.md`](FINETUNE.md) · [`docs/LLM_LOCAL.md`](LLM_LOCAL.md).
+## Claims and boundaries
 
-## What we will not put in core
-
-- Dense linear algebra / GPU tensors  
-- DataFrame engine  
-- Full AutoML / classic ML library zoo  
-- Native `.so` plugins for deep-learning runtimes  
-
-Those stay **external services** or remote APIs. Weft orchestrates.
-
-## ONNX / native models → sidecar (not core)
-
-Weft never loads `.onnx` in-process. Pattern:
-
-1. Run **ONNX Runtime / a model-serving stack / Triton** (or any HTTP model server) as a sibling process.  
-2. Call it with `http.post` + retries / circuit breaker.  
-3. Keep GPU drivers and weights outside the `weft` binary.
-
-Offline demo (mock JSON contract, no ONNX install):
-
-```bash
-weft run examples/onnx_sidecar/mock_server.weft   # terminal 1
-weft run examples/onnx_sidecar/main.weft          # terminal 2
-```
-
-Details: [`examples/onnx_sidecar/README.md`](../examples/onnx_sidecar/README.md).
-
-## Roadmap (ML slice)
-
-| Horizon | Deliverable |
-|---------|-------------|
-| **Now** | `packages/ml` + offline demo + this doc |
-| **Now** | ONNX *sidecar* example + HTTP contract (separate process) |
-| **Now** | Embed hardened: OpenAI-compat shapes, `/v1` URL normalize, batch `embed_many`, Azure `api-key` |
-| **Next** | optional HNSW-ish index in pure Weft or Go *only if* justified |
-| **Never (core)** | In-process deep learning training · CGo ONNX inside `weft` |
-
-Broader product roadmap (ecosystem, IDE, registry): [`docs/ROADMAP.md`](ROADMAP.md).
+Weft can replace Python for the supported classical training, tabular, array,
+and provider-dispatch workflows. It is not yet a drop-in replacement for all
+NumPy/pandas APIs, dtype systems, sparse arrays, FFTs, autodiff, or Python
+ecosystem libraries. Each native provider must be benchmarked and numerically
+validated independently; an ABI load success is not evidence that a GPU
+operation is correct.

@@ -223,8 +223,8 @@ Live example: [`examples/modules/`](../examples/modules/) (`mathx` multi-file �
 | Can expand | Cannot (v1) |
 |------------|-------------|
 | Functions, multi-file packages, `pub` APIs | New syntax / keywords |
-| Types (`pub type`) exported on the package map | Native Go / C plugins |
-| Composition via `deps` + transitive install | Binary ABI / shared libs |
+| Types (`pub type`) exported on the package map | Native plugins are host capabilities, loaded through `accelerator` |
+| Composition via `deps` + transitive install | Binary ABI / shared libs use the versioned `native/accelerator` contract |
 | Domain “stdlib” for your team (`use billing`) | Hooking the VM from outside |
 
 The runtime stdlib (`web`, `llm`, `db`, …) is compiled into the `weft` binary. If you need a new *host* capability (e.g. a new protocol), open a PR against `internal/stdlib`. Everything else — business logic, helpers, internal frameworks — belongs in modules.

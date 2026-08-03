@@ -205,5 +205,9 @@ Auth: set `WEFT_REGISTRY_TOKEN` for publish access.
 
 ## Not yet
 
-- Binary native extensions (expand via pure `.weft` modules)
+- General-purpose binary extensions are not a package-format feature. Native
+  acceleration is available only through the reviewed, capability-gated
+  `accelerator` ABI in [`native/accelerator`](../native/accelerator); provider
+  libraries must be selected explicitly and are not installed or discovered
+  implicitly by the package manager.
 - Registry hosted at registry.weftproject.dev with namespace ownership and key rotation

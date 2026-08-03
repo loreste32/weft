@@ -64,7 +64,7 @@ Typical agent work uses **core `llm`** plus optional modules as needed:
 | `cluster` | **stdlib** | distributed state via Redis (locks, counters, pub/sub) | [CLUSTER.md](CLUSTER.md) |
 | **mold** | **module** | structured models, validate JSON, JSON Schema / tool params | [MOLD.md](MOLD.md) |
 | **tokensave** | **module** | thrift context, memory, teach → train gold | [`packages/tokensave`](../packages/tokensave/) |
-| **ml** | **module** | embeddings, vectors, RAG index, metrics | [ML.md](ML.md) |
+| **ml** | **module** | embeddings, vectors, RAG index, metrics, classical minibatch training | [ML.md](ML.md) |
 | fine-tune | **CLI + external GPU** | private train orchestration | [FINETUNE.md](FINETUNE.md) |
 
 ---
@@ -175,9 +175,9 @@ All available at [registry.weftproject.dev](https://registry.weftproject.dev). I
 | **color** | Terminal color output (ANSI 256 / truecolor) |
 | **mold** | Structured models, JSON Schema, tool params |
 | **tokensave** | Thrift context, memory, teach → train gold |
-| **ml** | Embeddings, vectors, RAG index |
-| **warp** | N-dimensional array math |
-| **dataframe** | Tabular data: filter, group, join, pivot |
+| **ml** | Embeddings, vectors, RAG index, classical training |
+| **warp** | Validated NumPy-style arrays and native CUDA/ROCm/MLX dispatch |
+| **dataframe** | Validated tabular data: null-aware stats, joins, rolling, CSV/JSON |
 | **embed** | Embeddings client + vector store |
 | **experiment** | Experiment tracking: runs, params, metrics |
 | **metrics** | ML metrics: accuracy, F1, precision, recall |

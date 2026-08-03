@@ -8,6 +8,7 @@ use "./index.weft" as idx
 
 
 use "./metrics.weft" as met
+use "./train.weft" as tr
 
 
 pub fn cosine(a, b) { vec.cosine(a, b) }
@@ -57,3 +58,11 @@ pub fn mse(preds, labels) { met.mse(preds, labels) }
 
 pub fn split(rows, train_ratio) { met.split(rows, train_ratio) }
 
+pub fn linear_fit(features, targets, opts) -> Result[any] { tr.linear_fit(features, targets, opts) }
+pub fn logistic_fit(features, targets, opts) -> Result[any] { tr.logistic_fit(features, targets, opts) }
+pub fn fit(kind, features, targets, opts) -> Result[any] { tr.fit(kind, features, targets, opts) }
+pub fn train(kind, features, targets, opts) -> Result[any] { tr.train(kind, features, targets, opts) }
+pub fn predict(model, features) -> Result[any] { tr.predict(model, features) }
+pub fn predict_classes(model, features, threshold) -> Result[any] { tr.predict_classes(model, features, threshold) }
+pub fn score(model, features, targets) -> Result[any] { tr.score(model, features, targets) }
+pub fn standardize(features) -> Result[any] { tr.standardize(features) }

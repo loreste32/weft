@@ -20,6 +20,9 @@ echo "== go vet =="
 go vet ./...
 echo "== go test =="
 go test ./...
+echo "== native accelerator ABI =="
+# Compiles the checked-in C provider and exercises the real dlopen ABI.
+go test ./internal/accelerator/ -count=1
 echo "== race smoke =="
 # Concurrency-sensitive packages only (full -race ./... is too slow for every PR)
 go test ./internal/vm/ -race -count=1 -timeout 120s -run 'Parallel|Concurrent|Stack|NoPanic'
@@ -350,7 +353,7 @@ echo "airgap contents:" && ls /tmp/ci-weft-airgap/
 test -f /tmp/ci-weft-airgap/PRIVACY.md || { echo "PRIVACY.md missing"; exit 1; }
 test -f /tmp/ci-weft-airgap/train_private.sh || { echo "train_private.sh missing"; exit 1; }
 # cloud without --allow-upload must refuse (non-zero exit + privacy message)
-if /tmp/weft-ci train finetune --backend openai --skip-prepare --data /tmp/ci-weft-sft --dry-run >/dev/null 2>&1; then
+if env -u OPENAI_BASE_URL -u WEFT_API_BASE -u WEFT_PROVIDER /tmp/weft-ci train finetune --backend openai --skip-prepare --data /tmp/ci-weft-sft --dry-run >/dev/null 2>&1; then
   echo "expected privacy refusal for public openai without --allow-upload" >&2
   exit 1
 fi
