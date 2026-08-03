@@ -101,9 +101,22 @@ function startServer() {
   });
 }
 
+async function waitForTimeoutCloses(state, target) {
+  const deadline = Date.now() + 2000;
+  while (state.timeoutClosed < target && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 async function checkBrowser(name, browserType, baseURL, state) {
   const timeoutClosedBefore = state.timeoutClosed;
-  const browser = await browserType.launch({ headless: true });
+  const executablePath = name === "Chromium"
+    ? process.env.WEFT_PLAYWRIGHT_CHROMIUM_PATH
+    : process.env.WEFT_PLAYWRIGHT_FIREFOX_PATH;
+  const browser = await browserType.launch({
+    headless: true,
+    ...(executablePath ? { executablePath } : {}),
+  });
   const page = await browser.newPage();
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -220,6 +233,7 @@ async function checkBrowser(name, browserType, baseURL, state) {
       assert.match(timeout.output, /context deadline exceeded/);
       assert.strictEqual(timeout.error, null);
     }
+    await waitForTimeoutCloses(state, timeoutClosedBefore + 4);
     assert.strictEqual(state.postBody, "browser-post");
     assert.strictEqual(state.timeoutClosed - timeoutClosedBefore, 4);
     assert.deepStrictEqual(pageErrors, []);
