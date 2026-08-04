@@ -64,7 +64,8 @@ fn main -> Result {
 
 ## Strided views and indexing
 
-Arrays carry element strides and an element offset. `transpose_view` and `view` are immutable zero-copy logical views; `strides` reports byte strides and `element_strides` reports element strides. Existing value-producing operations materialize logical view order, and `contiguous` creates a row-major copy. `slice_step`, `slice_axis`, and `slice_selector` implement normalized Python/NumPy stepped slices, including negative steps. `index` supports integer, negative, integer-list, boolean-mask, slice, and full-axis selectors with bounded advanced-index semantics.
+
+Arrays carry element strides and an element offset. `transpose_view` and `view` are immutable zero-copy logical views; `strides` reports byte strides and `element_strides` reports element strides. Existing value-producing operations materialize logical view order, and `contiguous` creates a row-major copy. `slice_step`, `slice_axis`, and `slice_selector` implement normalized Python/NumPy stepped slices, including negative steps. `index` supports integer, negative, rectangular integer index arrays, boolean-mask, slice, and full-axis selectors. Multiple integer index arrays use NumPy right-aligned broadcasting; contiguous advanced axes preserve the basic-axis position, and separated advanced axes place the broadcast dimensions first. Assignment through advanced-index views and ellipsis/new-axis syntax are not implemented.
 
 ## API surface
 

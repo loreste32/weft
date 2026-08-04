@@ -12,7 +12,9 @@ fn main -> Result {
     even_slice := warp.slice_step(vector, 1, 8, 2)
     reverse_slice := warp.slice_step(vector, null, null, -1)
     axis_slice := warp.slice_axis(base, null, null, -1, 1)
-    indexed_slice := warp.index(vector, [warp.slice_selector(1, null, 2)])
+ indexed_slice := warp.index(vector, [warp.slice_selector(1, null, 2)])
+ paired := warp.index(base, [[0, 2], [1, 0]])
+ broadcasted := warp.index(base, [[[0], [2]], [0, 2]])
     say(json.stringify({
         "transposed_shape": transposed.shape,
         "transposed_element_strides": warp.element_strides(transposed),
@@ -27,6 +29,8 @@ fn main -> Result {
         "even_slice": warp.to_list(even_slice),
         "reverse_slice": warp.to_list(reverse_slice),
         "axis_slice": warp.to_list(axis_slice),
-        "indexed_slice": warp.to_list(indexed_slice),
+ "indexed_slice": warp.to_list(indexed_slice),
+ "paired": warp.to_list(paired),
+ "broadcasted": warp.to_list(broadcasted),
     }))
 }

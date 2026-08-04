@@ -58,9 +58,10 @@ operations retain their array dtype where the result is an array.
 
 ## Strided views and indexing
 
+
 `transpose_view(a, axes?)`, `reshape`, and `view(a, shape, element_strides, offset)` expose immutable logical views over shared backing storage. `element_strides` reports element units; `strides` reports byte units. `to_list`, `get`, arithmetic, reductions, sorting, masking, and linear algebra read views in logical order, including negative strides. `contiguous` materializes a row-major copy when a packed result is required.
 
-`index(a, selectors)` accepts integer selectors (including negative indices), integer-position lists, boolean masks, `slice_selector(start, stop, step)` selectors, and `null` full-axis selectors. Missing trailing selectors mean full axes. `slice_step` and `slice_axis` implement Python/NumPy start/stop/step normalization, including negative steps, as immutable strided views. Advanced multi-axis broadcasting and assignment views remain outside the current compatibility profile.
+`index(a, selectors)` accepts integer selectors (including negative indices), rectangular integer index arrays, boolean masks, `slice_selector(start, stop, step)` selectors, and `null` full-axis selectors. Missing trailing selectors mean full axes. Multiple integer index arrays broadcast using NumPy's right-aligned rules; contiguous advanced axes keep basic-axis order, while separated advanced axes move broadcast dimensions to the front. `slice_step` and `slice_axis` implement Python/NumPy start/stop/step normalization, including negative steps, as immutable strided views. Assignment through advanced-index views and ellipsis/new-axis syntax remain outside the current compatibility profile.
 
 ## Boundaries
 

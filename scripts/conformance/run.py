@@ -119,6 +119,8 @@ def warp_strides_expected() -> dict[str, Any]:
         "reverse_slice": np.arange(10)[::-1].tolist(),
         "axis_slice": base[:, ::-1].reshape(-1).tolist(),
         "indexed_slice": np.arange(10)[1::2].tolist(),
+        "paired": base[[0, 2], [1, 0]].tolist(),
+        "broadcasted": base[np.array([[0], [2]]), np.array([0, 2])].reshape(-1).tolist(),
     }
 
 

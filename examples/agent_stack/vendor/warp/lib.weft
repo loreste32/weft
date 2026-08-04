@@ -373,10 +373,10 @@ pub fn transpose_view(a, axes) {
     view(a, out_shape, out_strides, a._offset)
 }
 
-// NumPy-style indexing for one-dimensional selectors. Each selector may be
-// an integer (including negative indices), a list of integer positions, a
-// boolean mask list, or null to select the complete axis. Missing trailing
-// selectors are treated as null. One advanced axis is supported per call.
+// NumPy-style indexing selectors. Selectors may be integers (including
+// negative indices), rectangular integer index arrays, boolean masks,
+// slice selectors, or null to select a complete axis. Missing trailing
+// selectors are treated as null; advanced index arrays broadcast together.
 pub fn index(a, selectors) {
     if !_is_arr(a) || _wkind(selectors) != "list" { return Err("warp.index expects an array and selector list") }
     if len(selectors) > len(a.shape) { return Err("warp.index has too many selectors") }
@@ -388,6 +388,9 @@ pub fn index(a, selectors) {
         if spec == null { return Err("warp.index selector is invalid or out of range") }
         specs = push(specs, spec)
         axis = axis + 1
+    }
+    for spec in specs {
+        if spec.kind == "advanced" { return _index_advanced(a, specs) }
     }
     let mut out_shape = []
     let mut all_scalar = true
@@ -1659,8 +1662,13 @@ fn _index_spec(selector, size) {
         return {"kind": "scalar", "value": normalized}
     }
     if _wkind(selector) != "list" { return null }
-    if len(selector) == 0 { return {"kind": "list", "positions": []} }
-    first_kind := _wkind(selector[0])
+ if len(selector) == 0 { return {"kind": "advanced", "shape": [0], "values": []} }
+ first_kind := _wkind(selector[0])
+ if first_kind == "list" {
+  info := _index_array_info(selector, size)
+  if info == null { return null }
+  return {"kind": "advanced", "shape": info.shape, "values": info.values}
+ }
     if first_kind != "bool" && first_kind != "int" { return null }
     let mut positions = []
     if first_kind == "bool" {
@@ -1679,7 +1687,132 @@ fn _index_spec(selector, size) {
             positions = push(positions, normalized)
         }
     }
-    {"kind": "list", "positions": positions}
+ {"kind": "advanced", "shape": [len(positions)], "values": positions}
+}
+
+fn _index_array_info(selector, size) {
+ if _wkind(selector) != "list" { return null }
+ if len(selector) == 0 { return {"shape": [0], "values": []} }
+ first_kind := _wkind(selector[0])
+ if first_kind == "int" {
+  let mut values = []
+  for item in selector {
+   if _wkind(item) != "int" { return null }
+   normalized := _normalize_index(item, size)
+   if normalized == null { return null }
+   values = push(values, normalized)
+  }
+  return {"shape": [len(selector)], "values": values}
+ }
+ if first_kind != "list" { return null }
+ first := _index_array_info(selector[0], size)
+ if first == null { return null }
+ child_shape := first.shape
+ let mut values = []
+ for row in selector {
+  child := _index_array_info(row, size)
+  if child == null || !_same_shape(child.shape, child_shape) { return null }
+  for value in child.values { values = push(values, value) }
+ }
+ let mut shape = [len(selector)]
+ for dim in child_shape { shape = push(shape, dim) }
+ {"shape": shape, "values": values}
+}
+
+fn _same_shape(left, right) {
+ if _wkind(left) != "list" || _wkind(right) != "list" || len(left) != len(right) { return false }
+ let mut i = 0
+ while i < len(left) {
+  if left[i] != right[i] { return false }
+  i = i + 1
+ }
+ true
+}
+
+fn _advanced_index_value(spec, advanced_index, advanced_shape) {
+ offset := len(advanced_shape) - len(spec.shape)
+ let mut flat = 0
+ let mut i = 0
+ while i < len(spec.shape) {
+  dim := spec.shape[i]
+  coord := if dim == 1 { 0 } else { advanced_index[i + offset] }
+  flat = flat + coord * _prod(_tail(spec.shape, i + 1))
+  i = i + 1
+ }
+ spec.values[flat]
+}
+
+fn _index_coord_segment(index, start, count) {
+ let mut result = []
+ let mut i = 0
+ while i < count {
+  result = push(result, index[start + i])
+  i = i + 1
+ }
+ result
+}
+
+fn _index_advanced(a, specs) {
+ let mut advanced_axes = []
+ let mut axis = 0
+ while axis < len(specs) {
+  if specs[axis].kind == "advanced" { advanced_axes = push(advanced_axes, axis) }
+  axis = axis + 1
+ }
+ if len(advanced_axes) == 0 { return Err("warp.index requires an advanced selector") }
+ let mut advanced_shape = []
+ for advanced_axis in advanced_axes {
+  next_shape := _broadcast_shape(advanced_shape, specs[advanced_axis].shape)
+  if next_shape == null { return Err("warp.index advanced selectors could not be broadcast together") }
+  advanced_shape = next_shape
+ }
+ first_advanced := advanced_axes[0]
+ last_advanced := advanced_axes[len(advanced_axes) - 1]
+ let mut contiguous = true
+ axis = first_advanced
+ while axis <= last_advanced {
+  if specs[axis].kind != "advanced" { contiguous = false }
+  axis = axis + 1
+ }
+ let mut output_shape = []
+ if !contiguous { for dim in advanced_shape { output_shape = push(output_shape, dim) } }
+ axis = 0
+ while axis < len(specs) {
+  if contiguous && axis == first_advanced { for dim in advanced_shape { output_shape = push(output_shape, dim) } }
+  spec := specs[axis]
+  if spec.kind != "scalar" && spec.kind != "advanced" {
+   if !contiguous || axis < first_advanced || axis > last_advanced { output_shape = push(output_shape, spec.size) }
+  }
+  axis = axis + 1
+ }
+ let mut values = []
+ output_count := _prod(output_shape)
+ let mut flat = 0
+ while flat < output_count {
+  output_index := _unravel(flat, output_shape)
+  let mut advanced_index = []
+  let mut basic_cursor = 0
+  if contiguous {
+   axis = 0
+   while axis < first_advanced { if specs[axis].kind != "scalar" { basic_cursor = basic_cursor + 1 } axis = axis + 1 }
+   advanced_index = _index_coord_segment(output_index, basic_cursor, len(advanced_shape))
+   basic_cursor = 0
+  } else {
+   advanced_index = _index_coord_segment(output_index, 0, len(advanced_shape))
+   basic_cursor = len(advanced_shape)
+  }
+  let mut source_index = []
+  let mut advanced_consumed = false
+  axis = 0
+  while axis < len(specs) {
+   spec := specs[axis]
+   if spec.kind == "scalar" { source_index = push(source_index, spec.value) } else if spec.kind == "advanced" { if contiguous && !advanced_consumed { basic_cursor = basic_cursor + len(advanced_shape) advanced_consumed = true } source_index = push(source_index, _advanced_index_value(spec, advanced_index, advanced_shape)) } else { coordinate := output_index[basic_cursor] basic_cursor = basic_cursor + 1 source_position := if spec.kind == "slice" { spec.start + coordinate * spec.step } else { coordinate } source_index = push(source_index, source_position) }
+   axis = axis + 1
+  }
+  values = push(values, _logical_value_at(a, source_index))
+  flat = flat + 1
+ }
+ _array_with_dtype(values, output_shape, dtype(a))
 }
 
 fn _collect_index_values(a, specs, axis, source_index, result) {
