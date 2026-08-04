@@ -540,6 +540,13 @@ func jsonToValue(raw json.RawMessage) (runtime.Value, error) {
 // goToValue is in helpers.go
 
 func callWeftFn(env *runtime.Env, fn runtime.Value, args []runtime.Value) (runtime.Value, error) {
+	// User-defined Weft functions are compiled values (KindFunc), not native
+	// builtins. Delegate through the environment so module-home environments,
+	// closures, arity checks, coverage, and VM error wrapping use the same path
+	// as an ordinary call from Weft code.
+	if env != nil && env.Call != nil {
+		return env.Call(fn, args)
+	}
 	switch fn.Kind {
 	case runtime.KindBuiltin:
 		bo := fn.Obj.(*runtime.BuiltinObj)
