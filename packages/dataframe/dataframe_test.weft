@@ -1,4 +1,5 @@
 use "./lib.weft" as df
+use warp
 
 fn _sample_df {
     df.from_rows([
@@ -91,6 +92,33 @@ fn test_col {
     test.eq(names[0], "Alice")
 }
 
+fn test_warp_interchange_round_trip {
+    t := _sample_df()
+    packed := df.to_warp(t, ["age", "salary"], "float64")
+    test.is_true(packed.ok)
+    test.eq(warp.shape(packed.value), [5, 2])
+    test.eq(warp.to_list(warp.row(packed.value, 0)), [30.0, 90000.0])
+    restored := df.from_warp(packed.value, ["age", "salary"])
+    test.is_true(restored.ok)
+    test.eq(df.col(restored.value, "age"), [30.0, 25.0, 35.0, 28.0, 32.0])
+    test.eq(df.col(restored.value, "salary"), [90000.0, 75000.0, 85000.0, 70000.0, 95000.0])
+    one := df.from_warp(warp.array([4, 5], [2]), null)
+    test.is_true(one.ok)
+    test.eq(df.columns(one.value), ["column_0"])
+    test.eq(df.col(one.value, "column_0"), [4, 5])
+}
+
+fn test_warp_interchange_rejects_invalid_values {
+    t := _sample_df()
+    bad_column := df.to_warp(t, ["name"], null)
+    test.is_false(bad_column.ok)
+    with_null := df.from_rows([{"x": 1}, {"x": null}])
+    bad_null := df.to_warp(with_null, ["x"], null)
+    test.is_false(bad_null.ok)
+    bad_names := df.from_warp(warp.array([1, 2, 3], [3]), ["a", "b"])
+    test.is_false(bad_names.ok)
+}
+
 fn test_series_contract {
     t := _sample_df()
     s := df.series_from(t, "age")
@@ -164,6 +192,71 @@ fn test_index_preserved_by_row_transformations {
     test.eq(df.index(df.rename(sorted, {"age": "years"})), ["Carol", "Eve", "Alice"])
     added := df.add_column(sorted, "adult", fn(r) { r.age >= 18 })
     test.eq(df.index(added), ["Carol", "Eve", "Alice"])
+}
+
+fn test_multi_index_create_and_levels {
+    t := _sample_df()
+    test.eq(df.index_nlevels(t), 1)
+    test.eq(df.index_levels(t), [null])
+    bad := df.set_multi_index(t, [], null)
+    test.is_false(bad.ok)
+    unknown := df.set_multi_index(t, ["dept", "missing"], null)
+    test.is_false(unknown.ok)
+    single := df.set_multi_index(t, ["name"], null)
+    test.eq(df.index_nlevels(single), 1)
+    test.eq(df.index(single), ["Alice", "Bob", "Carol", "Dan", "Eve"])
+    multi := df.set_multi_index(t, ["dept", "name"], null)
+    test.eq(df.index_nlevels(multi), 2)
+    test.eq(df.index_levels(multi), ["dept", "name"])
+    test.is_false(contains(df.columns(multi), "dept"))
+    test.is_false(contains(df.columns(multi), "name"))
+    test.eq(df.index(multi)[0], ["eng", "Alice"])
+    test.eq(df.index(multi)[2], ["sales", "Carol"])
+    kept := df.set_multi_index(t, ["dept", "name"], false)
+    test.is_true(contains(df.columns(kept), "dept"))
+    test.eq(df.index(kept)[1], ["eng", "Bob"])
+}
+
+fn test_multi_index_loc_labels_and_partial {
+    multi := df.set_multi_index(_sample_df(), ["dept", "name"], null)
+    full := df.loc_labels(multi, [["eng", "Alice"], ["sales", "Dan"]])
+    test.eq(df.nrows(full), 2)
+    test.eq(df.index(full), [["eng", "Alice"], ["sales", "Dan"]])
+    test.eq(df.col(full, "age"), [30, 28])
+    test.eq(df.index_levels(full), ["dept", "name"])
+    // Scalar / partial first-level match selects all rows under that level.
+    eng := df.loc_labels(multi, ["eng"])
+    test.eq(df.nrows(eng), 3)
+    test.eq(df.index(eng)[0][0], "eng")
+    prefix := df.loc_labels(multi, [["sales"]])
+    test.eq(df.nrows(prefix), 2)
+    test.eq(df.col(prefix, "salary"), [85000, 70000])
+}
+
+fn test_multi_index_reindex_and_reset {
+    multi := df.set_multi_index(_sample_df(), ["dept", "name"], null)
+    filled := df.reindex(multi, [["eng", "Bob"], ["ops", "Missing"], ["sales", "Carol"]], null)
+    test.eq(df.nrows(filled), 3)
+    test.eq(df.index(filled), [["eng", "Bob"], ["ops", "Missing"], ["sales", "Carol"]])
+    test.eq(df.col(filled, "age"), [25, null, 35])
+    test.eq(df.index_nlevels(filled), 2)
+    restored := df.reset_index(multi, null)
+    test.eq(df.columns(restored)[0], "dept")
+    test.eq(df.columns(restored)[1], "name")
+    test.eq(df.col(restored, "dept")[0], "eng")
+    test.eq(df.col(restored, "name")[3], "Dan")
+    test.eq(df.nrows(restored), 5)
+}
+
+fn test_multi_index_preserved_by_head_and_filter {
+    multi := df.set_multi_index(_sample_df(), ["dept", "name"], null)
+    filtered := df.query(multi, "age", ">", 28)
+    test.eq(df.index_nlevels(filtered), 2)
+    test.eq(df.index_levels(filtered), ["dept", "name"])
+    test.eq(df.index(filtered), [["eng", "Alice"], ["sales", "Carol"], ["eng", "Eve"]])
+    h := df.head(filtered, 2)
+    test.eq(df.index(h), [["eng", "Alice"], ["sales", "Carol"]])
+    test.eq(df.index_levels(h), ["dept", "name"])
 }
 
 fn test_head_tail {
@@ -752,4 +845,38 @@ fn test_100k_row_frame_operations {
     test.eq(df.nrows(filtered), 100)
     preview := df.head(t, 5)
     test.eq(df.nrows(preview), 5)
+}
+
+fn test_group_by_transform {
+    t := _sample_df()
+    g := df.group_by_transform(t, "dept", "salary", "sum")
+    test.eq(df.nrows(g), 5)
+    // eng salaries 90000+75000+95000=260000
+    eng := df.filter_(g, fn(r) { r.dept == "eng" })
+    test.eq(df.col(eng, "salary")[0], 260000)
+    idxed := df.set_index(t, "name", null)
+    g2 := df.group_by_transform(idxed, "dept", "age", "mean")
+    test.eq(df.index(g2), df.index(idxed))
+}
+
+fn test_group_by_size {
+    t := _sample_df()
+    s := df.group_by_size(t, "dept")
+    test.eq(df.nrows(s), 2)
+    sizes := df.col(s, "size")
+    test.is_true(contains(sizes, 3) && contains(sizes, 2))
+}
+
+fn test_swaplevel_and_droplevel {
+    t := _sample_df()
+    multi := df.set_multi_index(t, ["dept", "name"], null)
+    test.eq(df.index_nlevels(multi), 2)
+    sw := df.swaplevel(multi, 0, 1)
+    test.eq(df.index_levels(sw), ["name", "dept"])
+    lab0 := df.index(sw)[0]
+    test.eq(lab0[0], "Alice")
+    test.eq(lab0[1], "eng")
+    d1 := df.droplevel(multi, 0)
+    test.eq(df.index_nlevels(d1), 1)
+    test.eq(df.index(d1)[0], "Alice")
 }

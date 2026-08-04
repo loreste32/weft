@@ -10,6 +10,9 @@ use "./index.weft" as idx
 use "./metrics.weft" as met
 use "./train.weft" as tr
 use "./autograd.weft" as ag
+use "./gradcheck.weft" as gc
+use "./higher.weft" as hi
+use "./device.weft" as dev
 use "./modules.weft" as mods
 
 
@@ -74,7 +77,10 @@ pub fn value(node) -> Result[any] { ag.value(node) }
 pub fn grad(node) -> Result[any] { ag.grad(node) }
 pub fn zero_grad(node) -> Result[any] { ag.zero_grad(node) }
 pub fn zero_grad_many(parameters) -> Result[any] { ag.zero_grad_many(parameters) }
-pub fn backward(node) -> Result[any] { ag.backward(node) }
+// create_graph: null/false = numeric grads; true/1 = scalar nested reverse-mode (grad is a node).
+pub fn backward(node, create_graph) -> Result[any] { ag.backward(node, create_graph) }
+pub fn grad_fn(output, inputs) -> Result[any] { ag.grad_fn(output, inputs) }
+pub fn grad_value(node) -> Result[any] { ag.grad_value(node) }
 pub fn sgd_step(parameters, learning_rate, weight_decay) -> Result[any] { ag.sgd_step(parameters, learning_rate, weight_decay) }
 pub fn adam_state(parameters) -> Result[any] { ag.adam_state(parameters) }
 pub fn adam_step(parameters, state, learning_rate, beta1, beta2, epsilon, weight_decay) -> Result[any] { ag.adam_step(parameters, state, learning_rate, beta1, beta2, epsilon, weight_decay) }
@@ -90,9 +96,19 @@ pub fn pow(node, exponent) -> Result[any] { ag.pow(node, exponent) }
 pub fn sum(node) -> Result[any] { ag.sum(node) }
 pub fn mean(node) -> Result[any] { ag.mean(node) }
 pub fn matmul(left, right) -> Result[any] { ag.matmul(left, right) }
-pub fn linear_module(in_features, out_features) -> Result[any] { mods.linear_module(in_features, out_features) }
+pub fn gradcheck(fn_loss, parameters, eps, rtol) -> Result[any] { gc.gradcheck(fn_loss, parameters, eps, rtol) }
+pub fn second_derivative(scalar_fn, x, eps) -> Result[any] { hi.second_derivative(scalar_fn, x, eps) }
+pub fn hvp(loss_fn, parameters, vector, eps) -> Result[any] { hi.hvp(loss_fn, parameters, vector, eps) }
+pub fn device(name) -> Result[any] { dev.device(name) }
+pub fn to_device(value, device_arg) -> Result[any] { dev.to_device(value, device_arg) }
+pub fn device_of(value) -> Result[any] { dev.device_of(value) }
+pub fn seed(value) -> Result[any] { mods.seed(value) }
+pub fn linear_module(in_features, out_features, seed_arg) -> Result[any] { mods.linear_module(in_features, out_features, seed_arg) }
+pub fn relu_module() -> Result[any] { mods.relu_module() }
+pub fn sequential(modules) -> Result[any] { mods.sequential(modules) }
 pub fn module_parameters(module) -> Result[any] { mods.module_parameters(module) }
 pub fn linear_forward(module, input) -> Result[any] { mods.linear_forward(module, input) }
+pub fn module_forward(module, input) -> Result[any] { mods.module_forward(module, input) }
 pub fn state_dict(parameters) -> Result[any] { mods.state_dict(parameters) }
 pub fn load_state_dict(parameters, values) -> Result[any] { mods.load_state_dict(parameters, values) }
 pub fn save_checkpoint(path, parameters, optimizer_state, metadata) -> Result[any] { mods.save_checkpoint(path, parameters, optimizer_state, metadata) }

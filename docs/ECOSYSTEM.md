@@ -13,7 +13,7 @@ Detail pages stay short and point back here when you get lost.
 │    telecom · auth · router · config · logger · queue ·       │
 │    mold · ml · tokensave · retry · cache · jwt · …  (23)     │
 ├─────────────────────────────────────────────────────────────┤
-│  Stdlib  (IN the binary — 81 packages)                       │
+│  Stdlib  (IN the binary — 83 packages)                       │
 │    llm · mcp · deepgram · elevenlabs · mlinfer · http ·     │
 │    dns · tls · os · compress · encoding · governor ·         │
 │    supervisor · cluster · sysinfo · proc · netutil · …       │

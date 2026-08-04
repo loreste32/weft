@@ -1,11 +1,14 @@
 use math
 use "./metrics.weft" as met
+use warp
 
 // Small, deterministic classical models that scale with minibatches. This is
 // intentionally a model API, not a promise of a full autograd framework.
 
 pub fn linear_fit(features, targets, opts) -> Result[any] {
-    shape := _validate_dataset(features, targets)
+    feature_rows := _feature_rows(features)
+    target_values := _target_values(targets)
+    shape := _validate_dataset(feature_rows, target_values)
     if shape == null { return Err("ml.linear_fit expects a non-empty numeric matrix and matching targets") }
     dims := shape[1]
     settings := _settings(opts)
@@ -16,7 +19,7 @@ pub fn linear_fit(features, targets, opts) -> Result[any] {
     let mut epoch = 0
     let mut loss = 0.0
     while epoch < settings.epochs {
-    step := _linear_epoch(features, targets, weights, bias, settings)
+    step := _linear_epoch(feature_rows, target_values, weights, bias, settings)
     loss = step.loss
     bias = step.bias
         epoch = epoch + 1
@@ -32,7 +35,9 @@ pub fn linear_fit(features, targets, opts) -> Result[any] {
 }
 
 pub fn logistic_fit(features, targets, opts) -> Result[any] {
-    shape := _validate_dataset(features, targets)
+    feature_rows := _feature_rows(features)
+    target_values := _target_values(targets)
+    shape := _validate_dataset(feature_rows, target_values)
     if shape == null { return Err("ml.logistic_fit expects a non-empty numeric matrix and matching targets") }
     n := shape[0]
     dims := shape[1]
@@ -44,7 +49,7 @@ pub fn logistic_fit(features, targets, opts) -> Result[any] {
     let mut epoch = 0
     let mut loss = 0.0
     while epoch < settings.epochs {
-    step := _logistic_epoch(features, targets, weights, bias, settings)
+    step := _logistic_epoch(feature_rows, target_values, weights, bias, settings)
     loss = step.loss
     bias = step.bias
         epoch = epoch + 1
@@ -71,10 +76,11 @@ pub fn train(kind, features, targets, opts) -> Result[any] {
 
 pub fn predict(model, features) -> Result[any] {
     if model == null || model.weights == null { return Err("ml.predict expects a fitted model") }
-    shape := _validate_features(features)
+    feature_rows := _feature_rows(features)
+    shape := _validate_features(feature_rows)
     if shape == null || shape[1] != len(model.weights) { return Err("ml.predict feature dimensions do not match model") }
     let mut result = []
-    for row in features {
+    for row in feature_rows {
         z := model.bias + _row_dot(row, model.weights)
         result = push(result, if model.kind == "logistic" { _sigmoid(z) } else { z })
     }
@@ -105,7 +111,8 @@ pub fn score(model, features, targets) -> Result[any] {
 }
 
 pub fn standardize(features) -> Result[any] {
-    shape := _validate_features(features)
+    feature_rows := _feature_rows(features)
+    shape := _validate_features(feature_rows)
     if shape == null { return Err("ml.standardize expects a non-empty numeric matrix") }
     n := shape[0]
     dims := shape[1]
@@ -114,10 +121,10 @@ pub fn standardize(features) -> Result[any] {
     let mut j = 0
     while j < dims {
         let mut total = 0.0
-        for row in features { total = total + row[j] }
+        for row in feature_rows { total = total + row[j] }
         mean_value := total / n
         let mut variance = 0.0
-        for row in features { delta := row[j] - mean_value variance = variance + delta * delta }
+        for row in feature_rows { delta := row[j] - mean_value variance = variance + delta * delta }
         let mut scale := math.sqrt(variance / n)
         if scale == 0 { scale = 1.0 }
         means = push(means, mean_value)
@@ -125,13 +132,51 @@ pub fn standardize(features) -> Result[any] {
         j = j + 1
     }
     let mut values = []
-    for row in features {
+    for row in feature_rows {
         let mut result = []
         j = 0
         while j < dims { result = push(result, (row[j] - means[j]) / scales[j]) j = j + 1 }
         values = push(values, result)
     }
     Ok({"values": values, "mean": means, "scale": scales})
+}
+
+// Training accepts ordinary nested lists and packed Warp matrices. The
+// current trainer materializes a Warp input into row lists once at the API
+// boundary, preserving the existing minibatch implementation while making
+// DataFrame -> Warp -> ML pipelines explicit and deterministic.
+fn _feature_rows(features) {
+    if !_is_warp_array(features) { return features }
+    shape := warp.shape(features)
+    if _kind(shape) != "list" || len(shape) != 2 { return null }
+    flat := warp.to_list(features)
+    if _kind(flat) != "list" || len(flat) != shape[0] * shape[1] { return null }
+    let mut rows = []
+    let mut i = 0
+    while i < shape[0] {
+        let mut row = []
+        let mut j = 0
+        while j < shape[1] {
+            row = push(row, flat[i * shape[1] + j])
+            j = j + 1
+        }
+        rows = push(rows, row)
+        i = i + 1
+    }
+    rows
+}
+
+fn _target_values(targets) {
+    if !_is_warp_array(targets) { return targets }
+    shape := warp.shape(targets)
+    if _kind(shape) != "list" || len(shape) != 1 { return null }
+    values := warp.to_list(targets)
+    if _kind(values) != "list" || len(values) != shape[0] { return null }
+    values
+}
+
+fn _is_warp_array(value) {
+    _kind(value) == "map" && contains(keys(value), "_warp") && value._warp == true
 }
 
 fn _validate_dataset(features, targets) {

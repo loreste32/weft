@@ -1,0 +1,57 @@
+// Optional 1M-row style scale smoke.
+// Default is 250k rows (1M is heavy for pure row-list Weft on CI hosts).
+//   WEFT_DF_ROWS=250000   (default)
+//   WEFT_DF_ROWS=1000000  for the full million when resources allow
+// Timing belongs to scripts/bench-scale.sh.
+use "../../packages/dataframe/lib.weft" as df
+
+fn _env_int(key, default) {
+    raw := env.get(key, "")
+    if raw == null || raw == "" { return default }
+    n := int.parse(raw).unwrap_or(0)
+    if n <= 0 { return default }
+    n
+}
+
+fn main {
+    // Default 250k — note in README: 1M optional via WEFT_DF_ROWS=1000000
+    let mut n = _env_int("WEFT_DF_ROWS", 250000)
+    if n > 2000000 { n = 2000000 }
+    let mut rows = []
+    let mut i = 0
+    while i < n {
+        dept := if i % 5 == 0 {
+            "eng"
+        } else if i % 5 == 1 {
+            "sales"
+        } else if i % 5 == 2 {
+            "ops"
+        } else if i % 5 == 3 {
+            "hr"
+        } else {
+            "legal"
+        }
+        rows = push(rows, {
+            "dept": dept,
+            "region": if i % 2 == 0 { "east" } else { "west" },
+            "salary": 50000 + (i % 1000),
+            "id": i,
+        })
+        i = i + 1
+    }
+    t := df.from_rows(rows)
+    g := df.group_by(t, "dept", {
+        "salary_sum": {"col": "salary", "op": "sum"},
+        "count": {"col": "salary", "op": "count"},
+    })
+    sorted := df.sort_by(t, "salary", true)
+    top := df.head(sorted, 1)
+    say(json.stringify({
+        "fixture": "dataframe_scale_1m",
+        "rows": df.nrows(t),
+        "note": "default 250k; set WEFT_DF_ROWS=1000000 for full million",
+        "groups": df.nrows(g),
+        "sorted_rows": df.nrows(sorted),
+        "top_salary": df.col(top, "salary")[0],
+    }))
+}

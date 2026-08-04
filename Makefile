@@ -1,5 +1,5 @@
 # Weft — weave agents into code
-.PHONY: build build-slim test ci install clean fmt vet doctor examples wasm wasm-test wasm-serve race-smoke fuzz-smoke bench bench-glue release-smoke
+.PHONY: build build-slim test ci install clean fmt vet doctor examples wasm wasm-test wasm-serve race-smoke fuzz-smoke bench bench-glue bench-numerical bench-scale vendor-sync vendor-check catalog-check accelerator-report accelerator-conformance capability-matrix release-smoke
 
 PREFIX ?= $(HOME)/.local
 BIN    ?= weft
@@ -75,6 +75,36 @@ bench:
 # Comparative Weft vs Python3 glue workloads (wall time; not PR-gated on numbers)
 bench-glue:
 	bash scripts/bench-glue.sh
+
+# CPU numerical/dataframe wall-time snapshots (not PR-gated on numbers)
+bench-numerical:
+	bash scripts/bench-numerical.sh
+
+# Keep example vendor trees aligned with packages/
+vendor-sync:
+	bash scripts/sync-vendor-packages.sh
+
+vendor-check:
+	bash scripts/check-vendor-sync.sh
+
+catalog-check:
+	bash scripts/check-catalog-sync.sh
+
+# Hardware/provider capability report (safe without GPUs)
+accelerator-report:
+	bash scripts/accelerator-report.sh
+
+# CPU reference build + external provider JSON/tensor tests (vendors optional)
+accelerator-conformance:
+	bash scripts/accelerator-conformance.sh
+
+# Honest Warp/DataFrame/ML claim matrix → reports/capability-matrix.md
+capability-matrix:
+	python3 scripts/capability-matrix.py
+
+# Scale budgets (warp matmul/elementwise + dataframe); soft budgets unless WEFT_SCALE_STRICT=1
+bench-scale:
+	bash scripts/bench-scale.sh
 
 # Full + slim build, compat goldens, GOOS compile matrix
 release-smoke:

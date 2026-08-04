@@ -1,0 +1,978 @@
+use "./lib.weft" as warp
+
+fn test_array {
+    a := warp.array([1, 2, 3], [3])
+    test.eq(warp.size(a), 3)
+    test.eq(warp.ndim(a), 1)
+    test.eq(warp.shape(a), [3])
+}
+
+fn test_zeros {
+    a := warp.zeros([2, 3])
+    test.eq(warp.size(a), 6)
+    test.eq(warp.shape(a), [2, 3])
+    test.is_true(warp.sum(a) == 0)
+}
+
+fn test_ones {
+    a := warp.ones([3])
+    test.eq(warp.to_list(a), [1.0, 1.0, 1.0])
+}
+
+fn test_full {
+    a := warp.full([2, 2], 7)
+    test.eq(warp.to_list(a), [7, 7, 7, 7])
+}
+
+fn test_logical_dtypes {
+    ints := warp.array([1, 2, 3], [3])
+    test.eq(warp.dtype(ints), "int64")
+    floats := warp.array_typed([1, 0, 2], [3], "float32")
+    test.eq(warp.dtype(floats), "float32")
+    test.eq(warp.to_list(warp.astype(floats, "int64")), [1, 0, 2])
+    test.eq(warp.dtype(warp.reshape(floats, [3, 1])), "float32")
+    flags := warp.array_typed([0, 2, 0], [3], "bool")
+    test.eq(warp.to_list(flags), [false, true, false])
+    test.eq(warp.dtype(warp.zeros_dtype([2], "float64")), "float64")
+}
+
+fn test_dtype_promotion_and_result_kinds {
+    ints := warp.array_typed([1, 2, 3], [3], "int64")
+    floats := warp.array_typed([1, 2, 3], [3], "float32")
+    test.eq(warp.dtype(warp.add(ints, floats)), "float64")
+    test.eq(warp.dtype(warp.mul(floats, 2)), "float32")
+    test.eq(warp.dtype(warp.equal(ints, 2)), "bool")
+    test.eq(warp.dtype(warp.logical_and(ints, 1)), "bool")
+    test.eq(warp.dtype(warp.sqrt(ints)), "float64")
+    test.eq(warp.to_list(warp.equal(ints, 2)), [false, true, false])
+    int_matrix := warp.reshape(ints, [1, 3])
+    float_matrix := warp.reshape(floats, [1, 3])
+    test.eq(warp.dtype(warp.sum_axis(int_matrix, 1)), "int64")
+    test.eq(warp.dtype(warp.sum_axis(float_matrix, 1)), "float32")
+ test.eq(warp.dtype(warp.mean_axis(int_matrix, 1)), "float64")
+ test.eq(warp.dtype(warp.mean_axis(float_matrix, 1)), "float32")
+ test.eq(warp.dtype(warp.cumsum(ints)), "int64")
+ test.eq(warp.dtype(warp.floor_(ints)), "float64")
+ test.eq(warp.dtype(warp.floor_(floats)), "float32")
+ test.eq(warp.dtype(warp.atan2(ints, ints)), "float64")
+}
+
+fn test_arange {
+    a := warp.arange(0, 5, null)
+    test.eq(warp.to_list(a), [0, 1, 2, 3, 4])
+}
+
+fn test_arange_step {
+    a := warp.arange(0, 10, 3)
+    test.eq(warp.to_list(a), [0, 3, 6, 9])
+}
+
+fn test_linspace {
+    a := warp.linspace(0, 1, 5)
+    test.eq(warp.size(a), 5)
+    d := warp.to_list(a)
+    test.eq(d[0], 0)
+    test.eq(d[4], 1.0)
+}
+
+fn test_eye {
+    e := warp.eye(3)
+    test.eq(warp.shape(e), [3, 3])
+    d := warp.to_list(e)
+    test.eq(d[0], 1.0)
+    test.eq(d[1], 0.0)
+    test.eq(d[4], 1.0)
+    test.eq(d[8], 1.0)
+}
+
+fn test_from_list {
+    a := warp.from_list([[1, 2], [3, 4]])
+    test.eq(warp.shape(a), [2, 2])
+    test.eq(warp.to_list(a), [1, 2, 3, 4])
+}
+
+fn test_rand {
+    a := warp.rand([10])
+    test.eq(warp.size(a), 10)
+    test.is_true(warp.min_(a) >= 0)
+    test.is_true(warp.max_(a) <= 1)
+}
+
+fn test_randint {
+    a := warp.randint(0, 10, [20])
+    test.eq(warp.size(a), 20)
+    test.is_true(warp.min_(a) >= 0)
+    test.is_true(warp.max_(a) < 10)
+}
+
+fn test_add {
+    a := warp.array([1, 2, 3], [3])
+    b := warp.array([10, 20, 30], [3])
+    test.eq(warp.to_list(warp.add(a, b)), [11, 22, 33])
+}
+
+fn test_add_scalar {
+    a := warp.array([1, 2, 3], [3])
+    test.eq(warp.to_list(warp.add(a, 10)), [11, 12, 13])
+}
+
+fn test_sub {
+    a := warp.array([10, 20, 30], [3])
+    b := warp.array([1, 2, 3], [3])
+    test.eq(warp.to_list(warp.sub(a, b)), [9, 18, 27])
+}
+
+fn test_mul {
+    a := warp.array([2, 3, 4], [3])
+    b := warp.array([10, 10, 10], [3])
+    test.eq(warp.to_list(warp.mul(a, b)), [20, 30, 40])
+}
+
+fn test_mul_scalar {
+    a := warp.array([1, 2, 3], [3])
+    test.eq(warp.to_list(warp.mul(a, 2)), [2, 4, 6])
+}
+
+fn test_neg {
+    a := warp.array([1, -2, 3], [3])
+    test.eq(warp.to_list(warp.neg(a)), [-1, 2, -3])
+}
+
+fn test_mod {
+    a := warp.array([10, 11, 12], [3])
+    test.eq(warp.to_list(warp.mod_(a, 3)), [1, 2, 0])
+}
+
+fn test_sign {
+    a := warp.array([-5, 0, 3], [3])
+    test.eq(warp.to_list(warp.sign(a)), [-1.0, 0.0, 1.0])
+}
+
+fn test_floor_ceil {
+    a := warp.array([1.2, 2.7, -0.5], [3])
+    test.eq(warp.to_list(warp.floor_(a)), [1, 2, -1])
+    test.eq(warp.to_list(warp.ceil_(a)), [2, 3, 0])
+}
+
+fn test_trig {
+    a := warp.array([0], [1])
+    test.eq(warp.to_list(warp.sin(a)), [0])
+    test.eq(warp.to_list(warp.cos(a)), [1.0])
+    test.eq(warp.to_list(warp.tan(a)), [0])
+}
+
+fn test_sum {
+    a := warp.array([1, 2, 3, 4], [4])
+    test.eq(warp.sum(a), 10)
+}
+
+fn test_prod {
+    a := warp.array([2, 3, 4], [3])
+    test.eq(warp.prod(a), 24)
+}
+
+fn test_mean {
+    a := warp.array([2, 4, 6, 8], [4])
+    test.eq(warp.mean(a), 5)
+}
+
+fn test_min_max {
+    a := warp.array([3, 1, 4, 1, 5], [5])
+    test.eq(warp.min_(a), 1)
+    test.eq(warp.max_(a), 5)
+}
+
+fn test_argmin_argmax {
+    a := warp.array([3, 1, 4, 1, 5], [5])
+    test.eq(warp.argmin(a, null), 1)
+    test.eq(warp.argmax(a, null), 4)
+    m := warp.array([3, 1, 2, 0, 4, 1], [2, 3])
+    test.eq(warp.to_list(warp.argmin(m, 0)), [1, 0, 1])
+    test.eq(warp.to_list(warp.argmin(m, 1)), [1, 0])
+    test.eq(warp.to_list(warp.argmax(m, 0)), [0, 1, 0])
+    test.eq(warp.to_list(warp.argmax(m, 1)), [0, 1])
+    // first-occurrence on ties
+    ties := warp.array([2, 1, 1, 3], [4])
+    test.eq(warp.argmin(ties, null), 1)
+}
+
+fn test_nansum_nanmean {
+    a := warp.array([1.0, math.nan, 3.0, 2.0], [4])
+    test.eq(warp.nansum(a), 6.0)
+    test.eq(warp.nanmean(a), 2.0)
+    clean := warp.array([2.0, 4.0, 6.0], [3])
+    test.eq(warp.nansum(clean), 12.0)
+    test.eq(warp.nanmean(clean), 4.0)
+    all_nan := warp.array([math.nan, math.nan], [2])
+    test.eq(warp.nansum(all_nan), 0.0)
+    // all-nan mean is NaN
+    test.is_true(warp.nanmean(all_nan) != warp.nanmean(all_nan))
+}
+
+fn test_atleast_1d_2d {
+    s := warp.atleast_1d(5)
+    test.eq(warp.shape(s), [1])
+    test.eq(warp.to_list(s), [5])
+    v := warp.atleast_1d(warp.array([1, 2, 3], [3]))
+    test.eq(warp.shape(v), [3])
+    test.eq(warp.to_list(v), [1, 2, 3])
+    m := warp.atleast_2d(warp.array([1, 2, 3], [3]))
+    test.eq(warp.shape(m), [1, 3])
+    test.eq(warp.to_list(m), [1, 2, 3])
+    sc2 := warp.atleast_2d(7)
+    test.eq(warp.shape(sc2), [1, 1])
+    test.eq(warp.to_list(sc2), [7])
+    already := warp.atleast_2d(warp.array([1, 2, 3, 4], [2, 2]))
+    test.eq(warp.shape(already), [2, 2])
+}
+
+fn test_broadcast_to {
+    a := warp.array([1, 2, 3], [3])
+    b := warp.broadcast_to(a, [2, 3])
+    test.eq(warp.shape(b), [2, 3])
+    test.eq(warp.to_list(b), [1, 2, 3, 1, 2, 3])
+    col := warp.array([10, 20], [2, 1])
+    wide := warp.broadcast_to(col, [2, 3])
+    test.eq(warp.to_list(wide), [10, 10, 10, 20, 20, 20])
+    bad := warp.broadcast_to(a, [2, 4])
+    test.is_false(bad.ok)
+}
+
+fn test_isclose {
+    a := warp.array([1.0, 2.0, 3.0], [3])
+    b := warp.array([1.0, 2.01, 3.0], [3])
+    flags := warp.isclose(a, b, 0.005, null)
+    test.eq(warp.to_list(flags), [true, false, true])
+    loose := warp.isclose(a, b, 0.02, null)
+    test.eq(warp.to_list(loose), [true, true, true])
+    exact := warp.isclose(a, a, null, null)
+    test.eq(warp.to_list(exact), [true, true, true])
+}
+
+fn test_pad {
+    a := warp.array([1, 2, 3], [3])
+    p := warp.pad(a, 1, 0)
+    test.eq(warp.shape(p), [5])
+    test.eq(warp.to_list(p), [0, 1, 2, 3, 0])
+    p2 := warp.pad(a, [2, 1], 9)
+    test.eq(warp.to_list(p2), [9, 9, 1, 2, 3, 9])
+    m := warp.array([1, 2, 3, 4], [2, 2])
+    mp := warp.pad(m, 1, 0)
+    test.eq(warp.shape(mp), [4, 4])
+    test.eq(warp.to_list(mp), [0, 0, 0, 0, 0, 1, 2, 0, 0, 3, 4, 0, 0, 0, 0, 0])
+    asymmetric := warp.pad(m, [[1, 0], [0, 1]], -1)
+    test.eq(warp.shape(asymmetric), [3, 3])
+    test.eq(warp.to_list(asymmetric), [-1, -1, -1, 1, 2, -1, 3, 4, -1])
+}
+
+fn test_cumsum {
+    a := warp.array([1, 2, 3, 4], [4])
+    test.eq(warp.to_list(warp.cumsum(a)), [1.0, 3.0, 6.0, 10.0])
+}
+
+fn test_cumprod {
+    a := warp.array([1, 2, 3, 4], [4])
+    test.eq(warp.to_list(warp.cumprod(a)), [1.0, 2.0, 6.0, 24.0])
+}
+
+fn test_median {
+    a := warp.array([3, 1, 4, 1, 5], [5])
+    test.eq(warp.median(a), 3)
+}
+
+fn test_sum_axis {
+    a := warp.array([1, 2, 3, 4, 5, 6], [2, 3])
+    // sum axis 0 (down columns): [1+4, 2+5, 3+6] → [5, 7, 9]
+    r0 := warp.sum_axis(a, 0)
+    test.eq(warp.to_list(r0), [5.0, 7.0, 9.0])
+    // sum axis 1 (across rows): [1+2+3, 4+5+6] → [6, 15]
+    r1 := warp.sum_axis(a, 1)
+    test.eq(warp.to_list(r1), [6.0, 15.0])
+}
+
+fn test_sum_axis_nd_and_negative_axis {
+    a := warp.array([1, 2, 3, 4, 5, 6, 7, 8], [2, 2, 2])
+    r0 := warp.sum_axis(a, 0)
+    test.eq(warp.shape(r0), [2, 2])
+    test.eq(warp.to_list(r0), [6.0, 8.0, 10.0, 12.0])
+    rn := warp.sum_axis(a, -1)
+    test.eq(warp.shape(rn), [2, 2])
+    test.eq(warp.to_list(rn), [3.0, 7.0, 11.0, 15.0])
+    scalar := warp.mean_axis(warp.array([2, 4, 6], [3]), 0)
+    test.eq(scalar, 4)
+}
+
+fn test_reduction_keepdims {
+    a := warp.array([1, 2, 3, 4, 5, 6], [2, 3])
+    r := warp.sum_axis_opts(a, 1, true)
+    test.eq(warp.shape(r), [2, 1])
+    test.eq(warp.to_list(r), [6.0, 15.0])
+    m := warp.mean_axis_opts(a, 0, true)
+    test.eq(warp.shape(m), [1, 3])
+    test.eq(warp.to_list(m), [2.5, 3.5, 4.5])
+}
+
+fn test_dot {
+    a := warp.array([1, 2, 3], [3])
+    b := warp.array([4, 5, 6], [3])
+    test.eq(warp.dot(a, b), 32)
+}
+
+fn test_matmul {
+    a := warp.array([1, 2, 3, 4], [2, 2])
+    b := warp.array([5, 6, 7, 8], [2, 2])
+    c := warp.matmul(a, b)
+    test.eq(warp.shape(c), [2, 2])
+    test.eq(warp.to_list(c), [19, 22, 43, 50])
+}
+
+fn test_norm {
+    a := warp.array([3, 4], [2])
+    test.eq(warp.norm(a), 5)
+}
+
+fn test_normalize {
+    a := warp.array([3, 4], [2])
+    n := warp.normalize(a)
+    test.is_true(warp.allclose(n, warp.array([0.6, 0.8], [2]), null))
+}
+
+fn test_trace {
+    a := warp.array([1, 2, 3, 4], [2, 2])
+    test.eq(warp.trace(a), 5)
+}
+
+fn test_det_2x2 {
+    a := warp.array([1, 2, 3, 4], [2, 2])
+    test.eq(warp.det(a)?, -2)
+}
+
+fn test_det_3x3 {
+    a := warp.array([1, 2, 3, 0, 1, 4, 5, 6, 0], [3, 3])
+    test.approx(warp.det(a)?, 1.0, 1e-6)
+}
+
+fn test_det_4x4 {
+    // [[1,2],[3,4]] det = -2; [[2,0],[0,3]] det = 6
+    // use a known 4x4: det of identity = 1
+    a := warp.eye(4)
+    test.approx(warp.det(a)?, 1.0, 1e-6)
+    // another: [[2,1,0,0],[0,3,1,0],[0,0,2,1],[0,0,0,4]] upper triangular, det = 2*3*2*4 = 48
+    b := warp.array([2,1,0,0, 0,3,1,0, 0,0,2,1, 0,0,0,4], [4, 4])
+    test.approx(warp.det(b)?, 48.0, 1e-6)
+}
+
+fn test_inv_4x4 {
+    a := warp.array([2,1,0,0, 1,3,1,0, 0,1,2,1, 0,0,1,2], [4, 4])
+    ai := warp.inv(a)?
+    product := warp.matmul(a, ai)
+    // check diagonal is ~1, off-diagonal is ~0
+    let mut i = 0
+    while i < 4 {
+        test.approx(warp.get(product, [i, i]), 1.0, 1e-6)
+        i = i + 1
+    }
+}
+
+fn test_solve_3x3 {
+    // [[3,0,0],[0,2,0],[0,0,1]] * [x,y,z] = [9,8,5] → x=3, y=4, z=5
+    a := warp.array([3,0,0, 0,2,0, 0,0,1], [3, 3])
+    b := warp.array([9, 8, 5], [3])
+    x := warp.solve(a, b)?
+    vals := warp.to_list(x)
+    test.approx(vals[0], 3.0, 1e-6)
+    test.approx(vals[1], 4.0, 1e-6)
+    test.approx(vals[2], 5.0, 1e-6)
+}
+
+fn test_inv_2x2 {
+    a := warp.array([4, 7, 2, 6], [2, 2])
+    ai := warp.inv(a)?
+    // inv([[4,7],[2,6]]) = [[0.6,-0.7],[-0.2,0.4]]
+    d := warp.to_list(ai)
+    test.approx(d[0], 0.6, 1e-6)
+    test.approx(d[1], -0.7, 1e-6)
+    test.approx(d[2], -0.2, 1e-6)
+    test.approx(d[3], 0.4, 1e-6)
+}
+
+fn test_outer {
+    a := warp.array([1, 2], [2])
+    b := warp.array([3, 4, 5], [3])
+    c := warp.outer(a, b)
+    test.eq(warp.shape(c), [2, 3])
+    test.eq(warp.to_list(c), [3, 4, 5, 6, 8, 10])
+}
+
+fn test_cross {
+    a := warp.array([1, 0, 0], [3])
+    b := warp.array([0, 1, 0], [3])
+    c := warp.cross(a, b)
+    test.eq(warp.to_list(c), [0, 0, 1])
+}
+
+fn test_transpose {
+    a := warp.array([1, 2, 3, 4, 5, 6], [2, 3])
+    t := warp.T(a)
+    test.eq(warp.shape(t), [3, 2])
+    test.eq(warp.to_list(t), [1, 4, 2, 5, 3, 6])
+}
+
+fn test_reshape {
+    a := warp.array([1, 2, 3, 4, 5, 6], [6])
+    b := warp.reshape(a, [2, 3])
+    test.eq(warp.shape(b), [2, 3])
+}
+
+fn test_flatten {
+    a := warp.array([1, 2, 3, 4], [2, 2])
+    test.eq(warp.shape(warp.flatten(a)), [4])
+}
+
+fn test_get_set {
+    a := warp.array([1, 2, 3, 4], [2, 2])
+    test.eq(warp.get(a, [0, 1]), 2)
+    test.eq(warp.get(a, [1, 0]), 3)
+    b := warp.set(a, [1, 1], 99)
+    test.eq(warp.get(b, [1, 1]), 99)
+}
+
+fn test_broadcasted_index_assignment {
+    a := warp.array([1, 2, 3, 4, 5, 6, 7, 8, 9], [3, 3])
+    rows := warp.set(a, [[0, 2], null], 10)
+    test.eq(warp.to_list(rows), [10, 10, 10, 4, 5, 6, 10, 10, 10])
+    test.eq(warp.to_list(a), [1, 2, 3, 4, 5, 6, 7, 8, 9])
+    paired := warp.set(a, [[0, 2], [1, 0]], warp.array([20, 30], [2]))
+    test.eq(warp.to_list(paired), [1, 20, 3, 4, 5, 6, 30, 8, 9])
+    broadcasted := warp.set(a, [[[0], [2]], [0, 2]], warp.array([40, 50], [2, 1]))
+    test.eq(warp.to_list(broadcasted), [40, 2, 40, 4, 5, 6, 50, 8, 50])
+    masked := warp.set(a, [[true, false, true], null], -1)
+    test.eq(warp.to_list(masked), [-1, -1, -1, 4, 5, 6, -1, -1, -1])
+    empty := warp.set(a, [[false, false, false], null], 77)
+    test.eq(warp.to_list(empty), warp.to_list(a))
+    vector := warp.arange(0, 6, 1)
+    sliced := warp.set(vector, [warp.slice_selector(1, null, 2)], warp.array([10, 20, 30], [3]))
+    test.eq(warp.to_list(sliced), [0, 10, 2, 20, 4, 30])
+    bad := warp.set(a, [[0, 2], null], [1, 2, 3, 4])
+    test.is_false(bad.ok)
+}
+
+fn test_row_col {
+    a := warp.array([1, 2, 3, 4, 5, 6], [2, 3])
+    test.eq(warp.to_list(warp.row(a, 0)), [1, 2, 3])
+    test.eq(warp.to_list(warp.row(a, 1)), [4, 5, 6])
+    test.eq(warp.to_list(warp.col(a, 1)), [2, 5])
+}
+
+fn test_slice {
+    a := warp.array([10, 20, 30, 40, 50], [5])
+    test.eq(warp.to_list(warp.slice(a, 1, 4)), [20, 30, 40])
+}
+
+fn test_concat {
+    a := warp.array([1, 2], [2])
+    b := warp.array([3, 4], [2])
+    test.eq(warp.to_list(warp.concat(a, b)), [1, 2, 3, 4])
+}
+
+fn test_vstack {
+    a := warp.array([1, 2, 3], [3])
+    b := warp.array([4, 5, 6], [3])
+    c := warp.vstack([a, b])
+    test.eq(warp.shape(c), [2, 3])
+    test.eq(warp.to_list(c), [1, 2, 3, 4, 5, 6])
+}
+
+fn test_stack_2d_and_validation {
+    a := warp.array([1, 2, 3, 4], [2, 2])
+    b := warp.array([5, 6, 7, 8], [2, 2])
+    vertical := warp.vstack([a, b])
+    test.eq(warp.shape(vertical), [4, 2])
+    horizontal := warp.hstack([a, b])
+    test.eq(warp.shape(horizontal), [2, 4])
+    test.eq(warp.to_list(horizontal), [1, 2, 5, 6, 3, 4, 7, 8])
+    bad := warp.vstack([warp.array([1, 2], [2]), warp.array([1, 2, 3], [3])])
+    test.is_false(bad.ok)
+}
+
+fn test_empty_and_axis_validation {
+    empty := warp.array([], [0])
+    test.is_null(warp.mean(empty))
+    test.is_null(warp.min_(empty))
+    test.eq(warp.sum(empty), 0.0)
+    bad := warp.sum_axis(warp.ones([2, 2]), 2)
+    test.is_false(bad.ok)
+}
+
+fn test_flip {
+    a := warp.array([1, 2, 3], [3])
+    test.eq(warp.to_list(warp.flip(a)), [3, 2, 1])
+}
+
+fn test_sort {
+    a := warp.array([3, 1, 4, 1, 5], [5])
+    test.eq(warp.to_list(warp.sort(a)), [1, 1, 3, 4, 5])
+}
+
+fn test_unique {
+    a := warp.array([3, 1, 4, 1, 5, 3], [6])
+    test.eq(warp.to_list(warp.unique(a)), [1, 3, 4, 5])
+}
+
+fn test_equal {
+    a := warp.array([1, 2, 3], [3])
+    b := warp.array([1, 0, 3], [3])
+    test.eq(warp.to_list(warp.equal(a, b)), [true, false, true])
+}
+
+fn test_comparisons {
+    a := warp.array([1, 5, 3], [3])
+    b := warp.array([2, 2, 3], [3])
+    test.eq(warp.to_list(warp.less(a, b)), [true, false, false])
+    test.eq(warp.to_list(warp.less_equal(a, b)), [true, false, true])
+    test.eq(warp.to_list(warp.greater(a, b)), [false, true, false])
+    test.eq(warp.to_list(warp.greater_equal(a, b)), [false, true, true])
+}
+
+fn test_where {
+    cond := warp.array([1, 0, 1], [3])
+    x := warp.array([10, 20, 30], [3])
+    y := warp.array([100, 200, 300], [3])
+    test.eq(warp.to_list(warp.where(cond, x, y)), [10, 200, 30])
+}
+
+fn test_numpy_shape_contracts {
+    a := warp.array([1, 2, 3, 4, 5, 6], [2, 3])
+    inferred := warp.reshape(a, [-1, 2])
+    test.eq(warp.shape(inferred), [3, 2])
+    singleton := warp.squeeze(warp.array([7], [1]))
+    test.eq(warp.shape(singleton), [])
+    expanded := warp.expand_dims(a, -1)
+    test.eq(warp.shape(expanded), [2, 3, 1])
+    test.eq(warp.to_list(warp.diag([1, 2])), [1, 0, 0, 2])
+}
+
+fn test_transpose_and_concatenate {
+    a := warp.array([1, 2, 3, 4], [2, 2])
+    b := warp.array([5, 6, 7, 8], [2, 2])
+    test.eq(warp.to_list(warp.transpose(a, [1, 0])), [1, 3, 2, 4])
+    rows := warp.concatenate([a, b], 0)
+    test.eq(warp.shape(rows), [4, 2])
+    test.eq(warp.to_list(rows), [1, 2, 3, 4, 5, 6, 7, 8])
+    cols := warp.concatenate([a, b], 1)
+    test.eq(warp.shape(cols), [2, 4])
+    test.eq(warp.to_list(cols), [1, 2, 5, 6, 3, 4, 7, 8])
+    stacked := warp.stack([a, b], 0)
+    test.eq(warp.shape(stacked), [2, 2, 2])
+    test.eq(warp.get(stacked, [1, 0, 1]), 6)
+}
+
+fn test_split_take_and_axis_manipulation {
+    a := warp.array([1, 2, 3, 4, 5, 6], [2, 3])
+    parts := warp.split(a, 3, 1)
+    test.eq(len(parts), 3)
+    test.eq(warp.to_list(parts[1]), [2, 5])
+    taken := warp.take(a, [2, 0], 1)
+    test.eq(warp.shape(taken), [2, 2])
+    test.eq(warp.to_list(taken), [3, 1, 6, 4])
+    tiled := warp.tile(a, [2, 1])
+    test.eq(warp.shape(tiled), [4, 3])
+    test.eq(warp.to_list(tiled), [1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6])
+    repeated := warp.repeat_axis(a, 2, 1)
+    test.eq(warp.to_list(repeated), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6])
+    flipped := warp.flip_axis(a, 0)
+    test.eq(warp.to_list(flipped), [4, 5, 6, 1, 2, 3])
+}
+
+fn test_manipulation_rejects_invalid_shapes {
+    a := warp.array([1, 2, 3, 4], [2, 2])
+    test.is_false(warp.reshape(a, [-1, -1]).ok)
+    test.is_false(warp.transpose(a, [0, 0]).ok)
+    test.is_false(warp.concatenate([a, warp.array([1, 2, 3], [3])], 0).ok)
+    test.is_false(warp.split(a, 3, 0).ok)
+    test.is_false(warp.take(a, [2], 0).ok)
+}
+
+fn test_all_any {
+    a := warp.array([1, 1, 1], [3])
+    test.is_true(warp.all_(a))
+    test.is_true(warp.any_(a))
+    b := warp.array([1, 0, 1], [3])
+    test.is_false(warp.all_(b))
+    test.is_true(warp.any_(b))
+    c := warp.array([0, 0, 0], [3])
+    test.is_false(warp.all_(c))
+    test.is_false(warp.any_(c))
+}
+
+fn test_clip {
+    a := warp.array([1, 5, 3, 8, 2], [5])
+    test.eq(warp.to_list(warp.clip(a, 2, 6)), [2, 5, 3, 6, 2])
+}
+
+fn test_sqrt {
+    a := warp.array([4, 9, 16], [3])
+    r := warp.sqrt(a)
+    d := warp.to_list(r)
+    test.eq(d[0], 2)
+    test.eq(d[1], 3)
+    test.eq(d[2], 4)
+}
+
+fn test_diag {
+    a := warp.array([1, 2, 3], [3])
+    d := warp.diag(a)
+    test.eq(warp.shape(d), [3, 3])
+    data := warp.to_list(d)
+    test.eq(data[0], 1)
+    test.eq(data[4], 2)
+    test.eq(data[8], 3)
+    test.eq(data[1], 0.0)
+}
+
+fn test_mask {
+    a := warp.array([10, 20, 30, 40], [4])
+    cond := warp.array([1, 0, 1, 0], [4])
+    test.eq(warp.to_list(warp.mask(a, cond)), [10, 30])
+}
+
+fn test_apply {
+    a := warp.array([1, 2, 3], [3])
+    r := warp.apply(a, fn(x) { x * x })
+    test.eq(warp.to_list(r), [1, 4, 9])
+}
+
+fn test_describe {
+    a := warp.array([1, 2, 3, 4, 5], [5])
+    d := warp.describe(a)
+    test.eq(d.size, 5)
+    test.eq(d.min, 1)
+    test.eq(d.max, 5)
+    test.eq(d.mean, 3)
+    test.eq(d.median, 3)
+}
+
+fn test_allclose {
+    a := warp.array([1.0, 2.0, 3.0], [3])
+    b := warp.array([1.0, 2.000000001, 3.0], [3])
+    test.is_true(warp.allclose(a, b, null))
+    c := warp.array([1.0, 2.1, 3.0], [3])
+    test.is_false(warp.allclose(a, c, null))
+    // custom tolerance
+    d := warp.array([1.0, 2.01, 3.0], [3])
+    test.is_true(warp.allclose(a, d, 0.1))
+}
+
+fn test_tile {
+    a := warp.array([1, 2], [2])
+    test.eq(warp.to_list(warp.tile(a, 3)), [1, 2, 1, 2, 1, 2])
+}
+
+fn test_repeat {
+    a := warp.array([1, 2, 3], [3])
+    test.eq(warp.to_list(warp.repeat(a, 2)), [1, 1, 2, 2, 3, 3])
+}
+
+fn test_count_nonzero {
+    a := warp.array([0, 1, 0, 3, 5, 0], [6])
+    test.eq(warp.count_nonzero(a), 3)
+}
+
+// === Regression tests: validation and multi-column solve ===
+
+fn test_det_validation_non_square {
+    a := warp.array([1, 2, 3, 4, 5, 6], [2, 3])
+    r := warp.det(a)
+    test.is_false(r.ok)
+}
+
+fn test_inv_validation_non_square {
+    a := warp.array([1, 2, 3, 4, 5, 6], [2, 3])
+    r := warp.inv(a)
+    test.is_false(r.ok)
+}
+
+fn test_solve_validation_mismatch {
+    a := warp.array([1, 2, 3, 4], [2, 2])
+    b := warp.array([1, 2, 3], [3])  // wrong size
+    r := warp.solve(a, b)
+    test.is_false(r.ok)
+}
+
+fn test_array_validation_and_broadcast {
+    bad := warp.array([1, 2], [3])
+    test.is_false(bad.ok)
+    left := warp.array([1, 2], [2, 1])
+    right := warp.array([10, 20, 30], [3])
+    result := warp.add(left, right)
+    test.eq(warp.shape(result), [2, 3])
+    test.eq(warp.to_list(result), [11, 21, 31, 12, 22, 32])
+    empty := warp.add(warp.zeros([0]), warp.ones([1]))
+    test.eq(warp.shape(empty), [0])
+}
+
+fn test_matmul_vector_forms {
+    a := warp.array([1, 2], [2])
+    b := warp.array([3, 4], [2])
+    test.eq(warp.matmul(a, b), 11.0)
+    matrix := warp.array([1, 2, 3, 4], [2, 2])
+    test.eq(warp.to_list(warp.matmul(matrix, b)), [11.0, 25.0])
+    test.eq(warp.to_list(warp.matmul(a, matrix)), [7.0, 10.0])
+}
+
+fn test_invalid_broadcast_is_error {
+    a := warp.array([1, 2], [2])
+    b := warp.array([1, 2, 3], [3])
+    result := warp.add(a, b)
+    test.is_false(result.ok)
+}
+
+fn test_solve_matrix_rhs {
+    // Solve AX = B where B has multiple columns
+    // A = [[2,0],[0,3]], B = [[4,6],[9,12]]
+    // X should be [[2,3],[3,4]]
+    a := warp.array([2,0, 0,3], [2, 2])
+    b := warp.array([4,6, 9,12], [2, 2])
+    x := warp.solve(a, b)?
+    test.eq(warp.shape(x), [2, 2])
+    vals := warp.to_list(x)
+    test.approx(vals[0], 2.0, 1e-6)
+    test.approx(vals[1], 3.0, 1e-6)
+    test.approx(vals[2], 3.0, 1e-6)
+    test.approx(vals[3], 4.0, 1e-6)
+}
+
+fn test_inv_roundtrip_3x3 {
+    // A * inv(A) should be identity
+    a := warp.array([1,2,0, 0,1,1, 2,0,1], [3, 3])
+    ai := warp.inv(a)?
+    product := warp.matmul(a, ai)
+    // check diagonal ≈ 1
+    test.approx(warp.get(product, [0, 0]), 1.0, 1e-6)
+    test.approx(warp.get(product, [1, 1]), 1.0, 1e-6)
+    test.approx(warp.get(product, [2, 2]), 1.0, 1e-6)
+    // check off-diagonal ≈ 0
+    test.approx(warp.get(product, [0, 1]), 0.0, 1e-6)
+    test.approx(warp.get(product, [1, 0]), 0.0, 1e-6)
+}
+
+fn test_det_1x1 {
+    a := warp.array([7], [1, 1])
+    test.eq(warp.det(a)?, 7)
+}
+
+fn test_strided_views_and_metadata {
+    base := warp.array_typed([1, 2, 3, 4, 5, 6], [2, 3], "int64")
+    test.is_true(warp.is_contiguous(base))
+    test.eq(warp.element_strides(base), [3, 1])
+    test.eq(warp.strides(base), [24, 8])
+
+    transposed := warp.transpose_view(base, null)
+    test.eq(warp.shape(transposed), [3, 2])
+    test.eq(warp.element_strides(transposed), [1, 3])
+    test.eq(warp.to_list(transposed), [1, 4, 2, 5, 3, 6])
+    test.is_false(warp.is_contiguous(transposed))
+    test.eq(warp.get(transposed, [-1, -1]), 6)
+    test.eq(warp.to_list(warp.add(transposed, 10)), [11, 14, 12, 15, 13, 16])
+
+    reversed := warp.view(base, [3], [-1], 2)
+    test.eq(warp.to_list(reversed), [3, 2, 1])
+    test.eq(warp.offset(reversed), 2)
+    test.eq(warp.to_list(warp.contiguous(transposed)), [1, 4, 2, 5, 3, 6])
+}
+
+fn test_advanced_and_boolean_indexing {
+    a := warp.array([1, 2, 3, 4, 5, 6, 7, 8, 9], [3, 3])
+    rows := warp.index(a, [[2, 0], null])
+    test.eq(warp.shape(rows), [2, 3])
+    test.eq(warp.to_list(rows), [7, 8, 9, 1, 2, 3])
+
+    cols := warp.index(a, [null, [-1, 0]])
+    test.eq(warp.shape(cols), [3, 2])
+    test.eq(warp.to_list(cols), [3, 1, 6, 4, 9, 7])
+
+    masked := warp.index(a, [[true, false, true], null])
+    test.eq(warp.shape(masked), [2, 3])
+    test.eq(warp.to_list(masked), [1, 2, 3, 7, 8, 9])
+
+    scalar := warp.index(a, [-1, -1])
+    test.eq(scalar, 9)
+    bad := warp.index(a, [[true, false], null])
+    test.is_false(bad.ok)
+}
+
+fn test_broadcasted_advanced_indexing {
+ a := warp.array([1, 2, 3, 4, 5, 6, 7, 8, 9], [3, 3])
+ paired := warp.index(a, [[0, 2], [1, 0]])
+ test.eq(warp.shape(paired), [2])
+ test.eq(warp.to_list(paired), [2, 7])
+ row_grid := warp.index(a, [[[0], [2]], null])
+ test.eq(warp.shape(row_grid), [2, 1, 3])
+ test.eq(warp.to_list(row_grid), [1, 2, 3, 7, 8, 9])
+ broadcasted := warp.index(a, [[[0], [2]], [0, 2]])
+ test.eq(warp.shape(broadcasted), [2, 2])
+ test.eq(warp.to_list(broadcasted), [1, 3, 7, 9])
+ cube := warp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], [2, 3, 4])
+ separated := warp.index(cube, [[0, 1], null, [1, 2]])
+ test.eq(warp.shape(separated), [2, 3])
+ test.eq(warp.to_list(separated), [2, 6, 10, 15, 19, 23])
+ rows := warp.index(a, [[0, 2], null])
+ test.eq(warp.shape(rows), [2, 3])
+ test.eq(warp.to_list(rows), [1, 2, 3, 7, 8, 9])
+ bad := warp.index(a, [[0, 1, 2], [0, 1]])
+ test.is_false(bad.ok)
+ ragged := warp.index(a, [[[0], [1, 2]], null])
+ test.is_false(ragged.ok)
+}
+
+fn test_stepped_and_axis_slices {
+    a := warp.arange(0, 10, 1)
+    test.eq(warp.to_list(warp.slice_step(a, 1, 8, 2)), [1, 3, 5, 7])
+    test.eq(warp.to_list(warp.slice_step(a, null, null, -1)), [9, 8, 7, 6, 5, 4, 3, 2, 1, 0])
+    test.eq(warp.to_list(warp.slice_step(a, -2, null, null)), [8, 9])
+
+    matrix := warp.array([1, 2, 3, 4, 5, 6], [2, 3])
+    reversed_cols := warp.slice_axis(matrix, null, null, -1, 1)
+    test.eq(warp.shape(reversed_cols), [2, 3])
+    test.eq(warp.to_list(reversed_cols), [3, 2, 1, 6, 5, 4])
+
+    selector := warp.slice_selector(1, null, 2)
+    selected := warp.index(a, [selector])
+    test.eq(warp.to_list(selected), [1, 3, 5, 7, 9])
+    bad := warp.slice_step(a, null, null, 0)
+    test.is_false(bad.ok)
+}
+
+fn test_native_storage_kind {
+    ints := warp.array([1, 2, 3], [3])
+    test.eq(warp.storage_kind(ints), "tensor")
+    floats := warp.array_typed([1.0, 2.0], [2], "float64")
+    test.eq(warp.storage_kind(floats), "tensor")
+    f32 := warp.array_typed([1, 2], [2], "float32")
+    test.eq(warp.storage_kind(f32), "tensor")
+    obj := warp.array_typed(["x", "y"], [2], "object")
+    test.eq(warp.storage_kind(obj), "list")
+}
+
+fn test_native_add_mul {
+    a := warp.array([1, 2, 3], [3])
+    b := warp.array([4, 5, 6], [3])
+    test.eq(warp.storage_kind(a), "tensor")
+    test.eq(warp.storage_kind(b), "tensor")
+    summed := warp.add(a, b)
+    product := warp.mul(a, b)
+    test.eq(warp.to_list(summed), [5, 7, 9])
+    test.eq(warp.to_list(product), [4, 10, 18])
+    test.eq(warp.storage_kind(summed), "tensor")
+    test.eq(warp.storage_kind(product), "tensor")
+    // float native path
+    fa := warp.array_typed([1.5, 2.5], [2], "float64")
+    fb := warp.array_typed([0.5, 1.5], [2], "float64")
+    test.eq(warp.storage_kind(fa), "tensor")
+    test.eq(warp.to_list(warp.add(fa, fb)), [2.0, 4.0])
+    test.eq(warp.to_list(warp.mul(fa, fb)), [0.75, 3.75])
+}
+
+fn test_native_broadcast_add {
+    left := warp.array([1, 2], [2, 1])
+    right := warp.array([10, 20, 30], [3])
+    test.eq(warp.storage_kind(left), "tensor")
+    test.eq(warp.storage_kind(right), "tensor")
+    result := warp.add(left, right)
+    test.eq(warp.shape(result), [2, 3])
+    test.eq(warp.to_list(result), [11, 21, 31, 12, 22, 32])
+    test.eq(warp.storage_kind(result), "tensor")
+    product := warp.mul(left, right)
+    test.eq(warp.shape(product), [2, 3])
+    test.eq(warp.to_list(product), [10, 20, 30, 20, 40, 60])
+    test.eq(warp.storage_kind(product), "tensor")
+}
+
+fn test_fft_1d_n4 {
+    // np.fft.fft([1,2,3,4]) = [10, -2+2j, -2, -2-2j]
+    a := warp.array([1.0, 2.0, 3.0, 4.0], [4])
+    out := warp.fft_1d(a)
+    re := warp.to_list(out.re)
+    im := warp.to_list(out.im)
+    test.approx(re[0], 10.0, 1e-6)
+    test.approx(im[0], 0.0, 1e-6)
+    test.approx(re[1], -2.0, 1e-6)
+    test.approx(im[1], 2.0, 1e-6)
+    test.approx(re[2], -2.0, 1e-6)
+    test.approx(im[2], 0.0, 1e-6)
+    test.approx(re[3], -2.0, 1e-6)
+    test.approx(im[3], -2.0, 1e-6)
+}
+
+fn test_fft_ifft_roundtrip {
+    a := warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], [8])
+    fwd := warp.fft_1d(a)
+    back := warp.ifft_1d(fwd.re, fwd.im)
+    got := warp.to_list(back.re)
+    let mut i = 0
+    while i < 8 {
+        test.approx(got[i], i + 1.0, 1e-6)
+        i = i + 1
+    }
+    // imag of real signal inverse should be ~0
+    im := warp.to_list(back.im)
+    i = 0
+    while i < 8 {
+        test.approx(im[i], 0.0, 1e-6)
+        i = i + 1
+    }
+}
+
+fn test_fft_naive_non_power_of_two {
+    // n=3 uses O(n²) path; compare known DFT of [1,0,0]
+    a := warp.array([1.0, 0.0, 0.0], [3])
+    out := warp.fft_1d(a)
+    re := warp.to_list(out.re)
+    im := warp.to_list(out.im)
+    test.approx(re[0], 1.0, 1e-6)
+    test.approx(im[0], 0.0, 1e-6)
+    test.approx(re[1], 1.0, 1e-6)
+    test.approx(im[1], 0.0, 1e-6)
+    test.approx(re[2], 1.0, 1e-6)
+    test.approx(im[2], 0.0, 1e-6)
+}
+
+fn test_fft_freq {
+    // np.fft.fftfreq(8, 1.0)
+    f := warp.fft_freq(8, 1.0)
+    d := warp.to_list(f)
+    test.approx(d[0], 0.0, 1e-12)
+    test.approx(d[1], 0.125, 1e-12)
+    test.approx(d[2], 0.25, 1e-12)
+    test.approx(d[3], 0.375, 1e-12)
+    test.approx(d[4], -0.5, 1e-12)
+    test.approx(d[5], -0.375, 1e-12)
+    test.approx(d[6], -0.25, 1e-12)
+    test.approx(d[7], -0.125, 1e-12)
+}
+
+fn test_diff {
+    a := warp.array([1.0, 2.0, 4.0, 7.0, 11.0], [5])
+    d1 := warp.diff(a, null)
+    test.eq(warp.to_list(d1), [1.0, 2.0, 3.0, 4.0])
+    d2 := warp.diff(a, 2)
+    test.eq(warp.to_list(d2), [1.0, 1.0, 1.0])
+}
+
+fn test_gradient {
+    a := warp.array([1.0, 2.0, 4.0, 7.0, 11.0], [5])
+    g := warp.gradient(a)
+    d := warp.to_list(g)
+    test.approx(d[0], 1.0, 1e-12)
+    test.approx(d[1], 1.5, 1e-12)
+    test.approx(d[2], 2.5, 1e-12)
+    test.approx(d[3], 3.5, 1e-12)
+    test.approx(d[4], 4.0, 1e-12)
+}
+
+fn test_trapz {
+    y := warp.array([1.0, 2.0, 3.0], [3])
+    test.approx(warp.trapz(y, null), 4.0, 1e-12)
+    test.approx(warp.trapz(y, 0.5), 2.0, 1e-12)
+    test.eq(warp.trapz(warp.array([1.0], [1]), null), 0.0)
+}

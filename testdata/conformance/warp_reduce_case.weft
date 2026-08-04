@@ -1,0 +1,21 @@
+use "../../packages/warp/lib.weft" as warp
+use json
+
+fn main -> Result {
+    flat := warp.array([3.0, 1.0, 4.0, 1.0, 5.0], [5])
+    matrix := warp.array([3.0, 1.0, 2.0, 0.0, 4.0, 1.0], [2, 3])
+    nan_vals := warp.array([1.0, math.nan, 3.0, 2.0], [4])
+    clean := warp.array([2.0, 4.0, 6.0], [3])
+    say(json.stringify({
+        "argmin_flat": warp.argmin(flat, null),
+        "argmax_flat": warp.argmax(flat, null),
+        "argmin_axis0": warp.argmin(matrix, 0).data,
+        "argmin_axis1": warp.argmin(matrix, 1).data,
+        "argmax_axis0": warp.argmax(matrix, 0).data,
+        "argmax_axis1": warp.argmax(matrix, 1).data,
+        "nanmean": warp.nanmean(nan_vals),
+        "nansum": warp.nansum(nan_vals),
+        "nanmean_clean": warp.nanmean(clean),
+        "nansum_clean": warp.nansum(clean),
+    }))
+}

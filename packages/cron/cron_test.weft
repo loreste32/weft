@@ -3,3 +3,87 @@ use "./lib.weft" as cron
 fn test_module_loads {
     test.is_true(true)
 }
+
+fn test_every_runs_and_stop {
+    cmd_probe := channel(8)
+    job := cron.every(0.05, fn() {
+        send(cmd_probe, "tick")
+        Ok(null)
+    })
+    test.is_true(job._cron == true)
+
+    // Wait for at least one tick via channel (shared across spawn).
+    let mut ticks = 0
+    let mut i = 0
+    while i < 40 && ticks < 2 {
+        msg := try_recv(cmd_probe)?
+        if msg.ok { ticks = ticks + 1 }
+        time.sleep(0.05)
+        i = i + 1
+    }
+    test.is_true(ticks >= 1)
+
+    cron.stop(job)
+    time.sleep(0.15)
+    st := cron.stats(job)
+    test.is_true(st.runs >= 1)
+    test.is_true(st.running == false)
+    // After stop, further ticks should not keep landing forever.
+    after := st.runs
+    time.sleep(0.2)
+    st2 := cron.stats(job)
+    test.is_true(st2.runs == after)
+}
+
+fn test_stats_before_first_tick {
+    job := cron.every(10, fn() { Ok(null) })
+    st := cron.stats(job)
+    test.is_true(st.runs == 0)
+    test.is_true(st.running == true)
+    cron.stop(job)
+    time.sleep(0.1)
+    st2 := cron.stats(job)
+    test.is_true(st2.running == false)
+}
+
+fn test_handler_errors_counted {
+    job := cron.every(0.05, fn() {
+        Err("boom")
+    })
+    time.sleep(0.2)
+    st := cron.stats(job)
+    test.is_true(st.errors >= 1)
+    cron.stop(job)
+}
+
+fn test_schedule_and_stop_all {
+    hits := channel(32)
+    sched := cron.schedule([
+        {"name": "a", "interval": 0.05, "handler": fn() {
+            send(hits, "a")
+            Ok(null)
+        }},
+        {"name": "b", "interval": 0.05, "handler": fn() {
+            send(hits, "b")
+            Ok(null)
+        }},
+    ])
+    test.is_true(sched._cron_scheduler == true)
+    time.sleep(0.2)
+    st := cron.stats(sched)
+    test.is_true(st.total_runs >= 1)
+    cron.stop_all(sched)
+    time.sleep(0.15)
+    st2 := cron.stats(sched)
+    test.is_true(st2.running == false)
+}
+
+fn test_every_rejects_bad_interval {
+    r := cron.every(0, fn() { Ok(null) })
+    test.is_true(r.is_err)
+}
+
+fn test_at_rejects_bad_hour {
+    r := cron.at(25, 0, fn() { Ok(null) })
+    test.is_true(r.is_err)
+}

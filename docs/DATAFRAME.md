@@ -1,6 +1,9 @@
 # dataframe — pandas-inspired tabular data for Weft
 
-Pure `.weft` module, no native dependencies. It uses row-list storage with an explicit ordered schema, null-aware aggregation, grouping, joins, pivoting, rolling windows, and I/O. It is designed for lightweight ETL and analysis, not drop-in pandas compatibility.
+Pure `.weft` module with an optional `warp` dependency for explicit numeric
+array interchange. It uses row-list storage, explicit ordered schema,
+null-aware aggregation, grouping, joins, pivoting, rolling windows, and I/O.
+It is designed for lightweight ETL analysis, not drop-in pandas compatibility.
 
 ```bash
 weft get dataframe
@@ -73,6 +76,18 @@ t := df.read_jsonl("data.jsonl")?
 | `select_(t, [cols])` | Keep only listed columns |
 | `drop(t, [cols])` | Remove listed columns |
 
+### DataFrame ↔ Warp interchange
+
+| Function | Meaning |
+|----------|---------|
+| `to_warp(t, columns?, dtype?)` | Copy selected non-null numeric columns into a packed 2-D Warp array; defaults to all columns and `float64` |
+| `from_warp(a, columns?)` | Copy a 1-D or 2-D Warp array into a DataFrame; generated names are `column_0`, `column_1`, ... |
+
+The boundary is intentionally explicit: DataFrames use row-list storage, so
+conversion copies. `to_warp` rejects nulls and non-numeric values rather than
+silently changing them; `from_warp` preserves array values but does not
+promise zero-copy ownership.
+
 ### Series and labels
 
 `col(t, name)` remains the compatibility API and returns a plain list. Use a
@@ -89,13 +104,20 @@ Series when the column needs a name and explicit labels:
 | `series_reindex` | Reorder or add labeled values with an explicit fill value |
 | `series_add` / `series_sub` / `series_mul` / `series_div` | Label-align two Series; optional fill value handles missing labels |
 | `index(t)` | Read the DataFrame index, defaulting to `0..n-1` |
-| `index_name(t)` | Read the explicit index name, if present |
+| `index_name(t)` | Read the explicit index name, if present (single-level) |
+| `index_levels(t)` | Level names: multi → `_index_levels`, single named → `[name]`, default → `[null]` |
+| `index_nlevels(t)` | Number of index levels (`1` for default/single-level frames) |
 | `set_index(t, column, drop?)` | Move a column into explicit index metadata; drop defaults to true |
-| `reset_index(t, name?)` | Materialize the index as a column; name defaults to `index` |
+| `set_multi_index(t, columns, drop?)` | Minimal multi-level index from a list of columns; labels stored as lists |
+| `reset_index(t, name?)` | Materialize the index as column(s); multi uses level names; single name defaults to `index` |
 | `loc_labels(t, labels)` / `reindex(t, labels, fill?)` | Select or align rows by explicit labels |
 
-The index model is explicit and single-level. `loc` remains positional
-half-open slicing; label selection and MultiIndex semantics are not claimed.
+The index model is explicit. Single-level indexes remain the common path.
+`set_multi_index` is a **minimal** multi-level foundation (not a full pandas
+MultiIndex): each row label is a list of values and level names live in
+`_index_levels`. `loc_labels` accepts full multi-keys, a prefix list, or a
+scalar first-level match; `reindex` requires exact full keys. `loc` remains
+positional half-open slicing.
 
 ```weft
 names := df.col(t, "name")       // ["Alice", "Bob", ...]
@@ -302,17 +324,22 @@ df.write_csv(t, "output.csv", null)?
 
 ## Limitations
 
-- Pure Weft — row-list storage, not columnar. No universal row-count limit is promised; benchmark your workload.
+- Pure Weft row-list storage, not columnar. Warp interchange is an explicit
+  copying boundary; no zero-copy columnar path is claimed yet. No universal
+  row-count limit is promised; benchmark your workload.
 - Sort uses the runtime comparator and is covered by the package scale tests.
-- Indexes are single-level metadata; operations that construct a new frame may
-  return a default positional index. `loc` is positional, not label-based.
-- There is no MultiIndex, categorical dtype, timezone-aware datetime, or
-  pandas extension-array protocol.
+- Indexes are metadata on the row list. Single-level is complete; multi-level
+  (`set_multi_index`) is minimal — no hierarchical grouping, swaplevel, or
+  advanced pandas MultiIndex APIs. Operations that construct a new frame may
+  drop to a default positional index. `loc` is positional, not label-based.
+- There is no categorical dtype, timezone-aware datetime, or pandas
+  extension-array protocol.
 - `pivot` rejects duplicate index/column pairs; use an explicit aggregation before reshaping.
 - No datetime parsing (use `time.*` stdlib manually).
 - `corr`/`cov` are pairwise, not correlation matrices, and use pairwise non-null numeric rows.
 
 ## API count
 
-103 exported functions, including aligned Series and explicit single-level
-index APIs. The package currently has 82 regression tests.
+112 exported functions, including aligned Series, single-level index APIs, and
+a minimal multi-level index foundation. Regression tests live in
+`packages/dataframe/dataframe_test.weft`.

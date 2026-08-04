@@ -1,0 +1,33 @@
+use "../../packages/warp/lib.weft" as warp
+use json
+
+// Smoke: dtype promotion table samples matching NumPy common scalar rules.
+fn main -> Result {
+    bools := warp.array_typed([true, false], [2], "bool")
+    ints := warp.array_typed([1, 2], [2], "int64")
+    f32 := warp.array_typed([1.0, 2.0], [2], "float32")
+    f64 := warp.array_typed([1.0, 2.0], [2], "float64")
+    f32_half := warp.array_typed([1.5, 2.5], [2], "float32")
+    i8 := warp.array_typed([-128, 127], [2], "int8")
+    u16 := warp.array_typed([0, 65535], [2], "uint16")
+    invalid_i8 := warp.array_typed([128], [1], "int8")
+
+    bool_int := warp.add(bools, ints)
+    int_f32 := warp.add(ints, f32)
+    f32_f64 := warp.add(f32, f64)
+    bool_f32 := warp.add(bools, f32_half)
+
+    say(json.stringify({
+        "bool_plus_int64_dtype": warp.dtype(bool_int),
+        "bool_plus_int64": bool_int.data,
+        "int64_plus_float32_dtype": warp.dtype(int_f32),
+        "int64_plus_float32": int_f32.data,
+        "float32_plus_float64_dtype": warp.dtype(f32_f64),
+        "float32_plus_float64": f32_f64.data,
+        "bool_plus_float32_dtype": warp.dtype(bool_f32),
+        "bool_plus_float32": bool_f32.data,
+        "int8": i8.data,
+        "uint16": u16.data,
+        "invalid_int8_ok": invalid_i8.ok,
+    }))
+}

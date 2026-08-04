@@ -1,0 +1,42 @@
+// Scale smoke: ~100k-row DataFrame groupby + sort.
+// Prints wall-free JSON (timing belongs to scripts/bench-scale.sh).
+use "../../packages/dataframe/lib.weft" as df
+
+fn main {
+    n := 100000
+    let mut rows = []
+    let mut i = 0
+    while i < n {
+        dept := if i % 5 == 0 {
+            "eng"
+        } else if i % 5 == 1 {
+            "sales"
+        } else if i % 5 == 2 {
+            "ops"
+        } else if i % 5 == 3 {
+            "hr"
+        } else {
+            "legal"
+        }
+        rows = push(rows, {
+            "dept": dept,
+            "region": if i % 2 == 0 { "east" } else { "west" },
+            "salary": 50000 + (i % 1000),
+            "id": i,
+        })
+        i = i + 1
+    }
+    t := df.from_rows(rows)
+    g := df.group_by(t, "dept", {
+        "salary_sum": {"col": "salary", "op": "sum"},
+        "count": {"col": "salary", "op": "count"},
+    })
+    sorted := df.sort_by(t, "salary", true)
+    top := df.head(sorted, 1)
+    say({
+        "rows": df.nrows(t),
+        "groups": df.nrows(g),
+        "sorted_rows": df.nrows(sorted),
+        "top_salary": df.col(top, "salary")[0],
+    })
+}

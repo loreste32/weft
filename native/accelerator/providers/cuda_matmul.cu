@@ -24,6 +24,12 @@ __global__ void weft_matmul_kernel(const float* a, const float* b, float* out,
   out[row * cols + col] = value;
 }
 
+__global__ void weft_add_kernel(const float* a, const float* b, float* out,
+                                size_t count) {
+  size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index < count) out[index] = a[index] + b[index];
+}
+
 static bool cuda_ok(cudaError_t status, const char* operation) {
   if (status == cudaSuccess) return true;
   last_error = std::string(operation) + ": " + cudaGetErrorString(status);
@@ -33,7 +39,7 @@ static bool cuda_ok(cudaError_t status, const char* operation) {
 extern "C" const char* weft_accel_manifest(void) {
   return "{\"name\":\"weft-cuda\",\"version\":\"1.0.0\","
          "\"abi\":1,\"vendors\":[\"cuda\"],"
-         "\"operations\":[\"health\",\"matmul\",\"tensor_matmul\"],"
+         "\"operations\":[\"health\",\"matmul\",\"tensor_matmul\",\"tensor_add\"],"
          "\"metadata\":{\"runtime\":\"cuda-runtime\",\"dtype\":\"float32\",\"tensor_abi\":\"1\"}}";
 }
 
@@ -108,6 +114,28 @@ static bool tensor_c_contiguous(const weft_accel_tensor_input& input) {
   return true;
 }
 
+static bool tensor_add_shape(const weft_accel_tensor_input& left,
+                             const weft_accel_tensor_input& right,
+                             size_t* count) {
+  if (left.rank == 0 || left.rank > 2 || left.rank != right.rank ||
+      left.shape == nullptr || right.shape == nullptr || left.strides == nullptr ||
+      right.strides == nullptr || !tensor_c_contiguous(left) || !tensor_c_contiguous(right)) {
+    return false;
+  }
+  size_t elements = 1;
+  for (uint32_t axis = 0; axis < left.rank; ++axis) {
+    if (left.shape[axis] != right.shape[axis] || left.shape[axis] < 0) return false;
+    size_t dimension = static_cast<size_t>(left.shape[axis]);
+    if (dimension != 0 && elements > SIZE_MAX / dimension) return false;
+    elements *= dimension;
+  }
+  if (elements == 0 || elements > SIZE_MAX / sizeof(float) ||
+      left.bytes != elements * sizeof(float) || right.bytes != elements * sizeof(float) ||
+      left.data == nullptr || right.data == nullptr) return false;
+  *count = elements;
+  return true;
+}
+
 extern "C" int weft_accel_run_tensor(const char* operation,
                                        const weft_accel_tensor_input* inputs,
                                        size_t input_count,
@@ -117,6 +145,58 @@ extern "C" int weft_accel_run_tensor(const char* operation,
     return 1;
   }
   std::memset(output, 0, sizeof(*output));
+  if (std::strcmp(operation, "tensor_add") == 0) {
+    size_t count = 0;
+    if (inputs[0].dtype != WEFT_TENSOR_FLOAT32 || inputs[1].dtype != WEFT_TENSOR_FLOAT32 ||
+        !tensor_add_shape(inputs[0], inputs[1], &count)) {
+      last_error = "CUDA tensor_add requires contiguous same-shape float32 tensors of rank 1 or 2";
+      return 1;
+    }
+    size_t output_bytes = count * sizeof(float);
+    float *device_a = nullptr, *device_b = nullptr, *device_out = nullptr;
+    bool ok = cuda_ok(cudaMalloc(&device_a, output_bytes), "cudaMalloc(add a)") &&
+              cuda_ok(cudaMalloc(&device_b, output_bytes), "cudaMalloc(add b)") &&
+              cuda_ok(cudaMalloc(&device_out, output_bytes), "cudaMalloc(add out)");
+    if (ok) ok = cuda_ok(cudaMemcpy(device_a, inputs[0].data, output_bytes, cudaMemcpyHostToDevice), "cudaMemcpy(add a)") &&
+                cuda_ok(cudaMemcpy(device_b, inputs[1].data, output_bytes, cudaMemcpyHostToDevice), "cudaMemcpy(add b)");
+    if (ok) {
+      constexpr size_t block_size = 256;
+      size_t blocks = (count + block_size - 1) / block_size;
+      if (blocks > 2147483647u) {
+        last_error = "CUDA tensor_add is too large for the provider launch bounds";
+        ok = false;
+      } else {
+        weft_add_kernel<<<static_cast<unsigned int>(blocks), block_size>>>(
+            static_cast<const float*>(device_a), static_cast<const float*>(device_b), device_out, count);
+        ok = cuda_ok(cudaGetLastError(), "tensor add kernel launch") &&
+             cuda_ok(cudaDeviceSynchronize(), "tensor add synchronize");
+      }
+    }
+    output->dtype = WEFT_TENSOR_FLOAT32;
+    output->rank = inputs[0].rank;
+    output->shape = static_cast<int64_t*>(std::calloc(output->rank, sizeof(int64_t)));
+    output->strides = static_cast<int64_t*>(std::calloc(output->rank, sizeof(int64_t)));
+    output->data = std::malloc(output_bytes);
+    output->bytes = output_bytes;
+    if (ok && (output->shape == nullptr || output->strides == nullptr || output->data == nullptr)) {
+      last_error = "CUDA tensor_add output allocation failed";
+      ok = false;
+    }
+    if (ok) {
+      std::memcpy(output->shape, inputs[0].shape, output->rank * sizeof(int64_t));
+      std::memcpy(output->strides, inputs[0].strides, output->rank * sizeof(int64_t));
+      ok = cuda_ok(cudaMemcpy(output->data, device_out, output_bytes, cudaMemcpyDeviceToHost),
+                   "cudaMemcpy(add result)");
+    }
+    cudaFree(device_a);
+    cudaFree(device_b);
+    cudaFree(device_out);
+    if (!ok) {
+      weft_accel_free_tensor(output);
+      return 1;
+    }
+    return 0;
+  }
   if (std::strcmp(operation, "tensor_matmul") != 0 ||
       inputs[0].dtype != WEFT_TENSOR_FLOAT32 || inputs[1].dtype != WEFT_TENSOR_FLOAT32 ||
       inputs[0].rank != 2 || inputs[1].rank != 2 ||

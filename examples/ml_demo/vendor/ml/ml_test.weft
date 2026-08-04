@@ -48,6 +48,16 @@ fn test_linear_fit_and_predict {
     test.is_true((ml.score(model, [[4.0], [5.0]], [9.0, 11.0])?) < 0.1)
 }
 
+fn test_linear_fit_accepts_packed_warp_inputs {
+    features := warp.array([0.0, 1.0, 2.0, 3.0], [4, 1])
+    targets := warp.array([1.0, 3.0, 5.0, 7.0], [4])
+    model := ml.linear_fit(features, targets, {"epochs": 300, "learning_rate": 0.05})
+    test.is_true(model.ok)
+    predictions := ml.predict(model.value, features)
+    test.is_true(predictions.ok)
+    test.approx(predictions.value[3], 7.0, 0.1)
+}
+
 fn test_logistic_fit_and_classes {
     model := ml.logistic_fit([[-2.0], [-1.0], [1.0], [2.0]], [0, 0, 1, 1], {"epochs": 400, "learning_rate": 0.2, "batch_size": 4})?
     classes := ml.predict_classes(model, [[-3.0], [3.0]], 0.5)?
@@ -81,7 +91,7 @@ fn test_autograd_chain_rule {
     y := ml.mul(2.0, x)?
     output := ml.add(x2, y)?
     test.approx(ml.value(output)?, 15.0, 1e-9)
-    ml.backward(output)?
+    ml.backward(output, null)?
     test.approx(ml.grad(x)?, 8.0, 1e-9)
 }
 
@@ -89,7 +99,7 @@ fn test_autograd_shared_subgraph_and_accumulation {
     x := ml.variable(2.0)?
     square := ml.mul(x, x)?
     output := ml.add(square, square)?
-    ml.backward(output)?
+    ml.backward(output, null)?
     test.approx(ml.grad(x)?, 8.0, 1e-9)
     ml.zero_grad(output)?
     test.approx(ml.grad(x)?, 0.0, 1e-9)
@@ -100,7 +110,7 @@ fn test_autograd_transcendental_and_relu {
     y := ml.exp(x)?
     z := ml.log(y)?
     out := ml.relu(z)?
-    ml.backward(out)?
+    ml.backward(out, null)?
     test.approx(ml.value(out)?, 2.0, 1e-9)
     test.approx(ml.grad(x)?, 1.0, 1e-9)
 }
@@ -117,12 +127,12 @@ fn test_autograd_tensor_sum_and_mean {
     x := ml.variable(warp.array([1.0, 2.0, 3.0], [3]))?
     total := ml.sum(x)?
     test.approx(ml.value(total)?, 6.0, 1e-9)
-    ml.backward(total)?
+    ml.backward(total, null)?
     test.eq(warp.to_list(ml.grad(x)?), [1.0, 1.0, 1.0])
 
     ml.zero_grad(total)?
     average := ml.mean(x)?
-    ml.backward(average)?
+    ml.backward(average, null)?
     test.eq(warp.to_list(ml.grad(x)?), [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0])
 }
 
@@ -131,7 +141,7 @@ fn test_autograd_tensor_matmul {
     right := ml.variable(warp.array([5.0, 6.0, 7.0, 8.0], [2, 2]))?
     product := ml.matmul(left, right)?
     loss := ml.sum(product)?
-    ml.backward(loss)?
+    ml.backward(loss, null)?
     test.eq(warp.to_list(ml.grad(left)?), [11.0, 15.0, 11.0, 15.0])
     test.eq(warp.to_list(ml.grad(right)?), [4.0, 4.0, 6.0, 6.0])
 }
@@ -142,7 +152,7 @@ fn test_autograd_tensor_elementwise_and_broadcast {
     shifted := ml.add(values, bias)?
     squared := ml.mul(shifted, shifted)?
     loss := ml.sum(squared)?
-    ml.backward(loss)?
+    ml.backward(loss, null)?
     test.eq(warp.to_list(ml.grad(values)?), [6.0, 0.0, 10.0, -4.0])
     test.approx(ml.grad(bias)?, 12.0, 1e-9)
 }
@@ -157,7 +167,7 @@ fn test_autograd_tensor_shape_errors_are_results {
 fn test_sgd_step_updates_scalar_and_tensor_parameters {
     x := ml.variable(3.0)?
     loss := ml.mul(x, x)?
-    ml.backward(loss)?
+    ml.backward(loss, null)?
     ml.sgd_step([x], 0.1, null)?
     test.approx(ml.value(x)?, 2.4, 1e-9)
     ml.zero_grad_many([x])?
@@ -165,7 +175,7 @@ fn test_sgd_step_updates_scalar_and_tensor_parameters {
 
     weights := ml.variable(warp.array([1.0, 2.0], [2]))?
     tensor_loss := ml.sum(ml.mul(weights, weights)?)?
-    ml.backward(tensor_loss)?
+    ml.backward(tensor_loss, null)?
     ml.sgd_step([weights], 0.1, null)?
     test.eq(warp.to_list(ml.value(weights)?), [0.8, 1.6])
 }
@@ -173,18 +183,18 @@ fn test_sgd_step_updates_scalar_and_tensor_parameters {
 fn test_adam_step_state_and_validation {
     x := ml.variable(1.0)?
     state := ml.adam_state([x])?
-    ml.backward(x)?
+    ml.backward(x, null)?
     ml.adam_step([x], state, 0.1, null, null, null, null)?
     test.approx(ml.value(x)?, 0.9, 1e-8)
     ml.zero_grad_many([x])?
-    ml.backward(x)?
+    ml.backward(x, null)?
     ml.adam_step([x], state, 0.1, null, null, null, null)?
     test.approx(ml.value(x)?, 0.8, 1e-8)
 
     weights := ml.variable(warp.array([1.0, 2.0], [2]))?
     tensor_state := ml.adam_state([weights])?
     tensor_loss := ml.sum(weights)?
-    ml.backward(tensor_loss)?
+    ml.backward(tensor_loss, null)?
     ml.adam_step([weights], tensor_state, 0.1, null, null, null, null)?
     updated_weights := warp.to_list(ml.value(weights)?)
     test.approx(updated_weights[0], 0.9, 1e-7)
@@ -200,7 +210,7 @@ fn test_adam_step_state_and_validation {
 }
 
 fn test_linear_module_forward_and_gradients {
-    module := ml.linear_module(2, 1)?
+    module := ml.linear_module(2, 1, null)?
     parameters := ml.module_parameters(module)?
     ml.load_state_dict(parameters, [warp.array([1.0, 2.0], [2, 1]), warp.array([0.0], [1])])?
     input := warp.array([1.0, 2.0, 3.0, 4.0], [2, 2])
@@ -208,13 +218,239 @@ fn test_linear_module_forward_and_gradients {
     test.eq(warp.shape(ml.value(output)?), [2, 1])
     test.eq(warp.to_list(ml.value(output)?), [5.0, 11.0])
     loss := ml.sum(output)?
-    ml.backward(loss)?
+    ml.backward(loss, null)?
     test.eq(warp.to_list(ml.grad(parameters[0])?), [4.0, 6.0])
     test.eq(warp.to_list(ml.grad(parameters[1])?), [2.0])
 }
 
+fn test_seeded_linear_is_deterministic {
+    a := ml.linear_module(3, 2, 42)?
+    b := ml.linear_module(3, 2, 42)?
+    va := ml.state_dict(ml.module_parameters(a)?)?
+    vb := ml.state_dict(ml.module_parameters(b)?)?
+    test.eq(warp.to_list(va[0]), warp.to_list(vb[0]))
+    c := ml.linear_module(3, 2, 7)?
+    vc := ml.state_dict(ml.module_parameters(c)?)?
+    test.is_true(warp.to_list(va[0]) != warp.to_list(vc[0]))
+}
+
+fn test_sequential_relu_forward {
+    linear := ml.linear_module(2, 1, null)?
+    ml.load_state_dict(ml.module_parameters(linear)?, [warp.array([1.0, -2.0], [2, 1]), warp.array([0.0], [1])])?
+    model := ml.sequential([linear, ml.relu_module()?])?
+    out := ml.module_forward(model, warp.array([1.0, 1.0], [1, 2]))?
+    test.eq(warp.to_list(ml.value(out)?), [0.0])
+    out2 := ml.module_forward(model, warp.array([3.0, 1.0], [1, 2]))?
+    test.eq(warp.to_list(ml.value(out2)?), [1.0])
+}
+
+fn test_gradcheck_scalar_square {
+    x := ml.variable(3.0)?
+    // Closures invoked from other modules capture locals, not module aliases.
+    mul := ml.mul
+    ok := ml.gradcheck(fn(params) {
+        p := params[0]
+        mul(p, p)
+    }, [x], 1e-5, 1e-4)?
+    test.is_true(ok)
+    test.approx(ml.value(x)?, 3.0, 1e-12)
+}
+
+fn test_gradcheck_array_weighted_sum {
+    w := ml.variable(warp.array([1.0, 2.0, 3.0], [3]))?
+    // Wrap fixed data as a constant node so mul sees autograd parents.
+    x := ml.constant(warp.array([4.0, 5.0, 6.0], [3]))?
+    mul := ml.mul
+    sum_fn := ml.sum
+    ok := ml.gradcheck(fn(params) {
+        product := mul(params[0], x)?
+        sum_fn(product)
+    }, [w], 1e-5, 1e-4)?
+    test.is_true(ok)
+    test.eq(warp.to_list(ml.value(w)?), [1.0, 2.0, 3.0])
+}
+
+fn test_gradcheck_rejects_empty_parameters {
+    r := ml.gradcheck(fn(params) { 1.0 }, [], 1e-5, 1e-4)
+    test.eq(r.ok, false)
+}
+
+fn test_gradcheck_restores_scalar_after_loss_error {
+    x := ml.variable(1.0)?
+    mul := ml.mul
+    r := ml.gradcheck(fn(params) {
+        if params[0].value > 1.000001 { return Err("probe failed") }
+        mul(params[0], params[0])
+    }, [x], 1e-5, 1e-4)
+    test.eq(r.ok, false)
+    test.approx(ml.value(x)?, 1.0, 1e-12)
+}
+
+fn test_second_derivative_cube {
+    // f(x) = x^3 => f''(x) = 6x; at x=2, f''=12. Nested reverse-mode path.
+    x := ml.variable(2.0)?
+    pow := ml.pow
+    sd := ml.second_derivative(fn(p) { pow(p, 3.0) }, x, 1e-5)?
+    test.approx(sd, 12.0, 1e-9)
+    test.approx(ml.value(x)?, 2.0, 1e-12)
+}
+
+fn test_second_derivative_quadratic_is_constant {
+    // f(x) = x^2 => f''(x) = 2. Nested reverse-mode path.
+    x := ml.variable(3.0)?
+    mul := ml.mul
+    sd := ml.second_derivative(fn(p) { mul(p, p) }, x, 1e-5)?
+    test.approx(sd, 2.0, 1e-9)
+}
+
+fn test_create_graph_double_backward_cube {
+    // f(x)=x^3; first grad 3x^2=12 at x=2 is a node; second backward => 6x=12.
+    x := ml.variable(2.0)?
+    y := ml.pow(x, 3.0)?
+    ml.backward(y, true)?
+    g := ml.grad(x)?
+    test.eq(g._autograd, true)
+    test.approx(ml.value(g)?, 12.0, 1e-9)
+    ml.zero_grad(g)?
+    ml.backward(g, null)?
+    test.approx(ml.grad(x)?, 12.0, 1e-9)
+}
+
+fn test_create_graph_double_backward_square {
+    // f(x)=x^2; first grad 2x=6 at x=3 is a node; second backward => 2.
+    x := ml.variable(3.0)?
+    y := ml.mul(x, x)?
+    ml.backward(y, true)?
+    g := ml.grad(x)?
+    test.eq(g._autograd, true)
+    test.approx(ml.value(g)?, 6.0, 1e-9)
+    ml.zero_grad(g)?
+    ml.backward(g, null)?
+    test.approx(ml.grad(x)?, 2.0, 1e-9)
+}
+
+fn test_grad_fn_scalar_square {
+    x := ml.variable(2.0)?
+    y := ml.mul(x, x)?
+    grads := ml.grad_fn(y, [x])?
+    test.eq(grads[0]._autograd, true)
+    test.approx(ml.value(grads[0])?, 4.0, 1e-9)
+    // Differentiate the gradient node again for second order.
+    ml.zero_grad(grads[0])?
+    ml.backward(grads[0], null)?
+    test.approx(ml.grad(x)?, 2.0, 1e-9)
+}
+
+fn test_backward_without_create_graph_keeps_numeric_grad {
+    x := ml.variable(2.0)?
+    y := ml.mul(x, x)?
+    ml.backward(y, null)?
+    g := ml.grad(x)?
+    test.approx(g, 4.0, 1e-9)
+    // Numeric grad is not a node.
+    test.is_true(type_of(g) == "float" || type_of(g) == "int")
+}
+
+fn test_hvp_scalar_quadratic {
+    // L(θ) = θ^2 => H = 2, H v = 2v. With v=1, HVP=2.
+    x := ml.variable(3.0)?
+    mul := ml.mul
+    result := ml.hvp(fn(params) { mul(params[0], params[0]) }, [x], [1.0], 1e-5)?
+    test.approx(result[0], 2.0, 1e-3)
+    test.approx(ml.value(x)?, 3.0, 1e-12)
+}
+
+fn test_hvp_array_quadratic {
+    // L(w) = sum(w^2) => H = 2 I, H v = 2v.
+    w := ml.variable(warp.array([1.0, 2.0, 3.0], [3]))?
+    mul := ml.mul
+    sum_fn := ml.sum
+    v := warp.array([0.5, -1.0, 2.0], [3])
+    result := ml.hvp(fn(params) {
+        product := mul(params[0], params[0])?
+        sum_fn(product)
+    }, [w], [v], 1e-5)?
+    test.approx(result[0][0], 1.0, 1e-3)
+    test.approx(result[0][1], -2.0, 1e-3)
+    test.approx(result[0][2], 4.0, 1e-3)
+    test.eq(warp.to_list(ml.value(w)?), [1.0, 2.0, 3.0])
+}
+
+fn test_hvp_rejects_mismatched_vector {
+    x := ml.variable(1.0)?
+    r := ml.hvp(fn(params) { params[0] }, [x], [1.0, 2.0], 1e-5)
+    test.eq(r.ok, false)
+}
+
+fn test_hvp_restores_parameters_after_loss_error {
+    x := ml.variable(3.0)?
+    mul := ml.mul
+    r := ml.hvp(fn(params) {
+        if params[0].value > 3.000001 { return Err("probe failed") }
+        mul(params[0], params[0])
+    }, [x], [1.0], 1e-5)
+    test.eq(r.ok, false)
+    test.approx(ml.value(x)?, 3.0, 1e-12)
+}
+
+fn test_device_cpu_handle_and_of {
+    cpu := ml.device("cpu")?
+    test.eq(cpu._device, true)
+    test.eq(cpu.name, "cpu")
+    test.eq(ml.device_of(cpu)?, "cpu")
+    test.eq(ml.device_of(1.0)?, "cpu")
+}
+
+fn test_device_rejects_unknown {
+    r := ml.device("tpu")
+    test.eq(r.ok, false)
+}
+
+fn test_to_device_cpu_tags_warp_array {
+    arr := warp.array([1.0, 2.0], [2])
+    cpu := ml.device("cpu")?
+    placed := ml.to_device(arr, cpu)?
+    test.eq(placed._device, "cpu")
+    test.eq(ml.device_of(placed)?, "cpu")
+    test.eq(warp.to_list(placed), [1.0, 2.0])
+    test.eq(ml.device_of(arr)?, "cpu")
+}
+
+fn test_to_device_cuda_falls_back_honestly {
+    arr := warp.array([1.0, 2.0], [2])
+    cuda := ml.device("cuda")?
+    result := ml.to_device(arr, cuda)?
+    // Pure Weft has no GPU: non-cpu placement returns fallback metadata.
+    test.eq(result.fallback, true)
+    test.eq(result.requested, "cuda")
+    test.eq(result.value._device, "cuda")
+    test.eq(ml.device_of(result)?, "cuda")
+    test.eq(ml.device_of(arr)?, "cpu")
+    // Compute still lives in host warp data.
+    test.eq(warp.to_list(result.value), [1.0, 2.0])
+    warp.release(result.value)?
+    test.eq(warp.to_list(arr), [1.0, 2.0])
+}
+
+fn test_to_device_accepts_name_string {
+    arr := warp.array([3.0], [1])
+    placed := ml.to_device(arr, "rocm")?
+    test.eq(placed.fallback, true)
+    test.eq(placed.requested, "rocm")
+    test.eq(ml.device_of(placed.value)?, "rocm")
+}
+
+fn test_to_device_does_not_mutate_autograd_node {
+    node := ml.variable(warp.array([1.0, 2.0], [2]))?
+    placed := ml.to_device(node, "cuda")?
+    test.eq(ml.device_of(node)?, "cpu")
+    test.eq(ml.device_of(placed)?, "cuda")
+    test.eq(warp.to_list(ml.value(node)?), [1.0, 2.0])
+    test.eq(warp.to_list(ml.value(placed)?), [1.0, 2.0])
+}
+
 fn test_checkpoint_round_trip_restores_values_and_state {
-    module := ml.linear_module(2, 1)?
+    module := ml.linear_module(2, 1, null)?
     parameters := ml.module_parameters(module)?
     values := [warp.array([3.0, 4.0], [2, 1]), warp.array([5.0], [1])]
     ml.load_state_dict(parameters, values)?

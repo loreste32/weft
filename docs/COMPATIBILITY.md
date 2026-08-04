@@ -37,9 +37,9 @@ claiming support for a new operation, dtype, edge case, or performance tier.
 
 ### `warp`
 
-- `internal/tensor` provides the typed/strided host primitive; `packages/warp`
-  now exposes an explicit bounded binary tensor-provider bridge, while its
-  general array value remains the portable list representation;
+- `internal/tensor` is the packed host storage engine; `packages/warp` now
+  uses host tensor handles (`_tid`) as primary storage for numeric dtypes,
+  with a portable list cache for views/indexing and object dtype;
 - typed, strided storage with views, offsets, C/F order, and buffer export;
 - complete dtype promotion/casting and scalar behavior;
 - basic, advanced, boolean, and broadcasted indexing;
@@ -64,9 +64,9 @@ conformance fixture, but they do not imply complete pandas indexing parity.
 
 ### ML and providers
 
-- `packages/ml` now has tested scalar/array reverse-mode primitives, but
-  optimizer, module, serialization, sparse/complex, and higher-order
-  autodiff behavior is still required;
+- `packages/ml` has reverse-mode autodiff, SGD/Adam, linear/sequential modules,
+  checkpoints, and deterministic seeds; sparse/complex tensors, higher-order
+  gradients, device placement, and async pools remain open;
 - device selection, streams, asynchronous execution, memory pools, and
   deterministic fallback behavior;
 - real hardware conformance jobs for every declared vendor provider.
@@ -78,3 +78,16 @@ conformance fixture, but they do not imply complete pandas indexing parity.
 - scale benchmarks and memory-limit tests;
 - CPU plus real CUDA/ROCm/MLX provider runs;
 - generated API/claim audit with no stale or unsupported documentation.
+
+## Engineering gates added in-tree
+
+- Channel-based `cron` (no spawn-captured mutability).
+- Accelerator trust model (disable / allowlist / checksum).
+- Host `tensor` stdlib package + Warp `_tid` storage.
+- Expanded differential fixtures (edges, indexes) + property smoke.
+- `scripts/check-vendor-sync.sh` fails CI on example vendor drift.
+- `scripts/check-catalog-sync.sh` fails CI on catalog/manifest path or version drift.
+- `scripts/accelerator-report.sh` publishes capability/status JSON.
+- `scripts/accelerator-conformance.sh` gates CPU reference health/identity/matmul/tensor_matmul (vendors optional).
+- `scripts/capability-matrix.py` writes an honest Warp/DataFrame/ML claim matrix.
+- `scripts/bench-scale.sh` multi-fixture scale budgets (soft warn; `WEFT_SCALE_STRICT=1` hard).

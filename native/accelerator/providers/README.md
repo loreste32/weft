@@ -6,8 +6,10 @@ not link CUDA, ROCm, or MLX, and a provider must only advertise hardware and
 operations it actually supports.
 
 All three providers implement the same bounded JSON `matmul` operation and
-the binary `tensor_matmul` operation. The binary operation is the required path
-for large batches; JSON remains a diagnostic/reference path:
+binary `tensor_matmul` plus `tensor_add` operations. The binary operations are
+the required paths for large batches; JSON remains a diagnostic/reference path.
+`tensor_add` accepts contiguous, same-shape float32 tensors of rank 1 or 2 and
+does not claim NumPy-style broadcasting:
 
 ```json
 {
@@ -48,8 +50,9 @@ hipcc -std=c++17 -shared -fPIC \
   -o libweft_accel_rocm.so
 ```
 
-The implementation uses HIP allocation, copies, kernel launch, synchronization,
-and device-to-host transfer. It declares both `rocm` and `hip` vendors.
+The implementation uses HIP allocation, copies, matmul and elementwise kernel
+launches, synchronization, and device-to-host transfer. It declares both
+`rocm` and `hip` vendors.
 
 ## Apple MLX
 
@@ -66,9 +69,9 @@ c++ -std=c++17 -shared -fPIC \
 ```
 
 The implementation uses the official MLX C API, creates float32 arrays,
-evaluates `mlx_matmul` on the default GPU stream, synchronizes before reading
-the result, and frees every MLX handle. MLX uses unified memory, but the
-provider still materializes results before returning them across the Weft ABI.
+evaluates `mlx_matmul` and `mlx_add` on the default GPU stream, synchronizes
+before reading results, and frees every MLX handle. MLX uses unified memory, but
+the provider still materializes results before returning them across the Weft ABI.
 
 ## Validation requirements
 
@@ -80,5 +83,8 @@ SDK or GPU; ordinary CI tests the ABI and CPU reference provider, while
 vendor-hardware jobs must compile and run each provider on its own runner.
 
 ## Hardware CI
+
+Hardware conformance covers health, 2×2 JSON matmul, binary tensor_matmul,
+and binary tensor_add. A successful compile alone is not provider validation.
 
 `.github/workflows/native-accelerators.yml` is a scheduled/manual conformance workflow. It is separate from pull-request CI because it requires self-hosted runners labeled `cuda`, `rocm`, and `mlx`. The CUDA runner needs `nvcc` and a working NVIDIA device; the ROCm runner needs `hipcc` and a working AMD device; the MLX runner needs Apple Silicon plus an `mlx-c` installation and repository variable `MLX_C_PREFIX`. Each job compiles the checked-in provider, loads it through Weft's `dlopen` ABI, and runs health plus 2×2 matmul checks. A green compile alone is not sufficient provider validation.

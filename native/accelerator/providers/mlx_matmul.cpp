@@ -5,6 +5,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <climits>
 #include <string>
 #include <vector>
 
@@ -17,7 +18,7 @@ static std::string last_error;
 extern "C" const char* weft_accel_manifest(void) {
   return "{\"name\":\"weft-mlx\",\"version\":\"1.0.0\","
          "\"abi\":1,\"vendors\":[\"mlx\"],"
-         "\"operations\":[\"health\",\"matmul\",\"tensor_matmul\"],"
+         "\"operations\":[\"health\",\"matmul\",\"tensor_matmul\",\"tensor_add\"],"
          "\"metadata\":{\"runtime\":\"mlx-c\",\"dtype\":\"float32\",\"tensor_abi\":\"1\"}}";
 }
 
@@ -104,6 +105,29 @@ static bool tensor_c_contiguous(const weft_accel_tensor_input& input) {
   return true;
 }
 
+static bool tensor_add_shape(const weft_accel_tensor_input& left,
+                             const weft_accel_tensor_input& right,
+                             size_t* count) {
+  if (left.rank == 0 || left.rank > 2 || left.rank != right.rank ||
+      left.shape == nullptr || right.shape == nullptr || left.strides == nullptr ||
+      right.strides == nullptr || !tensor_c_contiguous(left) || !tensor_c_contiguous(right)) {
+    return false;
+  }
+  size_t elements = 1;
+  for (uint32_t axis = 0; axis < left.rank; ++axis) {
+    if (left.shape[axis] != right.shape[axis] || left.shape[axis] < 0 ||
+        left.shape[axis] > INT_MAX) return false;
+    size_t dimension = static_cast<size_t>(left.shape[axis]);
+    if (dimension != 0 && elements > SIZE_MAX / dimension) return false;
+    elements *= dimension;
+  }
+  if (elements == 0 || elements > SIZE_MAX / sizeof(float) ||
+      left.bytes != elements * sizeof(float) || right.bytes != elements * sizeof(float) ||
+      left.data == nullptr || right.data == nullptr) return false;
+  *count = elements;
+  return true;
+}
+
 extern "C" int weft_accel_run_tensor(const char* operation,
                                        const weft_accel_tensor_input* inputs,
                                        size_t input_count,
@@ -113,6 +137,60 @@ extern "C" int weft_accel_run_tensor(const char* operation,
     return 1;
   }
   std::memset(output, 0, sizeof(*output));
+  if (std::strcmp(operation, "tensor_add") == 0) {
+    size_t count = 0;
+    if (inputs[0].dtype != WEFT_TENSOR_FLOAT32 || inputs[1].dtype != WEFT_TENSOR_FLOAT32 ||
+        !tensor_add_shape(inputs[0], inputs[1], &count)) {
+      last_error = "MLX tensor_add requires contiguous same-shape float32 tensors of rank 1 or 2";
+      return 1;
+    }
+    int shape[2] = {1, 1};
+    for (uint32_t axis = 0; axis < inputs[0].rank; ++axis) {
+      shape[axis] = static_cast<int>(inputs[0].shape[axis]);
+    }
+    mlx_array a_array = mlx_array_new_data(inputs[0].data, shape, inputs[0].rank, MLX_FLOAT32);
+    mlx_array b_array = mlx_array_new_data(inputs[1].data, shape, inputs[1].rank, MLX_FLOAT32);
+    mlx_stream stream = mlx_default_gpu_stream_new();
+    mlx_array result = mlx_array_new();
+    int status = 0;
+    if (a_array.ctx == nullptr || b_array.ctx == nullptr || stream.ctx == nullptr || result.ctx == nullptr) {
+      last_error = "MLX tensor add array or GPU stream allocation failed";
+      status = 1;
+    } else if (mlx_add(&result, a_array, b_array, stream) != 0 ||
+               mlx_array_eval(result) != 0 || mlx_synchronize(stream) != 0) {
+      last_error = "MLX tensor add evaluation failed";
+      status = 1;
+    }
+    const float* data = status == 0 ? mlx_array_data_float32(result) : nullptr;
+    if (status == 0 && data == nullptr) {
+      last_error = "MLX returned no tensor add data";
+      status = 1;
+    }
+    output->dtype = WEFT_TENSOR_FLOAT32;
+    output->rank = inputs[0].rank;
+    output->shape = static_cast<int64_t*>(std::calloc(output->rank, sizeof(int64_t)));
+    output->strides = static_cast<int64_t*>(std::calloc(output->rank, sizeof(int64_t)));
+    output->data = std::malloc(count * sizeof(float));
+    output->bytes = count * sizeof(float);
+    if (status == 0 && (output->shape == nullptr || output->strides == nullptr || output->data == nullptr)) {
+      last_error = "MLX tensor add output allocation failed";
+      status = 1;
+    }
+    if (status == 0) {
+      std::memcpy(output->shape, inputs[0].shape, output->rank * sizeof(int64_t));
+      std::memcpy(output->strides, inputs[0].strides, output->rank * sizeof(int64_t));
+      std::memcpy(output->data, data, output->bytes);
+    }
+    mlx_array_free(result);
+    mlx_array_free(a_array);
+    mlx_array_free(b_array);
+    mlx_stream_free(stream);
+    if (status != 0) {
+      weft_accel_free_tensor(output);
+      return 1;
+    }
+    return 0;
+  }
   if (std::strcmp(operation, "tensor_matmul") != 0 ||
       inputs[0].dtype != WEFT_TENSOR_FLOAT32 || inputs[1].dtype != WEFT_TENSOR_FLOAT32 ||
       inputs[0].rank != 2 || inputs[1].rank != 2 ||

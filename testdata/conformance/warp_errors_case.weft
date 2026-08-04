@@ -1,0 +1,29 @@
+use "../../packages/warp/lib.weft" as warp
+use json
+
+// Smoke: intentional failures — compare error *presence* only (not message text).
+fn main -> Result {
+    left2 := warp.array([1.0, 2.0], [2])
+    right3 := warp.array([1.0, 2.0, 3.0], [3])
+    broadcast_mismatch := warp.add(left2, right3)
+
+    six := warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+    bad_reshape := warp.reshape(six, [4, 2])
+
+    vec := warp.array([10.0, 20.0, 30.0], [3])
+    oob_index := warp.get(vec, [5])
+
+    // Control: valid ops must not report errors.
+    ok_add := warp.add(left2, warp.array([10.0, 20.0], [2]))
+    ok_reshape := warp.reshape(six, [3, 2])
+    ok_get := warp.get(vec, [1])
+
+    say(json.stringify({
+        "broadcast_mismatch": is_err(broadcast_mismatch),
+        "bad_reshape": is_err(bad_reshape),
+        "oob_index": is_err(oob_index),
+        "ok_add": !is_err(ok_add),
+        "ok_reshape": !is_err(ok_reshape),
+        "ok_get": !is_err(ok_get),
+    }))
+}

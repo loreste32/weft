@@ -1,0 +1,98 @@
+{
+  "format": "weft.scale.bench",
+  "version": 2,
+  "generated_at": "2026-08-04T04:27:46Z",
+  "host": {
+    "os": "Darwin",
+    "arch": "arm64"
+  },
+  "strict": false,
+  "budgets_ms": {
+    "warp_matmul": 120000,
+    "warp_elementwise": 60000,
+    "dataframe_100k": 120000,
+    "dataframe_250k": 300000
+  },
+  "budgets_peak_rss_kb": 4194304,
+  "budget_policy": {
+    "soft_by_default": true,
+    "strict_env": "WEFT_SCALE_STRICT",
+    "note": "Soft budgets warn; only WEFT_SCALE_STRICT=1 fails on budget miss. Run failures always fail."
+  },
+  "summary": {
+    "ok": true,
+    "budget_warnings": 0,
+    "budget_failures": 0,
+    "fixtures": 4
+  },
+  "results": [
+    {
+      "name": "warp_matmul",
+      "fixture": "testdata/bench/warp_scale.weft",
+      "wall_ms": 957,
+      "peak_rss_kb": 109728,
+      "budget_ms": 120000,
+      "within_budget": true,
+      "budget_warning": false,
+      "note": "default WEFT_WARP_N=256 matmul",
+      "result": {
+        "checksum": 150987788,
+        "fixture": "warp_scale",
+        "mode": "matmul",
+        "n": 256,
+        "storage": "tensor"
+      }
+    },
+    {
+      "name": "warp_elementwise",
+      "fixture": "testdata/bench/warp_scale.weft",
+      "wall_ms": 532,
+      "peak_rss_kb": 112080,
+      "budget_ms": 60000,
+      "within_budget": true,
+      "budget_warning": false,
+      "note": "default WEFT_WARP_ELEMS=100000 sum",
+      "result": {
+        "checksum": 299995,
+        "fixture": "warp_scale",
+        "mode": "elementwise",
+        "n": 100000,
+        "storage": "tensor"
+      }
+    },
+    {
+      "name": "dataframe_100k",
+      "fixture": "testdata/bench/dataframe_scale.weft",
+      "wall_ms": 3168,
+      "peak_rss_kb": 487680,
+      "budget_ms": 120000,
+      "within_budget": true,
+      "budget_warning": false,
+      "note": "fixed ~100k groupby+sort",
+      "result": {
+        "rows": 100000,
+        "groups": 5,
+        "sorted_rows": 100000,
+        "top_salary": 50999
+      }
+    },
+    {
+      "name": "dataframe_250k",
+      "fixture": "testdata/bench/dataframe_scale_1m.weft",
+      "wall_ms": 8426,
+      "peak_rss_kb": 1247344,
+      "budget_ms": 300000,
+      "within_budget": true,
+      "budget_warning": false,
+      "note": "default 250k; WEFT_DF_ROWS=1000000 for full million",
+      "result": {
+        "fixture": "dataframe_scale_1m",
+        "groups": 5,
+        "note": "default 250k; set WEFT_DF_ROWS=1000000 for full million",
+        "rows": 250000,
+        "sorted_rows": 250000,
+        "top_salary": 50999
+      }
+    }
+  ]
+}

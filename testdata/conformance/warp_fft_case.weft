@@ -1,0 +1,27 @@
+use "../../packages/warp/lib.weft" as warp
+use json
+
+fn main -> Result {
+    // Small power-of-2 real DFT (n=4 and n=8) for NumPy differential checks.
+    a4 := warp.array([1.0, 2.0, 3.0, 4.0], [4])
+    f4 := warp.fft_1d(a4)
+    a8 := warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], [8])
+    f8 := warp.fft_1d(a8)
+    inv8 := warp.ifft_1d(f8.re, f8.im)
+    freqs := warp.fft_freq(8, 1.0)
+    diffs := warp.diff(warp.array([1.0, 2.0, 4.0, 7.0, 11.0], [5]), null)
+    grads := warp.gradient(warp.array([1.0, 2.0, 4.0, 7.0, 11.0], [5]))
+    area := warp.trapz(warp.array([1.0, 2.0, 3.0], [3]), 1.0)
+    say(json.stringify({
+        "fft4_re": warp.to_list(f4.re),
+        "fft4_im": warp.to_list(f4.im),
+        "fft8_re": warp.to_list(f8.re),
+        "fft8_im": warp.to_list(f8.im),
+        "ifft8_re": warp.to_list(inv8.re),
+        "ifft8_im": warp.to_list(inv8.im),
+        "fftfreq8": warp.to_list(freqs),
+        "diff": warp.to_list(diffs),
+        "gradient": warp.to_list(grads),
+        "trapz": area,
+    }))
+}

@@ -54,12 +54,19 @@ echo "== format roundtrip =="
 go test ./internal/format/ -count=1 -run TestCompatFormatRoundTrip
 echo "== build =="
 go build -o /tmp/weft-ci ./cmd/weft
+echo "== vendor package sync =="
+bash scripts/check-vendor-sync.sh
+echo "== catalog package sync =="
+bash scripts/check-catalog-sync.sh
 echo "== NumPy/pandas conformance (when oracle dependencies are installed) =="
 if python3 -c 'import numpy, pandas' >/dev/null 2>&1; then
   python3 scripts/conformance/run.py --weft /tmp/weft-ci
 else
   echo "NumPy/pandas unavailable — dedicated CI conformance job remains required"
 fi
+echo "== accelerator trust/report smoke =="
+bash scripts/accelerator-report.sh /tmp/weft-accelerator-report.json
+python3 -c "import json; json.load(open('/tmp/weft-accelerator-report.json')); print('accelerator report ok')"
 echo "== bench pair parity (Weft == Python outputs) =="
 # Ensures comparative workloads stay equivalent; does not gate on wall time
 if command -v python3 >/dev/null 2>&1; then

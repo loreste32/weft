@@ -36,6 +36,29 @@ fn test_logical_dtypes {
     test.eq(warp.dtype(warp.zeros_dtype([2], "float64")), "float64")
 }
 
+fn test_fixed_width_integer_dtypes {
+    int8s := warp.array_typed([-128, 127], [2], "int8")
+    uint16s := warp.array_typed([0, 65535], [2], "uint16")
+    int32s := warp.array_typed([-2147483648, 2147483647], [2], "int32")
+    uint64s := warp.array_typed([0, 9223372036854775807], [2], "uint64")
+    test.eq(warp.dtype(int8s), "int8")
+    test.eq(warp.dtype(uint16s), "uint16")
+    test.eq(warp.dtype(int32s), "int32")
+    test.eq(warp.dtype(uint64s), "uint64")
+    test.eq(warp.itemsize(int8s), 1)
+    test.eq(warp.itemsize(uint16s), 2)
+    test.eq(warp.itemsize(int32s), 4)
+    test.eq(warp.itemsize(uint64s), 8)
+    test.eq(warp.to_list(uint16s), [0, 65535])
+}
+
+fn test_fixed_width_integer_range_validation {
+    too_small := warp.array_typed([-129], [1], "int8")
+    too_large := warp.array_typed([256], [1], "uint8")
+    test.eq(too_small.ok, false)
+    test.eq(too_large.ok, false)
+}
+
 fn test_dtype_promotion_and_result_kinds {
     ints := warp.array_typed([1, 2, 3], [3], "int64")
     floats := warp.array_typed([1, 2, 3], [3], "float32")
@@ -184,8 +207,85 @@ fn test_min_max {
 
 fn test_argmin_argmax {
     a := warp.array([3, 1, 4, 1, 5], [5])
-    test.eq(warp.argmin(a), 1)
-    test.eq(warp.argmax(a), 4)
+    test.eq(warp.argmin(a, null), 1)
+    test.eq(warp.argmax(a, null), 4)
+    m := warp.array([3, 1, 2, 0, 4, 1], [2, 3])
+    test.eq(warp.to_list(warp.argmin(m, 0)), [1, 0, 1])
+    test.eq(warp.to_list(warp.argmin(m, 1)), [1, 0])
+    test.eq(warp.to_list(warp.argmax(m, 0)), [0, 1, 0])
+    test.eq(warp.to_list(warp.argmax(m, 1)), [0, 1])
+    // first-occurrence on ties
+    ties := warp.array([2, 1, 1, 3], [4])
+    test.eq(warp.argmin(ties, null), 1)
+}
+
+fn test_nansum_nanmean {
+    a := warp.array([1.0, math.nan, 3.0, 2.0], [4])
+    test.eq(warp.nansum(a), 6.0)
+    test.eq(warp.nanmean(a), 2.0)
+    clean := warp.array([2.0, 4.0, 6.0], [3])
+    test.eq(warp.nansum(clean), 12.0)
+    test.eq(warp.nanmean(clean), 4.0)
+    all_nan := warp.array([math.nan, math.nan], [2])
+    test.eq(warp.nansum(all_nan), 0.0)
+    // all-nan mean is NaN
+    test.is_true(warp.nanmean(all_nan) != warp.nanmean(all_nan))
+}
+
+fn test_atleast_1d_2d {
+    s := warp.atleast_1d(5)
+    test.eq(warp.shape(s), [1])
+    test.eq(warp.to_list(s), [5])
+    v := warp.atleast_1d(warp.array([1, 2, 3], [3]))
+    test.eq(warp.shape(v), [3])
+    test.eq(warp.to_list(v), [1, 2, 3])
+    m := warp.atleast_2d(warp.array([1, 2, 3], [3]))
+    test.eq(warp.shape(m), [1, 3])
+    test.eq(warp.to_list(m), [1, 2, 3])
+    sc2 := warp.atleast_2d(7)
+    test.eq(warp.shape(sc2), [1, 1])
+    test.eq(warp.to_list(sc2), [7])
+    already := warp.atleast_2d(warp.array([1, 2, 3, 4], [2, 2]))
+    test.eq(warp.shape(already), [2, 2])
+}
+
+fn test_broadcast_to {
+    a := warp.array([1, 2, 3], [3])
+    b := warp.broadcast_to(a, [2, 3])
+    test.eq(warp.shape(b), [2, 3])
+    test.eq(warp.to_list(b), [1, 2, 3, 1, 2, 3])
+    col := warp.array([10, 20], [2, 1])
+    wide := warp.broadcast_to(col, [2, 3])
+    test.eq(warp.to_list(wide), [10, 10, 10, 20, 20, 20])
+    bad := warp.broadcast_to(a, [2, 4])
+    test.is_false(bad.ok)
+}
+
+fn test_isclose {
+    a := warp.array([1.0, 2.0, 3.0], [3])
+    b := warp.array([1.0, 2.01, 3.0], [3])
+    flags := warp.isclose(a, b, 0.005, null)
+    test.eq(warp.to_list(flags), [true, false, true])
+    loose := warp.isclose(a, b, 0.02, null)
+    test.eq(warp.to_list(loose), [true, true, true])
+    exact := warp.isclose(a, a, null, null)
+    test.eq(warp.to_list(exact), [true, true, true])
+}
+
+fn test_pad {
+    a := warp.array([1, 2, 3], [3])
+    p := warp.pad(a, 1, 0)
+    test.eq(warp.shape(p), [5])
+    test.eq(warp.to_list(p), [0, 1, 2, 3, 0])
+    p2 := warp.pad(a, [2, 1], 9)
+    test.eq(warp.to_list(p2), [9, 9, 1, 2, 3, 9])
+    m := warp.array([1, 2, 3, 4], [2, 2])
+    mp := warp.pad(m, 1, 0)
+    test.eq(warp.shape(mp), [4, 4])
+    test.eq(warp.to_list(mp), [0, 0, 0, 0, 0, 1, 2, 0, 0, 3, 4, 0, 0, 0, 0, 0])
+    asymmetric := warp.pad(m, [[1, 0], [0, 1]], -1)
+    test.eq(warp.shape(asymmetric), [3, 3])
+    test.eq(warp.to_list(asymmetric), [-1, -1, -1, 1, 2, -1, 3, 4, -1])
 }
 
 fn test_cumsum {
@@ -764,4 +864,147 @@ fn test_stepped_and_axis_slices {
     test.eq(warp.to_list(selected), [1, 3, 5, 7, 9])
     bad := warp.slice_step(a, null, null, 0)
     test.is_false(bad.ok)
+}
+
+fn test_native_storage_kind {
+    ints := warp.array([1, 2, 3], [3])
+    test.eq(warp.storage_kind(ints), "tensor")
+    floats := warp.array_typed([1.0, 2.0], [2], "float64")
+    test.eq(warp.storage_kind(floats), "tensor")
+    f32 := warp.array_typed([1, 2], [2], "float32")
+    test.eq(warp.storage_kind(f32), "tensor")
+    obj := warp.array_typed(["x", "y"], [2], "object")
+    test.eq(warp.storage_kind(obj), "list")
+}
+
+fn test_release_native_storage {
+    a := warp.array([1.0, 2.0, 3.0], [3])
+    test.eq(warp.storage_kind(a), "tensor")
+    test.eq(warp.release(a)?, true)
+    test.eq(warp.storage_kind(a), "list")
+    test.eq(warp.to_list(a), [1.0, 2.0, 3.0])
+    test.eq(warp.release(a)?, false)
+}
+
+fn test_native_add_mul {
+    a := warp.array([1, 2, 3], [3])
+    b := warp.array([4, 5, 6], [3])
+    test.eq(warp.storage_kind(a), "tensor")
+    test.eq(warp.storage_kind(b), "tensor")
+    summed := warp.add(a, b)
+    product := warp.mul(a, b)
+    test.eq(warp.to_list(summed), [5, 7, 9])
+    test.eq(warp.to_list(product), [4, 10, 18])
+    test.eq(warp.storage_kind(summed), "tensor")
+    test.eq(warp.storage_kind(product), "tensor")
+    // float native path
+    fa := warp.array_typed([1.5, 2.5], [2], "float64")
+    fb := warp.array_typed([0.5, 1.5], [2], "float64")
+    test.eq(warp.storage_kind(fa), "tensor")
+    test.eq(warp.to_list(warp.add(fa, fb)), [2.0, 4.0])
+    test.eq(warp.to_list(warp.mul(fa, fb)), [0.75, 3.75])
+}
+
+fn test_native_broadcast_add {
+    left := warp.array([1, 2], [2, 1])
+    right := warp.array([10, 20, 30], [3])
+    test.eq(warp.storage_kind(left), "tensor")
+    test.eq(warp.storage_kind(right), "tensor")
+    result := warp.add(left, right)
+    test.eq(warp.shape(result), [2, 3])
+    test.eq(warp.to_list(result), [11, 21, 31, 12, 22, 32])
+    test.eq(warp.storage_kind(result), "tensor")
+    product := warp.mul(left, right)
+    test.eq(warp.shape(product), [2, 3])
+    test.eq(warp.to_list(product), [10, 20, 30, 20, 40, 60])
+    test.eq(warp.storage_kind(product), "tensor")
+}
+
+fn test_fft_1d_n4 {
+    // np.fft.fft([1,2,3,4]) = [10, -2+2j, -2, -2-2j]
+    a := warp.array([1.0, 2.0, 3.0, 4.0], [4])
+    out := warp.fft_1d(a)
+    re := warp.to_list(out.re)
+    im := warp.to_list(out.im)
+    test.approx(re[0], 10.0, 1e-6)
+    test.approx(im[0], 0.0, 1e-6)
+    test.approx(re[1], -2.0, 1e-6)
+    test.approx(im[1], 2.0, 1e-6)
+    test.approx(re[2], -2.0, 1e-6)
+    test.approx(im[2], 0.0, 1e-6)
+    test.approx(re[3], -2.0, 1e-6)
+    test.approx(im[3], -2.0, 1e-6)
+}
+
+fn test_fft_ifft_roundtrip {
+    a := warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], [8])
+    fwd := warp.fft_1d(a)
+    back := warp.ifft_1d(fwd.re, fwd.im)
+    got := warp.to_list(back.re)
+    let mut i = 0
+    while i < 8 {
+        test.approx(got[i], i + 1.0, 1e-6)
+        i = i + 1
+    }
+    // imag of real signal inverse should be ~0
+    im := warp.to_list(back.im)
+    i = 0
+    while i < 8 {
+        test.approx(im[i], 0.0, 1e-6)
+        i = i + 1
+    }
+}
+
+fn test_fft_naive_non_power_of_two {
+    // n=3 uses O(n²) path; compare known DFT of [1,0,0]
+    a := warp.array([1.0, 0.0, 0.0], [3])
+    out := warp.fft_1d(a)
+    re := warp.to_list(out.re)
+    im := warp.to_list(out.im)
+    test.approx(re[0], 1.0, 1e-6)
+    test.approx(im[0], 0.0, 1e-6)
+    test.approx(re[1], 1.0, 1e-6)
+    test.approx(im[1], 0.0, 1e-6)
+    test.approx(re[2], 1.0, 1e-6)
+    test.approx(im[2], 0.0, 1e-6)
+}
+
+fn test_fft_freq {
+    // np.fft.fftfreq(8, 1.0)
+    f := warp.fft_freq(8, 1.0)
+    d := warp.to_list(f)
+    test.approx(d[0], 0.0, 1e-12)
+    test.approx(d[1], 0.125, 1e-12)
+    test.approx(d[2], 0.25, 1e-12)
+    test.approx(d[3], 0.375, 1e-12)
+    test.approx(d[4], -0.5, 1e-12)
+    test.approx(d[5], -0.375, 1e-12)
+    test.approx(d[6], -0.25, 1e-12)
+    test.approx(d[7], -0.125, 1e-12)
+}
+
+fn test_diff {
+    a := warp.array([1.0, 2.0, 4.0, 7.0, 11.0], [5])
+    d1 := warp.diff(a, null)
+    test.eq(warp.to_list(d1), [1.0, 2.0, 3.0, 4.0])
+    d2 := warp.diff(a, 2)
+    test.eq(warp.to_list(d2), [1.0, 1.0, 1.0])
+}
+
+fn test_gradient {
+    a := warp.array([1.0, 2.0, 4.0, 7.0, 11.0], [5])
+    g := warp.gradient(a)
+    d := warp.to_list(g)
+    test.approx(d[0], 1.0, 1e-12)
+    test.approx(d[1], 1.5, 1e-12)
+    test.approx(d[2], 2.5, 1e-12)
+    test.approx(d[3], 3.5, 1e-12)
+    test.approx(d[4], 4.0, 1e-12)
+}
+
+fn test_trapz {
+    y := warp.array([1.0, 2.0, 3.0], [3])
+    test.approx(warp.trapz(y, null), 4.0, 1e-12)
+    test.approx(warp.trapz(y, 0.5), 2.0, 1e-12)
+    test.eq(warp.trapz(warp.array([1.0], [1]), null), 0.0)
 }

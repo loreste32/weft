@@ -35,20 +35,60 @@ pub fn zero_grad(node) -> Result[any] {
     Ok(null)
 }
 
-pub fn backward(node) -> Result[any] {
+// reverse-mode VJP. When create_graph is true/1, scalar-op VJPs are built with
+// autograd nodes so node.grad is itself a graph (nested reverse-mode / double backward).
+// Array/matmul paths stay numeric even with create_graph (scalar nested first).
+pub fn backward(node, create_graph) -> Result[any] {
     if !_is_node(node) { return Err("ml.backward expects an autograd node") }
     if !_number(node.value) { return Err("ml.backward requires a scalar output; reduce arrays first") }
+    cg := _flag(create_graph)
     order := []
     _collect(node, order)
-    node.grad = node.grad + 1.0
+    node.grad = _seed_grad(node.grad, cg)?
     let mut i := len(order) - 1
     while i >= 0 {
         item := order[i]
-        if item.op != null { _propagate(item) }
+        if item.op != null {
+            if cg {
+                _propagate_graph(item)?
+            } else {
+                _propagate(item)
+            }
+        }
         i = i - 1
     }
     for item in order { item._topo_mark = false }
     Ok(null)
+}
+
+// Build gradient nodes d(output)/d(inputs[i]) via reverse-mode with create_graph.
+// Returns a list of autograd nodes (one per input). Scalar path.
+pub fn grad_fn(output, inputs) -> Result[any] {
+    if !_is_node(output) { return Err("ml.grad_fn expects an autograd output node") }
+    if !_number(output.value) { return Err("ml.grad_fn requires a scalar output; reduce arrays first") }
+    if _kind(inputs) != "list" || len(inputs) == 0 {
+        return Err("ml.grad_fn expects a non-empty list of input variables")
+    }
+    for inp in inputs {
+        if !_is_node(inp) || !inp.requires_grad {
+            return Err("ml.grad_fn inputs must be trainable autograd variables")
+        }
+    }
+    zero_grad(output)?
+    backward(output, true)?
+    let mut grads = []
+    for inp in inputs {
+        g := inp.grad
+        if _is_node(g) {
+            grads = push(grads, g)
+        } else if _number(g) {
+            // No graph parents (e.g. output is the input itself): wrap constant grad.
+            grads = push(grads, constant(g)?)
+        } else {
+            return Err("ml.grad_fn produced a non-scalar gradient; nested AD is scalar-first")
+        }
+    }
+    Ok(grads)
 }
 
 pub fn add(left, right) -> Result[any] {
@@ -118,13 +158,20 @@ pub fn zero_grad_many(parameters) -> Result[any] {
     Ok(null)
 }
 
+// Numeric gradient value (unwraps a create_graph grad node). Prefer grad() + value() for inspection.
+pub fn grad_value(node) -> Result[any] {
+    if !_is_node(node) { return Err("ml.grad_value expects an autograd node") }
+    Ok(_grad_numeric(node.grad))
+}
+
 pub fn sgd_step(parameters, learning_rate, weight_decay) -> Result[any] {
     if !_optimizer_parameters(parameters) { return Err("ml.sgd_step expects a list of trainable variables") }
     if !_number(learning_rate) || learning_rate <= 0 { return Err("ml.sgd_step learning_rate must be finite and positive") }
     decay := if weight_decay == null { 0.0 } else { weight_decay }
     if !_number(decay) || decay < 0 { return Err("ml.sgd_step weight_decay must be finite and non-negative") }
     for parameter in parameters {
-        gradient := if decay == 0 { parameter.grad } else { _value_add(parameter.grad, _value_mul(decay, parameter.value)) }
+        raw := _grad_numeric(parameter.grad)
+        gradient := if decay == 0 { raw } else { _value_add(raw, _value_mul(decay, parameter.value)) }
         parameter.value = _value_sub(parameter.value, _value_mul(learning_rate, gradient))
     }
     Ok(null)
@@ -163,7 +210,8 @@ pub fn adam_step(parameters, state, learning_rate, beta1, beta2, epsilon, weight
     let mut i = 0
     while i < len(parameters) {
         parameter := parameters[i]
-        gradient := if decay == 0 { parameter.grad } else { _value_add(parameter.grad, _value_mul(decay, parameter.value)) }
+        raw := _grad_numeric(parameter.grad)
+        gradient := if decay == 0 { raw } else { _value_add(raw, _value_mul(decay, parameter.value)) }
         first := _value_add(_value_mul(b1, state.m[i]), _value_mul(1.0 - b1, gradient))
         second := _value_add(_value_mul(b2, state.v[i]), _value_mul(1.0 - b2, _value_mul(gradient, gradient)))
         state.m[i] = first
@@ -198,47 +246,155 @@ fn _unary(node, op, operation, aux) -> Result[any] {
 
 fn _propagate(node) {
     parents := node.parents
+    g := _grad_numeric(node.grad)
     if node.op == "add" {
-        _add_grad(parents[0], _reduce_to_parent(node.grad, parents[0].value))
-        _add_grad(parents[1], _reduce_to_parent(node.grad, parents[1].value))
+        _add_grad(parents[0], _reduce_to_parent(g, parents[0].value))
+        _add_grad(parents[1], _reduce_to_parent(g, parents[1].value))
     } else if node.op == "sub" {
-        _add_grad(parents[0], _reduce_to_parent(node.grad, parents[0].value))
-        _add_grad(parents[1], _reduce_to_parent(_value_neg(node.grad), parents[1].value))
+        _add_grad(parents[0], _reduce_to_parent(g, parents[0].value))
+        _add_grad(parents[1], _reduce_to_parent(_value_neg(g), parents[1].value))
     } else if node.op == "mul" {
-        _add_grad(parents[0], _reduce_to_parent(_value_mul(node.grad, parents[1].value), parents[0].value))
-        _add_grad(parents[1], _reduce_to_parent(_value_mul(node.grad, parents[0].value), parents[1].value))
+        _add_grad(parents[0], _reduce_to_parent(_value_mul(g, parents[1].value), parents[0].value))
+        _add_grad(parents[1], _reduce_to_parent(_value_mul(g, parents[0].value), parents[1].value))
     } else if node.op == "div" {
-        _add_grad(parents[0], _reduce_to_parent(_value_div(node.grad, parents[1].value), parents[0].value))
+        _add_grad(parents[0], _reduce_to_parent(_value_div(g, parents[1].value), parents[0].value))
         denominator := _value_mul(parents[1].value, parents[1].value)
-        right := _value_neg(_value_div(_value_mul(node.grad, parents[0].value), denominator))
+        right := _value_neg(_value_div(_value_mul(g, parents[0].value), denominator))
         _add_grad(parents[1], _reduce_to_parent(right, parents[1].value))
     } else if node.op == "neg" {
-        _add_grad(parents[0], _reduce_to_parent(_value_neg(node.grad), parents[0].value))
+        _add_grad(parents[0], _reduce_to_parent(_value_neg(g), parents[0].value))
     } else if node.op == "exp" {
-        _add_grad(parents[0], _reduce_to_parent(_value_mul(node.grad, node.value), parents[0].value))
+        _add_grad(parents[0], _reduce_to_parent(_value_mul(g, node.value), parents[0].value))
     } else if node.op == "log" {
-        _add_grad(parents[0], _reduce_to_parent(_value_div(node.grad, parents[0].value), parents[0].value))
+        _add_grad(parents[0], _reduce_to_parent(_value_div(g, parents[0].value), parents[0].value))
     } else if node.op == "relu" {
         mask := _value_relu_derivative(parents[0].value)
-        _add_grad(parents[0], _reduce_to_parent(_value_mul(node.grad, mask), parents[0].value))
+        _add_grad(parents[0], _reduce_to_parent(_value_mul(g, mask), parents[0].value))
     } else if node.op == "pow" {
         exponent := node.aux
         factor := _value_pow(parents[0].value, exponent - 1.0)
-        _add_grad(parents[0], _reduce_to_parent(_value_mul(node.grad, _value_mul(exponent, factor)), parents[0].value))
+        _add_grad(parents[0], _reduce_to_parent(_value_mul(g, _value_mul(exponent, factor)), parents[0].value))
     } else if node.op == "sum" {
-        _add_grad(parents[0], _expand_like(node.grad, parents[0].value))
+        _add_grad(parents[0], _expand_like(g, parents[0].value))
     } else if node.op == "mean" {
-        _add_grad(parents[0], _value_div(_expand_like(node.grad, parents[0].value), _value_numel(parents[0].value)))
+        _add_grad(parents[0], _value_div(_expand_like(g, parents[0].value), _value_numel(parents[0].value)))
     } else if node.op == "matmul" {
         left := parents[0].value
         right := parents[1].value
-        _add_grad(parents[0], _value_matmul(node.grad, warp.T(right)))
-        _add_grad(parents[1], _value_matmul(warp.T(left), node.grad))
+        _add_grad(parents[0], _value_matmul(g, warp.T(right)))
+        _add_grad(parents[1], _value_matmul(warp.T(left), g))
     }
 }
 
+// Nested reverse-mode: accumulate parent.grad as autograd nodes for scalar ops.
+fn _propagate_graph(node) -> Result[any] {
+    // Fall back to numeric VJP when any involved value is a warp array.
+    if !_scalar_op_graph(node) {
+        _propagate(node)
+        return Ok(null)
+    }
+    parents := node.parents
+    g := _ensure_grad_node(node.grad)?
+    if node.op == "add" {
+        _add_grad_graph(parents[0], g)?
+        _add_grad_graph(parents[1], g)?
+    } else if node.op == "sub" {
+        _add_grad_graph(parents[0], g)?
+        _add_grad_graph(parents[1], neg(g)?)?
+    } else if node.op == "mul" {
+        _add_grad_graph(parents[0], mul(g, parents[1])?)?
+        _add_grad_graph(parents[1], mul(g, parents[0])?)?
+    } else if node.op == "div" {
+        _add_grad_graph(parents[0], div(g, parents[1])?)?
+        y2 := mul(parents[1], parents[1])?
+        num := mul(g, parents[0])?
+        _add_grad_graph(parents[1], neg(div(num, y2)?)?)?
+    } else if node.op == "neg" {
+        _add_grad_graph(parents[0], neg(g)?)?
+    } else if node.op == "exp" {
+        // d exp(x)/dx = exp(x) = this node
+        _add_grad_graph(parents[0], mul(g, node)?)?
+    } else if node.op == "log" {
+        _add_grad_graph(parents[0], div(g, parents[0])?)?
+    } else if node.op == "relu" {
+        // Subgradient mask is treated as a constant (non-differentiable kink).
+        mask := constant(_value_relu_derivative(parents[0].value))?
+        _add_grad_graph(parents[0], mul(g, mask)?)?
+    } else if node.op == "pow" {
+        exponent := node.aux
+        factor := pow(parents[0], exponent - 1.0)?
+        scaled := mul(constant(exponent)?, factor)?
+        _add_grad_graph(parents[0], mul(g, scaled)?)?
+    } else if node.op == "sum" {
+        _add_grad_graph(parents[0], g)?
+    } else if node.op == "mean" {
+        // scalar mean is identity
+        _add_grad_graph(parents[0], g)?
+    }
+    Ok(null)
+}
+
+fn _scalar_op_graph(node) {
+    if !_number(node.value) { return false }
+    if node.op == "matmul" { return false }
+    for parent in node.parents {
+        if !_number(parent.value) { return false }
+    }
+    true
+}
+
 fn _add_grad(node, amount) {
-    if node.requires_grad { node.grad = _value_add(node.grad, amount) }
+    if !node.requires_grad { return }
+    current := _grad_numeric(node.grad)
+    node.grad = _value_add(current, amount)
+}
+
+fn _add_grad_graph(node, amount) -> Result[any] {
+    if !node.requires_grad { return Ok(null) }
+    if _is_node(node.grad) {
+        node.grad = add(node.grad, amount)?
+    } else if _number(node.grad) && node.grad == 0 {
+        node.grad = amount
+    } else if _number(node.grad) {
+        node.grad = add(constant(node.grad)?, amount)?
+    } else {
+        node.grad = amount
+    }
+    Ok(null)
+}
+
+fn _seed_grad(current, create_graph) -> Result[any] {
+    if create_graph {
+        if _is_node(current) {
+            return Ok(add(current, constant(1.0)?)?)
+        }
+        if _number(current) {
+            // Keep numeric seed; first _ensure_grad_node wraps it.
+            return Ok(current + 1.0)
+        }
+        return Ok(1.0)
+    }
+    if _is_node(current) {
+        return Ok(current.value + 1.0)
+    }
+    Ok(current + 1.0)
+}
+
+fn _ensure_grad_node(g) -> Result[any] {
+    if _is_node(g) { return Ok(g) }
+    if !_number(g) { return Err("ml.backward create_graph expects scalar gradients") }
+    constant(g)
+}
+
+fn _grad_numeric(g) {
+    if _is_node(g) { return g.value }
+    g
+}
+
+fn _flag(v) {
+    if v == null || v == false || v == 0 || v == 0.0 { return false }
+    if v == true || v == 1 || v == 1.0 { return true }
+    false
 }
 
 fn _as_node(value) {
@@ -346,7 +502,11 @@ fn _value_log(a) {
 }
 
 fn _value_relu(a) {
-    if _is_array(a) { return warp.maximum(a, 0.0) }
+    if _is_array(a) {
+        // Prefer maximum when present; fall back for older vendor warps.
+        // greater returns 0/1, so a * (a > 0) is ReLU without a maximum op.
+        return warp.mul(a, warp.greater(a, 0.0))
+    }
     if a > 0.0 { a } else { 0.0 }
 }
 
@@ -380,7 +540,10 @@ fn _failed(value) {
 }
 
 fn _is_node(value) {
-    value != null && _kind(value) == "map" && value._autograd == true
+    if value == null || _kind(value) != "map" { return false }
+    // Warp arrays are maps too; only autograd nodes carry _autograd.
+    if !contains(keys(value), "_autograd") { return false }
+    value._autograd == true
 }
 
 fn _number(value) {

@@ -1,0 +1,16 @@
+use "../../packages/dataframe/lib.weft" as df
+
+fn main {
+    let mut rows = []
+    let mut i = 0
+    while i < 5000 {
+        rows = push(rows, {
+            "dept": if i % 3 == 0 { "eng" } else if i % 3 == 1 { "sales" } else { "ops" },
+            "salary": 50000 + (i % 1000),
+        })
+        i = i + 1
+    }
+    t := df.from_rows(rows)
+    g := df.group_by(t, "dept", {"salary_sum": {"col": "salary", "op": "sum"}, "count": {"col": "salary", "op": "count"}})
+    say({"rows": 5000, "groups": df.nrows(g)})
+}

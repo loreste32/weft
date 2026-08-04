@@ -172,12 +172,16 @@ func TestWS_UpgradeAndFrames(t *testing.T) {
 		s, err := c.RecvText()
 		recvCh <- recvRes{s, err}
 	}()
-	// drain pong in background so server write does not block
-	go func() {
-		buf := make([]byte, 64)
-		_, _ = br.Read(buf)
-	}()
+	// Drain the pong before sending the next client frame. Keeping this read
+	// synchronous prevents two goroutines from reading the same bufio.Reader.
 	writeMaskedFrame(t, hp.client, 0x9, []byte("p"))
+	pongOpcode, pongPayload, err := readServerFrame(br)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pongOpcode != 0xA || string(pongPayload) != "p" {
+		t.Fatalf("pong opcode=%x payload=%q", pongOpcode, pongPayload)
+	}
 	writeMaskedFrame(t, hp.client, 0x1, []byte("after-ping"))
 	rr = <-recvCh
 	if rr.err != nil {
@@ -228,12 +232,9 @@ func TestWS_UpgradeAndFrames(t *testing.T) {
 	}
 
 	// double close + send after close
-	// drain close frame write from server
-	go func() {
-		buf := make([]byte, 64)
-		_, _ = br.Read(buf)
-	}()
-	_ = c.Close()
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
 	_ = c.Close()
 	if err := c.SendText("nope"); err == nil {
 		t.Fatal("send after close")
@@ -269,6 +270,37 @@ func writeMaskedFrame(t *testing.T, w io.Writer, opcode byte, payload []byte) {
 			t.Fatal(err)
 		}
 	}
+}
+
+func readServerFrame(r io.Reader) (byte, []byte, error) {
+	var header [2]byte
+	if _, err := io.ReadFull(r, header[:]); err != nil {
+		return 0, nil, err
+	}
+	n := int(header[1] & 0x7f)
+	switch n {
+	case 126:
+		var ext [2]byte
+		if _, err := io.ReadFull(r, ext[:]); err != nil {
+			return 0, nil, err
+		}
+		n = int(binary.BigEndian.Uint16(ext[:]))
+	case 127:
+		var ext [8]byte
+		if _, err := io.ReadFull(r, ext[:]); err != nil {
+			return 0, nil, err
+		}
+		n64 := binary.BigEndian.Uint64(ext[:])
+		if n64 > uint64(^uint(0)>>1) {
+			return 0, nil, io.ErrUnexpectedEOF
+		}
+		n = int(n64)
+	}
+	payload := make([]byte, n)
+	if _, err := io.ReadFull(r, payload); err != nil {
+		return 0, nil, err
+	}
+	return header[0] & 0x0f, payload, nil
 }
 
 func TestWS_WriteFrameLongAndNewConnValue(t *testing.T) {

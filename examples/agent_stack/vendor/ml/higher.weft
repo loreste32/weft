@@ -1,0 +1,289 @@
+use math
+use warp
+use "./autograd.weft" as ag
+
+// Higher-order derivative helpers.
+//
+// second_derivative prefers nested reverse-mode (create_graph double backward)
+// for pure scalar graphs (add/mul/pow/…); falls back to finite differences of
+// analytical first gradients when nested AD is unavailable.
+//
+// Nested:  f''(x) via backward(f, create_graph) then backward(x.grad)
+// Finite:  f''(x) ≈ (f'(x+eps) - f'(x-eps)) / (2 eps)   — O(eps^2)
+// hvp:     H v ≈ (∇L(θ+εv) - ∇L(θ-εv)) / (2ε)            — finite-diff only
+
+/// Second derivative of a scalar function of a single scalar variable.
+/// `scalar_fn(x_node)` must return a scalar autograd node (or Result thereof).
+/// `x` is a trainable scalar variable node. Optional `eps` defaults to 1e-5
+/// (used only by the finite-difference fallback).
+pub fn second_derivative(scalar_fn, x, eps) -> Result[any] {
+    if !_is_node(x) || !x.requires_grad { return Err("ml.second_derivative expects a trainable scalar variable") }
+    if _is_array(x.value) || !_number(x.value) {
+        return Err("ml.second_derivative currently supports a single scalar variable")
+    }
+
+    // Prefer nested reverse-mode when the first gradient is a graph node.
+    nested := _second_derivative_nested(scalar_fn, x)
+    if nested.ok { return nested }
+
+    step := if eps == null { 1e-5 } else { eps }
+    if !_number(step) || step <= 0 { return Err("ml.second_derivative eps must be finite and positive") }
+
+    original := x.value
+    x.value = original + step
+    plus := _first_grad(scalar_fn, x)
+    if is_err(plus) {
+        x.value = original
+        return plus
+    }
+    x.value = original - step
+    minus := _first_grad(scalar_fn, x)
+    if is_err(minus) {
+        x.value = original
+        return minus
+    }
+    x.value = original
+    denom := 2.0 * step
+    Ok((plus? - minus?) / denom)
+}
+
+/// Nested reverse-mode second derivative: backward(f, create_graph) then backward(∂f/∂x).
+fn _second_derivative_nested(scalar_fn, x) -> Result[any] {
+    loss := _eval_loss(scalar_fn, x)?
+    ag.zero_grad(loss)?
+    ag.backward(loss, true)?
+    g := x.grad
+    if _is_node(g) {
+        // Double backward through the first-gradient graph.
+        // zero_grad(g) clears x.grad (and other leaves) so second-order accumulates cleanly.
+        ag.zero_grad(g)?
+        ag.backward(g, null)?
+        g2 := x.grad
+        if _is_node(g2) { return Ok(g2.value) }
+        if !_number(g2) { return Err("ml.second_derivative nested path did not yield a scalar") }
+        return Ok(g2)
+    }
+    // Constant first gradient (e.g. f(x)=x seeds grad=1 with no op): f'' = 0.
+    if _number(g) { return Ok(0.0) }
+    Err("ml.second_derivative nested path unavailable")
+}
+
+/// Hessian-vector product via finite difference of analytical gradients.
+/// `loss_fn(parameters)` returns a scalar loss node (or Result thereof).
+/// `parameters` is a non-empty list of trainable variables.
+/// `vector` is a list of directions matching each parameter (scalar or warp array).
+/// Optional `eps` defaults to 1e-5.
+/// Returns a list of HVP components with the same structure as each parameter value.
+pub fn hvp(loss_fn, parameters, vector, eps) -> Result[any] {
+    if _kind(parameters) != "list" || len(parameters) == 0 {
+        return Err("ml.hvp expects a non-empty list of trainable variables")
+    }
+    if _kind(vector) != "list" || len(vector) != len(parameters) {
+        return Err("ml.hvp vector must be a list matching parameters length")
+    }
+    step := if eps == null { 1e-5 } else { eps }
+    if !_number(step) || step <= 0 { return Err("ml.hvp eps must be finite and positive") }
+
+    let mut p = 0
+    while p < len(parameters) {
+        parameter := parameters[p]
+        if !_is_node(parameter) || !parameter.requires_grad {
+            return Err("ml.hvp expects trainable variable nodes")
+        }
+        direction := vector[p]
+        if !_compatible_direction(parameter.value, direction) {
+            return Err("ml.hvp vector entry ${p} is incompatible with parameter shape")
+        }
+        p = p + 1
+    }
+
+    // Snapshot bases so we can restore after both probes.
+    let mut bases = []
+    for parameter in parameters {
+        bases = push(bases, _snapshot(parameter.value))
+    }
+
+    // θ + εv
+    _apply_perturbation(parameters, bases, vector, step)?
+    plus_grads := _all_grads(loss_fn, parameters)
+    if is_err(plus_grads) {
+        _restore_parameters(parameters, bases)
+        return plus_grads
+    }
+
+    // θ - εv
+    _apply_perturbation(parameters, bases, vector, -step)?
+    minus_grads := _all_grads(loss_fn, parameters)
+    if is_err(minus_grads) {
+        _restore_parameters(parameters, bases)
+        return minus_grads
+    }
+
+    // Restore
+    _restore_parameters(parameters, bases)
+
+    denom := 2.0 * step
+    plus_values := plus_grads?
+    minus_values := minus_grads?
+    let mut out = []
+    p = 0
+    while p < len(parameters) {
+        out = push(out, _scale_diff(plus_values[p], minus_values[p], denom))
+        p = p + 1
+    }
+    Ok(out)
+}
+
+fn _restore_parameters(parameters, bases) {
+    let mut p = 0
+    while p < len(parameters) {
+        parameters[p].value = _restore(bases[p], parameters[p].value)
+        p = p + 1
+    }
+}
+
+fn _first_grad(scalar_fn, x) -> Result[any] {
+    loss := _eval_loss(scalar_fn, x)?
+    ag.zero_grad(loss)?
+    ag.backward(loss, null)?
+    raw := ag.grad(x)?
+    g := if _is_node(raw) { raw.value } else { raw }
+    if _is_array(g) || !_number(g) {
+        return Err("ml.second_derivative requires a scalar first gradient")
+    }
+    Ok(g)
+}
+
+fn _all_grads(loss_fn, parameters) -> Result[any] {
+    loss := _eval_loss_params(loss_fn, parameters)?
+    ag.zero_grad_many(parameters)?
+    ag.backward(loss, null)?
+    let mut grads = []
+    for parameter in parameters {
+        raw := ag.grad(parameter)?
+        g := if _is_node(raw) { raw.value } else { raw }
+        grads = push(grads, _snapshot(g))
+    }
+    Ok(grads)
+}
+
+fn _eval_loss(scalar_fn, x) -> Result[any] {
+    built := scalar_fn(x)
+    _as_scalar_loss(built, "ml.second_derivative")
+}
+
+fn _eval_loss_params(loss_fn, parameters) -> Result[any] {
+    built := loss_fn(parameters)
+    _as_scalar_loss(built, "ml.hvp")
+}
+
+fn _as_scalar_loss(built, label) -> Result[any] {
+    if _kind(built) == "result" {
+        if !built.ok { return built }
+        node := built.value
+        if !_is_node(node) { return Err("${label} fn Result must contain a scalar loss node") }
+        if !_number(node.value) { return Err("${label} requires a scalar loss; reduce arrays first") }
+        return Ok(node)
+    }
+    if _is_node(built) {
+        if !_number(built.value) { return Err("${label} requires a scalar loss; reduce arrays first") }
+        return Ok(built)
+    }
+    Err("${label} fn must return a scalar loss node or Result")
+}
+
+fn _apply_perturbation(parameters, bases, vector, scale) -> Result[any] {
+    let mut p = 0
+    while p < len(parameters) {
+        base := bases[p]
+        direction := vector[p]
+        if _is_array_snapshot(base) {
+            shape := base.shape
+            let mut data = []
+            let mut i = 0
+            flat_dir := if _is_array(direction) { warp.to_list(direction) } else { null }
+            while i < len(base.data) {
+                d := if flat_dir != null { flat_dir[i] } else { direction }
+                data = push(data, base.data[i] + scale * d)
+                i = i + 1
+            }
+            parameters[p].value = warp.array(data, shape)
+        } else {
+            parameters[p].value = base + scale * direction
+        }
+        p = p + 1
+    }
+    Ok(null)
+}
+
+fn _scale_diff(plus, minus, denom) {
+    // Grad snapshots are either scalars, flat lists, or {_array_snap, data, shape}.
+    if _is_array_snapshot(plus) {
+        let mut out = []
+        let mut i = 0
+        while i < len(plus.data) {
+            out = push(out, (plus.data[i] - minus.data[i]) / denom)
+            i = i + 1
+        }
+        return out
+    }
+    if _kind(plus) == "list" {
+        let mut out = []
+        let mut i = 0
+        while i < len(plus) {
+            out = push(out, (plus[i] - minus[i]) / denom)
+            i = i + 1
+        }
+        return out
+    }
+    (plus - minus) / denom
+}
+
+fn _compatible_direction(value, direction) {
+    if _is_array(value) {
+        if _is_array(direction) {
+            return warp.shape(value) == warp.shape(direction)
+        }
+        // Broadcast scalar direction across array parameters.
+        return _number(direction)
+    }
+    _number(direction)
+}
+
+fn _snapshot(value) {
+    if _is_array(value) {
+        return {"_array_snap": true, "data": warp.to_list(value), "shape": warp.shape(value)}
+    }
+    value
+}
+
+fn _is_array_snapshot(value) {
+    value != null && _kind(value) == "map" && value._array_snap == true
+}
+
+fn _restore(base, current_value) {
+    if _is_array_snapshot(base) {
+        return warp.array(base.data, base.shape)
+    }
+    // Preserve array-ness of the live value if base was scalar snapshot of array-less
+    base
+}
+
+fn _is_array(value) {
+    value != null && _kind(value) == "map" && value._warp == true
+}
+
+fn _is_node(value) {
+    if value == null || _kind(value) != "map" { return false }
+    if !contains(keys(value), "_autograd") { return false }
+    value._autograd == true
+}
+
+fn _number(value) {
+    if value == null { return false }
+    k := _kind(value)
+    if k != "int" && k != "float" { return false }
+    value == value && !math.isinf(value)
+}
+
+fn _kind(value) { type_of(value) }

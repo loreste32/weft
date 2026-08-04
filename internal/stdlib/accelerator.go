@@ -211,11 +211,52 @@ func tensorFromRuntime(value runtime.Value) (*tensor.Tensor, error) {
 			if item.B {
 				bytes[offset] = 1
 			}
-		case tensor.Int64:
+		case tensor.Int8, tensor.Int16, tensor.Int32, tensor.Int64:
 			if item.Kind != runtime.KindInt {
-				return nil, fmt.Errorf("tensor int64 data[%d] must be integer", i)
+				return nil, fmt.Errorf("tensor %s data[%d] must be integer", dtype, i)
 			}
-			binary.LittleEndian.PutUint64(bytes[offset:offset+8], uint64(item.I))
+			switch dtype {
+			case tensor.Int8:
+				if item.I < math.MinInt8 || item.I > math.MaxInt8 {
+					return nil, fmt.Errorf("tensor int8 data[%d] out of range", i)
+				}
+				bytes[offset] = byte(int8(item.I))
+			case tensor.Int16:
+				if item.I < math.MinInt16 || item.I > math.MaxInt16 {
+					return nil, fmt.Errorf("tensor int16 data[%d] out of range", i)
+				}
+				binary.LittleEndian.PutUint16(bytes[offset:offset+2], uint16(int16(item.I)))
+			case tensor.Int32:
+				if item.I < math.MinInt32 || item.I > math.MaxInt32 {
+					return nil, fmt.Errorf("tensor int32 data[%d] out of range", i)
+				}
+				binary.LittleEndian.PutUint32(bytes[offset:offset+4], uint32(int32(item.I)))
+			case tensor.Int64:
+				binary.LittleEndian.PutUint64(bytes[offset:offset+8], uint64(item.I))
+			}
+		case tensor.UInt8, tensor.UInt16, tensor.UInt32, tensor.UInt64:
+			if item.Kind != runtime.KindInt || item.I < 0 {
+				return nil, fmt.Errorf("tensor %s data[%d] must be a non-negative integer", dtype, i)
+			}
+			switch dtype {
+			case tensor.UInt8:
+				if item.I > math.MaxUint8 {
+					return nil, fmt.Errorf("tensor uint8 data[%d] out of range", i)
+				}
+				bytes[offset] = uint8(item.I)
+			case tensor.UInt16:
+				if item.I > math.MaxUint16 {
+					return nil, fmt.Errorf("tensor uint16 data[%d] out of range", i)
+				}
+				binary.LittleEndian.PutUint16(bytes[offset:offset+2], uint16(item.I))
+			case tensor.UInt32:
+				if item.I > math.MaxUint32 {
+					return nil, fmt.Errorf("tensor uint32 data[%d] out of range", i)
+				}
+				binary.LittleEndian.PutUint32(bytes[offset:offset+4], uint32(item.I))
+			case tensor.UInt64:
+				binary.LittleEndian.PutUint64(bytes[offset:offset+8], uint64(item.I))
+			}
 		case tensor.Float32:
 			value, ok := runtimeNumber(item)
 			if !ok {
@@ -265,8 +306,25 @@ func tensorToRuntime(value *tensor.Tensor) (runtime.Value, error) {
 		switch number := item.(type) {
 		case bool:
 			data = append(data, runtime.Bool(number))
+		case int8:
+			data = append(data, runtime.Int(int64(number)))
+		case int16:
+			data = append(data, runtime.Int(int64(number)))
+		case int32:
+			data = append(data, runtime.Int(int64(number)))
 		case int64:
 			data = append(data, runtime.Int(number))
+		case uint8:
+			data = append(data, runtime.Int(int64(number)))
+		case uint16:
+			data = append(data, runtime.Int(int64(number)))
+		case uint32:
+			data = append(data, runtime.Int(int64(number)))
+		case uint64:
+			if number > uint64(^uint64(0)>>1) {
+				return runtime.Null(), fmt.Errorf("tensor uint64 value %d cannot be represented by Weft's signed integer runtime", number)
+			}
+			data = append(data, runtime.Int(int64(number)))
 		case float32:
 			data = append(data, runtime.Float(float64(number)))
 		case float64:

@@ -1,6 +1,8 @@
 // dataframe — pandas-inspired tabular data for Weft.
 // Row-list storage with explicit column order and predictable null handling.
 
+use warp
+
 // ──────────────────────────────────────────────
 // Creation
 // ──────────────────────────────────────────────
@@ -209,6 +211,88 @@ pub fn col(t, name) {
     vals
 }
 
+// Convert selected numeric columns into a packed Warp matrix. DataFrame
+// storage is row-list based, so this boundary always copies; null and
+// non-numeric values are rejected instead of being silently coerced.
+pub fn to_warp(t, column_names, dtype_name) -> Result[any] {
+    if _kind(t) != "map" || t._df != true {
+        return Err("dataframe.to_warp expects a DataFrame")
+    }
+    selected := if column_names == null { t.columns } else { column_names }
+    if _kind(selected) != "list" {
+        return Err("dataframe.to_warp column_names must be a list or null")
+    }
+    target_dtype := if dtype_name == null { "float64" } else { dtype_name }
+    if _kind(target_dtype) != "str" {
+        return Err("dataframe.to_warp dtype_name must be a string or null")
+    }
+    let mut values = []
+    for name in selected {
+        if _kind(name) != "str" || !contains(t.columns, name) {
+            return Err("dataframe.to_warp received an unknown column")
+        }
+    }
+    for row in t.rows {
+        for name in selected {
+            value := row[name]
+            if value == null || (_kind(value) != "int" && _kind(value) != "float") {
+                return Err("dataframe.to_warp requires non-null numeric columns")
+            }
+            values = push(values, value)
+        }
+    }
+    packed := warp.array_typed(values, [len(t.rows), len(selected)], target_dtype)
+    if _kind(packed) == "result" { return packed }
+    Ok(packed)
+}
+
+// Build a DataFrame from a one- or two-dimensional Warp array. The values are
+// copied into row-list storage; generated names are column_0, column_1, ... .
+pub fn from_warp(a, column_names) -> Result[any] {
+    if _kind(a) != "map" || !contains(keys(a), "_warp") {
+        return Err("dataframe.from_warp expects a Warp array")
+    }
+    s := warp.shape(a)
+    if _kind(s) != "list" || (len(s) != 1 && len(s) != 2) {
+        return Err("dataframe.from_warp expects a one- or two-dimensional array")
+    }
+    row_count := s[0]
+    col_count := if len(s) == 1 { 1 } else { s[1] }
+    let mut names = []
+    if column_names == null {
+        let mut i = 0
+        while i < col_count {
+            names = push(names, "column_" + json.stringify(i))
+            i = i + 1
+        }
+    } else {
+        if _kind(column_names) != "list" || len(column_names) != col_count {
+            return Err("dataframe.from_warp column_names must match array columns")
+        }
+        for name in column_names {
+            if _kind(name) != "str" { return Err("dataframe.from_warp column names must be strings") }
+            names = push(names, name)
+        }
+    }
+    flat_array := warp.ravel(a)
+    if _kind(flat_array) == "result" { return flat_array }
+    flat := warp.to_list(flat_array)
+    if _kind(flat) == "result" { return flat }
+    let mut rows = []
+    let mut i = 0
+    while i < row_count {
+        let mut row = {}
+        let mut j = 0
+        while j < col_count {
+            row[names[j]] = flat[i * col_count + j]
+            j = j + 1
+        }
+        rows = push(rows, row)
+        i = i + 1
+    }
+    Ok(from_rows(rows))
+}
+
 // Series is the column-oriented companion to DataFrame. The existing col()
 // function intentionally remains a plain-list API for compatibility.
 pub fn series(values, name, index_values) {
@@ -332,33 +416,55 @@ pub fn index(t) {
 
 pub fn index_name(t) { if t._index_name == null { null } else { t._index_name } }
 
+// Number of index levels. Default / single-level frames return 1.
+// Minimal MultiIndex: levels stored in `_index_levels`, labels as lists in `_index`.
+pub fn index_nlevels(t) {
+    if contains(keys(t), "_index_levels") && t._index_levels != null && _kind(t._index_levels) == "list" {
+        n := len(t._index_levels)
+        if n > 0 { return n }
+    }
+    1
+}
+
+// Level names. Multi-level → `_index_levels`; single named → `[name]`; default → `[null]`.
+pub fn index_levels(t) {
+    if contains(keys(t), "_index_levels") && t._index_levels != null && _kind(t._index_levels) == "list" && len(t._index_levels) > 0 {
+        return t._index_levels
+    }
+    if contains(keys(t), "_index_name") && t._index_name != null { return [t._index_name] }
+    [null]
+}
+
 pub fn loc_labels(t, labels) {
     if _kind(labels) != "list" { return Err("dataframe.loc_labels expects a label list") }
     idx := index(t)
+    nlevels := index_nlevels(t)
     let mut selected = []
     let mut selected_index = []
     for label in labels {
         let mut i = 0
         while i < len(t.rows) {
-            if _value_key(idx[i]) == _value_key(label) {
+            if _index_label_matches(idx[i], label, nlevels) {
                 selected = push(selected, t.rows[i])
                 selected_index = push(selected_index, idx[i])
             }
             i = i + 1
         }
     }
-    {"_df": true, "columns": t.columns, "rows": selected, "_index": selected_index, "_index_name": t._index_name}
+    _frame_with_index(t.columns, selected, selected_index, t)
 }
 
 pub fn reindex(t, labels, fill_value) {
     if _kind(labels) != "list" { return Err("dataframe.reindex expects a label list") }
     idx := index(t)
+    nlevels := index_nlevels(t)
     let mut result = []
     for label in labels {
         let mut matched = false
         let mut i = 0
         while i < len(t.rows) {
-            if _value_key(idx[i]) == _value_key(label) {
+            // reindex requires exact label equality (full multi-key when multi-level)
+            if _index_label_exact(idx[i], label, nlevels) {
                 result = push(result, t.rows[i])
                 matched = true
                 break
@@ -371,7 +477,7 @@ pub fn reindex(t, labels, fill_value) {
             result = push(result, row)
         }
     }
-    {"_df": true, "columns": t.columns, "rows": result, "_index": labels, "_index_name": t._index_name}
+    _frame_with_index(t.columns, result, labels, t)
 }
 
 pub fn set_index(t, column, drop) {
@@ -393,7 +499,184 @@ pub fn set_index(t, column, drop) {
     {"_df": true, "columns": new_columns, "rows": new_rows, "_index": new_index, "_index_name": column}
 }
 
+// Minimal multi-level index: store each row label as a list of values and
+// level names in `_index_levels`. Not a full pandas MultiIndex.
+// One column delegates to set_index. drop defaults to true.
+pub fn set_multi_index(t, columns, drop) {
+    if _kind(columns) != "list" || len(columns) == 0 {
+        return Err("dataframe.set_multi_index expects a non-empty list of column names")
+    }
+    if len(columns) == 1 {
+        return set_index(t, columns[0], drop)
+    }
+    let mut seen = {}
+    for c in columns {
+        if _kind(c) != "str" { return Err("dataframe.set_multi_index column names must be strings") }
+        if !contains(t.columns, c) { return Err("dataframe.set_multi_index: unknown column " + c) }
+        if seen[c] != null { return Err("dataframe.set_multi_index: duplicate column " + c) }
+        seen[c] = true
+    }
+    remove := if drop == null { true } else { drop }
+    if _kind(remove) != "bool" { return Err("dataframe.set_multi_index drop must be boolean or null") }
+    let mut new_columns = []
+    for c in t.columns {
+        if !remove || !contains(columns, c) { new_columns = push(new_columns, c) }
+    }
+    let mut new_rows = []
+    let mut new_index = []
+    for row in t.rows {
+        let mut label = []
+        for c in columns { label = push(label, row[c]) }
+        new_index = push(new_index, label)
+        let mut next = {}
+        for c in new_columns { next[c] = row[c] }
+        new_rows = push(new_rows, next)
+    }
+    {"_df": true, "columns": new_columns, "rows": new_rows, "_index": new_index, "_index_levels": columns}
+}
+
+// Resolve multi-index level by int (incl. negative) or name.
+fn _resolve_level(t, level) {
+    nlevels := index_nlevels(t)
+    if nlevels < 2 { return Err("dataframe multi-index level ops require index_nlevels >= 2") }
+    if _kind(level) == "int" {
+        let mut idx = level
+        if idx < 0 { idx = nlevels + idx }
+        if idx < 0 || idx >= nlevels { return Err("dataframe level index out of range") }
+        return idx
+    }
+    if _kind(level) == "str" {
+        levels := t._index_levels
+        let mut i = 0
+        while i < len(levels) {
+            if levels[i] == level { return i }
+            i = i + 1
+        }
+        return Err("dataframe unknown index level name: " + level)
+    }
+    Err("dataframe level must be int or str")
+}
+
+pub fn swaplevel(t, i, j) {
+    nlevels := index_nlevels(t)
+    if nlevels < 2 { return Err("dataframe.swaplevel requires a multi-level index") }
+    a := _resolve_level(t, i)
+    if is_err(a) { return a }
+    b := _resolve_level(t, j)
+    if is_err(b) { return b }
+    if a == b { return t }
+    levels := t._index_levels
+    let mut new_levels = []
+    let mut li = 0
+    while li < nlevels {
+        if li == a { new_levels = push(new_levels, levels[b]) }
+        else if li == b { new_levels = push(new_levels, levels[a]) }
+        else { new_levels = push(new_levels, levels[li]) }
+        li = li + 1
+    }
+    idx := index(t)
+    let mut new_index = []
+    for label in idx {
+        if _kind(label) != "list" || len(label) != nlevels {
+            return Err("dataframe.swaplevel: malformed multi-index label")
+        }
+        let mut nl = []
+        let mut k = 0
+        while k < nlevels {
+            if k == a { nl = push(nl, label[b]) }
+            else if k == b { nl = push(nl, label[a]) }
+            else { nl = push(nl, label[k]) }
+            k = k + 1
+        }
+        new_index = push(new_index, nl)
+    }
+    {
+        "_df": true,
+        "columns": t.columns,
+        "rows": t.rows,
+        "_index": new_index,
+        "_index_levels": new_levels,
+    }
+}
+
+pub fn droplevel(t, level) {
+    nlevels := index_nlevels(t)
+    if nlevels < 2 { return Err("dataframe.droplevel requires a multi-level index") }
+    drop_i := _resolve_level(t, level)
+    if is_err(drop_i) { return drop_i }
+    levels := t._index_levels
+    let mut new_levels = []
+    let mut li = 0
+    while li < nlevels {
+        if li != drop_i { new_levels = push(new_levels, levels[li]) }
+        li = li + 1
+    }
+    idx := index(t)
+    let mut new_index = []
+    for label in idx {
+        if _kind(label) != "list" || len(label) != nlevels {
+            return Err("dataframe.droplevel: malformed multi-index label")
+        }
+        if len(new_levels) == 1 {
+            new_index = push(new_index, label[if drop_i == 0 { 1 } else { 0 }])
+        } else {
+            let mut nl = []
+            let mut k = 0
+            while k < nlevels {
+                if k != drop_i { nl = push(nl, label[k]) }
+                k = k + 1
+            }
+            new_index = push(new_index, nl)
+        }
+    }
+    if len(new_levels) == 1 {
+        {
+            "_df": true,
+            "columns": t.columns,
+            "rows": t.rows,
+            "_index": new_index,
+            "_index_name": new_levels[0],
+        }
+    } else {
+        {
+            "_df": true,
+            "columns": t.columns,
+            "rows": t.rows,
+            "_index": new_index,
+            "_index_levels": new_levels,
+        }
+    }
+}
+
 pub fn reset_index(t, name) {
+    nlevels := index_nlevels(t)
+    if nlevels > 1 {
+        levels := t._index_levels
+        for lv in levels {
+            if contains(t.columns, lv) {
+                return Err("dataframe.reset_index: index level name conflicts with a column: " + lv)
+            }
+        }
+        idx := index(t)
+        let mut new_columns = []
+        for lv in levels { new_columns = push(new_columns, lv) }
+        for c in t.columns { new_columns = push(new_columns, c) }
+        let mut new_rows = []
+        let mut i = 0
+        while i < len(t.rows) {
+            let mut next = {}
+            label := idx[i]
+            let mut li = 0
+            while li < nlevels {
+                next[levels[li]] = if _kind(label) == "list" { label[li] } else { null }
+                li = li + 1
+            }
+            for c in t.columns { next[c] = t.rows[i][c] }
+            new_rows = push(new_rows, next)
+            i = i + 1
+        }
+        return {"_df": true, "columns": new_columns, "rows": new_rows}
+    }
     index_name := if name == null { "index" } else { name }
     if _kind(index_name) != "str" { return Err("dataframe.reset_index name must be a string or null") }
     if contains(t.columns, index_name) { return Err("dataframe.reset_index: index name conflicts with a column") }
@@ -766,6 +1049,55 @@ pub fn group_by(t, group_col, aggs) {
     {"_df": true, "columns": new_cols, "rows": result}
 }
 
+// Pandas-style transform: each row gets its group's aggregate of `column`.
+// Result keeps the same columns and index; the target column is replaced.
+pub fn group_by_transform(t, group_col, column, op) {
+    if !contains(t.columns, group_col) { return Err("dataframe.group_by_transform: unknown group column") }
+    if !contains(t.columns, column) { return Err("dataframe.group_by_transform: unknown column") }
+    if !_valid_agg(op) { return Err("dataframe.group_by_transform: unknown aggregation") }
+    let mut groups = {}
+    for r in t.rows {
+        k := _value_key(r[group_col])
+        if groups[k] == null { groups[k] = [] }
+        groups[k] = push(groups[k], r[column])
+    }
+    let mut stats = {}
+    for k in keys(groups) {
+        stats[k] = _agg(op, groups[k])
+    }
+    let mut new_rows = []
+    for r in t.rows {
+        let mut nr = {}
+        for c in t.columns { nr[c] = r[c] }
+        nr[column] = stats[_value_key(r[group_col])]
+        new_rows = push(new_rows, nr)
+    }
+    _with_same_index(t, t.columns, new_rows)
+}
+
+pub fn group_by_size(t, group_col) {
+    if !contains(t.columns, group_col) { return Err("dataframe.group_by_size: unknown group column") }
+    let mut groups = {}
+    let mut group_order = []
+    for r in t.rows {
+        k := _value_key(r[group_col])
+        if groups[k] == null {
+            groups[k] = {"key": r[group_col], "n": 0}
+            group_order = push(group_order, k)
+        }
+        groups[k] = {"key": groups[k].key, "n": groups[k].n + 1}
+    }
+    let mut result = []
+    for gk in group_order {
+        g := groups[gk]
+        let mut row = {}
+        row[group_col] = g.key
+        row["size"] = g.n
+        result = push(result, row)
+    }
+    {"_df": true, "columns": [group_col, "size"], "rows": result}
+}
+
 pub fn agg(t, aggs) {
     // Aggregate whole dataframe: agg(df, {"total": {col: "price", op: "sum"}, ...})
     let mut row = {}
@@ -829,7 +1161,7 @@ pub fn describe(t, column) {
     vals := _numeric_col(t, column)
     n := len(vals)
     if n == 0 { return {"count": 0} }
-    sorted := sort(vals)
+    sorted := _sort_values(vals)
     s := _sum_list(vals)
     mn := s / n
     let mut var_sum = 0.0
@@ -1284,7 +1616,7 @@ pub fn expanding(t, column, op) {
 pub fn rank(t, column) {
     if !contains(t.columns, column) { return Err("dataframe.rank: unknown column " + column) }
     vals := col(t, column)
-    sorted := sort(vals)
+    sorted := _sort_values(vals)
     let mut ranks = {}
     let mut i = 0
     while i < len(sorted) {
@@ -1582,7 +1914,7 @@ fn _with_named_columns(t, columns, rows) {
     let mut result = {"_df": true, "columns": columns, "rows": rows}
     if contains(keys(t), "_index") && t._index != null {
         result["_index"] = _index_for_rows(t, rows)
-        result["_index_name"] = t._index_name
+        result = _copy_index_meta(result, t)
     }
     result
 }
@@ -1591,9 +1923,61 @@ fn _with_same_index(t, columns, rows) {
     let mut result = {"_df": true, "columns": columns, "rows": rows}
     if contains(keys(t), "_index") && t._index != null {
         result["_index"] = t._index
-        result["_index_name"] = t._index_name
+        result = _copy_index_meta(result, t)
     }
     result
+}
+
+// Build a frame carrying index labels plus single/multi-level metadata from src.
+fn _frame_with_index(columns, rows, labels, src) {
+    let mut result = {"_df": true, "columns": columns, "rows": rows, "_index": labels}
+    _copy_index_meta(result, src)
+}
+
+fn _copy_index_meta(result, src) {
+    let mut out = result
+    if contains(keys(src), "_index_name") && src._index_name != null {
+        out["_index_name"] = src._index_name
+    }
+    if contains(keys(src), "_index_levels") && src._index_levels != null {
+        out["_index_levels"] = src._index_levels
+    }
+    out
+}
+
+// Exact label equality for reindex (full multi-key when multi-level).
+fn _index_label_exact(idx_label, query_label, nlevels) {
+    if nlevels <= 1 {
+        return _value_key(idx_label) == _value_key(query_label)
+    }
+    if _kind(idx_label) != "list" || _kind(query_label) != "list" { return false }
+    if len(idx_label) != nlevels || len(query_label) != nlevels { return false }
+    let mut i = 0
+    while i < nlevels {
+        if _value_key(idx_label[i]) != _value_key(query_label[i]) { return false }
+        i = i + 1
+    }
+    true
+}
+
+// loc_labels match: full key, partial prefix list, or scalar first-level match.
+fn _index_label_matches(idx_label, query_label, nlevels) {
+    if nlevels <= 1 {
+        return _value_key(idx_label) == _value_key(query_label)
+    }
+    if _kind(idx_label) != "list" { return false }
+    if _kind(query_label) != "list" {
+        // Scalar → match first level only.
+        return _value_key(idx_label[0]) == _value_key(query_label)
+    }
+    if len(query_label) == 0 || len(query_label) > nlevels { return false }
+    if len(idx_label) < len(query_label) { return false }
+    let mut i = 0
+    while i < len(query_label) {
+        if _value_key(idx_label[i]) != _value_key(query_label[i]) { return false }
+        i = i + 1
+    }
+    true
 }
 
 fn _index_for_rows(t, rows) {
@@ -1689,6 +2073,57 @@ fn _comes_before(a, b, desc) {
 fn _copy_rows(rows) {
     let mut result = []
     for row in rows { result = push(result, row) }
+    result
+}
+
+// Stable ascending merge-sort for scalar lists (used by describe/rank).
+// Avoids the host `sort` builtin so `weft check` resolves module code without
+// relying on shared-prelude visibility in the type checker.
+fn _sort_values(values) {
+    if values == null || len(values) <= 1 {
+        let mut copy = []
+        if values != null {
+            for v in values { copy = push(copy, v) }
+        }
+        return copy
+    }
+    mid := len(values) / 2
+    left := _sort_values(_value_range(values, 0, mid))
+    right := _sort_values(_value_range(values, mid, len(values)))
+    _merge_values(left, right)
+}
+
+fn _value_range(values, start, stop) {
+    let mut result = []
+    let mut i = start
+    while i < stop {
+        result = push(result, values[i])
+        i = i + 1
+    }
+    result
+}
+
+fn _merge_values(left, right) {
+    let mut result = []
+    let mut li = 0
+    let mut ri = 0
+    while li < len(left) && ri < len(right) {
+        if _comes_after(left[li], right[ri], false) {
+            result = push(result, right[ri])
+            ri = ri + 1
+        } else {
+            result = push(result, left[li])
+            li = li + 1
+        }
+    }
+    while li < len(left) {
+        result = push(result, left[li])
+        li = li + 1
+    }
+    while ri < len(right) {
+        result = push(result, right[ri])
+        ri = ri + 1
+    }
     result
 }
 

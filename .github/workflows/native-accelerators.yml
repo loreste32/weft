@@ -30,7 +30,7 @@ jobs:
       - name: Run provider conformance test
         env:
           WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_cuda.so
-        run: go test ./internal/accelerator -run '^TestExternalProvider(Tensor)?$' -count=1 -timeout=120s
+        run: go test ./internal/accelerator -run '^TestExternalProvider' -count=1 -timeout=120s
 
   rocm:
     name: ROCm provider conformance
@@ -52,7 +52,7 @@ jobs:
       - name: Run provider conformance test
         env:
           WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_rocm.so
-        run: go test ./internal/accelerator -run '^TestExternalProvider(Tensor)?$' -count=1 -timeout=120s
+        run: go test ./internal/accelerator -run '^TestExternalProvider' -count=1 -timeout=120s
 
   mlx:
     name: MLX provider conformance
@@ -79,4 +79,26 @@ jobs:
         env:
           WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_mlx.dylib
           DYLD_LIBRARY_PATH: ${{ vars.MLX_C_PREFIX }}/lib
-        run: go test ./internal/accelerator -run '^TestExternalProvider(Tensor)?$' -count=1 -timeout=120s
+        run: go test ./internal/accelerator -run '^TestExternalProvider' -count=1 -timeout=120s
+
+  report:
+    name: Capability report
+    runs-on: ubuntu-latest
+    needs: []
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build weft
+        run: go build -o /tmp/weft-report ./cmd/weft
+      - name: Generate accelerator report
+        env:
+          WEFT_BIN: /tmp/weft-report
+        run: bash scripts/accelerator-report.sh "$RUNNER_TEMP/weft-accelerator-report.json"
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: accelerator-report
+          path: ${{ runner.temp }}/weft-accelerator-report.json

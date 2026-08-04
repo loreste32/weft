@@ -1,0 +1,31 @@
+use "../../packages/warp/lib.weft" as warp
+use json
+
+fn main -> Result {
+    empty := warp.zeros([0])
+    empty2 := warp.zeros([0, 3])
+    zerod := warp.array([7.0], [])
+    ints := warp.array_typed([1, 2, 3], [3], "int64")
+    floats := warp.array_typed([1.0, 2.0, 3.0], [3], "float64")
+    promoted := warp.add(ints, floats)
+    nan_arr := warp.array([1.0, math.nan, 3.0], [3])
+    inf_arr := warp.array([1.0, math.inf, -math.inf], [3])
+    keep := warp.sum_axis_opts(warp.array([1.0, 2.0, 3.0, 4.0], [2, 2]), 0, true)
+    broadcast_fail := warp.add(warp.array([1.0, 2.0], [2]), warp.array([1.0, 2.0, 3.0], [3]))
+    storage := warp.storage_kind(warp.array([1.0, 2.0], [2]))
+    say(json.stringify({
+        "empty_shape": empty.shape,
+        "empty_size": warp.size(empty),
+        "empty2_shape": empty2.shape,
+        "zerod_shape": zerod.shape,
+        "zerod_value": zerod.data[0],
+        "promoted_dtype": warp.dtype(promoted),
+        "promoted": promoted.data,
+        "nan_is_nan": warp.isnan(nan_arr).data,
+        "inf_is_inf": warp.isinf(inf_arr).data,
+        "keepdims_shape": keep.shape,
+        "keepdims_data": keep.data,
+        "broadcast_fail": is_err(broadcast_fail),
+        "storage": storage,
+    }))
+}

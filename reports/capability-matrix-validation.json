@@ -1,0 +1,229 @@
+{
+  "format": "weft.capability.matrix",
+  "version": 1,
+  "generated_at": "2026-08-04T04:27:50Z",
+  "honesty": "Statuses are conservative. implemented \u2260 complete NumPy/pandas/ML framework parity. See docs/COMPATIBILITY.md.",
+  "status_vocabulary": {
+    "implemented": "Present and covered at smoke/semantics level for the claim",
+    "partial": "Present but missing options, edge cases, scale, or backend parity",
+    "unsupported": "Not implemented or deliberately out of scope for replacement claims"
+  },
+  "export_counts": {
+    "warp": 153,
+    "dataframe": 110,
+    "ml": 65
+  },
+  "exports": {
+    "warp": {
+      "count": 153,
+      "package_path": "packages/warp/weft.json"
+    },
+    "dataframe": {
+      "count": 110,
+      "package_path": "packages/dataframe/weft.json"
+    },
+    "ml": {
+      "count": 65,
+      "package_path": "packages/ml/weft.json"
+    }
+  },
+  "claims": [
+    {
+      "area": "warp",
+      "claim": "array creation (array/zeros/ones/arange)",
+      "status": "implemented",
+      "notes": "Flat list + shape; typed constructors"
+    },
+    {
+      "area": "warp",
+      "claim": "logical dtypes (bool/int64/float32/float64/object)",
+      "status": "implemented",
+      "notes": "Logical metadata; not full NumPy casting table"
+    },
+    {
+      "area": "warp",
+      "claim": "host packed tensor storage (_tid)",
+      "status": "implemented",
+      "notes": "Primary numeric storage via internal/tensor"
+    },
+    {
+      "area": "warp",
+      "claim": "elementwise arithmetic + broadcasting",
+      "status": "implemented",
+      "notes": "Trailing broadcast; shape mismatch \u2192 Err"
+    },
+    {
+      "area": "warp",
+      "claim": "reductions (sum/mean/min/max/axis)",
+      "status": "implemented",
+      "notes": "Axis opts partial (keepdims yes; where/initial/out no)"
+    },
+    {
+      "area": "warp",
+      "claim": "matmul / dot (1D/2D forms)",
+      "status": "implemented",
+      "notes": "CPU; LU inv/solve O(n\u00b3)"
+    },
+    {
+      "area": "warp",
+      "claim": "strided views / transpose_view / advanced index",
+      "status": "partial",
+      "notes": "Views + index API expanding; not full NumPy indexing"
+    },
+    {
+      "area": "warp",
+      "claim": "1D FFT / IFFT / fft_freq",
+      "status": "partial",
+      "notes": "1D only; power-of-2 Cooley\u2013Tukey or naive; not multi-dim/sparse/masked"
+    },
+    {
+      "area": "warp",
+      "claim": "sparse / masked arrays",
+      "status": "unsupported",
+      "notes": "Not implemented"
+    },
+    {
+      "area": "warp",
+      "claim": "native accelerator dispatch (load/run/tensor)",
+      "status": "implemented",
+      "notes": "Explicit path + capability; no silent load"
+    },
+    {
+      "area": "warp",
+      "claim": "CUDA / ROCm / MLX automatic kernels",
+      "status": "partial",
+      "notes": "Vendor providers exist; require plugin path + hardware jobs"
+    },
+    {
+      "area": "warp",
+      "claim": "complete NumPy API replacement",
+      "status": "unsupported",
+      "notes": "Experimental surface; not binary-compatible NumPy"
+    },
+    {
+      "area": "dataframe",
+      "claim": "from_rows / from_columns / CSV/JSON I/O",
+      "status": "implemented",
+      "notes": "Row-list storage; quoted CSV"
+    },
+    {
+      "area": "dataframe",
+      "claim": "filter / query / sort / head/tail/iloc",
+      "status": "implemented",
+      "notes": "iloc scalar/list; not full .loc label engine"
+    },
+    {
+      "area": "dataframe",
+      "claim": "groupby + aggregations + transform/size",
+      "status": "partial",
+      "notes": "group_by, group_by_transform, group_by_size; not full pandas groupby API"
+    },
+    {
+      "area": "dataframe",
+      "claim": "join / merge / concat",
+      "status": "implemented",
+      "notes": "Common how-modes; not full multi-key parity"
+    },
+    {
+      "area": "dataframe",
+      "claim": "Series + explicit index / MultiIndex foundation",
+      "status": "partial",
+      "notes": "Series helpers + multi-level foundation; not complete MultiIndex"
+    },
+    {
+      "area": "dataframe",
+      "claim": "pivot / melt / rolling / expanding",
+      "status": "implemented",
+      "notes": "Present; window ops limited vs pandas"
+    },
+    {
+      "area": "dataframe",
+      "claim": "nullable / categorical / datetime dtypes",
+      "status": "unsupported",
+      "notes": "Null-aware stats only; no extension dtypes"
+    },
+    {
+      "area": "dataframe",
+      "claim": "Arrow / Parquet / columnar backend",
+      "status": "unsupported",
+      "notes": "Row-list only"
+    },
+    {
+      "area": "dataframe",
+      "claim": "100k+ row ETL scale",
+      "status": "partial",
+      "notes": "Scale smoke exists; not memory-optimized for multi-GB"
+    },
+    {
+      "area": "dataframe",
+      "claim": "complete pandas API replacement",
+      "status": "unsupported",
+      "notes": "Experimental; deliberate subset"
+    },
+    {
+      "area": "ml",
+      "claim": "vectors (dot/cosine/norm/topk)",
+      "status": "implemented",
+      "notes": "Pure Weft"
+    },
+    {
+      "area": "ml",
+      "claim": "embeddings + local index (RAG helpers)",
+      "status": "partial",
+      "notes": "Provider-backed embed; needs network/keys"
+    },
+    {
+      "area": "ml",
+      "claim": "classical linear / logistic fit + score",
+      "status": "implemented",
+      "notes": "CPU minibatch; 100k-row train tested"
+    },
+    {
+      "area": "ml",
+      "claim": "reverse-mode autodiff (scalars + warp)",
+      "status": "implemented",
+      "notes": "Tape ops; not full framework"
+    },
+    {
+      "area": "ml",
+      "claim": "SGD / Adam optimizers",
+      "status": "implemented",
+      "notes": "Scalar + Warp parameters"
+    },
+    {
+      "area": "ml",
+      "claim": "modules (linear/relu/sequential) + checkpoints",
+      "status": "implemented",
+      "notes": "Advisory; not PyTorch parity"
+    },
+    {
+      "area": "ml",
+      "claim": "higher-order grads (create_graph / gradcheck / hvp)",
+      "status": "partial",
+      "notes": "Scalar nested reverse-mode create_graph; array VJPs numeric; HVP finite-diff"
+    },
+    {
+      "area": "ml",
+      "claim": "device placement (cpu/cuda/rocm/mlx)",
+      "status": "partial",
+      "notes": "Advisory tags; non-CPU \u2192 fallback:true, compute stays CPU"
+    },
+    {
+      "area": "ml",
+      "claim": "GPU training without external provider",
+      "status": "unsupported",
+      "notes": "No fake GPU; needs native accelerator plugin"
+    },
+    {
+      "area": "ml",
+      "claim": "ONNX / Triton local inference",
+      "status": "partial",
+      "notes": "Via mlinfer HTTP sidecars, not in-process"
+    }
+  ],
+  "counts": {
+    "implemented": 16,
+    "partial": 10,
+    "unsupported": 6
+  }
+}

@@ -82,3 +82,21 @@ Apps that `use` modules needing models or disk must declare grants on the **modu
 - Signing: key name validation (rejects `/`, `\`, `..`, leading `-`/`.`)
 - VM: 10,000-frame call depth cap (stack overflow → error, not crash)
 - DB: JSON/JSONB columns auto-parsed safely via `encoding/json` (no eval)
+
+### Native accelerator plugins
+
+Native providers are loaded with `accelerator.load(path)` via `dlopen`. They run **in-process** and fully bypass the language sandbox.
+
+| Control | Env / mechanism |
+|---------|-----------------|
+| Hard disable | `WEFT_ACCELERATOR_DISABLE=1` |
+| Path allowlist | `WEFT_ACCELERATOR_ALLOWLIST` (colon/comma/semicolon-separated files or directories) |
+| Require checksum | `WEFT_ACCELERATOR_REQUIRE_CHECKSUM=1` |
+| Expected digest | `WEFT_ACCELERATOR_CHECKSUM=<64 hex>` or sidecar `<plugin>.sha256` |
+
+Rules of thumb:
+
+1. Treat provider shared libraries as **trusted host code**.
+2. Do not let registry packages silently load plugins; application code must pass an explicit path.
+3. Production servers should set an allowlist and require checksums.
+4. Capability grant `accelerator` is still required for third-party modules.

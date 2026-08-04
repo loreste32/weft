@@ -1,0 +1,64 @@
+// Scale smoke: matmul (default) or elementwise sum, size from env.
+//   WEFT_WARP_MODE=matmul|elementwise   (default matmul)
+//   WEFT_WARP_N=256                     (matmul edge length; default 256)
+//   WEFT_WARP_ELEMS=100000              (elementwise length; default 100000)
+// Timing belongs to scripts/bench-scale.sh — this program only prints JSON.
+use "../../packages/warp/lib.weft" as warp
+
+fn _env_int(key, default) {
+    raw := env.get(key, "")
+    if raw == null || raw == "" { return default }
+    n := int.parse(raw).unwrap_or(0)
+    if n <= 0 { return default }
+    n
+}
+
+fn _env_str(key, default) {
+    raw := env.get(key, "")
+    if raw == null || raw == "" { return default }
+    raw
+}
+
+fn main {
+    mode := _env_str("WEFT_WARP_MODE", "matmul")
+    if mode == "elementwise" {
+        let mut n = _env_int("WEFT_WARP_ELEMS", 100000)
+        if n > 5000000 { n = 5000000 }
+        let mut data = []
+        let mut i = 0
+        while i < n {
+            data = push(data, (i % 7) + 0.0)
+            i = i + 1
+        }
+        a := warp.array(data, [n])
+        total := warp.sum(a)
+        say(json.stringify({
+            "fixture": "warp_scale",
+            "mode": "elementwise",
+            "n": n,
+            "storage": warp.storage_kind(a),
+            "checksum": total,
+        }))
+    } else {
+        let mut n = _env_int("WEFT_WARP_N", 256)
+        // Cap accidental huge runs in CI; raise via env intentionally.
+        if n > 2048 { n = 2048 }
+        let mut data = []
+        let mut i = 0
+        let nn = n * n
+        while i < nn {
+            data = push(data, (i % 7) + 0.0)
+            i = i + 1
+        }
+        a := warp.array(data, [n, n])
+        b := warp.array(data, [n, n])
+        c := warp.matmul(a, b)
+        say(json.stringify({
+            "fixture": "warp_scale",
+            "mode": "matmul",
+            "n": n,
+            "storage": warp.storage_kind(a),
+            "checksum": warp.sum(c),
+        }))
+    }
+}

@@ -4,7 +4,7 @@
   "description": "Schedule recurring tasks — intervals, daily times, multi-job scheduler",
   "type": "module",
   "entry": "lib.weft",
-  "exports": ["every", "at", "schedule", "stop", "stop_all", "stats", "wait"],
+  "exports": ["every", "at", "schedule", "stop", "stop_all", "stats", "close", "wait"],
   "maturity": "beta",
   "license": "Apache-2.0",
   "keywords": ["cron", "schedule", "interval", "timer", "recurring", "jobs"],

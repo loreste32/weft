@@ -1,5 +1,6 @@
 use json
 use fs
+use math
 use warp
 use "./autograd.weft" as ag
 
@@ -7,10 +8,49 @@ use "./autograd.weft" as ag
 // contain autograd nodes at runtime; checkpoint files contain only plain
 // parameter values, optimizer state, and user metadata, never graph links.
 
-pub fn linear_module(in_features, out_features) -> Result[any] {
+// seed(value) returns a deterministic RNG handle. Pass it to linear_module as
+// the optional third argument for reproducible initialization.
+pub fn seed(value) -> Result[any] {
+    if _kind(value) != "int" { return Err("ml.seed expects an integer") }
+    Ok({"_ml_rng": true, "state": if value == 0 { 1 } else { value }})
+}
+
+fn _next_unit(rng) {
+    // Numerical Recipes LCG; returns [0, 1) and mutates rng.state.
+    let mut next = (rng.state * 1664525 + 1013904223) % 2147483647
+    if next < 0 { next = -next }
+    rng.state = next
+    value := (next + 0.0) / 2147483647.0
+    value
+}
+
+fn _rand_array(shape, scale, rng) {
+    let mut n = 1
+    for dim in shape { n = n * dim }
+    let mut data = []
+    let mut i = 0
+    while i < n {
+        value := _next_unit(rng)
+        data = push(data, (value * 2.0 - 1.0) * scale)
+        i = i + 1
+    }
+    warp.array(data, shape)
+}
+
+pub fn linear_module(in_features, out_features, seed_arg) -> Result[any] {
     if _kind(in_features) != "int" || in_features <= 0 { return Err("ml.linear_module in_features must be positive") }
     if _kind(out_features) != "int" || out_features <= 0 { return Err("ml.linear_module out_features must be positive") }
-    weight := ag.variable(warp.zeros([in_features, out_features]))?
+    scale := 1.0 / math.sqrt(in_features + 0.0)
+    rng := if seed_arg == null {
+        {"_ml_rng": true, "state": 1}
+    } else if _kind(seed_arg) == "int" {
+        {"_ml_rng": true, "state": if seed_arg == 0 { 1 } else { seed_arg }}
+    } else if _kind(seed_arg) == "map" && seed_arg._ml_rng == true {
+        seed_arg
+    } else {
+        return Err("ml.linear_module seed must be int or ml.seed handle")
+    }
+    weight := ag.variable(_rand_array([in_features, out_features], scale, rng))?
     bias := ag.variable(warp.zeros([out_features]))?
     Ok({
         "kind": "linear",
@@ -22,8 +62,73 @@ pub fn linear_module(in_features, out_features) -> Result[any] {
     })
 }
 
+pub fn sequential(modules) -> Result[any] {
+    if _kind(modules) != "list" || len(modules) == 0 {
+        return Err("ml.sequential expects a non-empty module list")
+    }
+    let mut parameters = []
+    for module in modules {
+        if module.kind == "linear" {
+            for parameter in module.parameters { parameters = push(parameters, parameter) }
+        } else if module.kind == "relu" {
+            // activation — no parameters
+        } else {
+            return Err("ml.sequential received an unsupported module kind")
+        }
+    }
+    Ok({
+        "kind": "sequential",
+        "modules": modules,
+        "parameters": parameters,
+    })
+}
+
+pub fn relu_module() -> Result[any] {
+    Ok({"kind": "relu", "parameters": []})
+}
+
+pub fn module_forward(module, input) -> Result[any] {
+    if module == null || _kind(module) != "map" { return Err("ml.module_forward expects a module") }
+    if module.kind == "linear" {
+        // sequential may pass an autograd node; unwrap to array when needed.
+        arr := if _is_array(input) {
+            input
+        } else if _kind(input) == "map" && contains(keys(input), "value") {
+            ag.value(input)?
+        } else {
+            input
+        }
+        return linear_forward(module, arr)
+    }
+    if module.kind == "relu" {
+        node := if _kind(input) == "map" && contains(keys(input), "grad") {
+            input
+        } else {
+            ag.constant(input)?
+        }
+        return ag.relu(node)
+    }
+    if module.kind == "sequential" {
+        let mut value = input
+        for child in module.modules {
+            value = module_forward(child, value)?
+        }
+        return Ok(value)
+    }
+    Err("ml.module_forward received an unsupported module kind")
+}
+
 pub fn module_parameters(module) -> Result[any] {
-    if !_is_linear(module) { return Err("ml.module_parameters expects a supported module") }
+    if module == null || _kind(module) != "map" || !_parameter_list(module.parameters) {
+        // Empty parameter lists are valid for pure activations.
+        if module != null && _kind(module) == "map" && module.kind == "relu" {
+            return Ok([])
+        }
+        if module != null && _kind(module) == "map" && module.kind == "sequential" && _kind(module.parameters) == "list" {
+            return Ok(module.parameters)
+        }
+        if !_is_linear(module) { return Err("ml.module_parameters expects a supported module") }
+    }
     Ok(module.parameters)
 }
 
@@ -34,6 +139,7 @@ pub fn linear_forward(module, input) -> Result[any] {
     }
     input_node := ag.constant(input)?
     product := ag.matmul(input_node, module.weight)?
+    // Bias [out_features] broadcasts onto [batch, out_features] via warp.add.
     ag.add(product, module.bias)
 }
 

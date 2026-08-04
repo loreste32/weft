@@ -1,0 +1,153 @@
+use math
+use warp
+use "./autograd.weft" as ag
+
+// Finite-difference gradient check against reverse-mode autodiff.
+// For each scalar or warp-array parameter, compares the analytical gradient
+// from backward() to a centered difference of the scalar loss. Returns Ok(true)
+// when every element is within relative tolerance, or Err with mismatch detail.
+
+pub fn gradcheck(fn_loss, parameters, eps, rtol) -> Result[any] {
+    if _kind(parameters) != "list" || len(parameters) == 0 {
+        return Err("ml.gradcheck expects a non-empty list of trainable variables")
+    }
+    step := if eps == null { 1e-5 } else { eps }
+    rel := if rtol == null { 1e-3 } else { rtol }
+    if !_number(step) || step <= 0 { return Err("ml.gradcheck eps must be finite and positive") }
+    if !_number(rel) || rel <= 0 { return Err("ml.gradcheck rtol must be finite and positive") }
+
+    // Analytical gradients via reverse mode.
+    loss := _eval_loss(fn_loss, parameters)?
+    ag.zero_grad_many(parameters)?
+    ag.backward(loss, null)?
+
+    let mut analytical = []
+    for parameter in parameters {
+        g := ag.grad(parameter)?
+        analytical = push(analytical, _snapshot(g))
+    }
+
+    // Numerical gradients via centered finite differences; restore values after each probe.
+    let mut p = 0
+    while p < len(parameters) {
+        parameter := parameters[p]
+        base := ag.value(parameter)?
+        analytic := analytical[p]
+        if _is_array(base) {
+            shape := warp.shape(base)
+            // Copy flat data so finite-difference probes never mutate warp storage.
+            let mut data = []
+            for item in warp.to_list(base) { data = push(data, item) }
+            n := len(data)
+            let mut i = 0
+            while i < n {
+                original := data[i]
+                data[i] = original + step
+                parameter.value = warp.array(data, shape)
+                plus := _loss_value(fn_loss, parameters)
+                if is_err(plus) {
+                    data[i] = original
+                    parameter.value = warp.array(data, shape)
+                    return plus
+                }
+                data[i] = original - step
+                parameter.value = warp.array(data, shape)
+                minus := _loss_value(fn_loss, parameters)
+                if is_err(minus) {
+                    data[i] = original
+                    parameter.value = warp.array(data, shape)
+                    return minus
+                }
+                data[i] = original
+                parameter.value = warp.array(data, shape)
+                denom := 2.0 * step
+                plus_value := plus?
+                minus_value := minus?
+                numerical := (plus_value - minus_value) / denom
+                analytic_i := analytic[i]
+                if !_close(analytic_i, numerical, rel) {
+                    return Err("ml.gradcheck mismatch param=${p} index=${i}: analytical=${analytic_i} numerical=${numerical} rtol=${rel}")
+                }
+                i = i + 1
+            }
+        } else {
+        original := base
+        parameter.value = original + step
+        plus := _loss_value(fn_loss, parameters)
+        if is_err(plus) {
+            parameter.value = original
+            return plus
+        }
+        parameter.value = original - step
+        minus := _loss_value(fn_loss, parameters)
+        if is_err(minus) {
+            parameter.value = original
+            return minus
+        }
+        parameter.value = original
+        denom := 2.0 * step
+        plus_value := plus?
+        minus_value := minus?
+        numerical := (plus_value - minus_value) / denom
+            if !_close(analytic, numerical, rel) {
+                return Err("ml.gradcheck mismatch param=${p}: analytical=${analytic} numerical=${numerical} rtol=${rel}")
+            }
+        }
+        p = p + 1
+    }
+    Ok(true)
+}
+
+fn _eval_loss(fn_loss, parameters) -> Result[any] {
+    built := fn_loss(parameters)
+    // Result is its own runtime kind (not a map); inspect with .ok / .value.
+    if _kind(built) == "result" {
+        if !built.ok { return built }
+        node := built.value
+        if !_is_node(node) { return Err("ml.gradcheck fn_loss Result must contain a scalar loss node") }
+        if !_number(node.value) { return Err("ml.gradcheck requires a scalar loss; reduce arrays first") }
+        return Ok(node)
+    }
+    if _is_node(built) {
+        if !_number(built.value) { return Err("ml.gradcheck requires a scalar loss; reduce arrays first") }
+        return Ok(built)
+    }
+    Err("ml.gradcheck fn_loss must return a scalar loss node or Result")
+}
+
+fn _loss_value(fn_loss, parameters) -> Result[any] {
+    loss := _eval_loss(fn_loss, parameters)?
+    ag.value(loss)
+}
+
+fn _snapshot(value) {
+    if _is_array(value) { return warp.to_list(value) }
+    value
+}
+
+fn _close(a, b, rtol) {
+    diff := math.abs(a - b)
+    aa := math.abs(a)
+    bb := math.abs(b)
+    let mut scale = if aa > bb { aa } else { bb }
+    floor_scale := 1e-8
+    if scale < floor_scale { scale = floor_scale }
+    diff <= rtol * scale
+}
+
+fn _is_array(value) {
+    value != null && _kind(value) == "map" && value._warp == true
+}
+
+fn _is_node(value) {
+    value != null && _kind(value) == "map" && value._autograd == true
+}
+
+fn _number(value) {
+    if value == null { return false }
+    k := _kind(value)
+    if k != "int" && k != "float" { return false }
+    value == value && !math.isinf(value)
+}
+
+fn _kind(value) { type_of(value) }

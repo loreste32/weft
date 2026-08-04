@@ -1,0 +1,15 @@
+use "../../packages/warp/lib.weft" as warp
+
+fn main {
+    n := 64
+    let mut data = []
+    let mut i = 0
+    while i < n * n {
+        data = push(data, (i % 7) + 0.0)
+        i = i + 1
+    }
+    a := warp.array(data, [n, n])
+    b := warp.array(data, [n, n])
+    c := warp.matmul(a, b)
+    say({"n": n, "storage": warp.storage_kind(a), "checksum": warp.sum(c)})
+}

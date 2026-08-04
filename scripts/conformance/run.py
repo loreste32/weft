@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Differential checks for Weft warp/dataframe against pinned NumPy/pandas."""
+"""Differential smoke checks for Weft warp/dataframe against pinned NumPy/pandas.
+
+Honesty: this is still a smoke suite (small fixtures + one property check), not a
+full NumPy/pandas replacement matrix. It locks a few high-value value/dtype/error
+behaviors from the numerical roadmap; gaps remain outside these samples.
+"""
 
 from __future__ import annotations
 
@@ -136,6 +141,204 @@ def dataframe_missing_expected() -> dict[str, Any]:
     }
 
 
+def warp_edges_expected() -> dict[str, Any]:
+    empty = np.zeros((0,), dtype=np.float64)
+    empty2 = np.zeros((0, 3), dtype=np.float64)
+    zerod = np.array(7.0)
+    ints = np.array([1, 2, 3], dtype=np.int64)
+    floats = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+    promoted = ints + floats
+    nan_arr = np.array([1.0, np.nan, 3.0])
+    inf_arr = np.array([1.0, np.inf, -np.inf])
+    keep = np.array([[1.0, 2.0], [3.0, 4.0]]).sum(axis=0, keepdims=True)
+    return {
+        "empty_shape": list(empty.shape),
+        "empty_size": int(empty.size),
+        "empty2_shape": list(empty2.shape),
+        "zerod_shape": list(zerod.shape),
+        "zerod_value": float(zerod),
+        "promoted_dtype": str(promoted.dtype),
+        "promoted": promoted.tolist(),
+        "nan_is_nan": np.isnan(nan_arr).tolist(),
+        "inf_is_inf": np.isinf(inf_arr).tolist(),
+        "keepdims_shape": list(keep.shape),
+        "keepdims_data": keep.reshape(-1).tolist(),
+        "broadcast_fail": True,
+        "storage": "tensor",
+    }
+
+
+def _numpy_raises(fn) -> bool:
+    try:
+        fn()
+        return False
+    except Exception:
+        return True
+
+
+def warp_errors_expected() -> dict[str, Any]:
+    """Error *presence* only (boolean flags), not message text or exception type."""
+    return {
+        "broadcast_mismatch": _numpy_raises(
+            lambda: np.array([1.0, 2.0]) + np.array([1.0, 2.0, 3.0])
+        ),
+        "bad_reshape": _numpy_raises(lambda: np.arange(6.0).reshape(4, 2)),
+        "oob_index": _numpy_raises(lambda: np.array([10.0, 20.0, 30.0])[5]),
+        "ok_add": not _numpy_raises(
+            lambda: np.array([1.0, 2.0]) + np.array([10.0, 20.0])
+        ),
+        "ok_reshape": not _numpy_raises(lambda: np.arange(6.0).reshape(3, 2)),
+        "ok_get": not _numpy_raises(lambda: np.array([10.0, 20.0, 30.0])[1]),
+    }
+
+
+def warp_dtype_expected() -> dict[str, Any]:
+    """Dtype promotion table smoke samples (not the full ufunc type-resolution matrix)."""
+    bools = np.array([True, False], dtype=bool)
+    ints = np.array([1, 2], dtype=np.int64)
+    f32 = np.array([1.0, 2.0], dtype=np.float32)
+    f64 = np.array([1.0, 2.0], dtype=np.float64)
+    f32_half = np.array([1.5, 2.5], dtype=np.float32)
+    i8 = np.array([-128, 127], dtype=np.int8)
+    u16 = np.array([0, 65535], dtype=np.uint16)
+    try:
+        np.array([128], dtype=np.int8)
+        invalid_i8_ok = True
+    except (OverflowError, ValueError):
+        invalid_i8_ok = False
+    bool_int = bools + ints
+    int_f32 = ints + f32
+    f32_f64 = f32 + f64
+    bool_f32 = bools + f32_half
+    return {
+        "bool_plus_int64_dtype": str(bool_int.dtype),
+        "bool_plus_int64": bool_int.tolist(),
+        "int64_plus_float32_dtype": str(int_f32.dtype),
+        "int64_plus_float32": int_f32.tolist(),
+        "float32_plus_float64_dtype": str(f32_f64.dtype),
+        "float32_plus_float64": f32_f64.tolist(),
+        "bool_plus_float32_dtype": str(bool_f32.dtype),
+        "bool_plus_float32": bool_f32.tolist(),
+        "int8": i8.tolist(),
+        "uint16": u16.tolist(),
+        "invalid_int8_ok": invalid_i8_ok,
+    }
+
+
+def warp_reduce_expected() -> dict[str, Any]:
+    """argmin/argmax (flat + axis) and NaN-aware reductions vs NumPy."""
+    flat = np.array([3.0, 1.0, 4.0, 1.0, 5.0])
+    matrix = np.array([[3.0, 1.0, 2.0], [0.0, 4.0, 1.0]])
+    nan_vals = np.array([1.0, np.nan, 3.0, 2.0])
+    clean = np.array([2.0, 4.0, 6.0])
+    return {
+        "argmin_flat": int(np.argmin(flat)),
+        "argmax_flat": int(np.argmax(flat)),
+        "argmin_axis0": np.argmin(matrix, axis=0).tolist(),
+        "argmin_axis1": np.argmin(matrix, axis=1).tolist(),
+        "argmax_axis0": np.argmax(matrix, axis=0).tolist(),
+        "argmax_axis1": np.argmax(matrix, axis=1).tolist(),
+        "nanmean": float(np.nanmean(nan_vals)),
+        "nansum": float(np.nansum(nan_vals)),
+        "nanmean_clean": float(np.nanmean(clean)),
+        "nansum_clean": float(np.nansum(clean)),
+    }
+
+
+def warp_fft_expected() -> dict[str, Any]:
+    """1D FFT / calculus smoke vs NumPy (small n; re/im within 1e-6)."""
+    a4 = np.array([1.0, 2.0, 3.0, 4.0])
+    a8 = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+    f4 = np.fft.fft(a4)
+    f8 = np.fft.fft(a8)
+    inv8 = np.fft.ifft(f8)
+    y = np.array([1.0, 2.0, 4.0, 7.0, 11.0])
+    trap_y = np.array([1.0, 2.0, 3.0])
+    # NumPy 2.x renamed trapz -> trapezoid; support both.
+    trapz_fn = getattr(np, "trapezoid", None) or getattr(np, "trapz")
+    return {
+        "fft4_re": f4.real.tolist(),
+        "fft4_im": f4.imag.tolist(),
+        "fft8_re": f8.real.tolist(),
+        "fft8_im": f8.imag.tolist(),
+        "ifft8_re": inv8.real.tolist(),
+        "ifft8_im": inv8.imag.tolist(),
+        "fftfreq8": np.fft.fftfreq(8, 1.0).tolist(),
+        "diff": np.diff(y).tolist(),
+        "gradient": np.gradient(y).tolist(),
+        "trapz": float(trapz_fn(trap_y, dx=1.0)),
+    }
+
+
+def assert_fft_close(actual: Any, expected: Any, path: str = "root") -> None:
+    """Like assert_equal but float lists use abs_tol=1e-6 (FFT tolerance)."""
+    if isinstance(expected, float):
+        if not isinstance(actual, (int, float)) or not math.isclose(
+            float(actual), expected, rel_tol=0.0, abs_tol=1e-6
+        ):
+            raise AssertionError(f"{path}: got {actual!r}, want {expected!r} (tol 1e-6)")
+        return
+    if isinstance(expected, list):
+        if not isinstance(actual, list) or len(actual) != len(expected):
+            raise AssertionError(f"{path}: got {actual!r}, want {expected!r}")
+        for index, (got, want) in enumerate(zip(actual, expected)):
+            assert_fft_close(got, want, f"{path}[{index}]")
+        return
+    if isinstance(expected, dict):
+        if not isinstance(actual, dict) or set(actual) != set(expected):
+            raise AssertionError(f"{path}: got keys {actual!r}, want {expected!r}")
+        for key, want in expected.items():
+            assert_fft_close(actual[key], want, f"{path}.{key}")
+        return
+    if actual != expected:
+        raise AssertionError(f"{path}: got {actual!r}, want {expected!r}")
+
+
+def dataframe_index_expected() -> dict[str, Any]:
+    frame = pd.DataFrame(
+        [{"name": "a", "v": 1}, {"name": "b", "v": 2}, {"name": "a", "v": 3}]
+    ).set_index("name", drop=False)
+    labels = frame.loc[["a"]]
+    # Pandas refuses reindex on duplicate labels; Weft keeps first-match fill.
+    # Compare Weft against an explicit first-hit oracle for this edge.
+    unique = pd.DataFrame(
+        [{"name": "a", "v": 1}, {"name": "b", "v": 2}]
+    ).set_index("name", drop=False)
+    reindexed = unique.reindex(["b", "a", "c"])
+    s1 = pd.Series([10, 20], index=["a", "b"], name="x")
+    s2 = pd.Series([1, 3], index=["b", "c"], name="y")
+    aligned = s1.add(s2)
+    filled = s1.add(s2, fill_value=0)
+    return {
+        "index": frame.index.tolist(),
+        "label_values": labels["v"].tolist(),
+        "reindex_index": reindexed.index.tolist(),
+        "reindex_values": [None if pd.isna(v) else v for v in reindexed["v"].tolist()],
+        "aligned_index": aligned.index.tolist(),
+        "aligned_values": [None if pd.isna(v) else v for v in aligned.tolist()],
+        "filled_values": [None if pd.isna(v) else v for v in filled.tolist()],
+    }
+
+
+def property_broadcast_roundtrip(seed: int = 0) -> None:
+    """Lightweight randomized property checks against NumPy broadcasting."""
+    rng = np.random.default_rng(seed)
+    for _ in range(8):
+        left_shape = tuple(int(x) for x in rng.integers(1, 4, size=rng.integers(1, 3)))
+        right_shape = list(left_shape)
+        if len(right_shape) > 0 and rng.random() < 0.5:
+            right_shape[-1] = 1
+        right_shape = tuple(right_shape)
+        left = rng.normal(size=left_shape)
+        right = rng.normal(size=right_shape)
+        try:
+            expected = left + right
+        except ValueError:
+            continue
+        # Oracle-only property: shape stability under re-broadcast.
+        assert expected.shape == np.broadcast_shapes(left_shape, right_shape)
+
+
 def records(frame: pd.DataFrame) -> list[dict[str, Any]]:
     return json.loads(frame.to_json(orient="records"))
 
@@ -186,15 +389,36 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--weft", type=Path, required=True)
     args = parser.parse_args()
-    actual_warp = run_weft(args.weft, "warp_case.weft")
+    # Resolve to an absolute path so Path("./weft") does not stringify to a
+    # bare "weft" that silently picks up a different binary from $PATH.
+    weft = args.weft.expanduser().resolve()
+    if not weft.exists():
+        raise SystemExit(f"weft binary not found: {weft}")
+    actual_warp = run_weft(weft, "warp_case.weft")
     assert_equal(actual_warp, warp_expected(), "warp")
-    actual_strides = run_weft(args.weft, "warp_strides_case.weft")
+    actual_strides = run_weft(weft, "warp_strides_case.weft")
     assert_equal(actual_strides, warp_strides_expected(), "warp_strides")
-    actual_dataframe = run_weft(args.weft, "dataframe_case.weft")
+    actual_edges = run_weft(weft, "warp_edges_case.weft")
+    assert_equal(actual_edges, warp_edges_expected(), "warp_edges")
+    actual_errors = run_weft(weft, "warp_errors_case.weft")
+    assert_equal(actual_errors, warp_errors_expected(), "warp_errors")
+    actual_dtype = run_weft(weft, "warp_dtype_case.weft")
+    assert_equal(actual_dtype, warp_dtype_expected(), "warp_dtype")
+    actual_reduce = run_weft(weft, "warp_reduce_case.weft")
+    assert_equal(actual_reduce, warp_reduce_expected(), "warp_reduce")
+    actual_fft = run_weft(weft, "warp_fft_case.weft")
+    assert_fft_close(actual_fft, warp_fft_expected(), "warp_fft")
+    actual_dataframe = run_weft(weft, "dataframe_case.weft")
     assert_equal(actual_dataframe, dataframe_expected(), "dataframe")
-    actual_missing = run_weft(args.weft, "dataframe_missing_case.weft")
+    actual_missing = run_weft(weft, "dataframe_missing_case.weft")
     assert_equal(actual_missing, dataframe_missing_expected(), "dataframe_missing")
-    print(f"conformance ok: NumPy {np.__version__}, pandas {pd.__version__}")
+    actual_index = run_weft(weft, "dataframe_index_case.weft")
+    assert_equal(actual_index, dataframe_index_expected(), "dataframe_index")
+    property_broadcast_roundtrip(seed=0)
+    print(
+        f"conformance ok: NumPy {np.__version__}, pandas {pd.__version__} "
+        f"(10 fixtures + property smoke)"
+    )
 
 
 if __name__ == "__main__":

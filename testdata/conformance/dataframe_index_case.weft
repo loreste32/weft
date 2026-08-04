@@ -1,0 +1,26 @@
+use "../../packages/dataframe/lib.weft" as df
+use json
+
+fn main -> Result {
+    t := df.from_rows([
+        {"name": "a", "v": 1},
+        {"name": "b", "v": 2},
+        {"name": "a", "v": 3},
+    ])
+    indexed := df.set_index(t, "name", false)
+    labels := df.loc_labels(indexed, ["a"])
+    reindexed := df.reindex(indexed, ["b", "a", "c"], null)
+    s1 := df.series([10, 20], "x", ["a", "b"])
+    s2 := df.series([1, 3], "y", ["b", "c"])
+    aligned := df.series_add(s1, s2, null)
+    filled := df.series_add(s1, s2, 0)
+    say(json.stringify({
+        "index": df.index(indexed),
+        "label_values": df.col(labels, "v"),
+        "reindex_index": df.index(reindexed),
+        "reindex_values": df.col(reindexed, "v"),
+        "aligned_index": df.series_index(aligned),
+        "aligned_values": df.series_values(aligned),
+        "filled_values": df.series_values(filled),
+    }))
+}

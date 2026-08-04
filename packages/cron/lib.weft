@@ -1,126 +1,307 @@
-pub fn every(interval_sec, f) {
-    let mut job = {
-        "interval": interval_sec,
-        "fn": f,
+// cron — recurring tasks coordinated by channels.
+//
+// Closures capture outer locals by value. Mutating a job map inside spawn
+// cannot communicate with the caller. This package uses channels for stop
+// signals and stats queries so the worker owns its counters.
+//
+// Important: module-private helpers are not reliably callable from spawn
+// closures, so worker loops are intentionally inlined in the spawn body.
+
+fn _job_handle(cmd, kind, meta) {
+    {
+        "_cron": true,
+        "cmd": cmd,
+        "kind": kind,
+        "meta": meta,
         "running": true,
-        "runs": 0,
-        "last_run": null,
-        "errors": 0,
     }
+}
+
+pub fn every(interval_sec, f) {
+    if interval_sec == null || interval_sec <= 0 {
+        return Err("cron.every requires a positive interval_sec")
+    }
+    if f == null {
+        return Err("cron.every requires a handler function")
+    }
+    cmd := channel(16)
     spawn(fn() {
-        while job.running {
-            time.sleep(interval_sec)
-            if !job.running {
-                return unit
+        let mut state = {
+            "running": true,
+            "runs": 0,
+            "errors": 0,
+            "last_run": null,
+        }
+        while state.running {
+            let mut remaining = interval_sec + 0.0
+            while remaining > 0 && state.running {
+                step := if remaining < 0.05 { remaining } else { 0.05 }
+                time.sleep(step)
+                remaining = remaining - step
+                msg := try_recv(cmd)?
+                if msg.ok {
+                    payload := msg.value
+                    if payload == "stop" {
+                        state.running = false
+                    } else if payload != null && payload.op == "stats" && payload.reply != null {
+                        send(payload.reply, {
+                            "runs": state.runs,
+                            "errors": state.errors,
+                            "running": state.running,
+                            "last_run": state.last_run,
+                        })
+                    }
+                }
             }
-            job.runs = job.runs + 1
-            job.last_run = time.now()
+            if !state.running {
+                break
+            }
+            state.runs = state.runs + 1
+            state.last_run = time.now()
             r := f()
-            if r != null && r.is_err {
-                job.errors = job.errors + 1
-                log.warn("cron job error", {"error": r.err.message, "runs": job.runs})
+            if is_err(r) {
+                state.errors = state.errors + 1
+                log.warn("cron job error", {"error": r.err.message, "runs": state.runs})
+            }
+        }
+        // Stay alive to answer stats after stop until "close".
+        while true {
+            msg := try_recv(cmd)?
+            if msg.ok {
+                payload := msg.value
+                if payload == "close" || payload == "stop" {
+                    break
+                }
+                if payload != null && payload.op == "stats" && payload.reply != null {
+                    send(payload.reply, {
+                        "runs": state.runs,
+                        "errors": state.errors,
+                        "running": false,
+                        "last_run": state.last_run,
+                    })
+                }
+            } else {
+                time.sleep(0.05)
             }
         }
     })
-    job
+    _job_handle(cmd, "every", {"interval": interval_sec})
 }
 
-
 pub fn at(hour, minute, f) {
-    let mut job = {
-        "running": true,
-        "runs": 0,
-        "last_run": null,
-        "errors": 0,
-        "schedule": "$hour:$minute",
+    if hour == null || hour < 0 || hour > 23 {
+        return Err("cron.at hour must be 0..23")
     }
+    if minute == null || minute < 0 || minute > 59 {
+        return Err("cron.at minute must be 0..59")
+    }
+    if f == null {
+        return Err("cron.at requires a handler function")
+    }
+    cmd := channel(16)
     spawn(fn() {
-        while job.running {
+        let mut state = {
+            "running": true,
+            "runs": 0,
+            "errors": 0,
+            "last_run": null,
+        }
+        while state.running {
             now := time.now()
             current_h := int(time.format(now, "15"))
             current_m := int(time.format(now, "04"))
-            mut target_sec := (hour - current_h) * 3600 + (minute - current_m) * 60
+            let mut target_sec = (hour - current_h) * 3600 + (minute - current_m) * 60
             if target_sec <= 0 {
                 target_sec = target_sec + 86400
             }
-            time.sleep(target_sec)
-            if !job.running {
-                return unit
+            let mut remaining = target_sec + 0.0
+            while remaining > 0 && state.running {
+                step := if remaining < 0.05 { remaining } else { 0.05 }
+                time.sleep(step)
+                remaining = remaining - step
+                msg := try_recv(cmd)?
+                if msg.ok {
+                    payload := msg.value
+                    if payload == "stop" {
+                        state.running = false
+                    } else if payload != null && payload.op == "stats" && payload.reply != null {
+                        send(payload.reply, {
+                            "runs": state.runs,
+                            "errors": state.errors,
+                            "running": state.running,
+                            "last_run": state.last_run,
+                        })
+                    }
+                }
             }
-            job.runs = job.runs + 1
-            job.last_run = time.now()
+            if !state.running {
+                break
+            }
+            state.runs = state.runs + 1
+            state.last_run = time.now()
             r := f()
-            if r != null && r.is_err {
-                job.errors = job.errors + 1
+            if is_err(r) {
+                state.errors = state.errors + 1
+                log.warn("cron job error", {"error": r.err.message, "runs": state.runs})
+            }
+        }
+        while true {
+            msg := try_recv(cmd)?
+            if msg.ok {
+                payload := msg.value
+                if payload == "close" || payload == "stop" {
+                    break
+                }
+                if payload != null && payload.op == "stats" && payload.reply != null {
+                    send(payload.reply, {
+                        "runs": state.runs,
+                        "errors": state.errors,
+                        "running": false,
+                        "last_run": state.last_run,
+                    })
+                }
+            } else {
+                time.sleep(0.05)
             }
         }
     })
+    _job_handle(cmd, "at", {"hour": hour, "minute": minute, "schedule": "$hour:$minute"})
+}
+
+pub fn schedule(jobs) {
+    if jobs == null {
+        return Err("cron.schedule expects a list of job specs")
+    }
+    let mut job_map = {}
+    for spec in jobs {
+        name := spec.name
+        if name == null || name == "" {
+            return Err("cron.schedule job requires a name")
+        }
+        if spec.interval != null {
+            job := every(spec.interval, spec["handler"])
+            if is_err(job) { return job }
+            job_map[name] = job
+        } else if spec.hour != null {
+            minute := if spec.minute != null { spec.minute } else { 0 }
+            job := at(spec.hour, minute, spec["handler"])
+            if is_err(job) { return job }
+            job_map[name] = job
+        } else {
+            return Err("cron.schedule job requires interval or hour")
+        }
+    }
+    {
+        "_cron_scheduler": true,
+        "jobs": job_map,
+        "running": true,
+    }
+}
+
+pub fn stop(job) {
+    if job == null {
+        return Err("cron.stop expects a job handle")
+    }
+    if contains(keys(job), "jobs") {
+        return stop_all(job)
+    }
+    if !contains(keys(job), "cmd") {
+        return Err("cron.stop expects a cron job handle")
+    }
+    send(job.cmd, "stop")
+    job.running = false
     job
 }
 
-
-pub fn schedule(jobs) {
-    scheduler := {
-        "jobs": {},
-        "running": true,
+pub fn stop_all(scheduler) {
+    if scheduler == null || !contains(keys(scheduler), "jobs") {
+        return Err("cron.stop_all expects a scheduler")
     }
-    for spec in jobs {
-        name := spec.name
-        if spec.interval != null {
-            scheduler.jobs[name] = every(spec.interval, spec["handler"])
-        } else if spec.hour != null {
-            minute := if spec.minute != null { spec.minute } else { 0 }
-            scheduler.jobs[name] = at(spec.hour, minute, spec["handler"])
-        }
+    scheduler.running = false
+    for name in scheduler.jobs {
+        stop(scheduler.jobs[name])
     }
     scheduler
 }
 
-
-pub fn stop(job) {
-    job.running = false
-}
-
-
-pub fn stop_all(scheduler) {
-    scheduler.running = false
-    for name in scheduler.jobs {
-        scheduler.jobs[name].running = false
+pub fn close(job) {
+    if job == null {
+        return Err("cron.close expects a job handle")
     }
+    if contains(keys(job), "jobs") {
+        for name in job.jobs {
+            close(job.jobs[name])
+        }
+        job.running = false
+        return job
+    }
+    if !contains(keys(job), "cmd") {
+        return Err("cron.close expects a cron job handle")
+    }
+    send(job.cmd, "stop")
+    send(job.cmd, "close")
+    job.running = false
+    job
 }
-
 
 pub fn stats(j) {
-    if j.jobs != null {
-        mut total_runs := 0
-        mut total_errors := 0
-        mut job_stats := []
+    if j == null {
+        return Err("cron.stats expects a job or scheduler")
+    }
+    if contains(keys(j), "jobs") {
+        let mut total_runs = 0
+        let mut total_errors = 0
+        let mut job_stats = []
+        let mut any_running = false
         for name in j.jobs {
-            job := j.jobs[name]
-            total_runs = total_runs + job.runs
-            total_errors = total_errors + job.errors
-            push(job_stats, {
+            st := stats(j.jobs[name])
+            if is_err(st) { return st }
+            total_runs = total_runs + st.runs
+            total_errors = total_errors + st.errors
+            if st.running { any_running = true }
+            job_stats = push(job_stats, {
                 "name": name,
-                "runs": job.runs,
-                "errors": job.errors,
-                "running": job.running,
+                "runs": st.runs,
+                "errors": st.errors,
+                "running": st.running,
+                "last_run": st.last_run,
             })
         }
-        {
+        return {
             "total_runs": total_runs,
             "total_errors": total_errors,
+            "running": any_running && j.running,
             "jobs": job_stats,
         }
-    } else { {
-        "runs": j.runs,
-        "errors": j.errors,
-        "running": j.running,
-        "last_run": j.last_run,
-    } }
+    }
+    if !contains(keys(j), "cmd") {
+        return Err("cron.stats expects a cron job handle")
+    }
+    reply := channel(1)
+    send(j.cmd, {"op": "stats", "reply": reply})
+    got := select_recv([reply], 2000)
+    if is_err(got) {
+        return {
+            "runs": 0,
+            "errors": 0,
+            "running": false,
+            "last_run": null,
+            "stale": true,
+        }
+    }
+    value := got?
+    if value.i != 0 {
+        return {
+            "runs": 0,
+            "errors": 0,
+            "running": false,
+            "last_run": null,
+            "stale": true,
+        }
+    }
+    value.value
 }
-
 
 pub fn wait {
     while true { time.sleep(3600) }
 }
-

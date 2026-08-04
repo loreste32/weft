@@ -1,0 +1,139 @@
+use warp
+
+// Advisory device placement for ML values.
+//
+// Pure Weft has no GPU runtime. `device` / `to_device` / `device_of` tag values
+// so future accelerator providers can bind compute. Until a real provider is
+// loaded, placement is advisory: CPU always works; non-CPU requests are
+// accepted with `fallback: true` and compute remains on the host CPU.
+// There is no fake GPU.
+
+pub fn device(name) -> Result[any] {
+    n := _normalize_name(name)
+    if n == null { return Err("ml.device expects one of: cpu, cuda, rocm, mlx") }
+    Ok({"_device": true, "name": n})
+}
+
+/// Move or tag `value` for `device`. Warp arrays receive a `_device` field.
+/// CPU requests return the tagged value. Non-CPU requests return a fallback
+/// wrapper `{"value": tagged, "fallback": true, "requested": name}` because no
+/// accelerator plugin is bound in pure Weft.
+pub fn to_device(value, dev) -> Result[any] {
+    handle := _as_device(dev)
+    if handle == null { return Err("ml.to_device expects a device handle from ml.device") }
+    tagged := _tag_value(value, handle.name)
+    if is_err(tagged) { return tagged }
+    if handle.name == "cpu" {
+        return Ok(tagged)
+    }
+    // Honest CPU fallback: placement recorded, compute stays on host.
+    Ok({
+        "value": tagged,
+        "fallback": true,
+        "requested": handle.name,
+    })
+}
+
+/// Return the logical device name for a value ("cpu" when unset).
+/// Understands warp arrays, autograd nodes (via their `.value`), and
+/// fallback wrappers from `to_device`.
+pub fn device_of(value) -> Result[any] {
+    if value == null { return Err("ml.device_of expects a value") }
+    if _is_device_handle(value) { return Ok(value.name) }
+    if _is_fallback_wrapper(value) { return device_of(value.value) }
+    if _is_node(value) { return device_of(value.value) }
+    if _is_array(value) {
+        if contains(keys(value), "_device") && value._device != null {
+            return Ok(value._device)
+        }
+        return Ok("cpu")
+    }
+    // Scalars and other plain values live on host CPU.
+    Ok("cpu")
+}
+
+fn _normalize_name(name) {
+    if _kind(name) != "string" { return null }
+    if name == "cpu" || name == "cuda" || name == "rocm" || name == "mlx" { return name }
+    null
+}
+
+fn _as_device(dev) {
+    if _is_device_handle(dev) { return dev }
+    // Allow a bare name string for convenience.
+    n := _normalize_name(dev)
+    if n == null { return null }
+    {"_device": true, "name": n}
+}
+
+fn _tag_value(value, name) -> Result[any] {
+    if _is_array(value) {
+        // Placement is metadata, but the input remains an immutable value.
+        // Materialize a distinct array so releasing the placed value cannot
+        // invalidate the caller's native tensor handle.
+        return _copy_array_with_device(value, name)
+    }
+    if _is_node(value) {
+        tagged_value := if _is_array(value.value) {
+            _copy_array_with_device(value.value, name)?
+        } else {
+            value.value
+        }
+        tagged_grad := if _is_array(value.grad) {
+            _copy_array_with_device(value.grad, name)?
+        } else {
+            value.grad
+        }
+        // Nodes themselves are graph values; copy the node shell so the
+        // caller's graph/value is not mutated by placement metadata.
+        return Ok({
+            "_autograd": true,
+            "value": tagged_value,
+            "grad": tagged_grad,
+            "requires_grad": value.requires_grad,
+            "parents": value.parents,
+            "op": value.op,
+            "aux": value.aux,
+            "_topo_mark": false,
+        })
+    }
+    if _is_fallback_wrapper(value) {
+        inner := _tag_value(value.value, name)?
+        return Ok(inner)
+    }
+    // Plain scalars: no storage to place; return unchanged (still "cpu").
+    Ok(value)
+}
+
+fn _copy_array_with_device(value, name) -> Result[any] {
+    cloned := warp.array_typed(warp.to_list(value), _copy(value.shape), value._dtype)
+    if _kind(cloned) == "result" {
+        return cloned
+    }
+    cloned._device = name
+    Ok(cloned)
+}
+
+fn _copy(values) {
+    let mut out = []
+    for value in values { out = push(out, value) }
+    out
+}
+
+fn _is_device_handle(value) {
+    value != null && _kind(value) == "map" && value._device == true && _kind(value.name) == "string"
+}
+
+fn _is_fallback_wrapper(value) {
+    value != null && _kind(value) == "map" && contains(keys(value), "fallback") && contains(keys(value), "value") && contains(keys(value), "requested")
+}
+
+fn _is_array(value) {
+    value != null && _kind(value) == "map" && value._warp == true
+}
+
+fn _is_node(value) {
+    value != null && _kind(value) == "map" && value._autograd == true
+}
+
+fn _kind(value) { type_of(value) }

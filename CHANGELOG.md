@@ -2,6 +2,28 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
+## [Unreleased]
+
+### Added
+- **Host packed tensors** — `internal/tensor` plus stdlib `tensor` provide typed, strided host storage with integer and float dtypes, a free-list memory pool (`Acquire`/`Release`), and Warp primary numeric storage (`storage_kind` reports `"tensor"` vs `"list"`).
+- **Accelerator trust model** — optional fail-closed plugin loads via `WEFT_ACCELERATOR_DISABLE`, `WEFT_ACCELERATOR_ALLOWLIST`, `WEFT_ACCELERATOR_REQUIRE_CHECKSUM`, and `WEFT_ACCELERATOR_CHECKSUM` (or a `<plugin>.sha256` sidecar); native providers still require an explicit path and accelerator capability.
+- **Accelerator capability reports** — `make accelerator-report` / `publish-accelerator-report` emit JSON and markdown under `reports/` with fallback policy, optional numerical benches, and honest unavailable provider status without GPUs (`docs/ACCELERATORS.md`).
+- **CPU numerical and scale benches** — `bench-numerical` and `bench-scale` (100k-row dataframe groupby/sort smoke) record wall times for local and CI-adjacent comparison.
+- **Vendor sync tooling** — `make vendor-sync` / `vendor-check` keep example vendor trees aligned with `packages/warp` and `packages/ml`.
+- **DataFrame ↔ ML boundary** — DataFrames can copy validated numeric columns into packed Warp arrays, and ML classical trainers accept packed Warp feature/target arrays for an explicit CPU pipeline.
+- **Conformance expansion** — NumPy/pandas differential fixtures (Warp edges, strides, dtype promotion, errors, reductions; dataframe index/missing) via `scripts/conformance/run.py` (10 fixtures + property smoke).
+- **Warp NumPy surface** — host-tensor `add`/`mul`/`matmul` fast path; `argmin`/`argmax`; `nansum`/`nanmean`; `atleast_*`; `broadcast_to`; `pad`; `isclose`; **1D FFT/IFFT** (`fft_1d`/`ifft_1d`/`fft_freq`, power-of-2 Cooley–Tukey or naive); `diff`/`gradient`/`trapz`.
+- **DataFrame multi-level + groupby** — `set_multi_index`, `swaplevel`, `droplevel`, multi-key `loc_labels`/`reindex`; **`group_by_transform`**, **`group_by_size`**; rolling/expanding retained.
+- **ML nested reverse-mode (scalar)** — `backward(node, create_graph)` builds differentiable scalar VJPs so double-backward yields exact second derivatives; `grad_fn`; finite-diff HVP retained; advisory device tags with honest CPU fallback.
+- **Release gates** — `accelerator-conformance` (CPU plugin JSON+tensor), `capability-matrix` report, multi-fixture `bench-scale` with soft budgets (250k DF rows default; 1M via env).
+- **cron package documentation** — channel control protocol and deep-copy capture limits.
+
+### Fixed
+- **Numerical runtime ownership and dtype safety** — pooled tensor temporaries are released on error/strided native calls; fixed-width dtypes preserve integer precision; Warp exposes explicit packed-handle release; ML finite-difference probes restore parameters on failure.
+- **cron concurrency** — jobs no longer rely on mutating a shared stats map across `spawn`; each job owns counters and answers `stop` / `stats` / `close` over a command channel.
+- **cron exports** — `weft.json` lists `close` alongside `every`, `at`, `schedule`, `stop`, `stop_all`, `stats`, and `wait`.
+- **dataframe `weft check`** — `describe` / `rank` no longer call host `sort` (undefined under module check); use package-local `_sort_values` merge-sort instead.
+
 ## [0.4.10] — 2026-08-03
 
 ### Added

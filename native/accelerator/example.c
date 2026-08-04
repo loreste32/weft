@@ -24,7 +24,7 @@ static void fail(const char *message) { last_error = message; }
 const char *weft_accel_manifest(void) {
     return "{\"name\":\"weft-example\",\"version\":\"1.1.0\","
            "\"abi\":1,\"vendors\":[\"example\"],"
-           "\"operations\":[\"health\",\"identity\",\"matmul\",\"tensor_matmul\"],"
+           "\"operations\":[\"health\",\"identity\",\"matmul\",\"tensor_matmul\",\"tensor_add\"],"
            "\"metadata\":{\"tensor_abi\":\"1\",\"dtype\":\"float64\"}}";
 }
 
@@ -202,7 +202,9 @@ static int run_matmul(const char *input_json, char **output_json) {
             }
         }
     }
-    if (!append_format(&output, "],\"shape\":[%zu,%zu]}", a_shape[0], b_shape[1])) {
+    if (!append_format(&output,
+                       "],\"shape\":[%zu,%zu],\"device\":\"cpu\",\"fallback\":false}",
+                       a_shape[0], b_shape[1])) {
         fail("matmul output allocation failed");
         free(a);
         free(b);
@@ -224,7 +226,10 @@ int weft_accel_run(const char *operation, const char *input_json,
     *output_json = NULL;
     last_error = "";
     if (strcmp(operation, "health") == 0) {
-        *output_json = copy_string("{\"ok\":true,\"backend\":\"example-cpu\"}");
+        /* Explicit device + fallback reporting: CPU reference never falls back. */
+        *output_json = copy_string(
+            "{\"ok\":true,\"backend\":\"example-cpu\",\"device\":\"cpu\","
+            "\"fallback\":false,\"requested_device\":\"cpu\"}");
     } else if (strcmp(operation, "identity") == 0) {
         *output_json = copy_string(input_json);
     } else if (strcmp(operation, "matmul") == 0) {
@@ -257,6 +262,67 @@ static int tensor_c_contiguous(const weft_accel_tensor_input *input) {
     return 1;
 }
 
+static int tensor_add_shape(const weft_accel_tensor_input *left,
+                            const weft_accel_tensor_input *right,
+                            size_t *count_out) {
+    size_t count = 1;
+    uint32_t axis;
+    if (left == NULL || right == NULL || count_out == NULL || left->rank == 0 ||
+        left->rank != right->rank || left->shape == NULL || right->shape == NULL ||
+        left->strides == NULL || right->strides == NULL ||
+        !tensor_c_contiguous(left) || !tensor_c_contiguous(right)) {
+        return 0;
+    }
+    if (left->rank > 2) return 0;
+    for (axis = 0; axis < left->rank; axis++) {
+        if (left->shape[axis] != right->shape[axis] || left->shape[axis] < 0) return 0;
+        if (left->shape[axis] != 0 && count > SIZE_MAX / (size_t)left->shape[axis]) return 0;
+        count *= (size_t)left->shape[axis];
+    }
+    if (count > SIZE_MAX / sizeof(double) ||
+        left->bytes != count * sizeof(double) || right->bytes != count * sizeof(double) ||
+        (count != 0 && (left->data == NULL || right->data == NULL))) {
+        return 0;
+    }
+    *count_out = count;
+    return 1;
+}
+
+static int run_tensor_add(const weft_accel_tensor_input *inputs,
+                          weft_accel_tensor_output *output) {
+    const double *left;
+    const double *right;
+    double *result;
+    size_t count;
+    uint32_t axis;
+    if (inputs[0].dtype != WEFT_TENSOR_FLOAT64 || inputs[1].dtype != WEFT_TENSOR_FLOAT64 ||
+        !tensor_add_shape(&inputs[0], &inputs[1], &count)) {
+        fail("reference tensor_add requires contiguous same-shape float64 tensors of rank 1 or 2");
+        return 0;
+    }
+    output->dtype = WEFT_TENSOR_FLOAT64;
+    output->rank = inputs[0].rank;
+    output->shape = (int64_t *)calloc(output->rank, sizeof(int64_t));
+    output->strides = (int64_t *)calloc(output->rank, sizeof(int64_t));
+    output->data = count == 0 ? NULL : malloc(count * sizeof(double));
+    output->bytes = count * sizeof(double);
+    if (output->shape == NULL || output->strides == NULL || (count != 0 && output->data == NULL)) {
+        fail("tensor_add output allocation failed");
+        weft_accel_free_tensor(output);
+        return 0;
+    }
+    memcpy(output->shape, inputs[0].shape, output->rank * sizeof(int64_t));
+    output->strides[output->rank - 1] = 1;
+    for (axis = output->rank - 1; axis > 0; axis--) {
+        output->strides[axis - 1] = output->strides[axis] * output->shape[axis];
+    }
+    left = (const double *)inputs[0].data;
+    right = (const double *)inputs[1].data;
+    result = (double *)output->data;
+    for (size_t index = 0; index < count; index++) result[index] = left[index] + right[index];
+    return 1;
+}
+
 int weft_accel_run_tensor(const char *operation,
                           const weft_accel_tensor_input *inputs,
                           size_t input_count,
@@ -276,6 +342,10 @@ int weft_accel_run_tensor(const char *operation,
         return 1;
     }
     memset(output, 0, sizeof(*output));
+    if (strcmp(operation, "tensor_add") == 0) {
+        if (!run_tensor_add(inputs, output)) return 1;
+        return 0;
+    }
     if (strcmp(operation, "tensor_matmul") != 0) {
         fail("unsupported tensor operation");
         return 1;

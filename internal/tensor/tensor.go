@@ -15,7 +15,14 @@ type DType string
 
 const (
 	Bool    DType = "bool"
+	Int8    DType = "int8"
+	Int16   DType = "int16"
+	Int32   DType = "int32"
 	Int64   DType = "int64"
+	UInt8   DType = "uint8"
+	UInt16  DType = "uint16"
+	UInt32  DType = "uint32"
+	UInt64  DType = "uint64"
 	Float32 DType = "float32"
 	Float64 DType = "float64"
 )
@@ -28,12 +35,14 @@ var (
 
 func (d DType) ItemSize() int {
 	switch d {
-	case Bool:
+	case Bool, Int8, UInt8:
 		return 1
-	case Int64, Float64:
-		return 8
-	case Float32:
+	case Int16, UInt16:
+		return 2
+	case Int32, UInt32, Float32:
 		return 4
+	case Int64, UInt64, Float64:
+		return 8
 	default:
 		return 0
 	}
@@ -56,6 +65,7 @@ type Tensor struct {
 	offset          int64
 	storage         []byte
 	storageElements int64
+	owned           bool // true when this tensor owns storage eligible for pooling
 }
 
 func New(dtype DType, shape []int) (*Tensor, error) {
@@ -76,6 +86,7 @@ func New(dtype DType, shape []int) (*Tensor, error) {
 		strides:         contiguousStrides(shape),
 		storage:         make([]byte, bytes),
 		storageElements: count,
+		owned:           true,
 	}, nil
 }
 
@@ -92,15 +103,18 @@ func FromBytes(dtype DType, shape []int, data []byte) (*Tensor, error) {
 }
 
 func FromFloat64(shape []int, values []float64) (*Tensor, error) {
-	t, err := New(Float64, shape)
+	t, err := Acquire(Float64, shape)
 	if err != nil {
 		return nil, err
 	}
-	if len(values) != int(t.storageElements) {
-		return nil, fmt.Errorf("tensor value count %d does not match shape element count %d", len(values), t.storageElements)
+	expected := t.storageElements
+	if len(values) != int(expected) {
+		Release(t)
+		return nil, fmt.Errorf("tensor value count %d does not match shape element count %d", len(values), expected)
 	}
 	for i, value := range values {
 		if err := t.setElement(int64(i), value); err != nil {
+			Release(t)
 			return nil, err
 		}
 	}
@@ -164,6 +178,7 @@ func (t *Tensor) View(shape []int, strides []int64, offset int64) (*Tensor, erro
 		offset:          offset,
 		storage:         t.storage,
 		storageElements: t.storageElements,
+		owned:           false, // views share storage and must not be pooled independently
 	}, nil
 }
 
@@ -249,8 +264,22 @@ func (t *Tensor) Value(indices ...int) (any, error) {
 	switch t.dtype {
 	case Bool:
 		return t.storage[offset] != 0, nil
+	case Int8:
+		return int8(t.storage[offset]), nil
+	case Int16:
+		return int16(binary.LittleEndian.Uint16(t.storage[offset : offset+2])), nil
+	case Int32:
+		return int32(binary.LittleEndian.Uint32(t.storage[offset : offset+4])), nil
 	case Int64:
 		return int64(binary.LittleEndian.Uint64(t.storage[offset : offset+8])), nil
+	case UInt8:
+		return t.storage[offset], nil
+	case UInt16:
+		return binary.LittleEndian.Uint16(t.storage[offset : offset+2]), nil
+	case UInt32:
+		return binary.LittleEndian.Uint32(t.storage[offset : offset+4]), nil
+	case UInt64:
+		return binary.LittleEndian.Uint64(t.storage[offset : offset+8]), nil
 	case Float32:
 		return math.Float32frombits(binary.LittleEndian.Uint32(t.storage[offset : offset+4])), nil
 	case Float64:
@@ -275,6 +304,15 @@ func (t *Tensor) Set(value any, indices ...int) error {
 
 func (t *Tensor) Bytes() []byte { return append([]byte(nil), t.storage...) }
 
+// ByteLen reports the owned storage size without copying the backing buffer.
+// Callers that need the bytes themselves should use Bytes.
+func (t *Tensor) ByteLen() int {
+	if t == nil {
+		return 0
+	}
+	return len(t.storage)
+}
+
 func (t *Tensor) Contiguous() (*Tensor, error) {
 	if t == nil {
 		return nil, errors.New("cannot copy a nil tensor")
@@ -282,7 +320,7 @@ func (t *Tensor) Contiguous() (*Tensor, error) {
 	if t.IsContiguous() && t.offset == 0 {
 		return t, nil
 	}
-	result, err := New(t.dtype, t.shape)
+	result, err := Acquire(t.dtype, t.shape)
 	if err != nil {
 		return nil, err
 	}
@@ -290,9 +328,11 @@ func (t *Tensor) Contiguous() (*Tensor, error) {
 		indices := unravel(flat, t.shape)
 		value, err := t.Value(indices...)
 		if err != nil {
+			Release(result)
 			return nil, err
 		}
 		if err := result.setElement(flat, value); err != nil {
+			Release(result)
 			return nil, err
 		}
 	}
@@ -306,22 +346,11 @@ func (t *Tensor) Float64Values() ([]float64, error) {
 		if err != nil {
 			return nil, err
 		}
-		switch n := value.(type) {
-		case bool:
-			if n {
-				values = append(values, 1)
-			} else {
-				values = append(values, 0)
-			}
-		case int64:
-			values = append(values, float64(n))
-		case float32:
-			values = append(values, float64(n))
-		case float64:
-			values = append(values, n)
-		default:
+		f, ok := numericToFloat64(value)
+		if !ok {
 			return nil, fmt.Errorf("tensor value %T is not numeric", value)
 		}
+		values = append(values, f)
 	}
 	return values, nil
 }
@@ -360,24 +389,74 @@ func (t *Tensor) setElement(position int64, value any) error {
 	if position < 0 || position >= t.storageElements {
 		return ErrOutOfBounds
 	}
+	if t.storage == nil {
+		return errors.New("cannot write to a released tensor")
+	}
 	offset := int(position) * t.dtype.ItemSize()
 	switch t.dtype {
 	case Bool:
 		v, ok := value.(bool)
 		if !ok {
-			return fmt.Errorf("cannot store %T in bool tensor", value)
+			// allow 0/1-style numeric writes
+			if n, nok := numericInt64(value); nok {
+				v = n != 0
+			} else {
+				return fmt.Errorf("cannot store %T in bool tensor", value)
+			}
 		}
 		if v {
 			t.storage[offset] = 1
 		} else {
 			t.storage[offset] = 0
 		}
+	case Int8:
+		v, ok := numericInt64(value)
+		if !ok || v < math.MinInt8 || v > math.MaxInt8 {
+			return fmt.Errorf("cannot store %v in int8 tensor", value)
+		}
+		t.storage[offset] = byte(int8(v))
+	case Int16:
+		v, ok := numericInt64(value)
+		if !ok || v < math.MinInt16 || v > math.MaxInt16 {
+			return fmt.Errorf("cannot store %v in int16 tensor", value)
+		}
+		binary.LittleEndian.PutUint16(t.storage[offset:offset+2], uint16(int16(v)))
+	case Int32:
+		v, ok := numericInt64(value)
+		if !ok || v < math.MinInt32 || v > math.MaxInt32 {
+			return fmt.Errorf("cannot store %v in int32 tensor", value)
+		}
+		binary.LittleEndian.PutUint32(t.storage[offset:offset+4], uint32(int32(v)))
 	case Int64:
 		v, ok := numericInt64(value)
 		if !ok {
 			return fmt.Errorf("cannot store %T in int64 tensor", value)
 		}
 		binary.LittleEndian.PutUint64(t.storage[offset:offset+8], uint64(v))
+	case UInt8:
+		v, ok := numericUint64(value)
+		if !ok || v > math.MaxUint8 {
+			return fmt.Errorf("cannot store %v in uint8 tensor", value)
+		}
+		t.storage[offset] = uint8(v)
+	case UInt16:
+		v, ok := numericUint64(value)
+		if !ok || v > math.MaxUint16 {
+			return fmt.Errorf("cannot store %v in uint16 tensor", value)
+		}
+		binary.LittleEndian.PutUint16(t.storage[offset:offset+2], uint16(v))
+	case UInt32:
+		v, ok := numericUint64(value)
+		if !ok || v > math.MaxUint32 {
+			return fmt.Errorf("cannot store %v in uint32 tensor", value)
+		}
+		binary.LittleEndian.PutUint32(t.storage[offset:offset+4], uint32(v))
+	case UInt64:
+		v, ok := numericUint64(value)
+		if !ok {
+			return fmt.Errorf("cannot store %T in uint64 tensor", value)
+		}
+		binary.LittleEndian.PutUint64(t.storage[offset:offset+8], v)
 	case Float32:
 		v, ok := numericFloat64(value)
 		if !ok {
@@ -418,16 +497,101 @@ func numericInt64(value any) (int64, bool) {
 		return int64(n), true
 	case uint64:
 		return int64(n), n <= math.MaxInt64
+	case float32:
+		if math.IsNaN(float64(n)) || math.IsInf(float64(n), 0) {
+			return 0, false
+		}
+		return int64(n), true
+	case float64:
+		if math.IsNaN(n) || math.IsInf(n, 0) {
+			return 0, false
+		}
+		return int64(n), true
+	default:
+		return 0, false
+	}
+}
+
+func numericUint64(value any) (uint64, bool) {
+	switch n := value.(type) {
+	case int:
+		if n < 0 {
+			return 0, false
+		}
+		return uint64(n), true
+	case int8:
+		if n < 0 {
+			return 0, false
+		}
+		return uint64(n), true
+	case int16:
+		if n < 0 {
+			return 0, false
+		}
+		return uint64(n), true
+	case int32:
+		if n < 0 {
+			return 0, false
+		}
+		return uint64(n), true
+	case int64:
+		if n < 0 {
+			return 0, false
+		}
+		return uint64(n), true
+	case uint:
+		return uint64(n), true
+	case uint8:
+		return uint64(n), true
+	case uint16:
+		return uint64(n), true
+	case uint32:
+		return uint64(n), true
+	case uint64:
+		return n, true
+	case float32:
+		if n < 0 || math.IsNaN(float64(n)) || math.IsInf(float64(n), 0) {
+			return 0, false
+		}
+		return uint64(n), true
+	case float64:
+		if n < 0 || math.IsNaN(n) || math.IsInf(n, 0) {
+			return 0, false
+		}
+		return uint64(n), true
 	default:
 		return 0, false
 	}
 }
 
 func numericFloat64(value any) (float64, bool) {
+	return numericToFloat64(value)
+}
+
+func numericToFloat64(value any) (float64, bool) {
 	switch n := value.(type) {
+	case bool:
+		if n {
+			return 1, true
+		}
+		return 0, true
 	case int:
 		return float64(n), true
+	case int8:
+		return float64(n), true
+	case int16:
+		return float64(n), true
+	case int32:
+		return float64(n), true
 	case int64:
+		return float64(n), true
+	case uint:
+		return float64(n), true
+	case uint8:
+		return float64(n), true
+	case uint16:
+		return float64(n), true
+	case uint32:
 		return float64(n), true
 	case uint64:
 		return float64(n), true

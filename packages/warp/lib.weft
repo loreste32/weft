@@ -1,8 +1,13 @@
 use math
 use accelerator
+use tensor
 
 // ndarray-compatible numerical arrays for Weft. Arrays are immutable values:
 // operations return a new array and never mutate the caller's data.
+//
+// Primary storage for supported numeric dtypes is a host packed tensor handle
+// (`_tid`). A portable list (`data`) is retained for object dtypes, views that
+// need shared list indexing, and as a materialization cache after reads.
 
 // ──────────────────────────────────────────────
 // Creation
@@ -13,11 +18,11 @@ pub fn array(data, shape) {
     s := if shape == null { [len(data)] } else { shape }
     if !_valid_shape(s) { return Err("warp.array expects non-negative integer dimensions") }
     if _prod(s) != len(data) { return Err("warp.array data length does not match shape") }
-    {"_warp": true, "data": data, "shape": s, "_dtype": _infer_dtype(data), "_strides": _contiguous_strides(s), "_offset": 0}
+    _make_array(data, s, _infer_dtype(data))
 }
 
-// Logical dtypes follow NumPy's common scalar names. Values remain ordinary
-// Weft values; this metadata does not claim packed storage or SIMD execution.
+// Logical dtypes follow NumPy's common scalar names. Numeric dtypes pack into
+// host tensor storage; object dtype keeps a portable list.
 pub fn array_typed(data, shape, dtype_name) {
     if _wkind(data) != "list" { return Err("warp.array_typed expects a flat data list") }
     s := if shape == null { [len(data)] } else { shape }
@@ -30,9 +35,15 @@ pub fn array_typed(data, shape, dtype_name) {
         if dtype_name != "object" && (value == null || (kind != "bool" && kind != "int" && kind != "float")) {
             return Err("warp.array_typed expects numeric values for this dtype")
         }
-        casted = push(casted, _cast_value(value, dtype_name))
+        converted := _cast_value(value, dtype_name)
+        if _wkind(converted) == "result" {
+            if !converted.ok { return converted }
+            casted = push(casted, converted.value)
+        } else {
+            casted = push(casted, converted)
+        }
     }
-    {"_warp": true, "data": casted, "shape": s, "_dtype": dtype_name, "_strides": _contiguous_strides(s), "_offset": 0}
+    _make_array(casted, s, dtype_name)
 }
 
 pub fn astype(a, dtype_name) {
@@ -69,7 +80,14 @@ pub fn full_dtype(shape, value, dtype_name) {
     n := _prod(shape)
     let mut d = []
     let mut i = 0
-    while i < n { d = push(d, _cast_value(value, dtype_name))
+    while i < n {
+        converted := _cast_value(value, dtype_name)
+        if _wkind(converted) == "result" {
+            if !converted.ok { return converted }
+            d = push(d, converted.value)
+        } else {
+            d = push(d, converted)
+        }
         i = i + 1 }
     array_typed(d, shape, dtype_name)
 }
@@ -307,6 +325,81 @@ pub fn expand_dims(a, axis) {
     _array_like(_data(a), s, a)
 }
 
+// Ensure at least 1-D / 2-D, matching NumPy atleast_1d / atleast_2d.
+pub fn atleast_1d(a) {
+    if !_is_arr(a) { return array([a], [1]) }
+    if len(a.shape) == 0 { return _array_like(_data(a), [1], a) }
+    a
+}
+
+pub fn atleast_2d(a) {
+    if !_is_arr(a) { return array([a], [1, 1]) }
+    rank := len(a.shape)
+    if rank == 0 { return _array_like(_data(a), [1, 1], a) }
+    if rank == 1 { return _array_like(_data(a), [1, a.shape[0]], a) }
+    a
+}
+
+// Materialize `a` broadcast to `shape` (right-aligned NumPy rules).
+pub fn broadcast_to(a, shape) {
+    if !_is_arr(a) { return Err("warp.broadcast_to expects an array") }
+    if !_valid_shape(shape) { return Err("warp.broadcast_to expects a valid shape") }
+    bs := _broadcast_shape(a.shape, shape)
+    if bs == null || bs != shape { return Err("warp.broadcast_to cannot broadcast to target shape") }
+    let mut d = []
+    n := _prod(shape)
+    let mut i = 0
+    while i < n {
+        index := _unravel(i, shape)
+        d = push(d, _broadcast_value(a, index, shape))
+        i = i + 1
+    }
+    _array_like(d, shape, a)
+}
+
+// Constant pad for 1-D / 2-D (and general N-D). `pad_width` may be:
+//   int                → pad both sides of every axis by that amount
+//   [before, after]    → same pair applied to every axis
+//   [[b0,a0], [b1,a1]] → per-axis pairs
+pub fn pad(a, pad_width, constant_value) {
+    if !_is_arr(a) { return Err("warp.pad expects an array") }
+    cv := if _wkind(constant_value) == "unit" || constant_value == null { 0 } else { constant_value }
+    rank := len(a.shape)
+    pads := _normalize_pad_width(pad_width, rank)
+    if pads == null { return Err("warp.pad received invalid pad_width") }
+    let mut out_shape = []
+    let mut i = 0
+    while i < rank {
+        out_shape = push(out_shape, a.shape[i] + pads[i][0] + pads[i][1])
+        i = i + 1
+    }
+    let mut d = []
+    n := _prod(out_shape)
+    let mut flat = 0
+    while flat < n {
+        out_index := _unravel(flat, out_shape)
+        let mut in_bounds = true
+        let mut source_index = []
+        let mut ax = 0
+        while ax < rank {
+            coord := out_index[ax] - pads[ax][0]
+            if coord < 0 || coord >= a.shape[ax] {
+                in_bounds = false
+                break
+            }
+            source_index = push(source_index, coord)
+            ax = ax + 1
+        }
+        if in_bounds {
+            d = push(d, _logical_value_at(a, source_index))
+        } else {
+            d = push(d, cv)
+        }
+        flat = flat + 1
+    }
+    _array_like(d, out_shape, a)
+}
+
 pub fn transpose(a, axes) {
     if !_is_arr(a) { return Err("warp.transpose expects an array") }
     let mut rank = len(a.shape)
@@ -501,9 +594,18 @@ pub fn slice_selector(start, stop, step) {
 // Element-wise arithmetic
 // ──────────────────────────────────────────────
 
-pub fn add(a, b) { _binop(a, b, fn(x, y) { x + y }) }
+pub fn add(a, b) {
+    // Prefer host packed tensors when both operands have native `_tid` storage.
+    native := _try_tensor_binop(a, b, "add")
+    if native != null { return native }
+    _binop(a, b, fn(x, y) { x + y })
+}
 pub fn sub(a, b) { _binop(a, b, fn(x, y) { x - y }) }
-pub fn mul(a, b) { _binop(a, b, fn(x, y) { x * y }) }
+pub fn mul(a, b) {
+    native := _try_tensor_binop(a, b, "mul")
+    if native != null { return native }
+    _binop(a, b, fn(x, y) { x * y })
+}
 pub fn div(a, b) { _binop(a, b, fn(x, y) { x / y }) }
 pub fn mod_(a, b) { _binop(a, b, fn(x, y) { x % y }) }
 pub fn neg(a) { _unaryop(a, fn(x) { -x }) }
@@ -647,24 +749,55 @@ pub fn max_(a) {
     m
 }
 
-pub fn argmin(a) {
-    data := _data(a)
-    if len(data) == 0 { return null }
-    let mut mi = 0
-    let mut i = 1
-    while i < len(data) { if data[i] < data[mi] { mi = i }
-        i = i + 1 }
-    mi
+// argmin / argmax: flat index when axis is omitted; index along `axis` otherwise.
+pub fn argmin(a, axis) {
+    axis_arg := if _wkind(axis) == "unit" { null } else { axis }
+    if axis_arg == null {
+        data := _data(a)
+        if len(data) == 0 { return null }
+        let mut mi = 0
+        let mut i = 1
+        while i < len(data) { if data[i] < data[mi] { mi = i }
+            i = i + 1 }
+        return mi
+    }
+    _arg_reduce_axis(a, axis_arg, true)
 }
 
-pub fn argmax(a) {
-    data := _data(a)
-    if len(data) == 0 { return null }
-    let mut mi = 0
-    let mut i = 1
-    while i < len(data) { if data[i] > data[mi] { mi = i }
-        i = i + 1 }
-    mi
+pub fn argmax(a, axis) {
+    axis_arg := if _wkind(axis) == "unit" { null } else { axis }
+    if axis_arg == null {
+        data := _data(a)
+        if len(data) == 0 { return null }
+        let mut mi = 0
+        let mut i = 1
+        while i < len(data) { if data[i] > data[mi] { mi = i }
+            i = i + 1 }
+        return mi
+    }
+    _arg_reduce_axis(a, axis_arg, false)
+}
+
+// NaN-aware reductions: skip values where x != x.
+pub fn nansum(a) {
+    let mut s = 0.0
+    for x in _data(a) {
+        if x == x { s = s + x }
+    }
+    s
+}
+
+pub fn nanmean(a) {
+    let mut s = 0.0
+    let mut n = 0
+    for x in _data(a) {
+        if x == x {
+            s = s + x
+            n = n + 1
+        }
+    }
+    if n == 0 { return math.nan }
+    s / (n + 0.0)
 }
 
 pub fn cumsum(a) {
@@ -763,6 +896,17 @@ pub fn dot(a, b) {
 pub fn matmul(a, b) {
     sa := a.shape
     sb := b.shape
+    // Prefer host packed tensors for 2D matmul when both operands are native.
+    if len(sa) == 2 && len(sb) == 2 && _has_tid(a) && _has_tid(b) && sa[1] == sb[0] {
+        out := tensor.matmul(a._tid, b._tid)
+        if !is_err(out) {
+            handle := out?
+            values := tensor.to_list(handle)
+            tensor.free(handle)?
+            if is_err(values) { return values }
+            return _make_array(values?, [sa[0], sb[1]], _promote_dtype(a, b))
+        }
+    }
     if len(sa) == 1 && len(sb) == 1 {
         if sa[0] != sb[0] { return Err("warp.matmul vector lengths do not match") }
         let mut result = 0.0
@@ -1074,6 +1218,309 @@ pub fn cross(a, b) {
         ad[2]*bd[0] - ad[0]*bd[2],
         ad[0]*bd[1] - ad[1]*bd[0],
     ], [3])
+}
+
+// ──────────────────────────────────────────────
+// Signal / numerical calculus (1D)
+// ──────────────────────────────────────────────
+// Pure Weft DFT and calculus helpers. Complexity limits:
+//   fft_1d / ifft_1d — Cooley–Tukey O(n log n) when n is a power of 2;
+//     otherwise naive O(n²) DFT. Practical for small n (power-of-2 up to a
+//     few thousand samples; non-power-of-2 preferably n <= 256). Not a
+//     BLAS/FFTW substitute.
+//   diff / gradient / trapz / fft_freq — O(n).
+
+// 1D DFT. Accepts a real warp array (or flat list) and returns
+// {"re": array, "im": array} of the same length (NumPy-compatible unnormalized
+// DFT). Complex input may be a map {"re": array|list, "im": array|list}.
+pub fn fft_1d(a) {
+    parts := _fft_parts(a)
+    if is_err(parts) { return parts }
+    n := len(parts.re)
+    if n == 0 {
+        return {"re": array([], [0]), "im": array([], [0])}
+    }
+    out := if _is_power_of_two(n) {
+        _fft_radix2(parts.re, parts.im, false)
+    } else {
+        _fft_naive(parts.re, parts.im, false)
+    }
+    {"re": array(out.re, [n]), "im": array(out.im, [n])}
+}
+
+// Inverse 1D DFT. re and im are warp arrays or flat lists of equal length.
+// Returns {"re": array, "im": array} scaled by 1/n (NumPy ifft convention).
+pub fn ifft_1d(re, im) {
+    rd := if _is_arr(re) { _data(re) } else if _wkind(re) == "list" { re } else {
+        return Err("warp.ifft_1d expects re as array or list")
+    }
+    id := if _is_arr(im) { _data(im) } else if _wkind(im) == "list" { im } else {
+        return Err("warp.ifft_1d expects im as array or list")
+    }
+    if len(rd) != len(id) { return Err("warp.ifft_1d re/im length mismatch") }
+    n := len(rd)
+    if n == 0 {
+        return {"re": array([], [0]), "im": array([], [0])}
+    }
+    out := if _is_power_of_two(n) {
+        _fft_radix2(rd, id, true)
+    } else {
+        _fft_naive(rd, id, true)
+    }
+    {"re": array(out.re, [n]), "im": array(out.im, [n])}
+}
+
+// Frequency bin centers in cycles per unit of sample spacing d (np.fft.fftfreq).
+// d defaults to 1.0 when null.
+pub fn fft_freq(n, d) {
+    if _wkind(n) != "int" || n < 0 { return Err("warp.fft_freq requires a non-negative integer n") }
+    spacing := if d == null { 1.0 } else { d + 0.0 }
+    if spacing == 0.0 { return Err("warp.fft_freq sample spacing d cannot be zero") }
+    if n == 0 { return array([], [0]) }
+    val := 1.0 / (n * spacing)
+    // NumPy: results[:N] = 0..N-1, results[N:] = -n//2 .. -1 where N = (n-1)//2 + 1
+    n_pos := (n - 1) / 2 + 1
+    let mut d_out = []
+    let mut i = 0
+    while i < n_pos {
+        d_out = push(d_out, i * val)
+        i = i + 1
+    }
+    let mut j = 0 - (n / 2)
+    while j < 0 {
+        d_out = push(d_out, j * val)
+        j = j + 1
+    }
+    array(d_out, [n])
+}
+
+// 1D discrete difference of order n (default 1), like np.diff.
+// Result length is len(a) - n. n may be null (treated as 1).
+pub fn diff(a, n_arg) {
+    order := if n_arg == null { 1 } else { n_arg }
+    if _wkind(order) != "int" || order < 0 {
+        return Err("warp.diff requires a non-negative integer order")
+    }
+    let mut data = if _is_arr(a) { _data(a) } else if _wkind(a) == "list" { a } else {
+        return Err("warp.diff expects an array or list")
+    }
+    if order == 0 { return array(_copy(data), [len(data)]) }
+    if order > len(data) {
+        return Err("warp.diff order exceeds array length")
+    }
+    let mut k = 0
+    while k < order {
+        let mut next = []
+        let mut i = 0
+        m := len(data) - 1
+        while i < m {
+            next = push(next, data[i + 1] - data[i])
+            i = i + 1
+        }
+        data = next
+        k = k + 1
+    }
+    array(data, [len(data)])
+}
+
+// 1D gradient via central differences (unit spacing), like np.gradient for 1D.
+// Endpoints use first-order one-sided differences.
+pub fn gradient(a) {
+    data := if _is_arr(a) { _data(a) } else if _wkind(a) == "list" { a } else {
+        return Err("warp.gradient expects an array or list")
+    }
+    n := len(data)
+    if n == 0 { return array([], [0]) }
+    if n == 1 { return array([0.0], [1]) }
+    let mut d = []
+    // forward difference at start
+    d = push(d, data[1] - data[0] + 0.0)
+    let mut i = 1
+    while i < n - 1 {
+        d = push(d, (data[i + 1] - data[i - 1]) / 2.0)
+        i = i + 1
+    }
+    // backward difference at end
+    d = push(d, data[n - 1] - data[n - 2] + 0.0)
+    array(d, [n])
+}
+
+// Trapezoidal rule for 1D integrate. dx defaults to 1.0 when null.
+// Returns a scalar (float). Empty/singleton inputs return 0.0.
+pub fn trapz(y, dx_arg) {
+    data := if _is_arr(y) { _data(y) } else if _wkind(y) == "list" { y } else {
+        return Err("warp.trapz expects an array or list")
+    }
+    dx := if dx_arg == null { 1.0 } else { dx_arg + 0.0 }
+    n := len(data)
+    if n < 2 { return 0.0 }
+    let mut s = 0.0
+    let mut i = 0
+    while i < n - 1 {
+        s = s + (data[i] + data[i + 1]) * 0.5 * dx
+        i = i + 1
+    }
+    s
+}
+
+fn _is_power_of_two(n) {
+    if _wkind(n) != "int" || n < 1 { return false }
+    let mut v = n
+    while v > 1 {
+        if v % 2 != 0 { return false }
+        v = v / 2
+    }
+    true
+}
+
+// Normalize real or complex input into flat re/im float lists.
+fn _fft_parts(a) {
+    if a != null && _wkind(a) == "map" && contains(keys(a), "re") {
+        if !_is_arr(a.re) && _wkind(a.re) != "list" {
+            return Err("warp.fft_1d complex re must be array or list")
+        }
+        rd := if _is_arr(a.re) { _data(a.re) } else { a.re }
+        let mut id = []
+        if contains(keys(a), "im") && a.im != null {
+            if !_is_arr(a.im) && _wkind(a.im) != "list" {
+                return Err("warp.fft_1d complex im must be array or list")
+            }
+            id = if _is_arr(a.im) { _data(a.im) } else { a.im }
+        } else {
+            let mut i = 0
+            while i < len(rd) {
+                id = push(id, 0.0)
+                i = i + 1
+            }
+        }
+        if len(rd) != len(id) { return Err("warp.fft_1d re/im length mismatch") }
+        return {"re": rd, "im": id}
+    }
+    if !_is_arr(a) && _wkind(a) != "list" {
+        return Err("warp.fft_1d expects an array, list, or {re, im} map")
+    }
+    data := if _is_arr(a) { _data(a) } else { a }
+    let mut re = []
+    let mut im = []
+    for x in data {
+        re = push(re, x + 0.0)
+        im = push(im, 0.0)
+    }
+    {"re": re, "im": im}
+}
+
+// Naive O(n²) DFT. inverse=true applies conjugate twiddle and 1/n scale.
+fn _fft_naive(re, im, inverse) {
+    n := len(re)
+    sign := if inverse { 1.0 } else { -1.0 }
+    scale := if inverse { 1.0 / (n + 0.0) } else { 1.0 }
+    two_pi := 2.0 * 3.141592653589793
+    let mut out_re = []
+    let mut out_im = []
+    let mut k = 0
+    while k < n {
+        let mut sr = 0.0
+        let mut si = 0.0
+        let mut t = 0
+        while t < n {
+            th := sign * two_pi * k * t / (n + 0.0)
+            c := math.cos(th)
+            s := math.sin(th)
+            // exp(sign * i * th) * (re + i im)
+            sr = sr + re[t] * c - im[t] * s
+            si = si + re[t] * s + im[t] * c
+            t = t + 1
+        }
+        out_re = push(out_re, sr * scale)
+        out_im = push(out_im, si * scale)
+        k = k + 1
+    }
+    {"re": out_re, "im": out_im}
+}
+
+// Iterative radix-2 Cooley–Tukey. O(n log n). inverse uses +angle and 1/n.
+fn _fft_radix2(re_in, im_in, inverse) {
+    n := len(re_in)
+    // bit-reversal copy
+    let mut re = []
+    let mut im = []
+    let mut i = 0
+    while i < n {
+        re = push(re, re_in[i] + 0.0)
+        im = push(im, im_in[i] + 0.0)
+        i = i + 1
+    }
+    // compute log2(n)
+    let mut logn = 0
+    let mut tmp = n
+    while tmp > 1 {
+        logn = logn + 1
+        tmp = tmp / 2
+    }
+    // bit-reverse permutation
+    i = 0
+    while i < n {
+        let mut rev = 0
+        let mut x = i
+        let mut b = 0
+        while b < logn {
+            rev = rev * 2 + (x % 2)
+            x = x / 2
+            b = b + 1
+        }
+        if rev > i {
+            tr := re[i]
+            re[i] = re[rev]
+            re[rev] = tr
+            ti := im[i]
+            im[i] = im[rev]
+            im[rev] = ti
+        }
+        i = i + 1
+    }
+    sign := if inverse { 1.0 } else { -1.0 }
+    two_pi := 2.0 * 3.141592653589793
+    let mut len_ = 2
+    while len_ <= n {
+        half := len_ / 2
+        ang := sign * two_pi / (len_ + 0.0)
+        wlen_re := math.cos(ang)
+        wlen_im := math.sin(ang)
+        let mut start = 0
+        while start < n {
+            let mut wr = 1.0
+            let mut wi = 0.0
+            let mut k = 0
+            while k < half {
+                i0 := start + k
+                i1 := i0 + half
+                tr := wr * re[i1] - wi * im[i1]
+                ti := wr * im[i1] + wi * re[i1]
+                re[i1] = re[i0] - tr
+                im[i1] = im[i0] - ti
+                re[i0] = re[i0] + tr
+                im[i0] = im[i0] + ti
+                // wr, wi *= wlen
+                nwr := wr * wlen_re - wi * wlen_im
+                nwi := wr * wlen_im + wi * wlen_re
+                wr = nwr
+                wi = nwi
+                k = k + 1
+            }
+            start = start + len_
+        }
+        len_ = len_ * 2
+    }
+    if inverse {
+        scale := 1.0 / (n + 0.0)
+        i = 0
+        while i < n {
+            re[i] = re[i] * scale
+            im[i] = im[i] * scale
+            i = i + 1
+        }
+    }
+    {"re": re, "im": im}
 }
 
 // ──────────────────────────────────────────────
@@ -1420,6 +1867,18 @@ pub fn describe(a) {
     }
 }
 
+// Element-wise closeness: |a-b| <= atol + rtol*|b|. Defaults match NumPy
+// (atol=1e-8, rtol=1e-5). NaN compares false (equal_nan=false).
+pub fn isclose(a, b, atol, rtol) {
+    at := if _wkind(atol) == "unit" || atol == null { 1e-8 } else { atol }
+    rt := if _wkind(rtol) == "unit" || rtol == null { 1e-5 } else { rtol }
+    _binop_with_dtype(a, b, fn(x, y) {
+        if x != x || y != y { 0 }
+        else if math.abs(x - y) <= at + rt * math.abs(y) { 1 }
+        else { 0 }
+    }, "bool")
+}
+
 pub fn allclose(a, b, atol) {
     tol := if atol == null { 1e-8 } else { atol }
     ad := _data(a)
@@ -1436,7 +1895,7 @@ pub fn allclose(a, b, atol) {
 
 pub fn isnan(a) { _unaryop_with_dtype(a, fn(x) { if x != x { 1 } else { 0 } }, "bool") }
 
-pub fn isinf(a) { _unaryop_with_dtype(a, fn(x) { if x == 1.0/0.0 || x == -1.0/0.0 { 1 } else { 0 } }, "bool") }
+pub fn isinf(a) { _unaryop_with_dtype(a, fn(x) { if x == math.inf || x == -math.inf { 1 } else { 0 } }, "bool") }
 
 pub fn isfinite(a) { _unaryop_with_dtype(a, fn(x) { if x == x && x != 1.0/0.0 && x != -1.0/0.0 { 1 } else { 0 } }, "bool") }
 
@@ -1536,12 +1995,69 @@ fn _copy(data) {
     result
 }
 
-fn _data(a) { if _is_arr(a) { _flat_values(a) } else { a } }
+fn _make_array(data, shape, dtype_name) {
+    if dtype_name != "object" && _tensor_packable(dtype_name) {
+        handle := tensor.from_list(dtype_name, shape, data)
+        if !is_err(handle) {
+            h := handle?
+            return {
+                "_warp": true,
+                "data": data,
+                "shape": shape,
+                "_dtype": dtype_name,
+                "_strides": _contiguous_strides(shape),
+                "_offset": 0,
+                "_tid": h,
+                "_native": true,
+            }
+        }
+    }
+    {
+        "_warp": true,
+        "data": data,
+        "shape": shape,
+        "_dtype": dtype_name,
+        "_strides": _contiguous_strides(shape),
+        "_offset": 0,
+        "_native": false,
+    }
+}
+
+fn _tensor_packable(dtype_name) {
+    dtype_name == "bool" || dtype_name == "int8" || dtype_name == "int16" || dtype_name == "int32" || dtype_name == "int64" || dtype_name == "uint8" || dtype_name == "uint16" || dtype_name == "uint32" || dtype_name == "uint64" || dtype_name == "float32" || dtype_name == "float64"
+}
+
+fn _has_tid(a) {
+    _is_arr(a) && contains(keys(a), "_tid") && a._tid != null
+}
+
+fn _data(a) {
+    if !_is_arr(a) { return a }
+    if a.data != null { return _flat_values(a) }
+    if _has_tid(a) {
+        values := tensor.to_list(a._tid)?
+        a.data = values
+        return values
+    }
+    _flat_values(a)
+}
+
+pub fn storage_kind(a) {
+    if !_is_arr(a) { return "scalar" }
+    if _has_tid(a) { "tensor" } else { "list" }
+}
+
+pub fn itemsize(a) {
+    if !_is_arr(a) { return Err("warp.itemsize expects an array") }
+    _itemsize(dtype(a))
+}
 
 fn _itemsize(dtype_name) {
     if dtype_name == "bool" { 1 }
-    else if dtype_name == "int64" { 8 }
-    else if dtype_name == "float32" { 4 }
+    else if dtype_name == "int8" || dtype_name == "uint8" { 1 }
+    else if dtype_name == "int16" || dtype_name == "uint16" { 2 }
+    else if dtype_name == "int32" || dtype_name == "uint32" || dtype_name == "float32" { 4 }
+    else if dtype_name == "int64" || dtype_name == "uint64" || dtype_name == "float64" { 8 }
     else { 8 }
 }
 
@@ -2021,18 +2537,48 @@ fn _promote_dtype(left, right) {
     l := if _is_arr(left) { dtype(left) } else { _scalar_dtype(left) }
     r := if _is_arr(right) { dtype(right) } else { _scalar_dtype(right) }
     if l == "object" || r == "object" { return "object" }
-    if ((l == "float32" && r == "int64") || (l == "int64" && r == "float32")) &&
+    if ((l == "float32" && _integer_dtype(r)) || (r == "float32" && _integer_dtype(l))) &&
         _is_arr(left) && _is_arr(right) {
         return "float64"
     }
     if l == "float64" || r == "float64" { return "float64" }
     if l == "float32" || r == "float32" { return "float32" }
-    if l == "int64" || r == "int64" { return "int64" }
-    "bool"
+    // uint64 cannot be represented exactly by a signed runtime integer when
+    // combined with a signed integer, so promote that pair to float64.
+    if (l == "uint64" && _signed_integer_dtype(r)) ||
+        (r == "uint64" && _signed_integer_dtype(l)) {
+        return "float64"
+    }
+    left_rank := _dtype_rank(l)
+    right_rank := _dtype_rank(r)
+    if left_rank >= right_rank { l } else { r }
+}
+
+fn _signed_integer_dtype(dtype_name) {
+    dtype_name == "int8" || dtype_name == "int16" || dtype_name == "int32" || dtype_name == "int64"
+}
+
+fn _integer_dtype(dtype_name) {
+    _signed_integer_dtype(dtype_name) || dtype_name == "uint8" || dtype_name == "uint16" || dtype_name == "uint32" || dtype_name == "uint64"
+}
+
+fn _dtype_rank(dtype_name) {
+    if dtype_name == "bool" { 1 }
+    else if dtype_name == "uint8" { 2 }
+    else if dtype_name == "int8" { 3 }
+    else if dtype_name == "uint16" { 4 }
+    else if dtype_name == "int16" { 5 }
+    else if dtype_name == "uint32" { 6 }
+    else if dtype_name == "int32" { 7 }
+    else if dtype_name == "uint64" { 8 }
+    else if dtype_name == "int64" { 9 }
+    else if dtype_name == "float32" { 10 }
+    else if dtype_name == "float64" { 11 }
+    else { 0 }
 }
 
 fn _valid_dtype(dtype_name) {
-    dtype_name == "bool" || dtype_name == "int64" || dtype_name == "float32" || dtype_name == "float64" || dtype_name == "object"
+    dtype_name == "bool" || dtype_name == "int8" || dtype_name == "int16" || dtype_name == "int32" || dtype_name == "int64" || dtype_name == "uint8" || dtype_name == "uint16" || dtype_name == "uint32" || dtype_name == "uint64" || dtype_name == "float32" || dtype_name == "float64" || dtype_name == "object"
 }
 
 fn _infer_dtype(data) {
@@ -2059,9 +2605,50 @@ fn _cast_value(value, dtype_name) {
     if kind != "bool" && kind != "int" && kind != "float" {
         return Err("warp dtype conversion expects numeric values")
     }
-    if dtype_name == "bool" { value != 0 }
-    else if dtype_name == "int64" { if value < 0 { math.ceil(value) } else { math.floor(value) } }
-    else { value + 0.0 }
+    // Coerce bool to 0/1 before numeric casts (Weft forbids bool+int arithmetic).
+    num := if kind == "bool" { if value { 1 } else { 0 } } else { value }
+    if kind == "float" && (value != value || math.isinf(value)) {
+        if dtype_name != "float32" && dtype_name != "float64" {
+            return Err("warp integer dtype conversion requires a finite value")
+        }
+    }
+    if dtype_name == "bool" {
+        if kind == "bool" { value } else { num != 0 }
+    } else if dtype_name == "float32" || dtype_name == "float64" {
+        num + 0.0
+    } else {
+        integer := if kind == "float" {
+            if num < 0 { math.ceil(num) } else { math.floor(num) }
+        } else { num }
+        if integer < -9.223372036854776e18 || integer > 9.223372036854776e18 {
+            return Err("warp integer dtype conversion is out of int64 range")
+        }
+        if dtype_name == "int8" {
+            if integer < -128 || integer > 127 { return Err("warp int8 conversion is out of range") }
+        } else if dtype_name == "int16" {
+            if integer < -32768 || integer > 32767 { return Err("warp int16 conversion is out of range") }
+        } else if dtype_name == "int32" {
+            if integer < -2147483648 || integer > 2147483647 { return Err("warp int32 conversion is out of range") }
+        } else if dtype_name == "uint8" {
+            if integer < 0 || integer > 255 { return Err("warp uint8 conversion is out of range") }
+        } else if dtype_name == "uint16" {
+            if integer < 0 || integer > 65535 { return Err("warp uint16 conversion is out of range") }
+        } else if dtype_name == "uint32" {
+            if integer < 0 || integer > 4294967295 { return Err("warp uint32 conversion is out of range") }
+        } else if dtype_name == "uint64" {
+            if integer < 0 { return Err("warp uint64 conversion is out of range") }
+        } else if dtype_name != "int64" {
+            return Err("warp dtype conversion received unsupported dtype")
+        }
+        integer
+    }
+}
+
+// Coerce bool operands to 0/1 for arithmetic result dtypes so promotion works.
+fn _op_input(value, result_dtype) {
+    if result_dtype == "bool" || result_dtype == "object" { return value }
+    kind := _wkind(value)
+    if kind == "bool" { if value { 1 } else { 0 } } else { value }
 }
 
 fn _validate_2d(a) -> Result[any] {
@@ -2091,6 +2678,41 @@ fn _prod(shape) {
 
 fn _binop(a, b, op) { _binop_with_dtype(a, b, op, null) }
 
+// Host-tensor elementwise path for add/mul. Returns a new array on success, or
+// null so the caller can fall back to the portable `_binop` implementation.
+// Broadcast semantics match tensor.Add/Mul (NumPy right-aligned).
+fn _try_tensor_binop(a, b, op_name) {
+    if !_has_tid(a) || !_has_tid(b) { return null }
+    if op_name != "add" && op_name != "mul" { return null }
+    result_dtype := _promote_dtype(a, b)
+    if !_tensor_packable(result_dtype) { return null }
+    out := if op_name == "add" {
+        tensor.add(a._tid, b._tid)
+    } else {
+        tensor.mul(a._tid, b._tid)
+    }
+    if is_err(out) { return null }
+    handle := out?
+    values := tensor.to_list(handle)
+    tensor.free(handle)?
+    if is_err(values) { return null }
+    shape := _broadcast_shape(a.shape, b.shape)
+    if shape == null { return null }
+    _make_array(values?, shape, result_dtype)
+}
+
+// release drops the optional host tensor backing this array. It is useful for
+// long-running programs that create many large temporary arrays. The array is
+// invalid for further native-backed operations after release; its portable
+// data cache remains available for inspection.
+pub fn release(a) -> Result[any] {
+    if !_is_arr(a) || !_has_tid(a) { return Ok(false) }
+    tensor.free(a._tid)?
+    a._tid = null
+    a._native = false
+    Ok(true)
+}
+
 fn _binop_with_dtype(a, b, op, forced_dtype) {
     result_dtype := if forced_dtype == null { _promote_dtype(a, b) } else { forced_dtype }
     if _is_arr(a) && _is_arr(b) {
@@ -2101,26 +2723,34 @@ fn _binop_with_dtype(a, b, op, forced_dtype) {
         n := _prod(shape)
         while i < n {
             index := _unravel(i, shape)
-            d = push(d, op(_broadcast_value(a, index, shape), _broadcast_value(b, index, shape)))
+            left := _op_input(_broadcast_value(a, index, shape), result_dtype)
+            right := _op_input(_broadcast_value(b, index, shape), result_dtype)
+            d = push(d, op(left, right))
             i = i + 1
         }
         _array_with_dtype(d, shape, result_dtype)
     } else if _is_arr(a) {
         let mut d = []
         let mut i = 0
-    data := _data(a)
-    while i < len(data) { d = push(d, op(data[i], b))
-        i = i + 1 }
+        data := _data(a)
+        right := _op_input(b, result_dtype)
+        while i < len(data) {
+            d = push(d, op(_op_input(data[i], result_dtype), right))
+            i = i + 1
+        }
         _array_with_dtype(d, a.shape, result_dtype)
     } else if _is_arr(b) {
         let mut d = []
         let mut i = 0
-    data := _data(b)
-    while i < len(data) { d = push(d, op(a, data[i]))
-        i = i + 1 }
+        data := _data(b)
+        left := _op_input(a, result_dtype)
+        while i < len(data) {
+            d = push(d, op(left, _op_input(data[i], result_dtype)))
+            i = i + 1
+        }
         _array_with_dtype(d, b.shape, result_dtype)
     } else {
-        value := op(a, b)
+        value := op(_op_input(a, result_dtype), _op_input(b, result_dtype))
         if result_dtype == "bool" { value != 0 } else { value }
     }
 }
@@ -2375,4 +3005,69 @@ fn _reduce_axis_nd_opts(a, axis, op, init, keepdims) {
         kept_shape[normalized] = 1
         _array_with_dtype(d, kept_shape, result_dtype)
     } else if len(out_shape) == 0 { d[0] } else { _array_with_dtype(d, out_shape, result_dtype) }
+}
+
+// is_min=true → argmin, false → argmax. Returns indices of first extreme along axis.
+fn _arg_reduce_axis(a, axis, is_min) {
+    if !_is_arr(a) { return Err("warp argmin/argmax expects an array") }
+    normalized := _normalize_axis(axis, len(a.shape), false)
+    if normalized == null { return Err("warp argmin/argmax axis is out of range") }
+    if a.shape[normalized] == 0 { return Err("warp argmin/argmax cannot reduce an empty axis") }
+    out_shape := _remove_axis(a.shape, normalized)
+    output_size := _prod(out_shape)
+    let mut d = []
+    let mut flat = 0
+    while flat < output_size {
+        output_index := _unravel(flat, out_shape)
+        let mut best_k = 0
+        let mut best_v = _logical_value_at(a, _insert_axis_index(output_index, normalized, 0))
+        let mut k = 1
+        while k < a.shape[normalized] {
+            v := _logical_value_at(a, _insert_axis_index(output_index, normalized, k))
+            better := if is_min { v < best_v } else { v > best_v }
+            if better {
+                best_v = v
+                best_k = k
+            }
+            k = k + 1
+        }
+        d = push(d, best_k)
+        flat = flat + 1
+    }
+    if len(out_shape) == 0 { d[0] } else { _array_with_dtype(d, out_shape, "int64") }
+}
+
+fn _normalize_pad_width(pad_width, rank) {
+    if _wkind(pad_width) == "int" {
+        if pad_width < 0 { return null }
+        let mut pads = []
+        let mut i = 0
+        while i < rank {
+            pads = push(pads, [pad_width, pad_width])
+            i = i + 1
+        }
+        return pads
+    }
+    if _wkind(pad_width) != "list" { return null }
+    // Uniform [before, after] applied to every axis.
+    if len(pad_width) == 2 && _wkind(pad_width[0]) == "int" && _wkind(pad_width[1]) == "int" {
+        if pad_width[0] < 0 || pad_width[1] < 0 { return null }
+        let mut pads = []
+        let mut i = 0
+        while i < rank {
+            pads = push(pads, [pad_width[0], pad_width[1]])
+            i = i + 1
+        }
+        return pads
+    }
+    // Per-axis [[before, after], ...]
+    if len(pad_width) != rank { return null }
+    let mut pads = []
+    for pair in pad_width {
+        if _wkind(pair) != "list" || len(pair) != 2 { return null }
+        if _wkind(pair[0]) != "int" || _wkind(pair[1]) != "int" { return null }
+        if pair[0] < 0 || pair[1] < 0 { return null }
+        pads = push(pads, [pair[0], pair[1]])
+    }
+    pads
 }

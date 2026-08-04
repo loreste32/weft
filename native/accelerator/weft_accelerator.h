@@ -15,7 +15,7 @@ extern "C" {
 
 // Must return a process-lifetime JSON object, for example:
 // {"name":"mlx","version":"0.1.0","abi":1,
-//  "vendors":["mlx"],"operations":["health","matmul"]}
+//  "vendors":["mlx"],"operations":["health","matmul","tensor_add"]}
 const char *weft_accel_manifest(void);
 
 // The provider owns *output_json and must release it from weft_accel_free.
@@ -28,14 +28,26 @@ const char *weft_accel_last_error(void);
 
 void weft_accel_free(char *output_json);
 
-// Optional binary tensor ABI. Providers that advertise `tensor_matmul` must
-// export these symbols. Shapes are dimensions; strides are element strides.
+// Optional binary tensor ABI. Providers that advertise `tensor_matmul` or
+// `tensor_add` must export these symbols. Shapes are dimensions; strides are
+// element strides. `tensor_add` is a bounded same-shape elementwise addition
+// operation; providers must reject unsupported broadcasting rather than
+// silently changing the requested shape.
 // The provider owns output storage until weft_accel_free_tensor is called.
 enum {
-    WEFT_TENSOR_BOOL = 1,
-    WEFT_TENSOR_INT64 = 2,
-    WEFT_TENSOR_FLOAT32 = 3,
-    WEFT_TENSOR_FLOAT64 = 4
+  WEFT_TENSOR_BOOL = 1,
+  WEFT_TENSOR_INT64 = 2,
+  WEFT_TENSOR_FLOAT32 = 3,
+  WEFT_TENSOR_FLOAT64 = 4,
+  // Codes 1–4 are frozen for ABI v1 compatibility. Additional fixed-width
+  // dtypes append here so existing providers keep their meanings.
+  WEFT_TENSOR_INT8 = 5,
+  WEFT_TENSOR_INT16 = 6,
+  WEFT_TENSOR_INT32 = 7,
+  WEFT_TENSOR_UINT8 = 8,
+  WEFT_TENSOR_UINT16 = 9,
+  WEFT_TENSOR_UINT32 = 10,
+  WEFT_TENSOR_UINT64 = 11
 };
 
 typedef struct {

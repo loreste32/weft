@@ -302,6 +302,20 @@ func dtypeCode(dtype tensor.DType) uint32 {
 		return 3
 	case tensor.Float64:
 		return 4
+	case tensor.Int8:
+		return 5
+	case tensor.Int16:
+		return 6
+	case tensor.Int32:
+		return 7
+	case tensor.UInt8:
+		return 8
+	case tensor.UInt16:
+		return 9
+	case tensor.UInt32:
+		return 10
+	case tensor.UInt64:
+		return 11
 	default:
 		return 0
 	}
@@ -317,6 +331,20 @@ func dtypeName(code uint32) (tensor.DType, error) {
 		return tensor.Float32, nil
 	case 4:
 		return tensor.Float64, nil
+	case 5:
+		return tensor.Int8, nil
+	case 6:
+		return tensor.Int16, nil
+	case 7:
+		return tensor.Int32, nil
+	case 8:
+		return tensor.UInt8, nil
+	case 9:
+		return tensor.UInt16, nil
+	case 10:
+		return tensor.UInt32, nil
+	case 11:
+		return tensor.UInt64, nil
 	default:
 		return "", fmt.Errorf("native tensor provider returned unsupported dtype code %d", code)
 	}
