@@ -600,7 +600,7 @@ Connect directly to FreeSWITCH via the Event Socket Library for real-time call c
 
 **Concurrency model:** After authentication, one reader owns socket reads and a coordinator owns command writes and response/event routing. `command()` and `recv_event()`/`recv_event_timeout()` may be used concurrently; event frames are delivered before command replies, and timed-out event waits are removed from the coordinator queue. Normal connection reads install no hidden deadline, so an idle ESL event stream remains open until the caller closes it or sets a deadline.
 
-**Offline verification:** `weft test packages/telecom -q -run parser` covers framing and validation. CI also runs `TestESLBlackBoxProcess`, which launches the actual Weft CLI against a local mock TCP server and verifies authentication, coalesced frames, event-before-reply routing, concurrent commands, timeout cancellation, and cleanup. This test does not claim live FreeSWITCH compatibility; release validation still requires a real FreeSWITCH/Asterisk environment and SIP scenarios.
+**Offline verification:** `weft test packages/telecom -q -run parser` covers framing and validation, and `-run server_closes` covers the coordinator dead path in-language (pending commands and blocked event waiters fail fast when the server drops the connection). CI also runs the ESL black-box suite (`go test ./pkg/weft -run '^TestESL'` with `WEFT_CLI` set), which launches the actual Weft CLI against local mock TCP servers and verifies authentication, coalesced frames, event-before-reply routing, concurrent commands, timeout cancellation, and cleanup. The adversarial cases add: server-initiated close while a command reply is pending and while `recv_event` is blocked (both must fail, never hang, and later operations must report the dead connection), frames delivered byte-by-byte and split mid-header / mid-Content-Length digits with frame boundaries coalesced into shared writes, and a 10-way concurrent command stress followed by a 260-command flood that exercises the 256-entry pending-request cap (overflow is rejected explicitly) and dead-path cleanup of the survivors. These tests do not claim live FreeSWITCH compatibility; release validation still requires a real FreeSWITCH/Asterisk environment and SIP scenarios.
 
 ### Inbound mode
 
@@ -689,6 +689,8 @@ fn main {
 
 Control Asterisk via the REST Interface + WebSocket events.
 
+**Offline verification:** `weft test packages/telecom -q -run ari` stands up an in-process mock ARI server (stdlib `web` app with REST routes and a WebSocket event stream) and covers REST round-trips (channels list, originate, answer, hangup, bridge create/add-channel), auth failure (HTTP 401 surfaces as an `Err`), `ari_listen` receiving StasisStart/StasisEnd events, a malformed JSON frame being skipped without killing the listen loop, listen failing cleanly when nothing is listening, and cleanup when the server closes the socket. This does not claim live Asterisk compatibility; release validation still requires a real Asterisk environment.
+
 ### Connect and listen
 
 ```weft
@@ -709,9 +711,9 @@ fn main -> Result {
 
     // listen for events (blocking)
     telecom.ari_listen(ari, fn(event) {
-        say("event: ${event.type}")
+        say("event: " + event["type"])
 
-        if event.type == "StasisStart" {
+        if event["type"] == "StasisStart" {
             id := event.channel.id
             say("call from: ${event.channel.caller.number}")
 
@@ -720,7 +722,7 @@ fn main -> Result {
             telecom.ari_play(ari, id, "sound:hello-world", null)?
         }
 
-        if event.type == "ChannelDtmfReceived" {
+        if event["type"] == "ChannelDtmfReceived" {
             say("DTMF: ${event.digit}")
         }
     })?

@@ -58,8 +58,15 @@ echo "== vendor package sync =="
 bash scripts/check-vendor-sync.sh
 echo "== catalog package sync =="
 bash scripts/check-catalog-sync.sh
+echo "== capability matrix freshness =="
+# Committed reports/capability-matrix.{md,json} must match the generator —
+# stale capability claims fail CI (roadmap P0: no stale generated data).
+python3 scripts/capability-matrix.py --check
 echo "== NumPy/pandas conformance (when oracle dependencies are installed) =="
-if python3 -c 'import numpy, pandas' >/dev/null 2>&1; then
+# The conformance runner imports all pinned oracle libraries, not only
+# NumPy/pandas. GitHub's dedicated job installs this complete set; local CI
+# skips the optional oracle gate when any dependency is unavailable.
+if python3 -c 'import numpy, pandas, sklearn' >/dev/null 2>&1; then
   python3 scripts/conformance/run.py --weft /tmp/weft-ci
 else
   echo "NumPy/pandas unavailable — dedicated CI conformance job remains required"

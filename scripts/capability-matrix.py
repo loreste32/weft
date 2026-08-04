@@ -13,7 +13,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,7 +41,7 @@ def load_exports(pkg: str) -> list[str]:
 CLAIMS: list[dict] = [
     # ── Warp (NumPy-style arrays) ──────────────────────────────────────
     {"area": "warp", "claim": "array creation (array/zeros/ones/arange)", "status": "implemented", "notes": "Flat list + shape; typed constructors"},
-    {"area": "warp", "claim": "fixed-width dtypes (bool/int/uint/float/object)", "status": "implemented", "notes": "Packed host dtypes with range validation; not full NumPy casting table or complex/structured dtypes"},
+    {"area": "warp", "claim": "fixed-width dtypes (bool/int/uint/float/object)", "status": "implemented", "notes": "Packed host dtypes with range validation; promotion matches NumPy 2.x promote_types for all supported pairs; full astype casting table and complex/structured dtypes not claimed"},
     {"area": "warp", "claim": "host packed tensor storage (_tid)", "status": "implemented", "notes": "Primary numeric storage via internal/tensor"},
     {"area": "warp", "claim": "elementwise arithmetic + broadcasting", "status": "implemented", "notes": "Trailing broadcast; shape mismatch → Err"},
     {"area": "warp", "claim": "reductions (sum/mean/min/max/axis)", "status": "implemented", "notes": "Axis opts partial (keepdims yes; where/initial/out no)"},
@@ -53,7 +55,7 @@ CLAIMS: list[dict] = [
     # ── DataFrame (pandas-inspired) ────────────────────────────────────
     {"area": "dataframe", "claim": "from_rows / from_columns / CSV/JSON I/O", "status": "implemented", "notes": "Row-list storage; quoted CSV"},
     {"area": "dataframe", "claim": "filter / query / sort / head/tail/iloc", "status": "implemented", "notes": "iloc scalar/list; not full .loc label engine"},
-    {"area": "dataframe", "claim": "groupby + aggregations + transform/size", "status": "partial", "notes": "group_by, group_by_transform, group_by_size; not full pandas groupby API"},
+    {"area": "dataframe", "claim": "groupby + aggregations + transform/size", "status": "partial", "notes": "group_by with single/composite keys + per-column agg lists, group_by_transform, group_by_size, pivot_table aggfuncs; not full pandas groupby API"},
     {"area": "dataframe", "claim": "join / merge / concat", "status": "implemented", "notes": "Common how-modes; not full multi-key parity"},
     {"area": "dataframe", "claim": "DataFrame ↔ Warp numeric interchange", "status": "partial", "notes": "Tested 1D/2D copying path; rejects null/non-numeric values; zero-copy not claimed"},
     {"area": "dataframe", "claim": "Series + explicit index / MultiIndex foundation", "status": "partial", "notes": "Series helpers + multi-level foundation; not complete MultiIndex"},
@@ -199,6 +201,67 @@ def render_md(matrix: dict) -> str:
     return "\n".join(lines)
 
 
+def slim_matrix(matrix: dict) -> dict:
+    """JSON report form: drop full export lists; keep counts + claims."""
+    slim = dict(matrix)
+    slim["exports"] = {
+        k: {"count": v["count"], "package_path": v["package_path"]}
+        for k, v in matrix["exports"].items()
+    }
+    return slim
+
+
+def normalize_md(text: str) -> str:
+    """Strip the volatile timestamp so drift checks compare content only."""
+    return re.sub(r"^- \*\*Generated:\*\* .*$", "- **Generated:** <normalized>", text, flags=re.M)
+
+
+def check_fresh() -> int:
+    """Fail when committed reports/ drift from the generated capability data."""
+    matrix = build_matrix()
+    fresh_md = normalize_md(render_md(matrix))
+    fresh_json = slim_matrix(matrix)
+    fresh_json.pop("generated_at", None)
+
+    failures = 0
+    md_path = ROOT / "reports" / "capability-matrix.md"
+    committed_md = normalize_md(md_path.read_text(encoding="utf-8")) if md_path.is_file() else ""
+    if committed_md != fresh_md:
+        failures += 1
+        print(f"STALE: {md_path} differs from generated output", file=sys.stderr)
+        diff = difflib.unified_diff(
+            committed_md.splitlines(), fresh_md.splitlines(),
+            fromfile=str(md_path), tofile="generated", lineterm="",
+        )
+        for i, line in enumerate(diff):
+            if i >= 60:
+                print("... (diff truncated)", file=sys.stderr)
+                break
+            print(line, file=sys.stderr)
+
+    json_path = ROOT / "reports" / "capability-matrix.json"
+    try:
+        committed_json = json.loads(json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        committed_json = None
+    if isinstance(committed_json, dict):
+        committed_json.pop("generated_at", None)
+    if committed_json != fresh_json:
+        failures += 1
+        print(f"STALE: {json_path} differs from generated output", file=sys.stderr)
+
+    if failures:
+        print(
+            "capability matrix stale — regenerate with `make capability-matrix` "
+            "(or `python3 scripts/capability-matrix.py --json reports/capability-matrix.json`) "
+            "and commit the result",
+            file=sys.stderr,
+        )
+        return 1
+    print("capability matrix fresh")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -212,7 +275,15 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="Optional JSON output path",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Fail if committed reports/ are stale (writes nothing)",
+    )
     args = parser.parse_args(argv)
+
+    if args.check:
+        return check_fresh()
 
     matrix = build_matrix()
     out = Path(args.output)
@@ -223,13 +294,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         jpath = Path(args.json)
         jpath.parent.mkdir(parents=True, exist_ok=True)
-        # Drop full export lists from default JSON for size; keep counts + claims.
-        slim = dict(matrix)
-        slim["exports"] = {
-            k: {"count": v["count"], "package_path": v["package_path"]}
-            for k, v in matrix["exports"].items()
-        }
-        jpath.write_text(json.dumps(slim, indent=2) + "\n", encoding="utf-8")
+        jpath.write_text(json.dumps(slim_matrix(matrix), indent=2) + "\n", encoding="utf-8")
         print(jpath)
 
     counts = matrix["counts"]

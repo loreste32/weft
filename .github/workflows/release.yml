@@ -55,7 +55,7 @@ jobs:
               fi
               echo "  $goos/$goarch ($flavor)"
               # shellcheck disable=SC2086
-              GOOS=$goos GOARCH=$goarch go build $tags -o "dist/bin/weft${ext}" ./cmd/weft
+              GOOS=$goos GOARCH=$goarch go build $tags -trimpath -buildvcs=false -o "dist/bin/weft${ext}" ./cmd/weft
               pkg="weft-${VERSION}-${goos}-${goarch}${suffix}"
               if [ "$goos" = "windows" ]; then
                 (cd dist/bin && zip -q "../${pkg}.zip" "weft${ext}")
@@ -66,6 +66,12 @@ jobs:
             done
           done
           (cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS)
+
+      - name: Offline install + reproducible build gate
+        run: bash scripts/reproducible-build-check.sh
+
+      - name: SBOM
+        run: bash scripts/sbom.sh dist/SBOM.json
 
       - name: Package VS Code extension
         run: |

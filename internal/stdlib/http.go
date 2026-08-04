@@ -585,6 +585,12 @@ func doRequest(env *runtime.Env, method, urlStr, body string, headers map[string
 		return errRes(circuitOpenMsg+": "+host, "http"), nil
 	}
 
+	// Request bodies are bounded exactly like responses (browser parity:
+	// http_wasm.go enforces the same limit before send).
+	if len(body) > maxBodyBytes {
+		return errRes(fmt.Sprintf("http request body exceeds %d MiB limit", maxBodyBytes>>20), "http"), nil
+	}
+
 	var lastErr error
 	var lastStatus int
 	for attempt := 0; attempt <= retries; attempt++ {

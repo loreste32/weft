@@ -50,6 +50,19 @@ No `fn main` in test files.
 
 A failed assert ends that `test_*` function and prints `FAIL file::name`.
 
+## Pass/fail semantics
+
+A `test_*` function fails when it **raises** a runtime error (e.g. a failed `test.eq`) **or** when it **returns an `Err` Result** — including `Err` propagated by `?`:
+
+```weft
+fn test_parse_config {
+    cfg := parse_config("bad")?   // Err propagates → this test FAILs
+    test.eq(cfg.name, "x")
+}
+```
+
+Returning `Ok(...)` or any non-`Result` value passes. Use `test.ok` / `test.eq` for assertions — don't let a `?` silently decide the outcome unless a propagated error is exactly what should fail the test.
+
 ## Related
 
 | Tool | Role |

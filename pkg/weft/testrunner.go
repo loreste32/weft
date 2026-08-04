@@ -11,6 +11,7 @@ import (
 
 	"github.com/loreste/weft/internal/compile"
 	"github.com/loreste/weft/internal/parse"
+	"github.com/loreste/weft/internal/runtime"
 	"github.com/loreste/weft/internal/stdlib"
 	"github.com/loreste/weft/internal/vm"
 )
@@ -283,21 +284,24 @@ func runTestFile(path string, opts TestOptions, covHit map[string]bool) ([]TestC
 
 		// timeout
 		start := time.Now()
+		var ret runtime.Value
 		if opts.Timeout > 0 {
 			done := make(chan struct{})
 			var runErr error
+			var runRet runtime.Value
 			go func() {
-				_, runErr = machine.RunFunc(fn, nil)
+				runRet, runErr = machine.RunFunc(fn, nil)
 				close(done)
 			}()
 			select {
 			case <-done:
 				err = runErr
+				ret = runRet
 			case <-time.After(time.Duration(opts.Timeout) * time.Second):
 				err = fmt.Errorf("test timed out after %ds", opts.Timeout)
 			}
 		} else {
-			_, err = machine.RunFunc(fn, nil)
+			ret, err = machine.RunFunc(fn, nil)
 		}
 		c.Ms = time.Since(start).Milliseconds()
 
@@ -323,12 +327,41 @@ func runTestFile(path string, opts TestOptions, covHit map[string]bool) ([]TestC
 				c.OK = false
 				c.Err = err.Error()
 			}
+		} else if msg, failed := testReturnedErr(ret); failed {
+			c.OK = false
+			c.Err = msg
 		} else {
 			c.OK = true
 		}
 		cases = append(cases, c)
 	}
 	return cases, allFuncs, nil
+}
+
+// testReturnedErr reports whether a test fn returned an Err Result value —
+// e.g. `?` propagating a failed call, or an explicit `return Err(...)`.
+// Such a return fails the test; only raised runtime errors did so before.
+func testReturnedErr(ret runtime.Value) (msg string, failed bool) {
+	if ret.Kind != runtime.KindResult {
+		return "", false
+	}
+	ro, ok := ret.Obj.(*runtime.ResultObj)
+	if !ok || ro.Ok {
+		return "", false
+	}
+	e := ro.Err
+	// Error structs carry the message; anything else is rendered defensively.
+	if e.Kind == runtime.KindStruct {
+		if so, ok := e.Obj.(*runtime.StructObj); ok {
+			if m, ok := so.Fields["message"]; ok {
+				if m.Kind == runtime.KindStr {
+					return "test returned Err: " + m.S, true
+				}
+				return "test returned Err: " + m.String(), true
+			}
+		}
+	}
+	return "test returned Err: " + e.String(), true
 }
 
 // PrintTestReport writes a human summary; returns process exit code.

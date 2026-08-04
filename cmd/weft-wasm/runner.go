@@ -15,7 +15,10 @@ import (
 )
 
 const (
-	maxSourceBytes = 100_000
+	// 512 KiB leaves room for bundling pure-Weft packages (warp + dataframe
+	// ≈ 200 KiB combined) into a single browser program; the compiler/VM path
+	// is otherwise unchanged and the timeout still bounds total work.
+	maxSourceBytes = 512_000
 	defaultTimeout = 5 * time.Second
 	maxTimeout     = 30 * time.Second
 )

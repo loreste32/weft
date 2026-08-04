@@ -249,6 +249,10 @@ fn _coordinator(conn, inbox) {
                 send(request.reply, _reply_err(dead_error))
                 continue
             }
+            if len(pending) >= _max_request_queue() {
+                send(request.reply, _reply_err("ESL: too many pending requests"))
+                continue
+            }
             pending = push(pending, request)
             written := conn.write(request.cmd)
             if !written.ok {

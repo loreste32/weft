@@ -15,6 +15,21 @@ using weft_accel_provider::parse_matrix;
 
 static std::string last_error;
 
+// Execution reporting for the most recent run (weft_accel_exec_info). MLX
+// evaluates on the default GPU stream and never falls back to CPU: ops either
+// run on the GPU or fail with an error, so fallback is always false here.
+static std::string last_exec_info;
+
+static std::string mlx_device_name() { return "mlx:0"; }
+
+static void record_exec_info(bool fallback) {
+  last_exec_info = weft_accel_provider::exec_info_json(mlx_device_name(), fallback);
+}
+
+extern "C" char* weft_accel_exec_info(void) {
+  return copy_output(last_exec_info);
+}
+
 extern "C" const char* weft_accel_manifest(void) {
   return "{\"name\":\"weft-mlx\",\"version\":\"1.0.0\","
          "\"abi\":1,\"vendors\":[\"mlx\"],"
@@ -38,8 +53,11 @@ extern "C" int weft_accel_run(const char* operation, const char* input_json,
       last_error = "mlx_device_count failed";
       return 1;
     }
+    std::string device = mlx_device_name();
+    record_exec_info(false);
     *output_json = copy_output(std::string("{\"ok\":true,\"backend\":\"mlx\",\"devices\":") +
-                               std::to_string(devices) + "}");
+                               std::to_string(devices) + ",\"device\":\"" + device +
+                               "\",\"requested_device\":\"" + device + "\",\"fallback\":false}");
     if (*output_json == nullptr) { last_error = "result allocation failed"; return 1; }
     return 0;
   }
@@ -88,7 +106,8 @@ extern "C" int weft_accel_run(const char* operation, const char* input_json,
   mlx_array_free(b_array);
   mlx_stream_free(stream);
   if (status != 0) return 1;
-  *output_json = copy_output(weft_accel_provider::matrix_json(values, a.rows, b.cols));
+  record_exec_info(false);
+  *output_json = copy_output(weft_accel_provider::matrix_json(values, a.rows, b.cols, mlx_device_name(), false));
   if (*output_json == nullptr) { last_error = "result allocation failed"; return 1; }
   return 0;
 }
@@ -189,6 +208,7 @@ extern "C" int weft_accel_run_tensor(const char* operation,
       weft_accel_free_tensor(output);
       return 1;
     }
+    record_exec_info(false);
     return 0;
   }
   if (std::strcmp(operation, "tensor_matmul") != 0 ||
@@ -258,6 +278,7 @@ extern "C" int weft_accel_run_tensor(const char* operation,
     weft_accel_free_tensor(output);
     return 1;
   }
+  record_exec_info(false);
   return 0;
 }
 

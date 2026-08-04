@@ -51,11 +51,14 @@ func TestRunTensorReleasesTemporaryContiguousInputs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := p.RunTensor("tensor_matmul", left, right)
+	result, info, err := p.RunTensor("tensor_matmul", left, right)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer tensor.Release(result)
+	if info.Reported || info.Status != StatusUnreported {
+		t.Fatalf("fake provider without exec_info export must be unreported, got %+v", info)
+	}
 	if len(fake.inputs) != 2 {
 		t.Fatalf("provider received %d inputs, want 2", len(fake.inputs))
 	}

@@ -132,6 +132,10 @@ jobs:
           go build -o /tmp/weft-telecom ./cmd/weft
           /tmp/weft-telecom mod check packages/telecom
           /tmp/weft-telecom test packages/telecom -q -run parser
+      - name: Run telecom ESL dead-path and ARI mock tests
+        run: |
+          /tmp/weft-telecom test packages/telecom -q -run server_closes
+          /tmp/weft-telecom test packages/telecom -q -run ari
 
   telecom-dispatcher:
     name: telecom-dispatcher
@@ -148,7 +152,7 @@ jobs:
           go build -o /tmp/weft-telecom ./cmd/weft
           /tmp/weft-telecom mod check packages/telecom
           WEFT_CLI=/tmp/weft-telecom go test ./pkg/weft \
-            -run '^TestESLBlackBoxProcess$' -count=1 -timeout=120s
+            -run '^TestESL' -count=1 -timeout=120s
 
   wasm:
     name: wasm
@@ -205,6 +209,85 @@ jobs:
           cache: true
       - name: Release smoke
         run: bash scripts/release-smoke.sh
+
+  # Roadmap 0.4.x gap: macOS/Windows were cross-compiled but never executed.
+  # This job RUNS the core suite on both.
+  cross-platform:
+    name: cross-platform (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Unit (core packages)
+        shell: bash
+        run: |
+          go test ./internal/lex/ ./internal/parse/ ./internal/compile/ ./internal/vm/ \
+            ./internal/types/ ./internal/pkgman/ ./pkg/weft/ -count=1 -timeout 300s
+      - name: Compat corpus
+        shell: bash
+        run: go test ./pkg/weft/ -count=1 -run TestCompatCorpus
+      - name: Build and run smoke
+        shell: bash
+        run: |
+          mkdir -p ci-bin
+          go build -o "./ci-bin/weft${EXT}" ./cmd/weft
+          "./ci-bin/weft${EXT}" version | grep -q "weft 0."
+          "./ci-bin/weft${EXT}" run examples/hello.weft | grep -q hello
+        env:
+          EXT: ${{ runner.os == 'Windows' && '.exe' || '' }}
+
+  # Roadmap 0.4.x gap: Dockerfile was never built or smoke-tested in CI.
+  docker:
+    name: docker-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t weft-ci .
+      - name: Smoke test
+        run: |
+          docker run --rm weft-ci version | grep -q "weft 0."
+          docker run --rm weft-ci doctor | grep -q "weft 0."
+          printf 'fn main { say("container ok") }\n' > /tmp/ci_docker_hello.weft
+          docker run --rm -v /tmp/ci_docker_hello.weft:/tmp/h.weft weft-ci run /tmp/h.weft | grep -q "container ok"
+
+  # Live broker coverage (STDLIB_GAPS.md): real services, not skips.
+  # WEFT_LIVE_REQUIRED=1 turns "broker unreachable" from skip into FAILURE.
+  brokers-live:
+    name: brokers-live
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      nats:
+        image: nats:2
+        ports: ["4222:4222"]
+      rabbitmq:
+        image: rabbitmq:3
+        ports: ["5672:5672"]
+      mongo:
+        image: mongo:7
+        ports: ["27017:27017"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Live broker tests (required, never skipped)
+        env:
+          WEFT_LIVE_REQUIRED: "1"
+        run: |
+          go test ./internal/stdlib/ -count=1 -timeout 180s \
+            -run 'TestNATS_LiveOptional|TestAMQP_Live|TestMongo_Live'
 
   # Longer fuzz on a schedule / manual only (not every PR)
   fuzz-deep:

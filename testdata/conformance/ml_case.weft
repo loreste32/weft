@@ -1,0 +1,73 @@
+use "../../packages/ml/lib.weft" as ml
+use json
+
+// Deterministic sklearn differential fixture. All data is hardcoded (no
+// randomness). Features are standardized (population std, ddof=0, matching
+// sklearn StandardScaler) before fitting so plain full-batch gradient
+// descent converges tightly enough to compare against sklearn's closed-form
+// / lbfgs optima (see scripts/conformance/run.py ml_expected).
+
+fn main -> Result {
+    // Exact linear relation: y = 3*x1 - 2*x2 + 1.5
+    features := [
+        [0.0, 7.0],
+        [1.0, 3.0],
+        [2.0, 5.0],
+        [3.0, 1.0],
+        [4.0, 6.0],
+        [5.0, 2.0],
+        [6.0, 4.0],
+        [7.0, 0.5],
+    ]
+    targets := [-12.5, -1.5, -2.5, 8.5, 1.5, 12.5, 11.5, 21.5]
+    std := ml.standardize(features)?
+    model := ml.linear_fit(std.values, targets, {"epochs": 4000, "learning_rate": 0.1, "batch_size": 8})?
+    predictions := ml.predict(model, std.values)?
+    mse := ml.score(model, std.values, targets)?
+    n := len(targets)
+    let mut sum_y = 0.0
+    for t in targets { sum_y = sum_y + t }
+    mean_y := sum_y / n
+    let mut ss_tot = 0.0
+    for t in targets { d := t - mean_y  ss_tot = ss_tot + d * d }
+    r2 := 1.0 - mse * n / ss_tot
+
+    // Binary classification with class overlap so the unregularized MLE
+    // exists (no separable-data divergence).
+    log_features := [
+        [-2.0, -1.0],
+        [-1.5, 0.5],
+        [-1.0, -0.5],
+        [-0.5, 1.0],
+        [0.5, -1.0],
+        [0.8, 0.6],
+        [2.0, 1.0],
+        [1.5, -0.5],
+        [1.0, 0.8],
+        [0.5, -0.2],
+        [-0.6, -0.4],
+        [0.8, 0.5],
+    ]
+    log_targets := [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]
+    log_std := ml.standardize(log_features)?
+    log_model := ml.logistic_fit(log_std.values, log_targets, {"epochs": 20000, "learning_rate": 0.5, "batch_size": 12})?
+    probabilities := ml.predict(log_model, log_std.values)?
+    accuracy := ml.score(log_model, log_std.values, log_targets)?
+
+    say(json.stringify({
+        "standardize": {"mean": std.mean, "scale": std.scale, "values": std.values},
+        "linear": {
+            "weights": model.weights,
+            "bias": model.bias,
+            "predictions": predictions,
+            "mse": mse,
+            "r2": r2,
+        },
+        "logistic": {
+            "weights": log_model.weights,
+            "bias": log_model.bias,
+            "probabilities": probabilities,
+            "accuracy": accuracy,
+        },
+    }))
+}

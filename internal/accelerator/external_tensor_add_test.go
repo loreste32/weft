@@ -50,9 +50,20 @@ func TestExternalProviderTensorAdd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := plugin.RunTensor("tensor_add", left, right)
+	result, info, err := plugin.RunTensor("tensor_add", left, right)
 	if err != nil {
 		t.Fatal("external tensor add: ", err)
+	}
+	// Execution reporting is mandatory for conformance (see TestExternalProviderReporting).
+	if !info.Reported {
+		t.Fatalf("REPORTING_UNREPORTED: provider %q omits tensor exec info", manifest.Name)
+	}
+	if info.Fallback && info.Device != "cpu" {
+		t.Fatalf("REPORTING_CONTRADICTORY: tensor_add claims fallback on non-cpu device: %+v", info)
+	}
+	if !info.Fallback && info.RequestedDevice != "" && info.Device != info.RequestedDevice {
+		t.Fatalf("REPORTING_CONTRADICTORY: tensor_add device %q != requested %q without fallback",
+			info.Device, info.RequestedDevice)
 	}
 	values, err := result.Float64Values()
 	if err != nil {

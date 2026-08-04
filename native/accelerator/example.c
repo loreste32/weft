@@ -9,6 +9,9 @@
 
 static const char *last_error = "";
 
+/* Execution reporting state; populated after copy_string is defined below. */
+static char last_exec_info[192] = "";
+
 static char *copy_string(const char *value) {
     size_t size;
     char *copy;
@@ -21,11 +24,24 @@ static char *copy_string(const char *value) {
 
 static void fail(const char *message) { last_error = message; }
 
+/* Execution reporting for the most recent run. The CPU reference always
+   computes on the host and never falls back, so it reports device "cpu"
+   with fallback false. Empty until the first call. */
+static void record_exec_info(const char *device, const char *requested, int fallback) {
+    snprintf(last_exec_info, sizeof(last_exec_info),
+             "{\"device\":\"%s\",\"requested_device\":\"%s\",\"fallback\":%s,\"status\":\"%s\"}",
+             device, requested, fallback ? "true" : "false",
+             fallback ? "fallback" : "device");
+}
+
+char *weft_accel_exec_info(void) { return copy_string(last_exec_info); }
+
 const char *weft_accel_manifest(void) {
-    return "{\"name\":\"weft-example\",\"version\":\"1.1.0\","
+    return "{\"name\":\"weft-example\",\"version\":\"1.2.0\","
            "\"abi\":1,\"vendors\":[\"example\"],"
-           "\"operations\":[\"health\",\"identity\",\"matmul\",\"tensor_matmul\",\"tensor_add\"],"
-           "\"metadata\":{\"tensor_abi\":\"1\",\"dtype\":\"float64\"}}";
+           "\"operations\":[\"health\",\"identity\",\"matmul\",\"tensor_matmul\","
+           "\"tensor_add\",\"tensor_sub\",\"tensor_mul\",\"tensor_div\",\"tensor_sum\"],"
+           "\"metadata\":{\"tensor_abi\":\"1\",\"dtype\":\"float64\",\"dtypes\":\"float32,float64\"}}";
 }
 
 const char *weft_accel_last_error(void) { return last_error; }
@@ -203,7 +219,7 @@ static int run_matmul(const char *input_json, char **output_json) {
         }
     }
     if (!append_format(&output,
-                       "],\"shape\":[%zu,%zu],\"device\":\"cpu\",\"fallback\":false}",
+                       "],\"shape\":[%zu,%zu],\"device\":\"cpu\",\"requested_device\":\"cpu\",\"fallback\":false}",
                        a_shape[0], b_shape[1])) {
         fail("matmul output allocation failed");
         free(a);
@@ -225,6 +241,7 @@ int weft_accel_run(const char *operation, const char *input_json,
     }
     *output_json = NULL;
     last_error = "";
+    record_exec_info("cpu", "cpu", 0);
     if (strcmp(operation, "health") == 0) {
         /* Explicit device + fallback reporting: CPU reference never falls back. */
         *output_json = copy_string(
@@ -262,9 +279,13 @@ static int tensor_c_contiguous(const weft_accel_tensor_input *input) {
     return 1;
 }
 
-static int tensor_add_shape(const weft_accel_tensor_input *left,
-                            const weft_accel_tensor_input *right,
-                            size_t *count_out) {
+/* Bounded same-shape contract shared by every elementwise binary op. The
+   reference provider deliberately does not implement broadcasting: inputs
+   must have identical ranks and shapes, be C-contiguous, and carry exactly
+   count * item_size bytes. */
+static int tensor_elementwise_shape(const weft_accel_tensor_input *left,
+                                    const weft_accel_tensor_input *right,
+                                    size_t item_size, size_t *count_out) {
     size_t count = 1;
     uint32_t axis;
     if (left == NULL || right == NULL || count_out == NULL || left->rank == 0 ||
@@ -279,8 +300,8 @@ static int tensor_add_shape(const weft_accel_tensor_input *left,
         if (left->shape[axis] != 0 && count > SIZE_MAX / (size_t)left->shape[axis]) return 0;
         count *= (size_t)left->shape[axis];
     }
-    if (count > SIZE_MAX / sizeof(double) ||
-        left->bytes != count * sizeof(double) || right->bytes != count * sizeof(double) ||
+    if (count > SIZE_MAX / item_size ||
+        left->bytes != count * item_size || right->bytes != count * item_size ||
         (count != 0 && (left->data == NULL || right->data == NULL))) {
         return 0;
     }
@@ -288,26 +309,63 @@ static int tensor_add_shape(const weft_accel_tensor_input *left,
     return 1;
 }
 
-static int run_tensor_add(const weft_accel_tensor_input *inputs,
-                          weft_accel_tensor_output *output) {
-    const double *left;
-    const double *right;
-    double *result;
+typedef enum {
+    ELEMENTWISE_ADD,
+    ELEMENTWISE_SUB,
+    ELEMENTWISE_MUL,
+    ELEMENTWISE_DIV
+} elementwise_op;
+
+static float apply_op_float(elementwise_op op, float a, float b) {
+    switch (op) {
+    case ELEMENTWISE_ADD: return a + b;
+    case ELEMENTWISE_SUB: return a - b;
+    case ELEMENTWISE_MUL: return a * b;
+    default: return a / b;
+    }
+}
+
+static double apply_op_double(elementwise_op op, double a, double b) {
+    switch (op) {
+    case ELEMENTWISE_ADD: return a + b;
+    case ELEMENTWISE_SUB: return a - b;
+    case ELEMENTWISE_MUL: return a * b;
+    default: return a / b;
+    }
+}
+
+/* Same-shape elementwise binary op (tensor_add, tensor_sub, tensor_mul,
+   tensor_div) for float32 or float64 tensors of rank 1 or 2. Non-same-shape
+   inputs are rejected outright: broadcasting is not part of this provider's
+   coverage claim. */
+static int run_tensor_elementwise(elementwise_op op, const char *name,
+                                  const weft_accel_tensor_input *inputs,
+                                  weft_accel_tensor_output *output) {
+    size_t item_size;
     size_t count;
     uint32_t axis;
-    if (inputs[0].dtype != WEFT_TENSOR_FLOAT64 || inputs[1].dtype != WEFT_TENSOR_FLOAT64 ||
-        !tensor_add_shape(&inputs[0], &inputs[1], &count)) {
-        fail("reference tensor_add requires contiguous same-shape float64 tensors of rank 1 or 2");
+    if (inputs[0].dtype != inputs[1].dtype ||
+        (inputs[0].dtype != WEFT_TENSOR_FLOAT64 && inputs[0].dtype != WEFT_TENSOR_FLOAT32)) {
+        fail("reference elementwise operations require matching float32 or float64 dtypes");
         return 0;
     }
-    output->dtype = WEFT_TENSOR_FLOAT64;
+    item_size = inputs[0].dtype == WEFT_TENSOR_FLOAT64 ? sizeof(double) : sizeof(float);
+    if (!tensor_elementwise_shape(&inputs[0], &inputs[1], item_size, &count)) {
+        static char message[128];
+        snprintf(message, sizeof(message),
+                 "reference %s requires contiguous same-shape float32/float64 tensors of rank 1 or 2",
+                 name);
+        fail(message);
+        return 0;
+    }
+    output->dtype = inputs[0].dtype;
     output->rank = inputs[0].rank;
     output->shape = (int64_t *)calloc(output->rank, sizeof(int64_t));
     output->strides = (int64_t *)calloc(output->rank, sizeof(int64_t));
-    output->data = count == 0 ? NULL : malloc(count * sizeof(double));
-    output->bytes = count * sizeof(double);
+    output->data = count == 0 ? NULL : malloc(count * item_size);
+    output->bytes = count * item_size;
     if (output->shape == NULL || output->strides == NULL || (count != 0 && output->data == NULL)) {
-        fail("tensor_add output allocation failed");
+        fail("elementwise output allocation failed");
         weft_accel_free_tensor(output);
         return 0;
     }
@@ -316,10 +374,85 @@ static int run_tensor_add(const weft_accel_tensor_input *inputs,
     for (axis = output->rank - 1; axis > 0; axis--) {
         output->strides[axis - 1] = output->strides[axis] * output->shape[axis];
     }
-    left = (const double *)inputs[0].data;
-    right = (const double *)inputs[1].data;
-    result = (double *)output->data;
-    for (size_t index = 0; index < count; index++) result[index] = left[index] + right[index];
+    if (inputs[0].dtype == WEFT_TENSOR_FLOAT64) {
+        const double *left = (const double *)inputs[0].data;
+        const double *right = (const double *)inputs[1].data;
+        double *result = (double *)output->data;
+        for (size_t index = 0; index < count; index++) {
+            result[index] = apply_op_double(op, left[index], right[index]);
+        }
+    } else {
+        const float *left = (const float *)inputs[0].data;
+        const float *right = (const float *)inputs[1].data;
+        float *result = (float *)output->data;
+        for (size_t index = 0; index < count; index++) {
+            result[index] = apply_op_float(op, left[index], right[index]);
+        }
+    }
+    return 1;
+}
+
+/* Full-reduction sum over a contiguous float32/float64 tensor of rank 1 or 2.
+   The output is a rank-0 tensor (NumPy `np.sum` semantics for a full
+   reduction), holding one element of the input dtype. The accumulation runs
+   in double precision for stability; the stored value matches the input
+   dtype. shape/strides are allocated (but empty of dimensions) so hosts never
+   see NULL arrays for a rank-0 result. */
+static int run_tensor_sum(const weft_accel_tensor_input *input,
+                          weft_accel_tensor_output *output) {
+    size_t item_size;
+    size_t count = 1;
+    uint32_t axis;
+    double total = 0.0;
+    if (input->dtype != WEFT_TENSOR_FLOAT64 && input->dtype != WEFT_TENSOR_FLOAT32) {
+        fail("reference tensor_sum requires a float32 or float64 tensor");
+        return 0;
+    }
+    if (input->rank == 0 || input->rank > 2 || input->shape == NULL ||
+        input->strides == NULL || !tensor_c_contiguous(input)) {
+        fail("reference tensor_sum requires a contiguous tensor of rank 1 or 2");
+        return 0;
+    }
+    for (axis = 0; axis < input->rank; axis++) {
+        if (input->shape[axis] < 0) {
+            fail("reference tensor_sum shape must be non-negative");
+            return 0;
+        }
+        if (input->shape[axis] != 0 && count > SIZE_MAX / (size_t)input->shape[axis]) {
+            fail("reference tensor_sum shape is too large");
+            return 0;
+        }
+        count *= (size_t)input->shape[axis];
+    }
+    item_size = input->dtype == WEFT_TENSOR_FLOAT64 ? sizeof(double) : sizeof(float);
+    if (count > SIZE_MAX / item_size || input->bytes != count * item_size ||
+        (count != 0 && input->data == NULL)) {
+        fail("reference tensor_sum byte length does not match its shape");
+        return 0;
+    }
+    if (input->dtype == WEFT_TENSOR_FLOAT64) {
+        const double *values = (const double *)input->data;
+        for (size_t index = 0; index < count; index++) total += values[index];
+    } else {
+        const float *values = (const float *)input->data;
+        for (size_t index = 0; index < count; index++) total += (double)values[index];
+    }
+    output->dtype = input->dtype;
+    output->rank = 0;
+    output->shape = (int64_t *)calloc(1, sizeof(int64_t));
+    output->strides = (int64_t *)calloc(1, sizeof(int64_t));
+    output->data = malloc(item_size);
+    output->bytes = item_size;
+    if (output->shape == NULL || output->strides == NULL || output->data == NULL) {
+        fail("tensor_sum output allocation failed");
+        weft_accel_free_tensor(output);
+        return 0;
+    }
+    if (input->dtype == WEFT_TENSOR_FLOAT64) {
+        *(double *)output->data = total;
+    } else {
+        *(float *)output->data = (float)total;
+    }
     return 1;
 }
 
@@ -337,17 +470,39 @@ int weft_accel_run_tensor(const char *operation,
     size_t col;
     size_t k;
     size_t bytes;
-    if (operation == NULL || inputs == NULL || output == NULL || input_count != 2) {
-        fail("tensor operation requires two inputs and an output");
+    if (operation == NULL || inputs == NULL || output == NULL) {
+        fail("tensor operation requires inputs and an output");
         return 1;
     }
     memset(output, 0, sizeof(*output));
-    if (strcmp(operation, "tensor_add") == 0) {
-        if (!run_tensor_add(inputs, output)) return 1;
+    record_exec_info("cpu", "cpu", 0);
+    if (strcmp(operation, "tensor_add") == 0 || strcmp(operation, "tensor_sub") == 0 ||
+        strcmp(operation, "tensor_mul") == 0 || strcmp(operation, "tensor_div") == 0) {
+        elementwise_op kind = ELEMENTWISE_ADD;
+        if (strcmp(operation, "tensor_sub") == 0) kind = ELEMENTWISE_SUB;
+        if (strcmp(operation, "tensor_mul") == 0) kind = ELEMENTWISE_MUL;
+        if (strcmp(operation, "tensor_div") == 0) kind = ELEMENTWISE_DIV;
+        if (input_count != 2) {
+            fail("elementwise tensor operations require two inputs");
+            return 1;
+        }
+        if (!run_tensor_elementwise(kind, operation, inputs, output)) return 1;
+        return 0;
+    }
+    if (strcmp(operation, "tensor_sum") == 0) {
+        if (input_count != 1) {
+            fail("tensor_sum requires one input");
+            return 1;
+        }
+        if (!run_tensor_sum(&inputs[0], output)) return 1;
         return 0;
     }
     if (strcmp(operation, "tensor_matmul") != 0) {
         fail("unsupported tensor operation");
+        return 1;
+    }
+    if (input_count != 2) {
+        fail("tensor_matmul requires two inputs");
         return 1;
     }
     if (inputs[0].dtype != WEFT_TENSOR_FLOAT64 || inputs[1].dtype != WEFT_TENSOR_FLOAT64 ||

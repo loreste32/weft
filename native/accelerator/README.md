@@ -56,6 +56,29 @@ The host validates ABI version, manifest fields, input/output JSON, and the
 256 MiB boundary. It rejects operations that are not declared by the manifest.
 The complete C declaration is [`weft_accelerator.h`](weft_accelerator.h).
 
+## Execution reporting (required for conformance)
+
+Every operation must report where it ran. Silent fallback is not allowed.
+
+- JSON operations include `"device"`, `"requested_device"`, and `"fallback"`
+  fields in every result object.
+- Providers additionally export `char *weft_accel_exec_info(void)` (additive
+  to ABI v1; the version is not bumped). It returns a newly allocated JSON
+  object describing the most recent `weft_accel_run` or
+  `weft_accel_run_tensor` call:
+  `{"device":"cuda:0","requested_device":"cuda:0","fallback":false,"status":"device"}`.
+  The host releases the string through `weft_accel_free`.
+
+The host parses these fields into a typed `ExecInfo` with status `device`
+(ran on requested device), `fallback` (fell back to CPU), `unavailable`
+(no provider ran the op), or `unreported` (provider said nothing). A
+contradictory report — a device other than the requested one with
+`fallback: false`, or a `status` that disagrees with the fallback flag — is
+rejected as an error. A missing export or malformed document is
+`unreported`, which fails `make accelerator-conformance` and the
+`TestExternalProviderReporting` gate; the conformance report classifies each
+provider as `honest`, `unreported`, or `contradictory`.
+
 ## Reference provider
 
 The checked-in C provider is a portable ABI and numerical reference. It has no

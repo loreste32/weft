@@ -18,7 +18,13 @@ does not claim NumPy-style broadcasting:
 }
 ```
 
-`matmul` returns `{"data":[19,22,43,50],"shape":[2,2]}`. The adapter is
+`matmul` returns `{"data":[19,22,43,50],"shape":[2,2]}` plus mandatory
+execution reporting fields: `"device"` (e.g. `"cuda:0"`, `"rocm:0"`,
+`"mlx:0"`), `"requested_device"`, and `"fallback"`. `health` returns the same
+fields. Each provider also exports `weft_accel_exec_info` (see
+[`../weft_accelerator.h`](../weft_accelerator.h)) so the binary tensor path
+carries the same report. These providers never fall back to CPU: a device
+failure is an error return, not a silent host-side result. The adapter is
 intentionally a correctness and ABI reference; production providers should add
 a binary tensor path before moving very large batches through JSON.
 

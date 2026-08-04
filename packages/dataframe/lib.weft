@@ -1016,36 +1016,62 @@ pub fn duplicated(t, subset) {
 // Aggregation / grouping
 // ──────────────────────────────────────────────
 
+// group_by(t, key_or_keys, aggs)
+//   key_or_keys: single column name or list of column names (composite key).
+//   aggs: map of output-name -> {"col": c, "op": op}  (named aggregation), or
+//         column-name -> [op, ...] / op  (per-column agg list; output columns
+//         are named "<col>_<op>", e.g. "salary_sum").
+// Groups are keyed by _composite_key (see Internals), so nulls and
+// mixed-type key values group exactly, never by string collision.
 pub fn group_by(t, group_col, aggs) {
-    if !contains(t.columns, group_col) { return Err("dataframe.group_by: unknown group column " + group_col) }
+    key_cols := if _kind(group_col) == "list" { group_col } else { [group_col] }
+    if len(key_cols) == 0 { return Err("dataframe.group_by: no group columns") }
+    for c in key_cols {
+        if !contains(t.columns, c) { return Err("dataframe.group_by: unknown group column " + c) }
+    }
+    // Normalize aggs into an ordered spec list of {"name", "col", "op"}.
+    let mut specs = []
     for agg_name in keys(aggs) {
-        if !contains(t.columns, aggs[agg_name].col) { return Err("dataframe.group_by: unknown aggregation column") }
-        if !_valid_agg(aggs[agg_name].op) { return Err("dataframe.group_by: unknown aggregation") }
+        spec := aggs[agg_name]
+        if _kind(spec) == "map" {
+            if !contains(t.columns, spec.col) { return Err("dataframe.group_by: unknown aggregation column") }
+            if !_valid_agg(spec.op) { return Err("dataframe.group_by: unknown aggregation") }
+            specs = push(specs, {"name": agg_name, "col": spec.col, "op": spec.op})
+        } else if _kind(spec) == "list" || _kind(spec) == "str" {
+            ops := if _kind(spec) == "list" { spec } else { [spec] }
+            if !contains(t.columns, agg_name) { return Err("dataframe.group_by: unknown aggregation column " + agg_name) }
+            for op in ops {
+                if !_valid_agg(op) { return Err("dataframe.group_by: unknown aggregation") }
+                specs = push(specs, {"name": agg_name + "_" + op, "col": agg_name, "op": op})
+            }
+        } else {
+            return Err("dataframe.group_by: invalid aggregation spec for " + agg_name)
+        }
     }
     let mut groups = {}
     let mut group_order = []
     for r in t.rows {
-        k := _value_key(r[group_col])
+        k := _composite_key(r, key_cols)
         if groups[k] == null {
-            groups[k] = {"key": r[group_col], "rows": []}
+            groups[k] = []
             group_order = push(group_order, k)
         }
-        groups[k] = {"key": groups[k].key, "rows": push(groups[k].rows, r)}
+        groups[k] = push(groups[k], r)
     }
     let mut result = []
     for gk in group_order {
         g := groups[gk]
         let mut row = {}
-        row[group_col] = g.key
-        for agg_name in keys(aggs) {
-            spec := aggs[agg_name]
-            vals := _col_vals(g.rows, spec.col)
-            row[agg_name] = _agg(spec.op, vals)
+        for c in key_cols { row[c] = g[0][c] }
+        for spec in specs {
+            vals := _col_vals(g, spec.col)
+            row[spec.name] = _agg(spec.op, vals)
         }
         result = push(result, row)
     }
-    let mut new_cols = [group_col]
-    for c in keys(aggs) { new_cols = push(new_cols, c) }
+    let mut new_cols = []
+    for c in key_cols { new_cols = push(new_cols, c) }
+    for spec in specs { new_cols = push(new_cols, spec.name) }
     {"_df": true, "columns": new_cols, "rows": result}
 }
 
@@ -1321,64 +1347,133 @@ pub fn concat_df(dfs) {
     {"_df": true, "columns": cols, "rows": rows}
 }
 
+// merge(left, right, left_on, right_on, how)
+//   left_on/right_on: column name or list of column names (multi-key merge);
+//   lists must have equal length. Null key components match each other
+//   (pandas-style), and composite keys use the collision-free _composite_key
+//   encoding. how: "inner" (default), "left", "outer".
+//   Overlapping non-key columns: left keeps its name, right gets "_right".
+//   Use merge_opts to pass explicit suffixes.
 pub fn merge(left, right, left_on, right_on, how) {
-    // Merge on different column names
+    _merge_impl(left, right, left_on, right_on, how, null)
+}
+
+// merge_opts(left, right, left_on, right_on, how, opts) — merge with options.
+//   opts.suffixes = [left_suffix, right_suffix] renames overlapping non-key
+//   columns instead of the default "_right" right-side renaming.
+pub fn merge_opts(left, right, left_on, right_on, how, opts) {
+    _merge_impl(left, right, left_on, right_on, how, opts)
+}
+
+fn _merge_impl(left, right, left_on, right_on, how, opts) {
     join_type := if how == null { "inner" } else { how }
-    if !contains(left.columns, left_on) || !contains(right.columns, right_on) { return Err("dataframe.merge: join column is missing") }
+    lkeys := if _kind(left_on) == "list" { left_on } else { [left_on] }
+    rkeys := if _kind(right_on) == "list" { right_on } else { [right_on] }
+    if len(lkeys) == 0 || len(lkeys) != len(rkeys) {
+        return Err("dataframe.merge: left_on and right_on must be non-empty and of equal length")
+    }
+    for k in lkeys {
+        if !contains(left.columns, k) { return Err("dataframe.merge: join column is missing") }
+    }
+    for k in rkeys {
+        if !contains(right.columns, k) { return Err("dataframe.merge: join column is missing") }
+    }
     if join_type != "inner" && join_type != "left" && join_type != "outer" {
         return Err("dataframe.merge supports inner, left, and outer joins")
     }
+    let mut suffixes = null
+    if opts != null {
+        if _kind(opts) != "map" { return Err("dataframe.merge: opts must be a map") }
+        suffixes = opts["suffixes"]
+        if suffixes != null && (_kind(suffixes) != "list" || len(suffixes) != 2) {
+            return Err("dataframe.merge: suffixes must be a [left, right] pair")
+        }
+    }
+    // Resolve output names for every column.
+    let mut left_names = {}
+    let mut used = {}
+    for c in left.columns {
+        let mut name = c
+        if suffixes != null && contains(right.columns, c) && !contains(lkeys, c) && !contains(rkeys, c) {
+            name = c + suffixes[0]
+        }
+        left_names[c] = name
+        used[name] = true
+    }
+    let mut right_names = {}
+    for c in right.columns {
+        if contains(rkeys, c) { continue }
+        let mut name = c
+        if suffixes != null {
+            if contains(left.columns, c) {
+                name = c + suffixes[1]
+            }
+        } else if used[name] != null {
+            name = c + "_right"
+            let mut suffix = 2
+            while used[name] != null {
+                name = c + "_right" + str(suffix)
+                suffix = suffix + 1
+            }
+        }
+        if used[name] != null {
+            return Err("dataframe.merge: suffixes produce a duplicate column name " + name)
+        }
+        used[name] = true
+        right_names[c] = name
+    }
+    // Index right rows by composite key.
     let mut idx = {}
     for r in right.rows {
-        k := _value_key(r[right_on])
+        k := _composite_key(r, rkeys)
         if idx[k] == null { idx[k] = [] }
         idx[k] = push(idx[k], r)
     }
     let mut result = []
     let mut right_matched = {}
-    right_names := _right_column_names(left, right, right_on)
     for lr in left.rows {
-        k := _value_key(lr[left_on])
+        k := _composite_key(lr, lkeys)
         matches := idx[k]
         if matches != null {
             right_matched[k] = true
             for rr in matches {
                 let mut merged = {}
-                for c in left.columns { merged[c] = lr[c] }
+                for c in left.columns { merged[left_names[c]] = lr[c] }
                 for c in right.columns {
-                    if c != right_on { merged[right_names[c]] = rr[c] }
+                    if !contains(rkeys, c) { merged[right_names[c]] = rr[c] }
                 }
                 result = push(result, merged)
             }
         } else if join_type == "left" || join_type == "outer" {
             let mut merged = {}
-            for c in left.columns { merged[c] = lr[c] }
+            for c in left.columns { merged[left_names[c]] = lr[c] }
             for c in right.columns {
-                if c != right_on { merged[right_names[c]] = null }
+                if !contains(rkeys, c) { merged[right_names[c]] = null }
             }
             result = push(result, merged)
         }
     }
     if join_type == "outer" {
         for rr in right.rows {
-            k := _value_key(rr[right_on])
+            k := _composite_key(rr, rkeys)
             if right_matched[k] == null {
                 let mut merged = {}
                 for c in left.columns {
-                    if c == left_on { merged[c] = rr[right_on] }
-                    else { merged[c] = null }
+                    key_pos := _list_index(lkeys, c)
+                    if key_pos >= 0 { merged[left_names[c]] = rr[rkeys[key_pos]] }
+                    else { merged[left_names[c]] = null }
                 }
                 for c in right.columns {
-                    if c != right_on { merged[right_names[c]] = rr[c] }
+                    if !contains(rkeys, c) { merged[right_names[c]] = rr[c] }
                 }
                 result = push(result, merged)
             }
         }
     }
     let mut all_cols = []
-    for c in left.columns { all_cols = push(all_cols, c) }
+    for c in left.columns { all_cols = push(all_cols, left_names[c]) }
     for c in right.columns {
-        if c != right_on { all_cols = push(all_cols, right_names[c]) }
+        if !contains(rkeys, c) { all_cols = push(all_cols, right_names[c]) }
     }
     {"_df": true, "columns": all_cols, "rows": result}
 }
@@ -1411,7 +1506,7 @@ pub fn pivot(t, index_col, pivot_col, value_col) {
             index_order = push(index_order, k)
         }
         pv := _value_key(r[pivot_col])
-        pair := k + "\u001f" + pv
+        pair := json.stringify([k, pv])
         if seen_pairs[pair] != null {
             return Err("dataframe.pivot found duplicate index/column pair")
         }
@@ -1433,6 +1528,75 @@ pub fn pivot(t, index_col, pivot_col, value_col) {
     {"_df": true, "columns": cols, "rows": rows}
 }
 
+// pivot_table(t, spec) — pivot WITH aggregation over duplicate index/column
+// pairs (unlike pivot, which errors on duplicates).
+//   spec.index:     column name or list of column names (row keys)
+//   spec.columns:   column name whose values become output columns
+//   spec.values:    column name to aggregate
+//   spec.aggfunc:   "sum" | "mean" | "count" | "min" | "max" | "first" | "last" | "std"
+//                   (default "mean")
+//   spec.fill_value: value for index/column combinations with no rows
+//                    (default null)
+pub fn pivot_table(t, spec) {
+    if _kind(spec) != "map" { return Err("dataframe.pivot_table expects a spec map") }
+    index_spec := spec["index"]
+    pivot_col := spec["columns"]
+    value_col := spec["values"]
+    if index_spec == null || pivot_col == null || value_col == null {
+        return Err("dataframe.pivot_table spec requires index, columns, and values")
+    }
+    index_cols := if _kind(index_spec) == "list" { index_spec } else { [index_spec] }
+    if len(index_cols) == 0 { return Err("dataframe.pivot_table: no index columns") }
+    for c in index_cols {
+        if !contains(t.columns, c) { return Err("dataframe.pivot_table: unknown index column " + c) }
+    }
+    if !contains(t.columns, pivot_col) { return Err("dataframe.pivot_table: unknown columns column " + pivot_col) }
+    if !contains(t.columns, value_col) { return Err("dataframe.pivot_table: unknown values column " + value_col) }
+    aggfunc := if spec["aggfunc"] == null { "mean" } else { spec["aggfunc"] }
+    if !_valid_agg(aggfunc) { return Err("dataframe.pivot_table: unknown aggfunc " + aggfunc) }
+    fill := spec["fill_value"]
+
+    let mut pivot_vals = []
+    let mut seen_pivot = {}
+    let mut cells = {}
+    let mut index_order = []
+    let mut index_rows = {}
+    for r in t.rows {
+        pk := _value_key(r[pivot_col])
+        if seen_pivot[pk] == null {
+            seen_pivot[pk] = true
+            pivot_vals = push(pivot_vals, r[pivot_col])
+        }
+        ik := _composite_key(r, index_cols)
+        if index_rows[ik] == null {
+            index_rows[ik] = r
+            index_order = push(index_order, ik)
+        }
+        // Pair key: JSON array of the two collision-free key encodings.
+        pair := json.stringify([ik, pk])
+        if cells[pair] == null { cells[pair] = [] }
+        cells[pair] = push(cells[pair], r[value_col])
+    }
+    let mut cols = []
+    for c in index_cols { cols = push(cols, c) }
+    for pv in pivot_vals { cols = push(cols, "" + pv) }
+    let mut rows = []
+    for ik in index_order {
+        let mut row = {}
+        for c in index_cols { row[c] = index_rows[ik][c] }
+        for pv in pivot_vals {
+            pk := _value_key(pv)
+            pair := json.stringify([ik, pk])
+            if cells[pair] == null {
+                row["" + pv] = fill
+            } else {
+                row["" + pv] = _agg(aggfunc, cells[pair])
+            }
+        }
+        rows = push(rows, row)
+    }
+    {"_df": true, "columns": cols, "rows": rows}
+}
 pub fn melt(t, id_cols, value_cols, var_name, val_name) {
     // Melt: columns become rows (unpivot)
     vn := if var_name == null { "variable" } else { var_name }
@@ -1613,20 +1777,110 @@ pub fn expanding(t, column, op) {
     {"_df": true, "columns": t.columns, "rows": new_rows}
 }
 
+// rank(t, column) — add "<column>_rank" with 1-based average ranks
+// (ascending, nulls keep a null rank). Use rank_opts for other methods.
 pub fn rank(t, column) {
+    _rank_impl(t, column, null)
+}
+
+// rank_opts(t, column, opts) — rank with options.
+//   opts.method:     "average" (default) | "min" | "max" | "dense" | "first"
+//   opts.ascending:  true (default) ranks smallest first; false ranks largest first
+//   opts.na_option:  "keep" (default, null rank) | "top" | "bottom"
+//   opts.pct:        true → ranks / N (N = non-null count for "keep",
+//                    total rows when nulls are ranked)
+pub fn rank_opts(t, column, opts) {
+    _rank_impl(t, column, opts)
+}
+
+fn _rank_impl(t, column, opts) {
     if !contains(t.columns, column) { return Err("dataframe.rank: unknown column " + column) }
-    vals := col(t, column)
-    sorted := _sort_values(vals)
-    let mut ranks = {}
+    let mut method = "average"
+    let mut ascending = true
+    let mut na_option = "keep"
+    let mut pct = false
+    if opts != null {
+        if _kind(opts) != "map" { return Err("dataframe.rank: opts must be a map") }
+        if opts["method"] != null { method = opts["method"] }
+        if opts["ascending"] != null { ascending = opts["ascending"] }
+        if opts["na_option"] != null { na_option = opts["na_option"] }
+        if opts["pct"] != null { pct = opts["pct"] }
+    }
+    if !contains(["average", "min", "max", "dense", "first"], method) {
+        return Err("dataframe.rank: unknown method " + method)
+    }
+    if !contains(["keep", "top", "bottom"], na_option) {
+        return Err("dataframe.rank: unknown na_option " + na_option)
+    }
+    n_total := len(t.rows)
+    let mut pairs = []
+    let mut null_idx = []
+    let mut ranks = []
     let mut i = 0
+    while i < n_total {
+        v := t.rows[i][column]
+        if v == null { null_idx = push(null_idx, i) }
+        else { pairs = push(pairs, {"i": i, "v": v}) }
+        ranks = push(ranks, null)
+        i = i + 1
+    }
+    sorted := _rank_sort_pairs(pairs, !ascending)
+    n_vals := len(pairs)
+    denom := if na_option == "keep" { n_vals } else { n_total }
+    let mut next_pos = 0
+    let mut dense = 0
+    // Null group ranked before all values.
+    if na_option == "top" && len(null_idx) > 0 {
+        dense = dense + 1
+        g := len(null_idx)
+        let mut k = 0
+        while k < g {
+            r := _rank_value(method, 0, g, k, dense)
+            ranks[null_idx[k]] = if pct { r * 1.0 / denom } else { r }
+            k = k + 1
+        }
+        next_pos = g
+    }
+    // Value tie groups in sorted (stable) order.
+    i = 0
     while i < len(sorted) {
-        value := sorted[i]
         let mut j = i
-        while j < len(sorted) && sorted[j] == value { j = j + 1 }
-        ranks[_value_key(value)] = (i + 1 + j) / 2.0
+        while j < len(sorted) && sorted[j].v == sorted[i].v { j = j + 1 }
+        dense = dense + 1
+        g := j - i
+        let mut k = 0
+        while k < g {
+            r := _rank_value(method, next_pos + i, g, k, dense)
+            ranks[sorted[i + k].i] = if pct { r * 1.0 / denom } else { r }
+            k = k + 1
+        }
         i = j
     }
-    add_column(t, column + "_rank", fn(r) { ranks[_value_key(r[column])] })
+    // Null group ranked after all values.
+    if na_option == "bottom" && len(null_idx) > 0 {
+        dense = dense + 1
+        g := len(null_idx)
+        let mut k = 0
+        while k < g {
+            r := _rank_value(method, n_vals, g, k, dense)
+            ranks[null_idx[k]] = if pct { r * 1.0 / denom } else { r }
+            k = k + 1
+        }
+    }
+    rank_col := column + "_rank"
+    let mut new_cols = []
+    for c in t.columns { new_cols = push(new_cols, c) }
+    if !contains(t.columns, rank_col) { new_cols = push(new_cols, rank_col) }
+    let mut new_rows = []
+    i = 0
+    while i < n_total {
+        let mut nr = {}
+        for c in t.columns { nr[c] = t.rows[i][c] }
+        nr[rank_col] = ranks[i]
+        new_rows = push(new_rows, nr)
+        i = i + 1
+    }
+    _with_same_index(t, new_cols, new_rows)
 }
 
 pub fn cumsum_(t, column) {
@@ -2018,6 +2272,74 @@ fn _kind(v) {
 
 fn _value_key(v) {
     _kind(v) + ":" + json.stringify(v)
+}
+
+// Composite group/join key encoding: a JSON array of the per-column
+// _value_key strings ("<kind>:<json>"). Each component is a JSON string, so
+// embedded separators, quotes, or type-punning values (1 vs "1", null vs
+// "null") can never make two distinct key tuples encode to the same key.
+fn _composite_key(row, cols) {
+    let mut parts = []
+    for c in cols { parts = push(parts, _value_key(row[c])) }
+    json.stringify(parts)
+}
+
+fn _list_index(list, value) {
+    let mut i = 0
+    while i < len(list) {
+        if list[i] == value { return i }
+        i = i + 1
+    }
+    -1
+}
+
+// Rank of one member of a tie group: pos = 0-based position of the group's
+// first member, g = group size, k = member's stable offset within the group,
+// dense_rank = 1-based count of distinct groups seen so far.
+fn _rank_value(method, pos, g, k, dense_rank) {
+    if method == "min" { return pos + 1 }
+    if method == "max" { return pos + g }
+    if method == "dense" { return dense_rank }
+    if method == "first" { return pos + 1 + k }
+    (pos + 1 + pos + g) / 2.0
+}
+
+// Stable merge sort of {"i", "v"} pairs by v (ties keep original row order,
+// which is what method "first" relies on). Nulls must be filtered out first.
+fn _rank_sort_pairs(pairs, desc) {
+    if len(pairs) <= 1 {
+        let mut copy = []
+        for p in pairs { copy = push(copy, p) }
+        return copy
+    }
+    mid := len(pairs) / 2
+    left := _rank_sort_pairs(_value_range(pairs, 0, mid), desc)
+    right := _rank_sort_pairs(_value_range(pairs, mid, len(pairs)), desc)
+    _rank_merge_pairs(left, right, desc)
+}
+
+fn _rank_merge_pairs(left, right, desc) {
+    let mut result = []
+    let mut li = 0
+    let mut ri = 0
+    while li < len(left) && ri < len(right) {
+        if _comes_after(left[li].v, right[ri].v, desc) {
+            result = push(result, right[ri])
+            ri = ri + 1
+        } else {
+            result = push(result, left[li])
+            li = li + 1
+        }
+    }
+    while li < len(left) {
+        result = push(result, left[li])
+        li = li + 1
+    }
+    while ri < len(right) {
+        result = push(result, right[ri])
+        ri = ri + 1
+    }
+    result
 }
 
 fn _row_key(row, cols) {

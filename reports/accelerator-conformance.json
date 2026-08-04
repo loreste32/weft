@@ -1,7 +1,7 @@
 {
   "format": "weft.accelerator.conformance",
   "version": 1,
-  "generated_at": "2026-08-04T11:49:00Z",
+  "generated_at": "2026-08-04T15:25:29Z",
   "host": {
     "os": "Darwin",
     "arch": "arm64",
@@ -12,6 +12,7 @@
     "conformance": "passed",
     "detail": "ok",
     "fallback": false,
+    "reporting": "honest",
     "tests": {
       "health": {
         "passed": true
@@ -26,26 +27,34 @@
       "tensor_matmul": {
         "passed": true
       },
+      "tensor_add": {
+        "passed": true
+      },
       "json_ops": "passed",
-      "tensor_ops": "passed"
+      "tensor_ops": "passed",
+      "tensor_add_ops": "passed",
+      "reporting_ops": "passed"
     }
   },
   "vendors": {
     "cuda": {
       "status": "unavailable",
       "conformance": "not_run",
+      "reporting": "not_run",
       "tool": null,
       "note": "Optional; self-hosted CUDA runner only"
     },
     "rocm": {
       "status": "unavailable",
       "conformance": "not_run",
+      "reporting": "not_run",
       "tool": null,
       "note": "Optional; self-hosted ROCm runner only"
     },
     "mlx": {
       "status": "unavailable",
       "conformance": "not_run",
+      "reporting": "not_run",
       "tool": "",
       "note": "Optional; requires MLX_C_PREFIX on Apple Silicon"
     }
@@ -53,6 +62,7 @@
   "summary": {
     "cpu_ok": true,
     "vendors_required": false,
-    "silent_fallback_allowed": false
+    "silent_fallback_allowed": false,
+    "reporting_required": true
   }
 }

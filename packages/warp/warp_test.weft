@@ -80,6 +80,49 @@ fn test_dtype_promotion_and_result_kinds {
  test.eq(warp.dtype(warp.atan2(ints, ints)), "float64")
 }
 
+// NumPy 2.x np.promote_types matrix for the 11 supported dtypes, locked for
+// every ordered pair. Mirrors TestPromoteDTypeNumPyMatrix in internal/tensor
+// (Go fast path) and the warp_dtype conformance fixture (Python oracle).
+fn test_dtype_promotion_matrix {
+    dtypes := ["bool", "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "float32", "float64"]
+    expected := {
+        "bool+bool": "bool", "bool+int8": "int8", "bool+int16": "int16", "bool+int32": "int32", "bool+int64": "int64", "bool+uint8": "uint8", "bool+uint16": "uint16", "bool+uint32": "uint32", "bool+uint64": "uint64", "bool+float32": "float32", "bool+float64": "float64",
+        "int8+bool": "int8", "int8+int8": "int8", "int8+int16": "int16", "int8+int32": "int32", "int8+int64": "int64", "int8+uint8": "int16", "int8+uint16": "int32", "int8+uint32": "int64", "int8+uint64": "float64", "int8+float32": "float32", "int8+float64": "float64",
+        "int16+bool": "int16", "int16+int8": "int16", "int16+int16": "int16", "int16+int32": "int32", "int16+int64": "int64", "int16+uint8": "int16", "int16+uint16": "int32", "int16+uint32": "int64", "int16+uint64": "float64", "int16+float32": "float32", "int16+float64": "float64",
+        "int32+bool": "int32", "int32+int8": "int32", "int32+int16": "int32", "int32+int32": "int32", "int32+int64": "int64", "int32+uint8": "int32", "int32+uint16": "int32", "int32+uint32": "int64", "int32+uint64": "float64", "int32+float32": "float64", "int32+float64": "float64",
+        "int64+bool": "int64", "int64+int8": "int64", "int64+int16": "int64", "int64+int32": "int64", "int64+int64": "int64", "int64+uint8": "int64", "int64+uint16": "int64", "int64+uint32": "int64", "int64+uint64": "float64", "int64+float32": "float64", "int64+float64": "float64",
+        "uint8+bool": "uint8", "uint8+int8": "int16", "uint8+int16": "int16", "uint8+int32": "int32", "uint8+int64": "int64", "uint8+uint8": "uint8", "uint8+uint16": "uint16", "uint8+uint32": "uint32", "uint8+uint64": "uint64", "uint8+float32": "float32", "uint8+float64": "float64",
+        "uint16+bool": "uint16", "uint16+int8": "int32", "uint16+int16": "int32", "uint16+int32": "int32", "uint16+int64": "int64", "uint16+uint8": "uint16", "uint16+uint16": "uint16", "uint16+uint32": "uint32", "uint16+uint64": "uint64", "uint16+float32": "float32", "uint16+float64": "float64",
+        "uint32+bool": "uint32", "uint32+int8": "int64", "uint32+int16": "int64", "uint32+int32": "int64", "uint32+int64": "int64", "uint32+uint8": "uint32", "uint32+uint16": "uint32", "uint32+uint32": "uint32", "uint32+uint64": "uint64", "uint32+float32": "float64", "uint32+float64": "float64",
+        "uint64+bool": "uint64", "uint64+int8": "float64", "uint64+int16": "float64", "uint64+int32": "float64", "uint64+int64": "float64", "uint64+uint8": "uint64", "uint64+uint16": "uint64", "uint64+uint32": "uint64", "uint64+uint64": "uint64", "uint64+float32": "float64", "uint64+float64": "float64",
+        "float32+bool": "float32", "float32+int8": "float32", "float32+int16": "float32", "float32+int32": "float64", "float32+int64": "float64", "float32+uint8": "float32", "float32+uint16": "float32", "float32+uint32": "float64", "float32+uint64": "float64", "float32+float32": "float32", "float32+float64": "float64",
+        "float64+bool": "float64", "float64+int8": "float64", "float64+int16": "float64", "float64+int32": "float64", "float64+int64": "float64", "float64+uint8": "float64", "float64+uint16": "float64", "float64+uint32": "float64", "float64+uint64": "float64", "float64+float32": "float64", "float64+float64": "float64",
+    }
+    for a in dtypes {
+        for b in dtypes {
+            xa := warp.array_typed([1], [1], a)
+            xb := warp.array_typed([1], [1], b)
+            test.eq(warp.dtype(warp.add(xa, xb)), expected[a + "+" + b])
+        }
+    }
+}
+
+fn test_dtype_casting_range_checks {
+    test.eq(warp.array_typed([256], [1], "uint8").ok, false)
+    test.eq(warp.array_typed([-1], [1], "uint8").ok, false)
+    test.eq(warp.array_typed([-32769], [1], "int16").ok, false)
+    test.eq(warp.array_typed([65536], [1], "uint16").ok, false)
+    test.eq(warp.array_typed([2147483648], [1], "int32").ok, false)
+    test.eq(warp.array_typed([4294967296], [1], "uint32").ok, false)
+    test.eq(warp.array_typed([-1], [1], "uint64").ok, false)
+    test.eq(warp.array_typed([1.0e30], [1], "int64").ok, false)
+    trunc := warp.array_typed([2.7, -2.7], [2], "int8")
+    test.eq(warp.to_list(trunc), [2, -2])
+    test.eq(warp.dtype(trunc), "int8")
+    bools := warp.array_typed([0, 2], [2], "bool")
+    test.eq(warp.to_list(bools), [false, true])
+}
+
 fn test_arange {
     a := warp.arange(0, 5, null)
     test.eq(warp.to_list(a), [0, 1, 2, 3, 4])

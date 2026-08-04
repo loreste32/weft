@@ -15,11 +15,66 @@ import (
 	"github.com/loreste/weft/internal/tensor"
 )
 
+// acceleratorEntry tracks one loaded plugin plus the execution reporting of
+// its most recent operation, so Weft code can observe where compute ran.
+type acceleratorEntry struct {
+	plugin *accelerator.Plugin
+	mu     sync.Mutex
+	last   accelerator.ExecInfo
+}
+
+func (e *acceleratorEntry) record(info accelerator.ExecInfo) {
+	e.mu.Lock()
+	e.last = info
+	e.mu.Unlock()
+}
+
+func (e *acceleratorEntry) lastInfo() accelerator.ExecInfo {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.last
+}
+
+func execInfoValue(info accelerator.ExecInfo) runtime.Value {
+	return goToValue(map[string]any{
+		"status":           info.Status,
+		"device":           info.Device,
+		"requested_device": info.RequestedDevice,
+		"fallback":         info.Fallback,
+		"reported":         info.Reported,
+	})
+}
+
+// manifestValue exposes the manifest as a usable map (goToValue would
+// stringify the struct, making plugin.manifest worthless from Weft).
+func manifestValue(manifest accelerator.Manifest) map[string]any {
+	vendors := make([]any, len(manifest.Vendors))
+	for i, vendor := range manifest.Vendors {
+		vendors[i] = vendor
+	}
+	operations := make([]any, len(manifest.Operations))
+	for i, operation := range manifest.Operations {
+		operations[i] = operation
+	}
+	metadata := make(map[string]any, len(manifest.Metadata))
+	for key, value := range manifest.Metadata {
+		metadata[key] = value
+	}
+	return map[string]any{
+		"name":       manifest.Name,
+		"version":    manifest.Version,
+		"abi":        manifest.ABI,
+		"vendors":    vendors,
+		"operations": operations,
+		"metadata":   metadata,
+	}
+}
+
 var nativeAccelerators = struct {
 	sync.RWMutex
 	next  uint64
-	items map[string]*accelerator.Plugin
-}{items: make(map[string]*accelerator.Plugin)}
+	items map[string]*acceleratorEntry
+}{items: make(map[string]*acceleratorEntry)}
 
 // packageAccelerator exposes the versioned native ABI. It intentionally does
 // not auto-discover libraries: loading native code is an explicit capability
@@ -41,12 +96,12 @@ func packageAccelerator() runtime.Value {
 		}
 		id := fmt.Sprintf("accel-%d", atomic.AddUint64(&nativeAccelerators.next, 1))
 		nativeAccelerators.Lock()
-		nativeAccelerators.items[id] = plugin
+		nativeAccelerators.items[id] = &acceleratorEntry{plugin: plugin}
 		nativeAccelerators.Unlock()
 		return runtime.Ok(goToValue(map[string]any{
 			"id":       id,
 			"path":     plugin.Path(),
-			"manifest": plugin.Manifest(),
+			"manifest": manifestValue(plugin.Manifest()),
 		})), nil
 	}, 1)
 
@@ -63,16 +118,17 @@ func packageAccelerator() runtime.Value {
 			return errRes("accelerator input: "+err.Error(), "accelerator"), nil
 		}
 		nativeAccelerators.RLock()
-		plugin := nativeAccelerators.items[id]
-		if plugin == nil {
+		entry := nativeAccelerators.items[id]
+		if entry == nil {
 			nativeAccelerators.RUnlock()
 			return errRes("accelerator plugin is not loaded", "accelerator"), nil
 		}
-		output, err := plugin.RunJSON(args[1].String(), input)
+		output, info, err := entry.plugin.RunJSONEx(args[1].String(), input)
 		nativeAccelerators.RUnlock()
 		if err != nil {
 			return errRes(err.Error(), "accelerator"), nil
 		}
+		entry.record(info)
 		var value any
 		if err := json.Unmarshal(output, &value); err != nil {
 			return errRes("accelerator output: "+err.Error(), "accelerator"), nil
@@ -89,15 +145,34 @@ func packageAccelerator() runtime.Value {
 			return errRes(err.Error(), "accelerator"), nil
 		}
 		nativeAccelerators.Lock()
-		plugin := nativeAccelerators.items[id]
+		entry := nativeAccelerators.items[id]
 		delete(nativeAccelerators.items, id)
 		nativeAccelerators.Unlock()
-		if plugin != nil {
-			if err := plugin.Close(); err != nil {
+		if entry != nil {
+			if err := entry.plugin.Close(); err != nil {
 				return errRes(err.Error(), "accelerator"), nil
 			}
 		}
 		return runtime.Ok(runtime.Bool(true)), nil
+	}, 1)
+
+	set(p, "last_exec_info", func(args []runtime.Value) (runtime.Value, error) {
+		if len(args) < 1 {
+			return errRes("accelerator.last_exec_info(plugin)", "accelerator"), nil
+		}
+		id, err := acceleratorPluginID(args[0])
+		if err != nil {
+			return errRes(err.Error(), "accelerator"), nil
+		}
+		nativeAccelerators.RLock()
+		entry := nativeAccelerators.items[id]
+		nativeAccelerators.RUnlock()
+		if entry == nil {
+			// Unavailable is a status, not an op failure: callers can tell
+			// "no plugin ran" apart from a provider error.
+			return runtime.Ok(execInfoValue(accelerator.UnavailableExecInfo())), nil
+		}
+		return runtime.Ok(execInfoValue(entry.lastInfo())), nil
 	}, 1)
 
 	set(p, "run_tensor", func(args []runtime.Value) (runtime.Value, error) {
@@ -117,16 +192,17 @@ func packageAccelerator() runtime.Value {
 			}
 		}
 		nativeAccelerators.RLock()
-		plugin := nativeAccelerators.items[id]
-		if plugin == nil {
+		entry := nativeAccelerators.items[id]
+		if entry == nil {
 			nativeAccelerators.RUnlock()
 			return errRes("accelerator plugin is not loaded", "accelerator"), nil
 		}
-		output, err := plugin.RunTensor(args[1].String(), inputs...)
+		output, info, err := entry.plugin.RunTensor(args[1].String(), inputs...)
 		nativeAccelerators.RUnlock()
 		if err != nil {
 			return errRes(err.Error(), "accelerator"), nil
 		}
+		entry.record(info)
 		result, err := tensorToRuntime(output)
 		if err != nil {
 			return errRes(err.Error(), "accelerator"), nil
@@ -138,11 +214,11 @@ func packageAccelerator() runtime.Value {
 		nativeAccelerators.RLock()
 		defer nativeAccelerators.RUnlock()
 		result := make([]any, 0, len(nativeAccelerators.items))
-		for id, plugin := range nativeAccelerators.items {
+		for id, entry := range nativeAccelerators.items {
 			result = append(result, map[string]any{
 				"id":       id,
-				"path":     plugin.Path(),
-				"manifest": plugin.Manifest(),
+				"path":     entry.plugin.Path(),
+				"manifest": manifestValue(entry.plugin.Manifest()),
 			})
 		}
 		return goToValue(result), nil

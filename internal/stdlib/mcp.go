@@ -508,7 +508,37 @@ func (s *mcpStdioServer) handle(req jsonRPCRequest) *jsonRPCResponse {
 				},
 			}
 		}
+		// Check if the Weft handler returned an Err Result
+		if result.Kind == runtime.KindResult {
+			if ro, ok := result.Obj.(*runtime.ResultObj); ok && !ro.Ok {
+				errMsg := ro.Err.String()
+				// Extract the message field from Error struct
+				if ro.Err.Kind == runtime.KindStruct {
+					if so, ok := ro.Err.Obj.(*runtime.StructObj); ok {
+						if msg, exists := so.Fields["message"]; exists {
+							errMsg = msg.String()
+						}
+					}
+				}
+				return &jsonRPCResponse{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Result: map[string]any{
+						"content": []map[string]any{
+							{"type": "text", "text": errMsg},
+						},
+						"isError": true,
+					},
+				}
+			}
+		}
 		text := result.String()
+		// Unwrap Ok(value) for cleaner output
+		if result.Kind == runtime.KindResult {
+			if ro, ok := result.Obj.(*runtime.ResultObj); ok && ro.Ok {
+				text = ro.Val.String()
+			}
+		}
 		return &jsonRPCResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,

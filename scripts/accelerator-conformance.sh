@@ -10,8 +10,10 @@
 #   bash scripts/accelerator-conformance.sh reports/accelerator-conformance.json
 #
 # Exit codes:
-#   0  — CPU reference path ok (built + health/identity/matmul/tensor tests pass)
-#   1  — CPU path failed (compile, load, or numerical/conformance failure)
+#   0  — CPU reference path ok (built + health/identity/matmul/tensor tests
+#        pass + execution reporting classified "honest")
+#   1  — CPU path failed (compile, load, numerical/conformance failure, or
+#        missing/contradictory device/fallback reporting)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -55,6 +57,8 @@ fi
 json_test="skipped"
 tensor_test="skipped"
 tensor_add_test="skipped"
+reporting_test="skipped"
+reporting="not_run"
 health_ok=false
 identity_ok=false
 matmul_ok=false
@@ -75,6 +79,12 @@ WEFT_ACCELERATOR_PLUGIN="$cpu_path" go test ./internal/accelerator \
   -run '^TestExternalProviderTensorAdd$' -count=1 -timeout=60s \
   >"${tmpdir}/tensor_add_test.out" 2>&1
 tensor_add_rc=$?
+  # Adversarial reporting gate: a provider that omits device/fallback fields
+  # or reports a contradiction fails conformance and is classified here.
+  WEFT_ACCELERATOR_PLUGIN="$cpu_path" go test ./internal/accelerator \
+    -run '^TestExternalProviderReporting$' -count=1 -timeout=60s \
+    >"${tmpdir}/reporting_test.out" 2>&1
+  reporting_rc=$?
   set -e
 
   if [[ $json_rc -eq 0 ]]; then
@@ -114,10 +124,31 @@ else
   fi
 fi
 
-# Overall CPU path status
+# Classify provider reporting honesty from the adversarial reporting test.
+if [[ "$cpu_status" == "built" ]]; then
+  if [[ $reporting_rc -eq 0 ]]; then
+    reporting_test="passed"
+    reporting="honest"
+  else
+    reporting_test="failed"
+    if grep -q "REPORTING_CONTRADICTORY" "${tmpdir}/reporting_test.out"; then
+      reporting="contradictory"
+    elif grep -q "REPORTING_UNREPORTED" "${tmpdir}/reporting_test.out"; then
+      reporting="unreported"
+    else
+      reporting="failed"
+    fi
+    if [[ "$json_test" == "passed" && "$tensor_test" == "passed" && "$tensor_add_test" == "passed" ]]; then
+      cpu_detail=$(tr '\n' ' ' <"${tmpdir}/reporting_test.out" | head -c 400)
+    fi
+  fi
+fi
+
+# Overall CPU path status. Reporting is part of conformance: a provider that
+# runs correctly but does not say where it ran does not pass.
 cpu_conformance="skipped"
 if [[ "$cpu_status" == "built" ]]; then
-if [[ "$json_test" == "passed" && "$tensor_test" == "passed" && "$tensor_add_test" == "passed" ]]; then
+if [[ "$json_test" == "passed" && "$tensor_test" == "passed" && "$tensor_add_test" == "passed" && "$reporting" == "honest" ]]; then
     cpu_conformance="passed"
   else
     cpu_conformance="failed"
@@ -139,7 +170,8 @@ python3 - "$OUT" \
   "$json_test" "$tensor_test" "$tensor_add_test" \
   "$health_ok" "$identity_ok" "$matmul_ok" "$tensor_ok" "$tensor_add_ok" \
   "$cpu_fallback" \
-  "$cuda_status" "$rocm_status" "$mlx_status" <<'PY'
+  "$cuda_status" "$rocm_status" "$mlx_status" \
+  "$reporting" "$reporting_test" <<'PY'
 import json, platform, shutil, subprocess, sys
 from datetime import datetime, timezone
 
@@ -160,7 +192,9 @@ from datetime import datetime, timezone
     cuda_status,
     rocm_status,
     mlx_status,
-) = sys.argv[1:17]
+    reporting,
+    reporting_test,
+) = sys.argv[1:19]
 
 def which(name):
     return shutil.which(name)
@@ -190,6 +224,9 @@ report = {
         "conformance": cpu_conformance,
         "detail": cpu_detail,
         "fallback": truthy(cpu_fallback),
+        # "honest" | "unreported" | "contradictory" | "failed" | "not_run".
+        # Anything but "honest" fails conformance, even if numerics pass.
+        "reporting": reporting,
         "tests": {
             "health": {"passed": truthy(health_ok)},
             "identity": {"passed": truthy(identity_ok)},
@@ -199,24 +236,28 @@ report = {
             "json_ops": json_test,
     "tensor_ops": tensor_test,
     "tensor_add_ops": tensor_add_test,
+    "reporting_ops": reporting_test,
         },
     },
     "vendors": {
         "cuda": {
             "status": cuda_status,
             "conformance": "not_run",
+            "reporting": "not_run",
             "tool": which("nvcc"),
             "note": "Optional; self-hosted CUDA runner only",
         },
         "rocm": {
             "status": rocm_status,
             "conformance": "not_run",
+            "reporting": "not_run",
             "tool": which("hipcc"),
             "note": "Optional; self-hosted ROCm runner only",
         },
         "mlx": {
             "status": mlx_status,
             "conformance": "not_run",
+            "reporting": "not_run",
             "tool": "",
             "note": "Optional; requires MLX_C_PREFIX on Apple Silicon",
         },
@@ -225,6 +266,7 @@ report = {
         "cpu_ok": cpu_conformance == "passed",
         "vendors_required": False,
         "silent_fallback_allowed": False,
+        "reporting_required": True,
     },
 }
 
@@ -232,7 +274,7 @@ with open(out, "w", encoding="utf-8") as fh:
     json.dump(report, fh, indent=2)
     fh.write("\n")
 print(out)
-print(f"cpu_reference: status={cpu_status} conformance={cpu_conformance}")
+print(f"cpu_reference: status={cpu_status} conformance={cpu_conformance} reporting={reporting}")
 print(f"  json_ops={json_test} tensor_ops={tensor_test} fallback={cpu_fallback}")
 print(f"vendors: cuda={cuda_status} rocm={rocm_status} mlx={mlx_status}")
 PY
@@ -240,8 +282,8 @@ PY
 echo "wrote $OUT"
 
 if [[ "$cpu_conformance" != "passed" ]]; then
-  echo "accelerator-conformance: CPU path failed" >&2
+  echo "accelerator-conformance: CPU path failed (reporting=${reporting})" >&2
   exit 1
 fi
-echo "accelerator-conformance: CPU path ok (vendors optional)"
+echo "accelerator-conformance: CPU path ok, reporting honest (vendors optional)"
 exit 0

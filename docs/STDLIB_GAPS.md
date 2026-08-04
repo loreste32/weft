@@ -106,6 +106,12 @@ Still thin without live brokers/daemons:
 | `mongo` collection ops | Needs MongoDB |
 | `nats` full sub loop | Needs NATS (optional live test if present) |
 
+Live coverage: the `brokers-live` CI job (`.github/workflows/ci.yml`) runs real
+NATS/RabbitMQ/MongoDB service containers with `WEFT_LIVE_REQUIRED=1`, which
+turns "broker unreachable" from a skip into a hard failure
+(`internal/stdlib/brokers_live_test.go`). Outside CI these tests skip when no
+local broker is listening.
+
 Covered offline: **llm** OpenAI + **Anthropic** httptest, `LLMDo`, pure converters; **http**/`web.ServeHTTP`/static/ws; **redis** miniredis; **websocket**/webrtc fakes; **ollama/vllm** httptest; **sqlite** db/tx; **archive/csv/email/json/table/viz**.
 
 Rule: every new behavior lands with tests. See CONTRIBUTING.md.

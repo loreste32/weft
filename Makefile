@@ -1,5 +1,5 @@
 # Weft — weave agents into code
-.PHONY: build build-slim test ci install clean fmt vet doctor examples wasm wasm-test wasm-serve race-smoke fuzz-smoke bench bench-glue bench-numerical bench-scale vendor-sync vendor-check catalog-check accelerator-report accelerator-conformance capability-matrix release-smoke
+.PHONY: build build-slim test ci install clean fmt vet doctor examples wasm wasm-test wasm-serve race-smoke fuzz-smoke bench bench-glue bench-numerical bench-scale vendor-sync vendor-check catalog-check accelerator-report accelerator-conformance capability-matrix capability-matrix-check release-smoke sbom repro-check
 
 PREFIX ?= $(HOME)/.local
 BIN    ?= weft
@@ -98,13 +98,25 @@ accelerator-report:
 accelerator-conformance:
 	bash scripts/accelerator-conformance.sh
 
-# Honest Warp/DataFrame/ML claim matrix → reports/capability-matrix.md
+# Honest Warp/DataFrame/ML claim matrix → reports/capability-matrix.{md,json}
 capability-matrix:
-	python3 scripts/capability-matrix.py
+	python3 scripts/capability-matrix.py --json reports/capability-matrix.json
+
+# Fail CI when committed capability reports drift from the generator
+capability-matrix-check:
+	python3 scripts/capability-matrix.py --check
 
 # Scale budgets (warp matmul/elementwise + dataframe); soft budgets unless WEFT_SCALE_STRICT=1
 bench-scale:
 	bash scripts/bench-scale.sh
+
+# Dependency SBOM (module graph + go.sum hashes) → stdout or file
+sbom:
+	bash scripts/sbom.sh
+
+# Offline install + byte-reproducible build gate (N6)
+repro-check:
+	bash scripts/reproducible-build-check.sh
 
 # Full + slim build, compat goldens, GOOS compile matrix
 release-smoke:

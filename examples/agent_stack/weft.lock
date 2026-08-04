@@ -5,7 +5,7 @@
       "name": "ml",
       "source": "path:/Users/loreste/weft/packages/ml",
       "version": "0.7.2",
-      "sum": "sha256:63bf8fdfafb1dab999045046402fcab4cc46a5463c57490b751f8fdb656c2962",
+      "sum": "sha256:191792c1367e8c4c21015e068f48e8dc03406a047c11b1ddf2d33f909abeef05",
       "dir": "vendor/ml"
     },
     {
@@ -26,7 +26,7 @@
       "name": "warp",
       "source": "path:/Users/loreste/weft/packages/warp",
       "version": "0.9.1",
-      "sum": "sha256:0bca84feee5df89148114e0a54a5f0b9c777904596a79fc8ec60a7524a4778ce",
+      "sum": "sha256:5caeab775571623f5a3ffcc19b066465b28bb2103bf831bb5d494e0cc8338ab2",
       "dir": "vendor/warp"
     }
   ]

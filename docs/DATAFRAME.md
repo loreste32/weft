@@ -334,7 +334,7 @@ df.write_csv(t, "output.csv", null)?
   drop to a default positional index. `loc` is positional, not label-based.
 - There is no categorical dtype, timezone-aware datetime, or pandas
   extension-array protocol.
-- `pivot` rejects duplicate index/column pairs; use an explicit aggregation before reshaping.
+- `pivot` rejects duplicate index/column pairs; use `pivot_table(t, {index, columns, values, aggfunc, fill_value?})` to aggregate duplicates instead.
 - No datetime parsing (use `time.*` stdlib manually).
 - `corr`/`cov` are pairwise, not correlation matrices, and use pairwise non-null numeric rows.
 

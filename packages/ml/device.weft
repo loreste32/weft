@@ -1,37 +1,134 @@
 use warp
+use accelerator
 
-// Advisory device placement for ML values.
+// Advisory device placement for ML values, with optional real plugin binding.
 //
 // Pure Weft has no GPU runtime. `device` / `to_device` / `device_of` tag values
-// so future accelerator providers can bind compute. Until a real provider is
-// loaded, placement is advisory: CPU always works; non-CPU requests are
-// accepted with `fallback: true` and compute remains on the host CPU.
-// There is no fake GPU.
+// so accelerator providers can bind compute. Without a plugin, placement is
+// advisory: CPU always works; non-CPU requests are accepted with
+// `fallback: true` and compute remains on the host CPU. There is no fake GPU.
+//
+// With `device_with_plugin(name, path)` a native provider shared library
+// (see native/accelerator/) is loaded through the accelerator stdlib.
+// `to_device` then probes the provider for real and attaches its execution
+// report (`plugin_device`, `plugin_status`, `plugin_reported`) verbatim.
+// Tensor matmul is dispatched through the plugin's binary ABI when both
+// operands carry the same bound provider. Unsupported or unbound values stay
+// on the CPU. Provider errors remain explicit instead of being disguised as
+// successful fallback.
 
-pub fn device(name) -> Result[any] {
-    n := _normalize_name(name)
-    if n == null { return Err("ml.device expects one of: cpu, cuda, rocm, mlx") }
-    Ok({"_device": true, "name": n})
+pub fn device(name) -> Result[any] { _make_device(name, null) }
+
+/// Like `device`, but loads a native accelerator plugin for a non-CPU name.
+/// The load result is recorded on the handle (`plugin_available`,
+/// `plugin_error`) and never hidden.
+pub fn device_with_plugin(name, plugin_path) -> Result[any] {
+    if _kind(plugin_path) != "str" || plugin_path == "" {
+        return Err("ml.device_with_plugin expects a plugin path string")
+    }
+    _make_device(name, plugin_path)
 }
 
-/// Move or tag `value` for `device`. Warp arrays receive a `_device` field.
+/// Move or tag `value` for `device`. Warp arrays receive a `_device` field and,
+/// when a plugin is bound, an internal `_accelerator` handle used by dispatch.
 /// CPU requests return the tagged value. Non-CPU requests return a fallback
-/// wrapper `{"value": tagged, "fallback": true, "requested": name}` because no
-/// accelerator plugin is bound in pure Weft.
+/// wrapper `{"value": tagged, "fallback": true, "requested": name, ...}` —
+/// compute stays on the host CPU whether or not a plugin is bound.
 pub fn to_device(value, dev) -> Result[any] {
     handle := _as_device(dev)
     if handle == null { return Err("ml.to_device expects a device handle from ml.device") }
-    tagged := _tag_value(value, handle.name)
+    plugin := if _plugin_available(handle) { handle._plugin } else { null }
+    tagged := _tag_value(value, handle.name, plugin)
     if is_err(tagged) { return tagged }
+    placed := tagged.value
     if handle.name == "cpu" {
-        return Ok(tagged)
+        return Ok(placed)
+    }
+    if _plugin_available(handle) {
+        // A real provider is bound: probe it and report verbatim. Placement
+        // itself is still a value-level operation; tensor ops dispatch below.
+        probe := _probe_plugin(handle)
+        if is_err(probe) { return probe }
+        return Ok({
+            "value": placed,
+            "fallback": true,
+            "requested": handle.name,
+            "plugin_available": true,
+            "dispatched": false,
+            "plugin": handle._plugin,
+            "plugin_device": probe.value.device,
+            "plugin_status": probe.value.status,
+            "plugin_reported": probe.value.reported,
+        })
     }
     // Honest CPU fallback: placement recorded, compute stays on host.
     Ok({
-        "value": tagged,
+        "value": placed,
         "fallback": true,
         "requested": handle.name,
+        "plugin_available": false,
+        "plugin_error": _handle_plugin_error(handle),
     })
+}
+
+/// Execution report of the bound plugin's most recent operation. Without a
+/// bound plugin, or before any operation ran, the status is "unavailable" or
+/// "unreported" — never a fabricated device claim.
+pub fn exec_info(dev) -> Result[any] {
+    handle := _as_device(dev)
+    if handle == null { return Err("ml.exec_info expects a device handle from ml.device") }
+    if !_plugin_available(handle) {
+        return Ok({"status": "unavailable", "device": "", "requested_device": "",
+                   "fallback": false, "reported": false})
+    }
+    accelerator.last_exec_info(handle._plugin)
+}
+
+// dispatch_matmul is the ML/autograd seam for the versioned binary tensor ABI.
+// It returns null when the operands are ordinary CPU values, are placed on
+// different devices, or have no shared accelerator plugin. The caller then
+// deliberately uses Warp's host implementation.
+pub fn dispatch_matmul(left, right) -> Result[any] {
+    if !_is_array(left) || !_is_array(right) { return Ok(null) }
+    if !_has(left, "_accelerator") || !_has(right, "_accelerator") {
+        return Ok(null)
+    }
+    if left._accelerator == null || right._accelerator == null {
+        return Ok(null)
+    }
+    if !_has(left, "_device") || !_has(right, "_device") || left._device != right._device {
+        return Ok(null)
+    }
+    if !_has(left._accelerator, "id") || !_has(right._accelerator, "id") ||
+        left._accelerator.id != right._accelerator.id {
+        return Ok(null)
+    }
+    plugin := left._accelerator
+    if !_has(plugin, "manifest") || !_has(plugin.manifest, "operations") ||
+        !contains(plugin.manifest.operations, "tensor_matmul") {
+        return Ok(null)
+    }
+    native := accelerator.run_tensor(plugin, "tensor_matmul", [
+        _tensor_descriptor(left),
+        _tensor_descriptor(right),
+    ])
+    if is_err(native) {
+        return Err("accelerator tensor_matmul failed: " + native.error)
+    }
+    descriptor := native.value
+    if !_has(descriptor, "dtype") || !_has(descriptor, "shape") || !_has(descriptor, "data") {
+        return Err("accelerator tensor_matmul returned an invalid tensor descriptor")
+    }
+    let mut result := warp.array_typed(descriptor.data, descriptor.shape, descriptor.dtype)
+    if _kind(result) == "result" {
+        if !result.ok { return Err("accelerator tensor_matmul returned an invalid array: " + result.error) }
+        result = result.value
+    }
+    result._device = left._device
+    result._accelerator = plugin
+    result._native_dispatch = true
+    Ok({"value": result, "dispatched": true, "fallback": false,
+        "device": left._device, "plugin": plugin.id})
 }
 
 /// Return the logical device name for a value ("cpu" when unset).
@@ -52,8 +149,51 @@ pub fn device_of(value) -> Result[any] {
     Ok("cpu")
 }
 
+fn _make_device(name, plugin_path) {
+    n := _normalize_name(name)
+    if n == null { return Err("ml.device expects one of: cpu, cuda, rocm, mlx") }
+    handle := {"_device": true, "name": n, "plugin_available": false,
+               "plugin_error": null, "_plugin": null}
+    if plugin_path != null {
+        if !accelerator.supported() {
+            handle.plugin_error = "native accelerator plugins are unavailable in this build"
+            return Ok(handle)
+        }
+        loaded := accelerator.load(plugin_path)
+        if is_err(loaded) {
+            handle.plugin_error = loaded.error
+        } else {
+            handle._plugin = loaded.value
+            handle.plugin_available = true
+        }
+    }
+    Ok(handle)
+}
+
+fn _plugin_available(handle) {
+    _has(handle, "plugin_available") && handle.plugin_available == true &&
+        _has(handle, "_plugin") && handle._plugin != null
+}
+
+fn _handle_plugin_error(handle) {
+    if contains(keys(handle), "plugin_error") { return handle.plugin_error }
+    null
+}
+
+fn _probe_plugin(handle) {
+    plugin := handle._plugin
+    if contains(plugin.manifest.operations, "health") {
+        probed := accelerator.run(plugin, "health", {})
+        if is_err(probed) { return Err("ml.to_device plugin health probe failed: " + probed.error) }
+        return accelerator.last_exec_info(plugin)
+    }
+    // No health operation: nothing ran, so nothing can be reported.
+    Ok({"status": "unreported", "device": "", "requested_device": "",
+        "fallback": false, "reported": false})
+}
+
 fn _normalize_name(name) {
-    if _kind(name) != "string" { return null }
+    if _kind(name) != "str" { return null }
     if name == "cpu" || name == "cuda" || name == "rocm" || name == "mlx" { return name }
     null
 }
@@ -63,24 +203,26 @@ fn _as_device(dev) {
     // Allow a bare name string for convenience.
     n := _normalize_name(dev)
     if n == null { return null }
-    {"_device": true, "name": n}
+    made := _make_device(n, null)
+    if is_err(made) { return null }
+    made.value
 }
 
-fn _tag_value(value, name) -> Result[any] {
+fn _tag_value(value, name, plugin) -> Result[any] {
     if _is_array(value) {
         // Placement is metadata, but the input remains an immutable value.
         // Materialize a distinct array so releasing the placed value cannot
         // invalidate the caller's native tensor handle.
-        return _copy_array_with_device(value, name)
+        return _copy_array_with_device(value, name, plugin)
     }
     if _is_node(value) {
         tagged_value := if _is_array(value.value) {
-            _copy_array_with_device(value.value, name)?
+            _copy_array_with_device(value.value, name, plugin)?
         } else {
             value.value
         }
         tagged_grad := if _is_array(value.grad) {
-            _copy_array_with_device(value.grad, name)?
+            _copy_array_with_device(value.grad, name, plugin)?
         } else {
             value.grad
         }
@@ -98,20 +240,26 @@ fn _tag_value(value, name) -> Result[any] {
         })
     }
     if _is_fallback_wrapper(value) {
-        inner := _tag_value(value.value, name)?
+        prior_plugin := if _has(value, "plugin") { value.plugin } else { plugin }
+        inner := _tag_value(value.value, name, prior_plugin)?
         return Ok(inner)
     }
     // Plain scalars: no storage to place; return unchanged (still "cpu").
     Ok(value)
 }
 
-fn _copy_array_with_device(value, name) -> Result[any] {
+fn _copy_array_with_device(value, name, plugin) -> Result[any] {
     cloned := warp.array_typed(warp.to_list(value), _copy(value.shape), value._dtype)
     if _kind(cloned) == "result" {
         return cloned
     }
     cloned._device = name
+    if plugin != null { cloned._accelerator = plugin }
     Ok(cloned)
+}
+
+fn _tensor_descriptor(value) {
+    {"dtype": warp.dtype(value), "shape": _copy(value.shape), "data": warp.to_list(value)}
 }
 
 fn _copy(values) {
@@ -120,20 +268,24 @@ fn _copy(values) {
     out
 }
 
+fn _has(value, key) {
+    value != null && _kind(value) == "map" && contains(keys(value), key)
+}
+
 fn _is_device_handle(value) {
-    value != null && _kind(value) == "map" && value._device == true && _kind(value.name) == "string"
+    _has(value, "_device") && value._device == true && _has(value, "name") && _kind(value.name) == "str"
 }
 
 fn _is_fallback_wrapper(value) {
-    value != null && _kind(value) == "map" && contains(keys(value), "fallback") && contains(keys(value), "value") && contains(keys(value), "requested")
+    _has(value, "fallback") && _has(value, "value") && _has(value, "requested")
 }
 
 fn _is_array(value) {
-    value != null && _kind(value) == "map" && value._warp == true
+    _has(value, "_warp") && value._warp == true
 }
 
 fn _is_node(value) {
-    value != null && _kind(value) == "map" && value._autograd == true
+    _has(value, "_autograd") && value._autograd == true
 }
 
 fn _kind(value) { type_of(value) }

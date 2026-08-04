@@ -1,0 +1,53 @@
+// Learning-rate schedules as pure, deterministic functions of
+// (base_lr, epoch, schedule params). Each returns the learning rate for the
+// given zero-based epoch, or Err on invalid parameters. Like metrics, these
+// return plain values rather than Result-wrapped ones.
+
+// step_lr: base_lr * gamma^floor(epoch / step_size).
+pub fn step_lr(base_lr, epoch, step_size, gamma) {
+    if !_positive(base_lr) { return Err("ml.step_lr base_lr must be finite and positive") }
+    if !_epoch(epoch) { return Err("ml.step_lr epoch must be a non-negative integer") }
+    if _kind(step_size) != "int" || step_size <= 0 {
+        return Err("ml.step_lr step_size must be a positive integer")
+    }
+    if !_positive(gamma) { return Err("ml.step_lr gamma must be finite and positive") }
+    base_lr * math.pow(gamma, math.floor(epoch / step_size))
+}
+
+// exponential_lr: base_lr * gamma^epoch.
+pub fn exponential_lr(base_lr, epoch, gamma) {
+    if !_positive(base_lr) { return Err("ml.exponential_lr base_lr must be finite and positive") }
+    if !_epoch(epoch) { return Err("ml.exponential_lr epoch must be a non-negative integer") }
+    if !_positive(gamma) { return Err("ml.exponential_lr gamma must be finite and positive") }
+    base_lr * math.pow(gamma, epoch)
+}
+
+// cosine_lr: cosine annealing from base_lr down to min_lr (default 0) over
+// total_epochs; epochs past total_epochs clamp at min_lr.
+pub fn cosine_lr(base_lr, epoch, total_epochs, min_lr) {
+    if !_positive(base_lr) { return Err("ml.cosine_lr base_lr must be finite and positive") }
+    if !_epoch(epoch) { return Err("ml.cosine_lr epoch must be a non-negative integer") }
+    if _kind(total_epochs) != "int" || total_epochs <= 0 {
+        return Err("ml.cosine_lr total_epochs must be a positive integer")
+    }
+    floor := if min_lr == null { 0.0 } else { min_lr }
+    if !_number(floor) || floor < 0 || floor > base_lr {
+        return Err("ml.cosine_lr min_lr must be finite and within [0, base_lr]")
+    }
+    let mut t = epoch
+    if t > total_epochs { t = total_epochs }
+    floor + (base_lr - floor) * 0.5 * (1.0 + math.cos(3.141592653589793 * t / total_epochs))
+}
+
+fn _positive(value) { _number(value) && value > 0 }
+
+fn _epoch(value) { _kind(value) == "int" && value >= 0 }
+
+fn _number(value) {
+    if value == null { return false }
+    k := _kind(value)
+    if k != "int" && k != "float" { return false }
+    value == value && !math.isinf(value)
+}
+
+fn _kind(value) { type_of(value) }

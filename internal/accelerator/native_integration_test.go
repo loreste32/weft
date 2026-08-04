@@ -7,7 +7,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+
+	"github.com/loreste/weft/internal/tensor"
 )
 
 func TestExampleSharedLibrary(t *testing.T) {
@@ -43,7 +46,7 @@ func TestExampleSharedLibrary(t *testing.T) {
 	if plugin.Manifest().Name != "weft-example" || plugin.Manifest().ABI != ABI {
 		t.Fatalf("unexpected manifest: %+v", plugin.Manifest())
 	}
-	health, err := plugin.RunJSON("health", []byte(`{}`))
+	health, healthInfo, err := plugin.RunJSONEx("health", []byte(`{}`))
 	if err != nil {
 		t.Fatal("health: ", err)
 	}
@@ -63,14 +66,18 @@ func TestExampleSharedLibrary(t *testing.T) {
 	if *healthValue.Fallback {
 		t.Fatalf("CPU reference health reported fallback=true: %s", health)
 	}
-	if healthValue.Device != "" && healthValue.Device != "cpu" {
+	if healthValue.Device != "cpu" {
 		t.Fatalf("CPU reference health device = %q, want cpu: %s", healthValue.Device, health)
+	}
+	if !healthInfo.Reported || healthInfo.Status != StatusDevice || healthInfo.Device != "cpu" ||
+		healthInfo.Fallback {
+		t.Fatalf("health exec info = %+v, want reported cpu device run", healthInfo)
 	}
 	identity, err := plugin.RunJSON("identity", []byte(`{"value":7}`))
 	if err != nil || string(identity) != `{"value":7}` {
 		t.Fatalf("identity result = %s, %v", identity, err)
 	}
-	matmul, err := plugin.RunJSON("matmul", []byte(`{"a":[1,2,3,4],"a_shape":[2,2],"b":[5,6,7,8],"b_shape":[2,2]}`))
+	matmul, matmulInfo, err := plugin.RunJSONEx("matmul", []byte(`{"a":[1,2,3,4],"a_shape":[2,2],"b":[5,6,7,8],"b_shape":[2,2]}`))
 	if err != nil {
 		t.Fatal("matmul: ", err)
 	}
@@ -93,6 +100,10 @@ func TestExampleSharedLibrary(t *testing.T) {
 	}
 	if *matrix.Fallback {
 		t.Fatalf("CPU reference matmul reported fallback=true: %s", matmul)
+	}
+	if !matmulInfo.Reported || matmulInfo.Status != StatusDevice || matmulInfo.Device != "cpu" ||
+		matmulInfo.RequestedDevice != "cpu" || matmulInfo.Fallback {
+		t.Fatalf("matmul exec info = %+v, want reported cpu device run", matmulInfo)
 	}
 }
 
@@ -137,9 +148,15 @@ func TestExternalProvider(t *testing.T) {
 	if !healthValue.OK {
 		t.Fatalf("external provider reported unhealthy: %s", health)
 	}
-	// Prefer explicit fallback reporting; require it when the key is present so
-	// silent fallback cannot hide as a green health check.
-	if healthValue.Fallback != nil && *healthValue.Fallback && healthValue.Device != "cpu" {
+	// Device and fallback reporting are mandatory: a provider that omits them
+	// fails conformance instead of passing silently.
+	if healthValue.Device == "" {
+		t.Fatalf("health missing device field: %s", health)
+	}
+	if healthValue.Fallback == nil {
+		t.Fatalf("health missing fallback flag: %s", health)
+	}
+	if *healthValue.Fallback && healthValue.Device != "cpu" {
 		t.Fatalf("health claims non-cpu device with fallback=true (silent fallback): %s", health)
 	}
 	if supportsOperation(manifest.Operations, "identity") {
@@ -170,8 +187,86 @@ func TestExternalProvider(t *testing.T) {
 			t.Fatalf("external matmul data[%d] = %v, want %v", i, matrix.Data[i], want[i])
 		}
 	}
-	// When providers report fallback, a true flag must not claim pure device exec.
-	if matrix.Fallback != nil && *matrix.Fallback && matrix.Device != "" && matrix.Device != "cpu" {
+	// Device and fallback reporting are mandatory for every provider under test.
+	if matrix.Device == "" {
+		t.Fatalf("matmul missing device field: %s", result)
+	}
+	if matrix.Fallback == nil {
+		t.Fatalf("matmul missing fallback flag: %s", result)
+	}
+	if *matrix.Fallback && matrix.Device != "cpu" {
 		t.Fatalf("matmul claims non-cpu device with fallback=true: %s", result)
+	}
+}
+
+// TestExternalProviderReporting is the adversarial reporting conformance
+// gate: every provider must truthfully report where each operation ran, on
+// both the JSON and the binary tensor path. Failure messages carry
+// REPORTING_UNREPORTED / REPORTING_CONTRADICTORY markers so the conformance
+// script can classify the provider as "unreported" or "contradictory"
+// instead of merely "failed".
+func TestExternalProviderReporting(t *testing.T) {
+	path := os.Getenv("WEFT_ACCELERATOR_PLUGIN")
+	if path == "" {
+		t.Skip("WEFT_ACCELERATOR_PLUGIN is not configured")
+	}
+	if !Supported() {
+		t.Skip("shared-library loading unavailable on platform")
+	}
+	plugin, err := Load(path)
+	if err != nil {
+		t.Fatal("load external provider: ", err)
+	}
+	defer func() { _ = plugin.Close() }()
+	manifest := plugin.Manifest()
+
+	check := func(op string, info ExecInfo, err error) {
+		t.Helper()
+		if err != nil {
+			if strings.Contains(err.Error(), "no fallback") || strings.Contains(err.Error(), "fallback=") {
+				t.Fatalf("REPORTING_CONTRADICTORY: %s: %v", op, err)
+			}
+			t.Fatalf("%s: %v", op, err)
+		}
+		if !info.Reported {
+			t.Fatalf("REPORTING_UNREPORTED: %s returned no device/fallback fields", op)
+		}
+		if info.Fallback && info.Device != "cpu" {
+			t.Fatalf("REPORTING_CONTRADICTORY: %s claims fallback on non-cpu device %q", op, info.Device)
+		}
+		if !info.Fallback && info.RequestedDevice != "" && info.Device != info.RequestedDevice {
+			t.Fatalf("REPORTING_CONTRADICTORY: %s device %q != requested %q without fallback",
+				op, info.Device, info.RequestedDevice)
+		}
+	}
+
+	_, healthInfo, err := plugin.RunJSONEx("health", []byte(`{}`))
+	check("health", healthInfo, err)
+	_, matmulInfo, err := plugin.RunJSONEx("matmul",
+		[]byte(`{"a":[1,2,3,4],"a_shape":[2,2],"b":[5,6,7,8],"b_shape":[2,2]}`))
+	check("matmul", matmulInfo, err)
+
+	if supportsOperation(manifest.Operations, "tensor_matmul") {
+		dtype := tensor.Float32
+		values := []any{float32(1), float32(2), float32(3), float32(4)}
+		other := []any{float32(5), float32(6), float32(7), float32(8)}
+		if manifest.Metadata["dtype"] == "float64" {
+			dtype = tensor.Float64
+			values = []any{float64(1), float64(2), float64(3), float64(4)}
+			other = []any{float64(5), float64(6), float64(7), float64(8)}
+		}
+		left, err := tensor.FromList(dtype, []int{2, 2}, values)
+		if err != nil {
+			t.Fatal(err)
+		}
+		right, err := tensor.FromList(dtype, []int{2, 2}, other)
+		if err != nil {
+			t.Fatal(err)
+		}
+		output, tensorInfo, err := plugin.RunTensor("tensor_matmul", left, right)
+		if output != nil {
+			defer tensor.Release(output)
+		}
+		check("tensor_matmul", tensorInfo, err)
 	}
 }

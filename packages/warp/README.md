@@ -58,8 +58,10 @@ Arrays are immutable values: `set` and every arithmetic operation return new
 arrays. Shape mismatches, ragged nested lists, invalid indices, and invalid
 constructor parameters return errors instead of silently truncating data.
 Common result typing is preserved: comparisons and logical predicates produce
-`bool`, math functions produce `float64`, and arithmetic follows the supported
-fixed-width integer/float promotion rules. Axis and cumulative
+`bool`, math functions produce `float64`, and arithmetic result dtypes follow
+NumPy 2.x `promote_types` rules for every supported dtype pair (including
+mixed signed/unsigned pairs such as `int8 + uint8 → int16` and
+`int64 + uint64 → float64`). Axis and cumulative
 operations retain their array dtype where the result is an array.
 
 ## Strided views and indexing

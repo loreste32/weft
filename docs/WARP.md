@@ -72,14 +72,16 @@ Arrays carry element strides and an element offset. `transpose_view` and `view` 
 The package manifest exports the complete public surface: creation,
 shape/indexing, element-wise math, comparisons, reductions, statistics,
 linear algebra, manipulation, masking, inspection, and native dispatch.
-Run `weft mod check packages/warp --tests` to verify the manifest and its 86
+Run `weft mod check packages/warp --tests` to verify the manifest and its 112
 regression tests.
 
 ## Deliberate limits
 
 `warp` is not yet a complete binary-compatible NumPy replacement. It does not
 yet implement every dtype, memory order, sparse matrix, masked array, FFT,
-autodiff, or ufunc protocol. The logical dtype layer does not provide packed
-memory or NumPy's full casting table. The CPU implementation is pure Weft and does not
+autodiff, or ufunc protocol. Binary dtype promotion matches NumPy 2.x
+`np.promote_types` for every supported dtype pair, but the casting layer still
+does not provide NumPy's full `astype` casting table (e.g. wraparound integer
+casts) or packed memory layout control. The CPU implementation is pure Weft and does not
 promise BLAS/SIMD performance. Use native providers for large GPU workloads
 and validate numerical equivalence for the operations you rely on.

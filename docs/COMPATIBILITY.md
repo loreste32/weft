@@ -23,10 +23,16 @@ replacement status.
 
 The checked-in differential harness is `scripts/conformance/run.py`. It runs
 the Weft programs in `testdata/conformance/` and compares their JSON results
-with pinned offline NumPy and pandas oracles from
+with pinned offline NumPy, pandas, and scikit-learn oracles from
 `scripts/conformance/requirements.txt`. The GitHub
 `numpy-pandas-conformance` job installs those exact versions and gates changes
-to `main`.
+to `main`. The harness also includes a seeded property suite
+(`warp_property_case.weft` driven per-case over stdin) and an `ml` fixture:
+because `ml.linear_fit`/`logistic_fit` are gradient descent while sklearn
+fits are closed-form/lbfgs, learned coefficients, predictions, and metrics
+are compared at abs_tol=1e-2 (observed agreement is ~1e-9 after
+standardizing features; `ml.standardize` itself is exact and checked at the
+strict 1e-10 tolerance).
 
 Python is only the reference oracle; it is not a Weft runtime dependency. The
 current corpus is a representative smoke suite, not proof of complete API
@@ -71,6 +77,78 @@ conformance fixture, but they do not imply complete pandas indexing parity.
   deterministic fallback behavior;
 - real hardware conformance jobs for every declared vendor provider.
 
+## Oracle versions and platform requirements
+
+- Differential oracle: **numpy==2.4.3**, **pandas==3.0.1**,
+  **scikit-learn==1.9.0** (pinned in
+  `scripts/conformance/requirements.txt`; installed only in the
+  `numpy-pandas-conformance` CI job, never at runtime).
+- CPU semantics are the reference on Linux and macOS (CI executes on Linux;
+  maintainers run the same suites on macOS). Windows is cross-compiled but not
+  executed in CI.
+- CUDA, ROCm, and Apple MLX providers are **environment-gated**: they require
+  the matching GPU/toolkit and the self-hosted runners in
+  `.github/workflows/native-accelerators.yml`. A provider that is absent must
+  report "unavailable"; it must never report success from CPU under a native
+  provider name.
+
+## Declared deviations and unsupported surface
+
+These are deliberate. Each entry is either a documented behavioral difference
+or an explicitly unsupported API; silent divergence is a bug, an entry here is
+not. When one of these is implemented, remove the entry and add conformance
+coverage in the same change.
+
+### `warp` vs NumPy
+
+- **Unsupported dtypes:** complex, datetime64, timedelta64, structured/record
+  arrays, and explicit byte-order (endianness) dtypes. No `float16` yet;
+  reduced-precision floats are `float32` only.
+- **`object` dtype** is declared and functional but stored on the portable
+  list path, not packed host storage; performance and some view semantics
+  differ from numeric dtypes.
+- **uint64 above int64 max** is not representable: Weft numbers are int64 /
+  float64, so casts and literals above `2^63-1` cannot round-trip exactly.
+- **No Fortran-order storage**; all packed tensors are C-contiguous with
+  strided views on top.
+- **No read-only arrays** and **no mutable aliasing views**: `set` produces a
+  new array; writing through a view does not mutate the base. NumPy code that
+  relies on `v = a[::2]; v[:] = 0` mutating `a` behaves differently.
+- **Masked arrays and sparse formats are unsupported** (no `numpy.ma`, no
+  sparse matrices).
+- **`loc`-style label indexing, ellipsis (`...`) and `newaxis` selector tokens
+  are not implemented**; missing trailing selectors mean "all".
+- Error fixtures in the conformance corpus assert error *presence*; NumPy
+  exception *types* (e.g. `LinAlgError`) are not mirrored.
+
+### `dataframe` vs pandas
+
+- **No nullable extension dtypes** (`Int64`, `boolean`, `string[python]`):
+  missing values are Weft `null` in row maps; there is no NaN-vs-NA
+  distinction, no categorical dtype, and no timezone-aware datetimes.
+- **Storage is row-list**, not columnar; zero-copy DataFrame ↔ Warp
+  interchange is impossible in this layout, so the tested interchange path
+  always copies and rejects null/non-numeric values.
+- **Duplicate labels:** reindexing with duplicate labels keeps first-match
+  fill where pandas raises; duplicate-label selection returns the first match.
+- **`loc` is positional slicing**, not pandas label semantics; no boolean-mask
+  `loc`, no combined row+col selection, no `loc`/`iloc` assignment with
+  broadcasting.
+- **No Parquet/Arrow I/O and no SQL bridge**; CSV/JSON/JSONL only, with
+  type-inferring parse (no explicit dtype/null policy arguments yet).
+
+### `ml` vs PyTorch / scikit-learn
+
+- **No forward-mode autodiff**; reverse-mode only, and nested `create_graph`
+  is scalar — array-level higher-order gradients are numeric (finite
+  difference).
+- **No gradient checkpointing, anomaly detection, or sparse/autodiff-aware
+  device placement.** Device tags remain advisory without a plugin; bound
+  providers currently dispatch only tensor matmul, and every provider report
+  is validated for truthful fallback/device status.
+- **Classical ML coverage is linear/logistic regression** plus preprocessing;
+  sparse and categorical estimator inputs are unsupported.
+
 ## Release gates
 
 - differential tests against the pinned NumPy/pandas oracle;
@@ -90,4 +168,10 @@ conformance fixture, but they do not imply complete pandas indexing parity.
 - `scripts/accelerator-report.sh` publishes capability/status JSON.
 - `scripts/accelerator-conformance.sh` gates CPU reference health/identity/matmul/tensor_matmul (vendors optional).
 - `scripts/capability-matrix.py` writes an honest Warp/DataFrame/ML claim matrix.
+- `scripts/capability-matrix.py --check` fails CI when the committed matrix is stale.
+- `scripts/reproducible-build-check.sh` gates offline install (`GOPROXY=off`
+  after `go mod download` + `go mod verify`) and byte-identical rebuilds from
+  two checkout paths with `-trimpath -buildvcs=false`.
+- `scripts/sbom.sh` emits the pinned dependency SBOM (module graph + go.sum
+  hashes); the release workflow publishes it as `SBOM.json`.
 - `scripts/bench-scale.sh` multi-fixture scale budgets (soft warn; `WEFT_SCALE_STRICT=1` hard).

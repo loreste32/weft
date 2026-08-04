@@ -14,6 +14,8 @@ use "./gradcheck.weft" as gc
 use "./higher.weft" as hi
 use "./device.weft" as dev
 use "./modules.weft" as mods
+use "./losses.weft" as losses
+use "./schedulers.weft" as sched
 
 
 pub fn cosine(a, b) { vec.cosine(a, b) }
@@ -71,6 +73,14 @@ pub fn predict(model, features) -> Result[any] { tr.predict(model, features) }
 pub fn predict_classes(model, features, threshold) -> Result[any] { tr.predict_classes(model, features, threshold) }
 pub fn score(model, features, targets) -> Result[any] { tr.score(model, features, targets) }
 pub fn standardize(features) -> Result[any] { tr.standardize(features) }
+pub fn batches(features, targets, batch_size, opts) -> Result[any] { tr.batches(features, targets, batch_size, opts) }
+pub fn step_lr(base_lr, epoch, step_size, gamma) { sched.step_lr(base_lr, epoch, step_size, gamma) }
+pub fn exponential_lr(base_lr, epoch, gamma) { sched.exponential_lr(base_lr, epoch, gamma) }
+pub fn cosine_lr(base_lr, epoch, total_epochs, min_lr) { sched.cosine_lr(base_lr, epoch, total_epochs, min_lr) }
+pub fn mse_loss(pred, target) -> Result[any] { losses.mse_loss(pred, target) }
+pub fn binary_cross_entropy(pred, target, eps) -> Result[any] { losses.binary_cross_entropy(pred, target, eps) }
+pub fn cross_entropy(logits, targets) -> Result[any] { losses.cross_entropy(logits, targets) }
+pub fn huber_loss(pred, target, delta) -> Result[any] { losses.huber_loss(pred, target, delta) }
 pub fn variable(value) -> Result[any] { ag.variable(value) }
 pub fn constant(value) -> Result[any] { ag.constant(value) }
 pub fn value(node) -> Result[any] { ag.value(node) }
@@ -92,6 +102,11 @@ pub fn neg(node) -> Result[any] { ag.neg(node) }
 pub fn exp(node) -> Result[any] { ag.exp(node) }
 pub fn log(node) -> Result[any] { ag.log(node) }
 pub fn relu(node) -> Result[any] { ag.relu(node) }
+pub fn sigmoid(node) -> Result[any] { ag.sigmoid(node) }
+pub fn tanh(node) -> Result[any] { ag.tanh(node) }
+pub fn gelu(node) -> Result[any] { ag.gelu(node) }
+pub fn softmax(node, axis) -> Result[any] { ag.softmax(node, axis) }
+pub fn huber(left, right, delta) -> Result[any] { ag.huber(left, right, delta) }
 pub fn pow(node, exponent) -> Result[any] { ag.pow(node, exponent) }
 pub fn sum(node) -> Result[any] { ag.sum(node) }
 pub fn mean(node) -> Result[any] { ag.mean(node) }
@@ -100,11 +115,17 @@ pub fn gradcheck(fn_loss, parameters, eps, rtol) -> Result[any] { gc.gradcheck(f
 pub fn second_derivative(scalar_fn, x, eps) -> Result[any] { hi.second_derivative(scalar_fn, x, eps) }
 pub fn hvp(loss_fn, parameters, vector, eps) -> Result[any] { hi.hvp(loss_fn, parameters, vector, eps) }
 pub fn device(name) -> Result[any] { dev.device(name) }
+pub fn device_with_plugin(name, plugin_path) -> Result[any] { dev.device_with_plugin(name, plugin_path) }
 pub fn to_device(value, device_arg) -> Result[any] { dev.to_device(value, device_arg) }
 pub fn device_of(value) -> Result[any] { dev.device_of(value) }
+pub fn exec_info(device_arg) -> Result[any] { dev.exec_info(device_arg) }
 pub fn seed(value) -> Result[any] { mods.seed(value) }
 pub fn linear_module(in_features, out_features, seed_arg) -> Result[any] { mods.linear_module(in_features, out_features, seed_arg) }
 pub fn relu_module() -> Result[any] { mods.relu_module() }
+pub fn sigmoid_module() -> Result[any] { mods.sigmoid_module() }
+pub fn tanh_module() -> Result[any] { mods.tanh_module() }
+pub fn gelu_module() -> Result[any] { mods.gelu_module() }
+pub fn softmax_module(axis) -> Result[any] { mods.softmax_module(axis) }
 pub fn sequential(modules) -> Result[any] { mods.sequential(modules) }
 pub fn module_parameters(module) -> Result[any] { mods.module_parameters(module) }
 pub fn linear_forward(module, input) -> Result[any] { mods.linear_forward(module, input) }

@@ -353,42 +353,81 @@ func broadcastValue(t *Tensor, outIndex, outShape []int) (any, error) {
 	return t.Value(src...)
 }
 
+// promoteDType mirrors NumPy 2.x type promotion (np.promote_types) for the
+// supported dtype set: bool, int8-64, uint8-64, float32/64. Keep it in sync
+// with _promote_dtype in packages/warp/lib.weft; TestPromoteDTypeNumPyMatrix
+// locks the full 11x11 matrix against the NumPy oracle.
 func promoteDType(a, b DType) DType {
-	if (a == UInt64 && isSignedIntegerDType(b)) || (b == UInt64 && isSignedIntegerDType(a)) {
-		return Float64
-	}
-	rank := func(d DType) int {
-		switch d {
-		case Bool:
-			return 1
-		case UInt8:
-			return 2
-		case Int8:
-			return 3
-		case UInt16:
-			return 4
-		case Int16:
-			return 5
-		case UInt32:
-			return 6
-		case Int32:
-			return 7
-		case UInt64:
-			return 8
-		case Int64:
-			return 9
-		case Float32:
-			return 10
-		case Float64:
-			return 11
-		default:
-			return 0
-		}
-	}
-	if rank(a) >= rank(b) {
+	if a == b {
 		return a
 	}
-	return b
+	// float64 dominates everything; float32 survives only against bool and
+	// integers of 16 bits or fewer.
+	if a == Float64 || b == Float64 {
+		return Float64
+	}
+	if a == Float32 || b == Float32 {
+		other := a
+		if a == Float32 {
+			other = b
+		}
+		switch other {
+		case Int32, Int64, UInt32, UInt64:
+			return Float64
+		default:
+			return Float32
+		}
+	}
+	// bool mixed with a non-float dtype adopts the other operand's dtype.
+	if a == Bool {
+		return b
+	}
+	if b == Bool {
+		return a
+	}
+	aSigned := isSignedIntegerDType(a)
+	bSigned := isSignedIntegerDType(b)
+	if aSigned == bSigned {
+		if integerDTypeBits(a) >= integerDTypeBits(b) {
+			return a
+		}
+		return b
+	}
+	// Mixed sign: the result is the smallest signed dtype wide enough to hold
+	// both ranges. A 64-bit unsigned paired with any signed integer overflows
+	// int64 and promotes to float64.
+	signed, unsigned := a, b
+	if !aSigned {
+		signed, unsigned = b, a
+	}
+	need := integerDTypeBits(signed)
+	if w := 2 * integerDTypeBits(unsigned); w > need {
+		need = w
+	}
+	switch {
+	case need <= 16:
+		return Int16
+	case need <= 32:
+		return Int32
+	case need <= 64:
+		return Int64
+	default:
+		return Float64
+	}
+}
+
+// integerDTypeBits reports the storage width in bits of an integer dtype.
+func integerDTypeBits(d DType) int {
+	switch d {
+	case Int8, UInt8:
+		return 8
+	case Int16, UInt16:
+		return 16
+	case Int32, UInt32:
+		return 32
+	default:
+		return 64
+	}
 }
 
 func isSignedIntegerDType(dtype DType) bool {

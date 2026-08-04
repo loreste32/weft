@@ -15,7 +15,11 @@ int main() {
   assert(a.rows == 2 && a.cols == 2 && a.values[3] == 4.0f);
   assert(b.rows == 2 && b.cols == 2 && b.values[0] == 5.0f);
   assert(!parse_matrix("{\"a\":[1],\"a_shape\":[2,2]}", "a", "a_shape", a, error));
-  assert(matrix_json({19.0f, 22.0f, 43.0f, 50.0f}, 2, 2) ==
-         "{\"data\":[19,22,43,50],\"shape\":[2,2]}");
+  assert(matrix_json({19.0f, 22.0f, 43.0f, 50.0f}, 2, 2, "cuda:0", false) ==
+         "{\"data\":[19,22,43,50],\"shape\":[2,2],\"device\":\"cuda:0\","
+         "\"requested_device\":\"cuda:0\",\"fallback\":false}");
+  assert(exec_info_json("cpu", true) ==
+         "{\"device\":\"cpu\",\"requested_device\":\"cpu\",\"fallback\":true,"
+         "\"status\":\"fallback\"}");
   return 0;
 }

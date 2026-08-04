@@ -880,3 +880,400 @@ fn test_swaplevel_and_droplevel {
     test.eq(df.index_nlevels(d1), 1)
     test.eq(df.index(d1)[0], "Alice")
 }
+
+// === Multi-column group_by ===
+
+fn test_group_by_multi_key_basic {
+    t := df.from_rows([
+        {"dept": "eng", "loc": "sf", "salary": 100, "age": 30},
+        {"dept": "eng", "loc": "sf", "salary": 200, "age": 40},
+        {"dept": "eng", "loc": "ny", "salary": 300, "age": 50},
+        {"dept": "sales", "loc": "sf", "salary": 400, "age": 60},
+    ])
+    g := df.group_by(t, ["dept", "loc"], {"salary": ["sum", "mean", "count"], "age": "max"})
+    test.eq(df.nrows(g), 3)
+    test.eq(df.columns(g), ["dept", "loc", "salary_sum", "salary_mean", "salary_count", "age_max"])
+    r0 := df.iloc(g, 0)
+    test.eq(r0.dept, "eng")
+    test.eq(r0.loc, "sf")
+    test.eq(r0.salary_sum, 300)
+    test.approx(r0.salary_mean, 150.0, 1e-9)
+    test.eq(r0.salary_count, 2)
+    test.eq(r0.age_max, 40)
+    r2 := df.iloc(g, 2)
+    test.eq(r2.dept, "sales")
+    test.eq(r2.salary_sum, 400)
+}
+
+fn test_group_by_multi_key_still_supports_named_aggs {
+    t := _sample_df()
+    g := df.group_by(t, ["dept"], {
+        "total": {"col": "salary", "op": "sum"},
+        "n": {"col": "name", "op": "count"},
+    })
+    test.eq(df.columns(g), ["dept", "total", "n"])
+    eng := df.filter_(g, fn(r) { r.dept == "eng" })
+    test.eq(df.iloc(eng, 0).total, 260000)
+    test.eq(df.iloc(eng, 0).n, 3)
+}
+
+// Adversarial: composite-key encoding must not collide for keys containing
+// separators, JSON metacharacters, or type-punning values.
+fn test_group_by_multi_key_encoding_no_collisions {
+    t := df.from_rows([
+        {"k1": "a", "k2": "b|c", "v": 1},
+        {"k1": "a|b", "k2": "c", "v": 2},
+        {"k1": "a\u001fb", "k2": "c", "v": 4},
+        {"k1": "a", "k2": "b\u001fc", "v": 8},
+        {"k1": "[\"a\", \"b\"]", "k2": "c", "v": 16},
+        {"k1": 1, "k2": "x", "v": 32},
+        {"k1": "1", "k2": "x", "v": 64},
+        {"k1": null, "k2": "x", "v": 128},
+        {"k1": "null", "k2": "x", "v": 256},
+    ])
+    g := df.group_by(t, ["k1", "k2"], {"v": ["sum", "count"]})
+    // Every row is a distinct composite key: 9 groups, each count 1.
+    test.eq(df.nrows(g), 9)
+    test.eq(df.col(g, "v_count"), [1, 1, 1, 1, 1, 1, 1, 1, 1])
+    // int 1 and str "1" are different groups, in first-seen order.
+    test.eq(df.iloc(g, 5).k1, 1)
+    test.eq(df.iloc(g, 6).k1, "1")
+    // null key component is preserved as null, not the string "null".
+    test.eq(df.iloc(g, 7).k1, null)
+    test.eq(df.iloc(g, 8).k1, "null")
+}
+
+fn test_group_by_all_null_key_column {
+    t := df.from_rows([
+        {"k": null, "v": 10},
+        {"k": null, "v": 20},
+        {"k": null, "v": null},
+    ])
+    g := df.group_by(t, "k", {"v": ["sum", "count", "mean"]})
+    test.eq(df.nrows(g), 1)
+    r := df.iloc(g, 0)
+    test.eq(r.k, null)
+    test.eq(r.v_sum, 30)
+    test.eq(r.v_count, 2)
+    test.approx(r.v_mean, 15.0, 1e-9)
+}
+
+fn test_group_by_empty_frame {
+    t := df.empty(["k", "v"])
+    g := df.group_by(t, ["k"], {"v": ["sum"]})
+    test.eq(df.nrows(g), 0)
+    test.eq(df.columns(g), ["k", "v_sum"])
+}
+
+fn test_group_by_single_row_groups_and_null_aggs {
+    t := df.from_rows([
+        {"k": "a", "v": null},
+        {"k": "b", "v": 7},
+    ])
+    g := df.group_by(t, "k", {"v": ["sum", "mean", "count", "std"]})
+    test.eq(df.nrows(g), 2)
+    ra := df.iloc(g, 0)
+    // All-null group: sum is 0, count is 0, mean/std are null (documented _agg semantics).
+    test.eq(ra.v_sum, 0)
+    test.eq(ra.v_count, 0)
+    test.eq(ra.v_mean, null)
+    test.eq(ra.v_std, null)
+    rb := df.iloc(g, 1)
+    test.eq(rb.v_sum, 7)
+    test.eq(rb.v_count, 1)
+    test.eq(rb.v_std, null)
+}
+
+fn test_group_by_multi_key_errors {
+    t := _sample_df()
+    missing := df.group_by(t, ["dept", "nope"], {"salary": ["sum"]})
+    test.is_false(missing.ok)
+    empty_keys := df.group_by(t, [], {"salary": ["sum"]})
+    test.is_false(empty_keys.ok)
+    bad_op := df.group_by(t, ["dept"], {"salary": ["sum", "median"]})
+    test.is_false(bad_op.ok)
+    bad_col := df.group_by(t, ["dept"], {"nope": ["sum"]})
+    test.is_false(bad_col.ok)
+    bad_spec := df.group_by(t, ["dept"], {"salary": 42})
+    test.is_false(bad_spec.ok)
+}
+
+// === pivot_table ===
+
+fn _pivot_dupes_df {
+    df.from_rows([
+        {"i": "a", "p": "x", "v": 1},
+        {"i": "a", "p": "x", "v": 3},
+        {"i": "a", "p": "x", "v": 2},
+        {"i": "a", "p": "x", "v": 4},
+        {"i": "a", "p": "y", "v": 10},
+        {"i": "b", "p": "x", "v": 5},
+    ])
+}
+
+fn test_pivot_table_aggregates_duplicates {
+    t := _pivot_dupes_df()
+    s := df.pivot_table(t, {"index": "i", "columns": "p", "values": "v", "aggfunc": "sum"})
+    test.eq(df.nrows(s), 2)
+    test.eq(df.columns(s), ["i", "x", "y"])
+    ra := df.iloc(s, 0)
+    test.eq(ra.x, 10)
+    test.eq(ra.y, 10)
+    rb := df.iloc(s, 1)
+    test.eq(rb.x, 5)
+    test.eq(rb.y, null)
+
+    m := df.pivot_table(t, {"index": "i", "columns": "p", "values": "v", "aggfunc": "mean"})
+    test.approx(df.iloc(m, 0).x, 2.5, 1e-9)
+    c := df.pivot_table(t, {"index": "i", "columns": "p", "values": "v", "aggfunc": "count"})
+    test.eq(df.iloc(c, 0).x, 4)
+    test.eq(df.iloc(c, 1).x, 1)
+    mn := df.pivot_table(t, {"index": "i", "columns": "p", "values": "v", "aggfunc": "min"})
+    test.eq(df.iloc(mn, 0).x, 1)
+    mx := df.pivot_table(t, {"index": "i", "columns": "p", "values": "v", "aggfunc": "max"})
+    test.eq(df.iloc(mx, 0).x, 4)
+    // default aggfunc is mean
+    d := df.pivot_table(t, {"index": "i", "columns": "p", "values": "v"})
+    test.approx(df.iloc(d, 0).y, 10.0, 1e-9)
+}
+
+fn test_pivot_table_fill_value {
+    t := _pivot_dupes_df()
+    s := df.pivot_table(t, {"index": "i", "columns": "p", "values": "v", "aggfunc": "sum", "fill_value": 0})
+    test.eq(df.iloc(s, 1).y, 0)
+    // fill_value applies only to missing cells, not to real aggregates
+    test.eq(df.iloc(s, 0).x, 10)
+}
+
+fn test_pivot_table_multi_index {
+    t := df.from_rows([
+        {"i": "a", "q": 1, "p": "x", "v": 5},
+        {"i": "a", "q": 1, "p": "x", "v": 7},
+        {"i": "a", "q": 2, "p": "x", "v": 100},
+    ])
+    s := df.pivot_table(t, {"index": ["i", "q"], "columns": "p", "values": "v", "aggfunc": "sum"})
+    test.eq(df.nrows(s), 2)
+    test.eq(df.columns(s), ["i", "q", "x"])
+    test.eq(df.iloc(s, 0).x, 12)
+    test.eq(df.iloc(s, 1).x, 100)
+}
+
+// Adversarial: index/column values containing separator characters must not
+// collapse into one cell.
+fn test_pivot_table_separator_values_no_collision {
+    t := df.from_rows([
+        {"i": "a|x", "p": "y", "v": 1},
+        {"i": "a", "p": "x|y", "v": 2},
+    ])
+    s := df.pivot_table(t, {"index": "i", "columns": "p", "values": "v", "aggfunc": "sum"})
+    test.eq(df.nrows(s), 2)
+    test.eq(df.columns(s), ["i", "y", "x|y"])
+    test.eq(df.iloc(s, 0).y, 1)
+    row0 := df.iloc(s, 0)
+    row1 := df.iloc(s, 1)
+    test.eq(row0["x|y"], null)
+    test.eq(row1["x|y"], 2)
+}
+
+fn test_pivot_separator_values_no_false_duplicate {
+    t := df.from_rows([
+        {"i": "a\u001fx", "p": "y", "v": 1},
+        {"i": "a", "p": "x\u001fy", "v": 2},
+    ])
+    p := df.pivot(t, "i", "p", "v")
+    test.eq(df.nrows(p), 2)
+}
+
+fn test_pivot_table_empty_and_errors {
+    e := df.empty(["i", "p", "v"])
+    s := df.pivot_table(e, {"index": "i", "columns": "p", "values": "v", "aggfunc": "sum"})
+    test.eq(df.nrows(s), 0)
+    test.eq(df.columns(s), ["i"])
+
+    t := _pivot_dupes_df()
+    test.is_false(df.pivot_table(t, {"index": "i", "columns": "p", "values": "v", "aggfunc": "median"}).ok)
+    test.is_false(df.pivot_table(t, {"index": "i", "columns": "p"}).ok)
+    test.is_false(df.pivot_table(t, {"index": "nope", "columns": "p", "values": "v"}).ok)
+    test.is_false(df.pivot_table(t, {"index": [], "columns": "p", "values": "v"}).ok)
+    test.is_false(df.pivot_table(t, "nope").ok)
+}
+
+// === rank methods ===
+
+fn _rank_ties_df {
+    _columns({"x": [30, 10, 10, 20]})
+}
+
+fn test_rank_methods_on_ties {
+    t := _rank_ties_df()
+    avg := df.rank_opts(t, "x", {"method": "average"})
+    test.eq(df.col(avg, "x_rank"), [4.0, 1.5, 1.5, 3.0])
+    mn := df.rank_opts(t, "x", {"method": "min"})
+    test.eq(df.col(mn, "x_rank"), [4, 1, 1, 3])
+    mx := df.rank_opts(t, "x", {"method": "max"})
+    test.eq(df.col(mx, "x_rank"), [4, 2, 2, 3])
+    dense := df.rank_opts(t, "x", {"method": "dense"})
+    test.eq(df.col(dense, "x_rank"), [3, 1, 1, 2])
+    first := df.rank_opts(t, "x", {"method": "first"})
+    test.eq(df.col(first, "x_rank"), [4, 1, 2, 3])
+}
+
+fn test_rank_descending {
+    t := _rank_ties_df()
+    desc := df.rank_opts(t, "x", {"ascending": false})
+    test.eq(df.col(desc, "x_rank"), [1.0, 3.5, 3.5, 2.0])
+    ddense := df.rank_opts(t, "x", {"method": "dense", "ascending": false})
+    test.eq(df.col(ddense, "x_rank"), [1, 3, 3, 2])
+    dfirst := df.rank_opts(t, "x", {"method": "first", "ascending": false})
+    test.eq(df.col(dfirst, "x_rank"), [1, 3, 4, 2])
+}
+
+fn test_rank_na_options {
+    t := _columns({"x": [30, 10, null, 10]})
+    keep := df.rank_opts(t, "x", null)
+    test.eq(df.col(keep, "x_rank"), [3.0, 1.5, null, 1.5])
+    top := df.rank_opts(t, "x", {"method": "min", "na_option": "top"})
+    test.eq(df.col(top, "x_rank"), [4, 2, 1, 2])
+    bottom := df.rank_opts(t, "x", {"method": "min", "na_option": "bottom"})
+    test.eq(df.col(bottom, "x_rank"), [3, 1, 4, 1])
+    // nulls ranked as a tie group honour method "first" in row order
+    t2 := _columns({"x": [null, 5, null]})
+    top2 := df.rank_opts(t2, "x", {"method": "first", "na_option": "top"})
+    test.eq(df.col(top2, "x_rank"), [1, 3, 2])
+}
+
+fn test_rank_pct {
+    t := _columns({"x": [30, 10, null, 10]})
+    pct := df.rank_opts(t, "x", {"pct": true})
+    test.eq(df.col(pct, "x_rank"), [1.0, 0.5, null, 0.5])
+    ptop := df.rank_opts(t, "x", {"method": "min", "na_option": "top", "pct": true})
+    test.eq(df.col(ptop, "x_rank"), [1.0, 0.5, 0.25, 0.5])
+}
+
+fn test_rank_empty_and_all_null {
+    e := df.empty(["x"])
+    r := df.rank_opts(e, "x", {"method": "dense"})
+    test.eq(df.nrows(r), 0)
+    test.eq(df.columns(r), ["x", "x_rank"])
+
+    allnull := _columns({"x": [null, null]})
+    k := df.rank_opts(allnull, "x", null)
+    test.eq(df.col(k, "x_rank"), [null, null])
+    tp := df.rank_opts(allnull, "x", {"method": "first", "na_option": "top"})
+    test.eq(df.col(tp, "x_rank"), [1, 2])
+    bt := df.rank_opts(allnull, "x", {"method": "min", "na_option": "bottom"})
+    test.eq(df.col(bt, "x_rank"), [1, 1])
+}
+
+fn test_rank_errors {
+    t := _rank_ties_df()
+    test.is_false(df.rank_opts(t, "nope", null).ok)
+    test.is_false(df.rank_opts(t, "x", {"method": "median"}).ok)
+    test.is_false(df.rank_opts(t, "x", {"na_option": "drop"}).ok)
+    test.is_false(df.rank_opts(t, "x", "nope").ok)
+    // default two-arg form still works and matches average/keep
+    d := df.rank(t, "x")
+    test.eq(df.col(d, "x_rank"), [4.0, 1.5, 1.5, 3.0])
+}
+
+// === multi-key merge ===
+
+fn test_merge_multi_key_basic {
+    left := df.from_rows([
+        {"a": 1, "b": "x", "lv": 10},
+        {"a": 1, "b": "y", "lv": 20},
+        {"a": 2, "b": "x", "lv": 30},
+    ])
+    right := df.from_rows([
+        {"a": 1, "b": "x", "rv": 100},
+        {"a": 2, "b": "x", "rv": 200},
+        {"a": 2, "b": "x", "rv": 300},
+    ])
+    m := df.merge(left, right, ["a", "b"], ["a", "b"], "inner")
+    test.eq(df.nrows(m), 3)
+    test.eq(df.col(m, "lv"), [10, 30, 30])
+    test.eq(df.col(m, "rv"), [100, 200, 300])
+    // composite key: (1,"x") must NOT match (1,"y")
+    no_match := df.merge(left, right, ["a", "b"], ["a", "b"], "inner")
+    test.is_true(contains(df.col(no_match, "rv"), 100))
+}
+
+fn test_merge_multi_key_types_and_nulls {
+    left := df.from_rows([
+        {"a": 1, "b": "x", "lv": 1},
+        {"a": "1", "b": "x", "lv": 2},
+        {"a": null, "b": "x", "lv": 3},
+        {"a": "a|b", "b": "c", "lv": 4},
+        {"a": "a", "b": "b|c", "lv": 5},
+    ])
+    right := df.from_rows([
+        {"a": 1, "b": "x", "rv": 10},
+        {"a": "1", "b": "x", "rv": 20},
+        {"a": null, "b": "x", "rv": 30},
+        {"a": "a", "b": "b|c", "rv": 50},
+    ])
+    m := df.merge(left, right, ["a", "b"], ["a", "b"], "inner")
+    test.eq(df.nrows(m), 4)
+    // int 1 joins only to int 1; "1" only to "1"; null matches null (pandas-style)
+    test.eq(df.col(m, "lv"), [1, 2, 3, 5])
+    test.eq(df.col(m, "rv"), [10, 20, 30, 50])
+    // separator-bearing composite keys do not collide: ("a|b","c") is unmatched
+    test.is_true(!contains(df.col(m, "lv"), 4))
+}
+
+fn test_merge_multi_key_outer_and_left {
+    left := df.from_rows([{"a": 1, "b": 1, "lv": 10}, {"a": 2, "b": 2, "lv": 20}])
+    right := df.from_rows([{"a": 1, "b": 1, "rv": 100}, {"a": 3, "b": 3, "rv": 300}])
+    o := df.merge(left, right, ["a", "b"], ["a", "b"], "outer")
+    test.eq(df.nrows(o), 3)
+    test.eq(df.col(o, "lv"), [10, 20, null])
+    test.eq(df.col(o, "rv"), [100, null, 300])
+    // unmatched right row fills the left key columns
+    test.eq(df.iloc(o, 2).a, 3)
+    test.eq(df.iloc(o, 2).b, 3)
+    l := df.merge(left, right, ["a", "b"], ["a", "b"], "left")
+    test.eq(df.nrows(l), 2)
+    test.eq(df.iloc(l, 1).rv, null)
+}
+
+fn test_merge_suffixes {
+    left := df.from_rows([{"id": 1, "value": "L", "uniq_l": 0}])
+    right := df.from_rows([{"id": 1, "value": "R", "uniq_r": 0}])
+    m := df.merge_opts(left, right, "id", "id", "inner", {"suffixes": ["_x", "_y"]})
+    test.eq(df.columns(m), ["id", "value_x", "uniq_l", "value_y", "uniq_r"])
+    test.eq(df.iloc(m, 0).value_x, "L")
+    test.eq(df.iloc(m, 0).value_y, "R")
+    // multi-key + suffixes: key columns are never suffixed
+    left2 := df.from_rows([{"a": 1, "b": 2, "value": "L"}])
+    right2 := df.from_rows([{"a": 1, "b": 2, "value": "R"}])
+    m2 := df.merge_opts(left2, right2, ["a", "b"], ["a", "b"], "inner", {"suffixes": ["_l", "_r"]})
+    test.eq(df.columns(m2), ["a", "b", "value_l", "value_r"])
+    // default (no opts) keeps the historical "_right" behaviour
+    d := df.merge(left, right, "id", "id", "inner")
+    test.eq(df.columns(d), ["id", "value", "uniq_l", "value_right", "uniq_r"])
+}
+
+fn test_merge_multi_key_errors {
+    left := df.from_rows([{"a": 1, "b": 1}])
+    right := df.from_rows([{"a": 1, "b": 1}])
+    test.is_false(df.merge(left, right, ["a", "b"], ["a"], "inner").ok)
+    test.is_false(df.merge(left, right, ["a", "nope"], ["a", "b"], "inner").ok)
+    test.is_false(df.merge(left, right, [], [], "inner").ok)
+    test.is_false(df.merge(left, right, "a", "a", "right").ok)
+    test.is_false(df.merge_opts(left, right, "a", "a", "inner", {"suffixes": ["_x"]}).ok)
+    test.is_false(df.merge_opts(left, right, "a", "a", "inner", "nope").ok)
+}
+
+fn test_merge_empty_frames {
+    left := df.empty(["a", "b", "lv"])
+    right := df.from_rows([{"a": 1, "b": 1, "rv": 100}])
+    inner := df.merge(left, right, ["a", "b"], ["a", "b"], "inner")
+    test.eq(df.nrows(inner), 0)
+    test.eq(df.columns(inner), ["a", "b", "lv", "rv"])
+    outer := df.merge(left, right, ["a", "b"], ["a", "b"], "outer")
+    test.eq(df.nrows(outer), 1)
+    test.eq(df.iloc(outer, 0).lv, null)
+    test.eq(df.iloc(outer, 0).rv, 100)
+    both := df.merge(left, df.empty(["a", "b", "rv"]), ["a", "b"], ["a", "b"], "outer")
+    test.eq(df.nrows(both), 0)
+}

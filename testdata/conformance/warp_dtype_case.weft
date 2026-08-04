@@ -1,7 +1,15 @@
 use "../../packages/warp/lib.weft" as warp
 use json
 
-// Smoke: dtype promotion table samples matching NumPy common scalar rules.
+// Exhaustive dtype promotion differential vs np.promote_types (NumPy 2.x):
+// every ordered pair of the 11 supported dtypes, plus representative
+// range-checked casting cases (overflow -> Err, negative -> unsigned -> Err,
+// float -> int truncation toward zero, bool mixing).
+fn _cast_ok(data, dtype_name) {
+    r := warp.array_typed(data, [len(data)], dtype_name)
+    if is_err(r) { false } else { true }
+}
+
 fn main -> Result {
     bools := warp.array_typed([true, false], [2], "bool")
     ints := warp.array_typed([1, 2], [2], "int64")
@@ -17,6 +25,26 @@ fn main -> Result {
     f32_f64 := warp.add(f32, f64)
     bool_f32 := warp.add(bools, f32_half)
 
+    // Full 11x11 promotion matrix: add of two 1-element typed arrays exposes
+    // the promoted result dtype through warp.dtype.
+    dtypes := ["bool", "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "float32", "float64"]
+    let mut promoted = {}
+    for a in dtypes {
+        for b in dtypes {
+            xa := warp.array_typed([1], [1], a)
+            xb := warp.array_typed([1], [1], b)
+            s := warp.add(xa, xb)
+            if is_err(s) {
+                promoted[a + "+" + b] = "error"
+            } else {
+                promoted[a + "+" + b] = warp.dtype(s)
+            }
+        }
+    }
+
+    trunc := warp.array_typed([2.7, -2.7], [2], "int8")
+    bool_cast := warp.array_typed([0, 2], [2], "bool")
+
     say(json.stringify({
         "bool_plus_int64_dtype": warp.dtype(bool_int),
         "bool_plus_int64": bool_int.data,
@@ -29,5 +57,18 @@ fn main -> Result {
         "int8": i8.data,
         "uint16": u16.data,
         "invalid_int8_ok": invalid_i8.ok,
+        "promoted": promoted,
+        "uint8_256_ok": _cast_ok([256], "uint8"),
+        "uint8_neg_ok": _cast_ok([-1], "uint8"),
+        "int16_underflow_ok": _cast_ok([-32769], "int16"),
+        "uint16_65536_ok": _cast_ok([65536], "uint16"),
+        "int32_over_ok": _cast_ok([2147483648], "int32"),
+        "uint32_over_ok": _cast_ok([4294967296], "uint32"),
+        "uint64_neg_ok": _cast_ok([-1], "uint64"),
+        "int64_huge_float_ok": _cast_ok([1.0e30], "int64"),
+        "float_to_int8_trunc": trunc.data,
+        "float_to_int8_trunc_dtype": warp.dtype(trunc),
+        "bool_cast": bool_cast.data,
+        "bool_cast_dtype": warp.dtype(bool_cast),
     }))
 }

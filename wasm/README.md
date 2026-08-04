@@ -13,7 +13,7 @@ make wasm-serve    # http://127.0.0.1:8765/playground.html
 
 The generated binary is intentionally ignored by Git. Its size depends on the Go toolchain; the current Go 1.26 build is approximately 18 MB. `wasm_exec.js` must come from the same Go toolchain as `weft.wasm`.
 
-The Playwright smoke test serves the generated runtime over HTTP and runs browser API checks in both Chromium and Firefox. The generated Wasm binary is rebuilt before the test and is intentionally not committed.
+The Playwright smoke test serves the generated runtime over HTTP and runs browser API checks in both Chromium and Firefox. A second suite, `playwright_adversarial_test.js`, runs adversarial checks against real local HTTP endpoints: deceptive and malformed `Content-Length` headers (via raw sockets), oversized declared lengths, gzip expansion, chunked streaming, redirects into over-limit bodies, request-body rejection before any bytes reach the server, repeated timeouts and their connection cleanup, repeated whole-program executions, and virtual-filesystem quota enforcement and reclamation. Both run through `npm run test:browser`. The generated Wasm binary is rebuilt before the test and is intentionally not committed.
 
 ## JavaScript API
 
@@ -36,7 +36,7 @@ The global functions `runWeft(code, timeoutMs?)` and `runWeftAsync(code, timeout
 Implemented browser capabilities:
 
 - language core, type annotations, bytecode validation, lists/maps, JSON, strings, math, time, regular expressions, and pure standard-library packages;
-- `http.get`, `post`, `put`, `patch`, `delete`, `request`, `fetch`, and `get_json` through the browser Fetch API when called from `runAsync()`; normal browser CORS and CSP rules apply, and request/response bodies are capped at 32 MiB. Body-bearing responses without a readable stream are rejected; `Content-Length` is never trusted as the memory bound;
+- `http.get`, `post`, `put`, `patch`, `delete`, `request`, `fetch`, and `get_json` through the browser Fetch API when called from `runAsync()`; normal browser CORS and CSP rules apply. Request and response bodies are each capped at 32 MiB: an oversized request body is rejected before anything is sent, an over-limit declared `Content-Length` is rejected before the body is read, and the response stream reader enforces the same limit on decoded bytes as they arrive (gzip expansion counts). `Content-Length` is never trusted as the memory bound, and body-bearing responses without a readable stream are rejected. Per-request deadlines come from `timeout_ms` (milliseconds) or `timeout` (seconds) in the opts map; expiry aborts the fetch and returns a deadline-exceeded `Err`;
 - `fs` through a process-local virtual filesystem, including read/write/list/stat/walk/temp-file operations. Paths are confined to the virtual root and capped at 4096 characters; storage is capped at 16 MiB per file, 64 MiB total, 10,000 files, 5,000 directories, and 15,000 combined entries. Files are not persisted to the user’s disk;
 - browser-safe `os` environment and path helpers. Browser process identity is represented by neutral values.
 

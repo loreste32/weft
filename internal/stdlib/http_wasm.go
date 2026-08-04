@@ -274,7 +274,13 @@ func browserFetch(ctx context.Context, method, url, body string, headers map[str
 		}
 		message := "fetch failed"
 		if len(args) > 0 && args[0].Truthy() {
-			message = args[0].String()
+			if args[0].Type() == js.TypeString {
+				message = args[0].String()
+			} else if args[0].Type() == js.TypeObject || args[0].Type() == js.TypeFunction {
+				if detail := args[0].Get("message"); detail.Type() == js.TypeString && detail.String() != "" {
+					message = detail.String()
+				}
+			}
 		}
 		send(browserHTTPResult{err: fmt.Errorf("%s", message)})
 		return nil

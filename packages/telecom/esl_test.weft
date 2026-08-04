@@ -64,3 +64,75 @@ fn test_connect_rejects_auth_failure() {
     server.await()?
     Ok(null)
 }
+
+// ──────────────────────────────────────────────
+// Server-initiated close (coordinator dead path)
+// ──────────────────────────────────────────────
+
+fn _mock_accept_authed(listener) -> Result[any] {
+    conn := listener.accept()?
+    conn.write("Content-Type: auth/request\n\n")?
+    conn.read()?
+    conn.write("Content-Type: command/reply\nReply-Text: +OK accepted\n\n")?
+    Ok(conn)
+}
+
+fn mock_close_during_command_server(listener) -> Result[any] {
+    conn := _mock_accept_authed(listener)?
+    conn.read()? // the pending command
+    conn.close()?
+    listener.close()?
+    Ok(null)
+}
+
+fn test_command_fails_when_server_closes() {
+    listener := socket.listen("tcp", "127.0.0.1:0")?
+    parts := str.split(listener.addr, ":")
+    port := parts[len(parts) - 1]
+    server := spawn(mock_close_during_command_server, listener)
+    conn_result := esl.connect("127.0.0.1", port, "pw")
+    test.ok(conn_result)
+    conn := conn_result.value
+
+    pending := esl.api(conn, "freeze")
+    test.is_false(pending.ok)
+
+    after := esl.api(conn, "after-close")
+    test.is_false(after.ok)
+
+    evt := esl.recv_event(conn)
+    test.is_false(evt.ok)
+    test.ok(server.await())
+    Ok(null)
+}
+
+fn mock_close_during_event_wait_server(listener) -> Result[any] {
+    conn := _mock_accept_authed(listener)?
+    time.sleep(0.2) // let the client block in recv_event
+    conn.close()?
+    listener.close()?
+    Ok(null)
+}
+
+fn test_event_wait_fails_when_server_closes() {
+    listener := socket.listen("tcp", "127.0.0.1:0")?
+    parts := str.split(listener.addr, ":")
+    port := parts[len(parts) - 1]
+    server := spawn(mock_close_during_event_wait_server, listener)
+    conn_result := esl.connect("127.0.0.1", port, "pw")
+    test.ok(conn_result)
+    conn := conn_result.value
+
+    blocked := esl.recv_event(conn)
+    test.is_false(blocked.ok)
+
+    // A dead connection must fail fast, not run out the timeout clock.
+    timed := esl.recv_event_timeout(conn, 5)
+    test.is_false(timed.ok)
+    test.is_false(str.contains("" + timed.error, "timeout"))
+
+    cmd := esl.api(conn, "after-close")
+    test.is_false(cmd.ok)
+    test.ok(server.await())
+    Ok(null)
+}

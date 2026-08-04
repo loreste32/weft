@@ -70,7 +70,7 @@ pub fn sequential(modules) -> Result[any] {
     for module in modules {
         if module.kind == "linear" {
             for parameter in module.parameters { parameters = push(parameters, parameter) }
-        } else if module.kind == "relu" {
+        } else if _is_activation(module) {
             // activation — no parameters
         } else {
             return Err("ml.sequential received an unsupported module kind")
@@ -85,6 +85,23 @@ pub fn sequential(modules) -> Result[any] {
 
 pub fn relu_module() -> Result[any] {
     Ok({"kind": "relu", "parameters": []})
+}
+
+pub fn sigmoid_module() -> Result[any] {
+    Ok({"kind": "sigmoid", "parameters": []})
+}
+
+pub fn tanh_module() -> Result[any] {
+    Ok({"kind": "tanh", "parameters": []})
+}
+
+pub fn gelu_module() -> Result[any] {
+    Ok({"kind": "gelu", "parameters": []})
+}
+
+// axis is optional; defaults to the last axis (see ml.softmax).
+pub fn softmax_module(axis) -> Result[any] {
+    Ok({"kind": "softmax", "axis": axis, "parameters": []})
 }
 
 pub fn module_forward(module, input) -> Result[any] {
@@ -108,6 +125,17 @@ pub fn module_forward(module, input) -> Result[any] {
         }
         return ag.relu(node)
     }
+    if module.kind == "sigmoid" || module.kind == "tanh" || module.kind == "gelu" || module.kind == "softmax" {
+        node := if _kind(input) == "map" && contains(keys(input), "grad") {
+            input
+        } else {
+            ag.constant(input)?
+        }
+        if module.kind == "sigmoid" { return ag.sigmoid(node) }
+        if module.kind == "tanh" { return ag.tanh(node) }
+        if module.kind == "gelu" { return ag.gelu(node) }
+        return ag.softmax(node, module.axis)
+    }
     if module.kind == "sequential" {
         let mut value = input
         for child in module.modules {
@@ -121,7 +149,7 @@ pub fn module_forward(module, input) -> Result[any] {
 pub fn module_parameters(module) -> Result[any] {
     if module == null || _kind(module) != "map" || !_parameter_list(module.parameters) {
         // Empty parameter lists are valid for pure activations.
-        if module != null && _kind(module) == "map" && module.kind == "relu" {
+        if module != null && _kind(module) == "map" && _is_activation(module) {
             return Ok([])
         }
         if module != null && _kind(module) == "map" && module.kind == "sequential" && _kind(module.parameters) == "list" {
@@ -197,6 +225,12 @@ pub fn load_checkpoint(path) -> Result[any] {
 
 fn _is_linear(module) {
     module != null && _kind(module) == "map" && module.kind == "linear" && _parameter_list(module.parameters)
+}
+
+fn _is_activation(module) {
+    if module == null || _kind(module) != "map" { return false }
+    kind := module.kind
+    kind == "relu" || kind == "sigmoid" || kind == "tanh" || kind == "gelu" || kind == "softmax"
 }
 
 fn _parameter_list(parameters) {

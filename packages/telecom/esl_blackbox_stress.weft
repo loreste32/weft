@@ -1,0 +1,59 @@
+use "./esl.weft" as esl
+
+// Black-box client for command concurrency stress. Phase 1: 10 concurrent
+// commands, each must receive its own reply. Phase 2: flood 260 commands at a
+// server that never replies; the 256-entry pending-request cap must reject
+// the overflow explicitly, and the surviving 256 must fail cleanly when the
+// server closes the connection.
+
+fn stress_command(conn, name) -> Result[any] {
+    esl.api(conn, name)
+}
+
+fn main -> Result[any] {
+    port := env.get("ESL_TEST_PORT", "")
+    conn := esl.connect("127.0.0.1", port, "pw")?
+
+    let mut tasks = []
+    let mut i = 0
+    while i < 10 {
+        name := "stress-0$i"
+        tasks = push(tasks, {"name": name, "task": spawn(stress_command, conn, name)})
+        i = i + 1
+    }
+    i = 0
+    while i < len(tasks) {
+        item := tasks[i]
+        reply := item.task.await()?
+        ensure(reply == "${item.name}-ok", "stress command ${item.name} got wrong reply: $reply")?
+        i = i + 1
+    }
+    say("STRESS-OK: 10 concurrent commands answered")
+
+    let mut flood = []
+    i = 0
+    while i < 260 {
+        flood = push(flood, spawn(stress_command, conn, "flood-$i"))
+        i = i + 1
+    }
+    let mut full = 0
+    let mut closed = 0
+    let mut succeeded = 0
+    i = 0
+    while i < len(flood) {
+        r := flood[i].await()
+        if r.ok {
+            succeeded = succeeded + 1
+        } else if str.contains("" + r.error, "too many pending") {
+            full = full + 1
+        } else {
+            closed = closed + 1
+        }
+        i = i + 1
+    }
+    ensure(succeeded == 0, "flood commands must not succeed: $succeeded")?
+    ensure(full == 4, "expected 4 queue-full errors, got $full")?
+    ensure(closed == 256, "expected 256 connection errors, got $closed")?
+    say("FLOOD-OK: full=$full closed=$closed")
+    Ok(null)
+}

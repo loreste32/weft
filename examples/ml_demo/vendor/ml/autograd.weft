@@ -1,6 +1,7 @@
 use json
 use str
 use warp
+use "./device.weft" as dev
 
 // Small reverse-mode autodiff tape for scalar model expressions.
 // Nodes are ordinary Weft maps so the API remains portable and inspectable.
@@ -17,13 +18,15 @@ pub fn constant(value) -> Result[any] {
 }
 
 pub fn value(node) -> Result[any] {
-    if !_is_node(node) { return Err("ml.value expects an autograd node") }
-    node.value
+    n := _unwrap_device(node)
+    if !_is_node(n) { return Err("ml.value expects an autograd node") }
+    n.value
 }
 
 pub fn grad(node) -> Result[any] {
-    if !_is_node(node) { return Err("ml.grad expects an autograd node") }
-    node.grad
+    n := _unwrap_device(node)
+    if !_is_node(n) { return Err("ml.grad expects an autograd node") }
+    n.grad
 }
 
 pub fn zero_grad(node) -> Result[any] {
@@ -146,6 +149,61 @@ pub fn matmul(left, right) -> Result[any] {
         return Err("ml.matmul autodiff currently supports two-dimensional arrays")
     }
     _binary(left, right, "matmul", fn(a, b) { _value_matmul(a, b) })
+}
+
+pub fn sigmoid(node) -> Result[any] {
+    _unary(node, "sigmoid", fn(a) { _value_sigmoid(a) }, null)
+}
+
+pub fn tanh(node) -> Result[any] {
+    _unary(node, "tanh", fn(a) { _value_tanh(a) }, null)
+}
+
+// Gaussian-error-linear-unit, tanh approximation (Hendrycks & Gimpel):
+// gelu(x) = 0.5 x (1 + tanh(sqrt(2/pi) (x + 0.044715 x^3))).
+pub fn gelu(node) -> Result[any] {
+    _unary(node, "gelu", fn(a) { _value_gelu(a) }, null)
+}
+
+// Axis-aware softmax over a warp array with max-subtraction stabilization.
+// axis defaults to the last axis; negative axes count from the end.
+pub fn softmax(node, axis) -> Result[any] {
+    x := _as_node(node)
+    if x == null || !_is_array(x.value) { return Err("ml.softmax expects a warp array") }
+    ax := _softmax_axis(x.value, axis)
+    if ax == null { return Err("ml.softmax axis out of range") }
+    _unary(node, "softmax", fn(a) { _value_softmax(a, ax) }, ax)
+}
+
+// Elementwise Huber loss between two values; reduce with mean/sum. The
+// quadratic/linear kink sits at |pred - target| = delta (default 1.0).
+pub fn huber(left, right, delta) -> Result[any] {
+    d := if delta == null { 1.0 } else { delta }
+    if !_number(d) || d <= 0 { return Err("ml.huber delta must be finite and positive") }
+    x := _as_node(left)
+    y := _as_node(right)
+    if x == null || y == null { return Err("ml.huber expects numeric scalars or nodes") }
+    result := _value_huber(x.value, y.value, d)
+    if _failed(result) { return result }
+    Ok(_node(result, x.requires_grad || y.requires_grad, [x, y], "huber", d))
+}
+
+// Mean softmax cross-entropy over a 2-D logits array [batch, classes] and a
+// list of integer class targets. The log-softmax is computed with the
+// log-sum-exp trick (max subtraction), so extreme logits cannot overflow.
+pub fn cross_entropy(node, targets) -> Result[any] {
+    x := _as_node(node)
+    if x == null || !_is_array(x.value) || len(warp.shape(x.value)) != 2 {
+        return Err("ml.cross_entropy expects 2-D logits [batch, classes]")
+    }
+    shape := warp.shape(x.value)
+    if shape[0] == 0 { return Err("ml.cross_entropy expects a non-empty batch") }
+    if !_class_targets(targets, shape[0], shape[1]) {
+        return Err("ml.cross_entropy expects one in-range integer class index per row")
+    }
+    result := _value_cross_entropy(x.value, targets)
+    if _failed(result) { return result }
+    Ok(_node(result, x.requires_grad, [x], "cross_entropy", targets))
 }
 
 // Optimizer primitives operate on variable nodes in place. The node graph
@@ -283,6 +341,30 @@ fn _propagate(node) {
         right := parents[1].value
         _add_grad(parents[0], _value_matmul(g, warp.T(right)))
         _add_grad(parents[1], _value_matmul(warp.T(left), g))
+    } else if node.op == "sigmoid" {
+        s := node.value
+        _add_grad(parents[0], _reduce_to_parent(_value_mul(g, _value_mul(s, _value_sub(1.0, s))), parents[0].value))
+    } else if node.op == "tanh" {
+        t := node.value
+        _add_grad(parents[0], _reduce_to_parent(_value_mul(g, _value_sub(1.0, _value_mul(t, t))), parents[0].value))
+    } else if node.op == "gelu" {
+        _add_grad(parents[0], _reduce_to_parent(_value_mul(g, _gelu_derivative(parents[0].value)), parents[0].value))
+    } else if node.op == "softmax" {
+        // Jacobian-vector product: dx = s * (g - sum(g * s, axis, keepdims)).
+        s := node.value
+        dot := warp.sum_axis_opts(warp.mul(g, s), node.aux, true)
+        _add_grad(parents[0], warp.mul(s, warp.sub(g, dot)))
+    } else if node.op == "huber" {
+        // d/dpred = clip(pred - target, -delta, delta); d/dtarget = -that.
+        delta := node.aux
+        residual := _value_sub(parents[0].value, parents[1].value)
+        clipped := _value_clip(residual, -delta, delta)
+        _add_grad(parents[0], _reduce_to_parent(_value_mul(g, clipped), parents[0].value))
+        _add_grad(parents[1], _reduce_to_parent(_value_mul(g, _value_neg(clipped)), parents[1].value))
+    } else if node.op == "cross_entropy" {
+        // dL/dlogits = (softmax - onehot) / batch.
+        probs := _value_softmax(parents[0].value, 1)
+        _add_grad(parents[0], _value_mul(g, _ce_grad(probs, node.aux, warp.shape(parents[0].value))))
     }
 }
 
@@ -337,6 +419,9 @@ fn _propagate_graph(node) -> Result[any] {
 fn _scalar_op_graph(node) {
     if !_number(node.value) { return false }
     if node.op == "matmul" { return false }
+    // Newer ops keep numeric VJPs under create_graph (array VJPs already do).
+    if node.op == "sigmoid" || node.op == "tanh" || node.op == "gelu" ||
+        node.op == "softmax" || node.op == "huber" || node.op == "cross_entropy" { return false }
     for parent in node.parents {
         if !_number(parent.value) { return false }
     }
@@ -526,17 +611,165 @@ fn _value_sum(a) {
 }
 
 fn _value_numel(a) {
-    if _is_array(a) { return warp.size(a) }
+    if _is_array(a) { return warp.size(a) + 0.0 }
     1.0
 }
 
 fn _value_matmul(a, b) {
-    if _is_array(a) || _is_array(b) { return warp.matmul(a, b) }
+    if _is_array(a) || _is_array(b) {
+        dispatched := dev.dispatch_matmul(a, b)
+        if is_err(dispatched) { return dispatched }
+        if dispatched.value != null && dispatched.value.dispatched == true {
+            return dispatched.value.value
+        }
+        return warp.matmul(a, b)
+    }
     a * b
+}
+
+fn _value_sigmoid(a) {
+    if _is_array(a) {
+        // Both branches are evaluated eagerly; the overflow-prone lane of each
+        // branch is discarded by where, so extreme values stay finite.
+        positive := warp.div(1.0, warp.add(1.0, warp.exp(warp.neg(a))))
+        e := warp.exp(a)
+        return warp.where(warp.greater_equal(a, 0.0), positive, warp.div(e, warp.add(1.0, e)))
+    }
+    if a >= 0 { return 1.0 / (1.0 + math.exp(-a)) }
+    e := math.exp(a)
+    return e / (1.0 + e)
+}
+
+fn _value_tanh(a) {
+    if _is_array(a) { return warp.tanh(a) }
+    _scalar_tanh(a)
+}
+
+fn _scalar_tanh(x) {
+    if x > 20.0 { return 1.0 }
+    if x < -20.0 { return -1.0 }
+    e := math.exp(2.0 * x)
+    return (e - 1.0) / (e + 1.0)
+}
+
+fn _value_gelu(a) {
+    if _is_array(a) {
+        return warp.mul(warp.mul(0.5, a), warp.add(1.0, warp.tanh(_gelu_inner(a))))
+    }
+    return 0.5 * a * (1.0 + _scalar_tanh(_gelu_inner_scalar(a)))
+}
+
+fn _gelu_derivative(x) {
+    // d/dx [0.5 x (1 + tanh u)], u = sqrt(2/pi) (x + 0.044715 x^3),
+    // u' = sqrt(2/pi) (1 + 0.134145 x^2).
+    if _is_array(x) {
+        t := warp.tanh(_gelu_inner(x))
+        sech2 := warp.sub(1.0, warp.mul(t, t))
+        du := warp.mul(0.7978845608028654, warp.add(1.0, warp.mul(0.134145, warp.pow_(x, 2.0))))
+        return warp.add(warp.mul(0.5, warp.add(1.0, t)), warp.mul(warp.mul(0.5, x), warp.mul(sech2, du)))
+    }
+    t := _scalar_tanh(_gelu_inner_scalar(x))
+    0.5 * (1.0 + t) + 0.5 * x * (1.0 - t * t) * 0.7978845608028654 * (1.0 + 0.134145 * x * x)
+}
+
+fn _gelu_inner(a) {
+    warp.mul(0.7978845608028654, warp.add(a, warp.mul(0.044715, warp.pow_(a, 3.0))))
+}
+
+fn _gelu_inner_scalar(x) {
+    0.7978845608028654 * (x + 0.044715 * x * x * x)
+}
+
+fn _value_softmax(a, axis) {
+    shifted := warp.sub(a, warp.max_axis_opts(a, axis, true))
+    e := warp.exp(shifted)
+    warp.div(e, warp.sum_axis_opts(e, axis, true))
+}
+
+fn _value_huber(a, b, delta) {
+    residual := _value_sub(a, b)
+    if _is_array(residual) {
+        magnitude := warp.abs_(residual)
+        quadratic := warp.mul(0.5, warp.mul(residual, residual))
+        linear := warp.mul(delta, warp.sub(magnitude, 0.5 * delta))
+        return warp.where(warp.less_equal(magnitude, delta), quadratic, linear)
+    }
+    magnitude := math.abs(residual)
+    if magnitude <= delta { return 0.5 * residual * residual }
+    return delta * (magnitude - 0.5 * delta)
+}
+
+fn _value_cross_entropy(logits, targets) {
+    shape := warp.shape(logits)
+    n := shape[0]
+    classes := shape[1]
+    // log-softmax row i: z - m - log(sum(exp(z - m))); loss averages the
+    // negative target log-probability: log(s) + m - z_target.
+    m := warp.max_axis_opts(logits, 1, true)
+    s := warp.sum_axis_opts(warp.exp(warp.sub(logits, m)), 1, true)
+    flat := warp.to_list(logits)
+    flat_m := warp.to_list(m)
+    flat_s := warp.to_list(s)
+    let mut total = 0.0
+    let mut i = 0
+    while i < n {
+        total = total + math.log(flat_s[i]) + flat_m[i] - flat[i * classes + targets[i]]
+        i = i + 1
+    }
+    total / n
+}
+
+fn _ce_grad(probs, targets, shape) {
+    n := shape[0]
+    classes := shape[1]
+    let mut data = []
+    let mut i = 0
+    while i < n {
+        let mut j = 0
+        while j < classes {
+            data = push(data, if j == targets[i] { 1.0 } else { 0.0 })
+            j = j + 1
+        }
+        i = i + 1
+    }
+    warp.div(warp.sub(probs, warp.array(data, shape)), n + 0.0)
+}
+
+fn _value_clip(a, lo, hi) {
+    if _is_array(a) { return warp.clip(a, lo, hi) }
+    math.clamp(a, lo, hi)
+}
+
+fn _softmax_axis(value, axis) {
+    ndim := len(warp.shape(value))
+    let mut ax = if axis == null { ndim - 1 } else { axis }
+    if _kind(ax) != "int" { return null }
+    if ax < 0 { ax = ax + ndim }
+    if ax < 0 || ax >= ndim { return null }
+    ax
+}
+
+fn _class_targets(targets, n, classes) {
+    if _kind(targets) != "list" || len(targets) != n { return false }
+    for target in targets {
+        if _kind(target) != "int" || target < 0 || target >= classes { return false }
+    }
+    true
 }
 
 fn _failed(value) {
     is_err(value)
+}
+
+// to_device wraps non-CPU placements in {"value", "fallback", "requested"};
+// value/grad look through that wrapper so placed nodes stay usable.
+fn _unwrap_device(value) {
+    if value == null || _kind(value) != "map" { return value }
+    if contains(keys(value), "fallback") && contains(keys(value), "requested") &&
+        contains(keys(value), "value") {
+        return value.value
+    }
+    value
 }
 
 fn _is_node(value) {

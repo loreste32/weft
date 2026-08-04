@@ -88,8 +88,13 @@ inline bool parse_matrix(const char* json, const char* data_key,
   return true;
 }
 
+// matrix_json renders one matmul result with mandatory execution reporting.
+// Silent fallback is not allowed: a provider that computed on the host for a
+// device request must pass device "cpu" and fallback true. The host rejects
+// results whose device contradicts requested_device without fallback.
 inline std::string matrix_json(const std::vector<float>& values,
-                               size_t rows, size_t cols) {
+                               size_t rows, size_t cols,
+                               const std::string& device, bool fallback) {
   std::ostringstream output;
   output.precision(9);
   output << "{\"data\":[";
@@ -97,8 +102,19 @@ inline std::string matrix_json(const std::vector<float>& values,
     if (i != 0) output << ',';
     output << values[i];
   }
-  output << "],\"shape\":[" << rows << ',' << cols << "]}";
+  output << "],\"shape\":[" << rows << ',' << cols << "],\"device\":\"" << device
+         << "\",\"requested_device\":\"" << device << "\",\"fallback\":"
+         << (fallback ? "true" : "false") << '}';
   return output.str();
+}
+
+// exec_info_json renders the weft_accel_exec_info document for one finished
+// operation. status is "device" or "fallback" ("unavailable" is produced by
+// the host, not by a successful provider run).
+inline std::string exec_info_json(const std::string& device, bool fallback) {
+  return std::string("{\"device\":\"") + device + "\",\"requested_device\":\"" + device +
+         "\",\"fallback\":" + (fallback ? "true" : "false") + ",\"status\":\"" +
+         (fallback ? "fallback" : "device") + "\"}";
 }
 
 inline char* copy_output(const std::string& value) {

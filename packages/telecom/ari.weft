@@ -1,9 +1,9 @@
 pub fn connect(opts) {
-    host := env.get("ASTERISK_HOST", "127.0.0.1")
-    port := env.get("ASTERISK_ARI_PORT", "8088")
-    username := env.get("ASTERISK_ARI_USER", "asterisk")
-    password := env.get("ASTERISK_ARI_PASSWORD", "asterisk")
-    app := "weft"
+    let mut host = env.get("ASTERISK_HOST", "127.0.0.1")
+    let mut port = env.get("ASTERISK_ARI_PORT", "8088")
+    let mut username = env.get("ASTERISK_ARI_USER", "asterisk")
+    let mut password = env.get("ASTERISK_ARI_PASSWORD", "asterisk")
+    let mut app = "weft"
     if opts != null {
         if opts.host != null {
             host = opts.host
@@ -37,7 +37,8 @@ fn req(client, method, path, body) -> Result[any] {
         "Authorization": "Basic ${client.auth}",
         "Content-Type": "application/json",
     }
-    resp := http.fetch(url, {
+    resp := http.fetch({
+        "url": url,
         "method": method,
         "headers": headers,
         "body": if body != null { json.stringify(body) } else { null },
@@ -67,17 +68,17 @@ pub fn channel(client, id) -> Result[any] { get(client, "/channels/$id") }
 pub fn originate(client, endpoint, opts) -> Result[any] {
     body := {"endpoint": endpoint, "app": client.app}
     if opts != null {
-        if opts.caller_id != null {
-            body.callerId = opts.caller_id
+        if opts["caller_id"] != null {
+            body.callerId = opts["caller_id"]
         }
-        if opts.context != null {
-            body.context = opts.context
+        if opts["context"] != null {
+            body.context = opts["context"]
         }
-        if opts.extension != null {
-            body.extension = opts.extension
+        if opts["extension"] != null {
+            body.extension = opts["extension"]
         }
-        if opts.variables != null {
-            body.variables = opts.variables
+        if opts["variables"] != null {
+            body.variables = opts["variables"]
         }
     }
     post(client, "/channels", body)
@@ -88,7 +89,7 @@ pub fn answer_channel(client, id) -> Result[any] { post(client, "/channels/$id/a
 
 
 pub fn hangup_channel(client, id, reason) -> Result[any] {
-    path := "/channels/$id"
+    let mut path = "/channels/$id"
     if reason != null {
         path = "$path?reason=$reason"
     }
@@ -97,7 +98,7 @@ pub fn hangup_channel(client, id, reason) -> Result[any] {
 
 
 pub fn play_channel(client, id, media, playback_id) -> Result[any] {
-    path := "/channels/$id/play?media=$media"
+    let mut path = "/channels/$id/play?media=$media"
     if playback_id != null {
         path = "$path&playbackId=$playback_id"
     }
@@ -106,22 +107,27 @@ pub fn play_channel(client, id, media, playback_id) -> Result[any] {
 
 
 pub fn record_channel(client, id, name, opts) -> Result[any] {
-    path := "/channels/$id/record?name=$name"
+    let mut path = "/channels/$id/record?name=$name"
     if opts != null {
-        if opts.format != null {
-            path = "$path&format=${opts.format}"
+        if opts["format"] != null {
+            v := opts["format"]
+            path = "$path&format=$v"
         }
-        if opts.max_duration != null {
-            path = "$path&maxDurationSeconds=${opts.max_duration}"
+        if opts["max_duration"] != null {
+            v := opts["max_duration"]
+            path = "$path&maxDurationSeconds=$v"
         }
-        if opts.max_silence != null {
-            path = "$path&maxSilenceSeconds=${opts.max_silence}"
+        if opts["max_silence"] != null {
+            v := opts["max_silence"]
+            path = "$path&maxSilenceSeconds=$v"
         }
-        if opts.beep != null {
-            path = "$path&beep=${opts.beep}"
+        if opts["beep"] != null {
+            v := opts["beep"]
+            path = "$path&beep=$v"
         }
-        if opts.terminate_on != null {
-            path = "$path&terminateOn=${opts.terminate_on}"
+        if opts["terminate_on"] != null {
+            v := opts["terminate_on"]
+            path = "$path&terminateOn=$v"
         }
     }
     post(client, path, null)
@@ -156,10 +162,11 @@ pub fn get_variable(client, id, name) -> Result[any] { get(client, "/channels/$i
 
 
 pub fn snoop(client, id, app_name, opts) -> Result[any] {
-    path := "/channels/$id/snoop?app=$app_name&spy=both"
+    let mut path = "/channels/$id/snoop?app=$app_name&spy=both"
     if opts != null {
-        if opts.whisper != null {
-            path = "$path&whisper=${opts.whisper}"
+        if opts["whisper"] != null {
+            v := opts["whisper"]
+            path = "$path&whisper=$v"
         }
     }
     post(client, path, null)
@@ -176,7 +183,7 @@ pub fn bridges(client) -> Result[any] { get(client, "/bridges") }
 
 
 pub fn add_to_bridge(client, bridge_id, channel_ids) -> Result[any] {
-    ids := channel_ids
+    let mut ids = channel_ids
     if len(channel_ids) > 0 && channel_ids[0] != null {
         ids = str.join(channel_ids, ",")
     }
@@ -224,12 +231,16 @@ pub fn listen(client, handler) -> Result[any] {
     say("ARI connecting to ${client.ws_url}")
     ws_conn := ws.connect(client.ws_url)?
     while true {
-        msg := ws_conn.read()?
-        if msg == null {
+        msg := ws_conn.recv()
+        if !msg.ok {
+            // Connection closed or errored — end the loop instead of hanging.
             break
         }
-        event := json.parse(msg)?
-        handler(event)
+        event := json.parse(msg.value)
+        if event.ok {
+            handler(event.value)
+        }
+        // Malformed event JSON is skipped so one bad frame cannot kill the loop.
     }
     Ok(unit)
 }

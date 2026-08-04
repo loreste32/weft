@@ -57,9 +57,15 @@ func TestExampleBinaryTensor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := plugin.RunTensor("tensor_matmul", left, right)
+	result, info, err := plugin.RunTensor("tensor_matmul", left, right)
 	if err != nil {
 		t.Fatal("tensor matmul: ", err)
+	}
+	// The reference provider exports weft_accel_exec_info: reporting is
+	// mandatory and must describe the CPU execution truthfully.
+	if !info.Reported || info.Status != StatusDevice || info.Device != "cpu" ||
+		info.RequestedDevice != "cpu" || info.Fallback {
+		t.Fatalf("reference tensor_matmul exec info = %+v", info)
 	}
 	values, err := result.Float64Values()
 	if err != nil {

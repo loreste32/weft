@@ -35,10 +35,21 @@ Optional env for the report scripts:
 
 ## Fallback policy
 
-Silent fallback is **not allowed**.
+Silent fallback is **not allowed** — and it is enforced, not just documented.
 
 1. A provider must report whether an operation ran on the **requested device**,
-   **fell back to CPU**, or is **unavailable**.
+   **fell back to CPU**, or is **unavailable**. Reporting is wired end-to-end:
+   - JSON results carry `device`, `requested_device`, and `fallback` fields.
+   - The binary tensor path carries the same report through the additive ABI
+     v1 export `weft_accel_exec_info` (see
+     [`native/accelerator/README.md`](../native/accelerator/README.md)).
+   - The host parses both into a typed `accelerator.ExecInfo` with status
+     `device` / `fallback` / `unavailable` / `unreported` and validates
+     honesty: a report claiming a device other than the requested one with
+     `fallback: false` is rejected as an error.
+   - Weft code reads the report via `accelerator.last_exec_info(plugin)`
+     (also exposed as `warp.accelerator_last_exec_info` and
+     `ml.exec_info`).
 2. Unavailable hardware → `status=unavailable`. That is **not** a test failure.
 3. A failed provider run (build, load, or numerical mismatch) → `status=failed`.
    It must not be hidden as a skip.
@@ -46,6 +57,11 @@ Silent fallback is **not allowed**.
    Loading a plugin never silently reverts to CPU without reporting it.
 5. Vendor providers must not claim device execution if they only returned a
    host-side result.
+6. A provider that omits the reporting fields is `unreported` and fails
+   conformance: `TestExternalProviderReporting` and
+   `scripts/accelerator-conformance.sh` classify each provider as `honest`,
+   `unreported`, or `contradictory`, and only `honest` passes. The
+   classification is recorded per provider in the conformance JSON report.
 
 Status vocabulary used in the JSON report:
 
@@ -158,7 +174,9 @@ claims need self-hosted jobs.
 
 - [ ] `make accelerator-conformance` — CPU reference builds; `health`,
       `identity`, `matmul`, and `tensor_matmul` pass under
-      `WEFT_ACCELERATOR_PLUGIN`; report records `fallback: false` for the CPU
+      `WEFT_ACCELERATOR_PLUGIN`; the adversarial reporting gate
+      (`TestExternalProviderReporting`) classifies the provider `honest`;
+      report records `fallback: false` and `reporting: "honest"` for the CPU
       reference.
 - [ ] `make accelerator-report` / `make publish-accelerator-report` — vendors
       without toolchains show `unavailable` / `not_run` (not a failure).
@@ -184,7 +202,9 @@ claims need self-hosted jobs.
       tolerances, cpu_vs_gpu, transfer_overhead, memory,
       `fallback_occurred`).
 - [ ] Device-claimed ops report `fallback_occurred=false` (or explicit
-      `fallback: true` with `device: "cpu"` — never silent).
+      `fallback: true` with `device: "cpu"` — never silent), and the
+      provider's `reporting` classification is `honest` on both the JSON and
+      the binary tensor path.
 - [ ] Representative matmul / transfer wall times recorded against CPU
       baseline (`make bench-numerical` for host side).
 
@@ -192,8 +212,13 @@ claims need self-hosted jobs.
 
 - [ ] Do not mark Warp/DataFrame/ML as full NumPy/pandas/framework
       replacements without COMPATIBILITY.md level 1–4 pass.
-- [ ] ML `to_device` non-CPU paths remain advisory with `fallback: true`
-      unless a real plugin is bound and measured.
+- [x] ML `matmul` routes through a bound provider's binary `tensor_matmul`
+      operation when both operands share that provider; the host reconstructs
+      the result and checks the provider's execution report. Unbound,
+      mismatched, and unsupported operations remain honest CPU fallback.
+- [ ] Extend the same conformance boundary to the remaining ML forward and
+      backward operations, with native device-memory ownership and hardware
+      validation before making CUDA/ROCm/MLX performance claims.
 - [ ] Capability matrix statuses stay conservative (`partial` /
       `unsupported` preferred over optimistic `implemented`).
 

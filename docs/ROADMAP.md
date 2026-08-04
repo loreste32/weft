@@ -2,7 +2,7 @@
 
 Weft is for agent scripts, telecom, HTTP glue, and ops tooling. It stays small on purpose.
 
-## Where we are now (0.5.0)
+## Where we are now (0.5.1)
 
 Weft is on the **0.4.x** line (0.3.x complete — see [VERSIONING.md](VERSIONING.md)). Positioning and maturity: [STABILITY.md](STABILITY.md). You can build the binary, write real scripts, and run them on a single Go runtime.
 
@@ -104,13 +104,13 @@ In one line: **useful for agents, telecom, and ops scripts when versions are pin
 
 ## Where we hope to go
 
-The **0.3.x line is complete** (0.3.31–0.5.0). Everything shipped.
+The **0.3.x line is complete** (0.3.31–0.5.1). Everything shipped.
 
 **Completed in 0.3.x:** changelog page, `weft doc`, `weft lint`, `weft build`, `weft test --race/--mem/--timeout`, `cluster`/`governor`/`supervisor` stdlib, `deepgram`/`elevenlabs`/`mlinfer`, MCP, telecom with FreeSWITCH/Asterisk, website with 36 doc pages. (0.4.0 then added the `http_router`, `template`, `validate`, `cron` registry modules — 23 total.)
 
 ## 0.4.x — make it solid
 
-**Shipped in 0.4.x so far (0.4.0–0.5.0):** optional type annotations + `--strict`, DAP debugging, browser Wasm playground, registry namespace trust, telecom SIP REFER / WebRTC bridge, VS Code 0.5.0 (LSP types + DAP), bytecode validation, fuzz/race/bench smoke targets, grouped imports, registry auto-fetch, third-party git imports, LSP references/rename/extract/auto-import, REPL tab completion + multi-line polish, compat corpus expansion, glue benchmarks vs Python, reference apps, tag-triggered release workflow, crypto.argon2id + crypto.pbkdf2, ESL Content-Length frame parser, LU decomposition for warp det/inv/solve, maturity labels for all 81+23 packages, supply-chain tests, benchmark CI publishing.
+**Shipped in 0.4.x so far (0.4.0–0.5.1):** optional type annotations + `--strict`, DAP debugging, browser Wasm playground, registry namespace trust, telecom SIP REFER / WebRTC bridge, VS Code 0.5.1 (LSP types + DAP), bytecode validation, fuzz/race/bench smoke targets, grouped imports, registry auto-fetch, third-party git imports, LSP references/rename/extract/auto-import, REPL tab completion + multi-line polish, compat corpus expansion, glue benchmarks vs Python, reference apps, tag-triggered release workflow, crypto.argon2id + crypto.pbkdf2, ESL Content-Length frame parser, LU decomposition for warp det/inv/solve, maturity labels for all 81+23 packages, supply-chain tests, benchmark CI publishing.
 
 **Reliability (priority now — prove the core):**
 - Language/VM fuzzing and malformed-input testing (`make fuzz-smoke`) — done (smoke + weekly deep)  
@@ -128,7 +128,7 @@ The **0.3.x line is complete** (0.3.31–0.5.0). Everything shipped.
 
 **IDE & tooling:**
 - LSP: locals, multi-file rename, extract-function — done  
-- VS Code extension 0.5.0 VSIX packaged; Marketplace publish needs `VSCE_PAT`
+- VS Code extension 0.5.1 VSIX packaged; Marketplace publish needs `VSCE_PAT`
 
 **Release & platform gaps (next):**
 - macOS + Windows CI runners — today those targets are cross-compiled, never executed  
@@ -186,8 +186,23 @@ hardware is environment-dependent).
 
 ### P0 — correctness and truthful capability reporting
 
-- Remove silent fallback claims: an accelerator provider must report whether an
-  operation ran on the requested device, fell back to CPU, or is unavailable.
+- ~~Remove silent fallback claims~~ **Done (wired + enforced):** providers
+  report per-op whether work ran on the requested device, fell back to CPU, or
+  is unavailable — via JSON `device`/`requested_device`/`fallback` fields and
+  the additive ABI v1 export `weft_accel_exec_info` for the binary tensor
+  path. The host parses these into a typed `ExecInfo`, rejects contradictory
+  reports as errors, and surfaces them through `accelerator.last_exec_info`,
+  `warp.accelerator_last_exec_info`, and `ml.exec_info`. Conformance is
+  adversarial: `TestExternalProviderReporting` plus
+  `scripts/accelerator-conformance.sh` classify providers as
+  `honest`/`unreported`/`contradictory` and fail anything but `honest`.
+  **Done for the first operation:** `ml.matmul` now routes two arrays carrying
+  the same bound plugin through the binary `tensor_matmul` ABI, reconstructs a
+  Warp result, and surfaces the provider's execution report. Unbound,
+  mismatched, or unsupported values use host Warp; provider failures are
+  explicit errors. Remaining: route additional forward/backward ML operations,
+  implement real device-memory ownership, and validate CUDA/ROCm/MLX providers
+  on their native hardware.
 - Keep all native and browser limits explicit: request/response byte limits,
   timeout and cancellation behavior, filesystem quotas, unsupported packages,
   and resource-lifecycle guarantees.

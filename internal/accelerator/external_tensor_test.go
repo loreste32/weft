@@ -29,9 +29,21 @@ func TestExternalProviderTensor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := plugin.RunTensor("tensor_matmul", left, right)
+	result, info, err := plugin.RunTensor("tensor_matmul", left, right)
 	if err != nil {
 		t.Fatal("external tensor matmul: ", err)
+	}
+	// Execution reporting is mandatory for conformance: a provider that omits
+	// weft_accel_exec_info, or reports a contradiction, fails here.
+	if !info.Reported {
+		t.Fatalf("REPORTING_UNREPORTED: provider %q omits tensor exec info", plugin.Manifest().Name)
+	}
+	if info.Fallback && info.Device != "cpu" {
+		t.Fatalf("REPORTING_CONTRADICTORY: tensor_matmul claims fallback on non-cpu device: %+v", info)
+	}
+	if !info.Fallback && info.RequestedDevice != "" && info.Device != info.RequestedDevice {
+		t.Fatalf("REPORTING_CONTRADICTORY: tensor_matmul device %q != requested %q without fallback",
+			info.Device, info.RequestedDevice)
 	}
 	values, err := result.Float64Values()
 	if err != nil {

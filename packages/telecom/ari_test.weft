@@ -1,0 +1,177 @@
+use "./ari.weft" as ari
+
+// Mock ARI server: HTTP REST routes plus a WebSocket event stream, all
+// in-process via the stdlib web app. Every REST route checks the
+// Authorization header so auth failures surface like a real Asterisk.
+//
+// NOTE: the test runner only fails a test on raised errors (test.*), never
+// on `?`-propagated Err values, so every step that must succeed is asserted
+// with test.ok rather than `?`.
+
+fn _mock_auth_ok(req) {
+    expected := "Basic " + base64.encode("asterisk:secret")
+    req.headers["Authorization"] == expected
+}
+
+fn _mock_unauthorized() { web.json(401, {"error": "unauthorized"}) }
+
+fn mock_ari_server(port) {
+    app := web.app()
+
+    app.get("/ari/channels", fn(req) {
+        if !_mock_auth_ok(req) { return _mock_unauthorized() }
+        web.json(200, [{"id": "ch-1", "state": "Up"}])
+    })
+
+    app.post("/ari/channels", fn(req) {
+        if !_mock_auth_ok(req) { return _mock_unauthorized() }
+        body := json.parse(req.body)
+        if !body.ok || body.value.endpoint == null {
+            return web.json(400, {"error": "endpoint required"})
+        }
+        web.json(200, {"id": "ch-new", "state": "Ring", "dialplan": {"app": body.value.app}})
+    })
+
+    app.post("/ari/channels/:id/answer", fn(req) {
+        if !_mock_auth_ok(req) { return _mock_unauthorized() }
+        web.text(204, "")
+    })
+
+    app.delete("/ari/channels/:id", fn(req) {
+        if !_mock_auth_ok(req) { return _mock_unauthorized() }
+        if req.query_map["reason"] != "normal" {
+            return web.json(400, {"error": "reason required"})
+        }
+        web.text(204, "")
+    })
+
+    app.post("/ari/bridges", fn(req) {
+        if !_mock_auth_ok(req) { return _mock_unauthorized() }
+        if req.query_map["type"] != "mixing" {
+            return web.json(400, {"error": "unsupported bridge type"})
+        }
+        web.json(200, {"id": "br-1", "type": "mixing"})
+    })
+
+    app.post("/ari/bridges/:id/addChannel", fn(req) {
+        if !_mock_auth_ok(req) { return _mock_unauthorized() }
+        if req.query_map["channel"] != "ch-1,ch-2" {
+            return web.json(400, {"error": "channel list required"})
+        }
+        web.text(204, "")
+    })
+
+    app.ws("/ari/events", fn(conn) {
+        conn.send(json.stringify({"type": "StasisStart", "channel": {"id": "ch-1"}}))?
+        // A malformed frame must not kill the client listen loop.
+        conn.send("this is not json")?
+        conn.send(json.stringify({"type": "StasisEnd", "channel": {"id": "ch-1"}}))?
+        conn.close()?
+    })
+
+    app.listen("127.0.0.1:$port")
+}
+
+fn _free_port() {
+    listener_result := socket.listen("tcp", "127.0.0.1:0")
+    test.ok(listener_result)
+    listener := listener_result.value
+    parts := str.split(listener.addr, ":")
+    port := parts[len(parts) - 1]
+    test.ok(listener.close())
+    port
+}
+
+fn _wait_server(port) {
+    let mut i = 0
+    while i < 100 {
+        probe := socket.dial("tcp", "127.0.0.1:$port")
+        if probe.ok {
+            conn := probe.value
+            conn.close()
+            return null
+        }
+        time.sleep(0.05)
+        i = i + 1
+    }
+    test.fail("mock ARI server did not start on port $port")
+}
+
+fn _start_mock() {
+    port := _free_port()
+    spawn(mock_ari_server, port)
+    _wait_server(port)
+    port
+}
+
+fn _mock_client(port) {
+    ari.connect({"host": "127.0.0.1", "port": port, "username": "asterisk", "password": "secret", "app": "weft-test"})
+}
+
+fn test_ari_rest_roundtrip() {
+    port := _start_mock()
+    client := _mock_client(port)
+
+    channels_result := ari.channels(client)
+    test.ok(channels_result)
+    channels := channels_result.value
+    test.eq(len(channels), 1)
+    test.eq(channels[0].id, "ch-1")
+
+    originated_result := ari.originate(client, "PJSIP/1000", {"caller_id": "Weft <1000>"})
+    test.ok(originated_result)
+    originated := originated_result.value
+    test.eq(originated.id, "ch-new")
+    test.eq(originated.dialplan.app, "weft-test")
+
+    test.ok(ari.answer_channel(client, "ch-new"))
+    test.ok(ari.hangup_channel(client, "ch-new", "normal"))
+
+    bridge_result := ari.create_bridge(client, "mixing")
+    test.ok(bridge_result)
+    test.eq(bridge_result.value.id, "br-1")
+    test.ok(ari.add_to_bridge(client, "br-1", ["ch-1", "ch-2"]))
+    Ok(null)
+}
+
+fn test_ari_auth_failure() {
+    port := _start_mock()
+    bad := ari.connect({"host": "127.0.0.1", "port": port, "username": "asterisk", "password": "wrong", "app": "weft-test"})
+    result := ari.channels(bad)
+    test.is_false(result.ok)
+    test.contains("" + result.error, "401")
+    Ok(null)
+}
+
+fn _ari_listen_task(client) {
+    ch := channel(10)
+    listened := ari.listen(client, fn(event) {
+        send(ch, event["type"])
+    })
+    test.ok(listened)
+    let mut seen = []
+    while len(seen) < 2 {
+        item := recv(ch)
+        test.ok(item)
+        seen = push(seen, item.value)
+    }
+    seen
+}
+
+fn test_ari_listen_receives_events() {
+    port := _start_mock()
+    client := _mock_client(port)
+    task := spawn(_ari_listen_task, client)
+    // The malformed frame between the two events is skipped, not fatal, and
+    // the server closing the socket ends the loop cleanly.
+    test.eq(task.join(), ["StasisStart", "StasisEnd"])
+    Ok(null)
+}
+
+fn test_ari_listen_connect_failure() {
+    port := _free_port() // nothing is listening here
+    client := _mock_client(port)
+    result := ari.listen(client, fn(event) { null })
+    test.is_false(result.ok)
+    Ok(null)
+}

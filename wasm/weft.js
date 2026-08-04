@@ -52,8 +52,8 @@
 
   function validateCode(code) {
     if (typeof code !== "string") return "code must be a string";
-    if (new TextEncoder().encode(code).length > 100000) {
-      return "code too large (max 100000 bytes)";
+    if (new TextEncoder().encode(code).length > 512000) {
+      return "code too large (max 512000 bytes)";
     }
     return null;
   }

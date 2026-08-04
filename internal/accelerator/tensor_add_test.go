@@ -50,9 +50,12 @@ func TestExampleBinaryTensorAdd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := plugin.RunTensor("tensor_add", left, right)
+	result, info, err := plugin.RunTensor("tensor_add", left, right)
 	if err != nil {
 		t.Fatal("tensor add: ", err)
+	}
+	if !info.Reported || info.Status != StatusDevice || info.Device != "cpu" || info.Fallback {
+		t.Fatalf("reference tensor_add exec info = %+v", info)
 	}
 	values, err := result.Float64Values()
 	if err != nil {
@@ -72,7 +75,7 @@ func TestExampleBinaryTensorAdd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := plugin.RunTensor("tensor_add", left, wrongShape); err == nil {
+	if _, _, err := plugin.RunTensor("tensor_add", left, wrongShape); err == nil {
 		t.Fatal("tensor_add accepted mismatched shapes")
 	}
 	wrongDType, err := tensor.FromList(tensor.Int64, []int{2, 3},
@@ -80,7 +83,7 @@ func TestExampleBinaryTensorAdd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := plugin.RunTensor("tensor_add", left, wrongDType); err == nil {
+	if _, _, err := plugin.RunTensor("tensor_add", left, wrongDType); err == nil {
 		t.Fatal("tensor_add accepted unsupported dtype")
 	}
 }

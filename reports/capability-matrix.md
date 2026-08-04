@@ -1,6 +1,6 @@
 # Weft capability matrix
 
-- **Generated:** 2026-08-04T12:35:48Z
+- **Generated:** 2026-08-04T16:42:16Z
 - **Format:** `weft.capability.matrix` v1
 - **Honesty:** Statuses are conservative. implemented ≠ complete NumPy/pandas/ML framework parity. See docs/COMPATIBILITY.md.
 
@@ -17,8 +17,8 @@
 | Package | Export count | Manifest |
 |---------|--------------|----------|
 | `warp` | 155 | `packages/warp/weft.json` |
-| `dataframe` | 112 | `packages/dataframe/weft.json` |
-| `ml` | 65 | `packages/ml/weft.json` |
+| `dataframe` | 115 | `packages/dataframe/weft.json` |
+| `ml` | 84 | `packages/ml/weft.json` |
 
 ## Claim summary
 
@@ -29,7 +29,7 @@
 | Claim | Status | Notes |
 |-------|--------|-------|
 | array creation (array/zeros/ones/arange) | `implemented` | Flat list + shape; typed constructors |
-| fixed-width dtypes (bool/int/uint/float/object) | `implemented` | Packed host dtypes with range validation; not full NumPy casting table or complex/structured dtypes |
+| fixed-width dtypes (bool/int/uint/float/object) | `implemented` | Packed host dtypes with range validation; promotion matches NumPy 2.x promote_types for all supported pairs; full astype casting table and complex/structured dtypes not claimed |
 | host packed tensor storage (_tid) | `implemented` | Primary numeric storage via internal/tensor |
 | elementwise arithmetic + broadcasting | `implemented` | Trailing broadcast; shape mismatch → Err |
 | reductions (sum/mean/min/max/axis) | `implemented` | Axis opts partial (keepdims yes; where/initial/out no) |
@@ -38,7 +38,7 @@
 | 1D FFT / IFFT / fft_freq | `partial` | 1D only; power-of-2 Cooley–Tukey or naive; not multi-dim/sparse/masked |
 | sparse / masked arrays | `unsupported` | Not implemented |
 | native accelerator dispatch (load/run/tensor) | `implemented` | Explicit path + capability; no silent load |
-| CUDA / ROCm / MLX automatic kernels | `partial` | Vendor providers exist; require plugin path + hardware jobs |
+| CUDA / ROCm / MLX automatic kernels | `partial` | Vendor providers expose bounded float32 matmul + same-shape tensor_add; require explicit plugin path + hardware jobs |
 | complete NumPy API replacement | `unsupported` | Experimental surface; not binary-compatible NumPy |
 
 ## dataframe
@@ -47,7 +47,7 @@
 |-------|--------|-------|
 | from_rows / from_columns / CSV/JSON I/O | `implemented` | Row-list storage; quoted CSV |
 | filter / query / sort / head/tail/iloc | `implemented` | iloc scalar/list; not full .loc label engine |
-| groupby + aggregations + transform/size | `partial` | group_by, group_by_transform, group_by_size; not full pandas groupby API |
+| groupby + aggregations + transform/size | `partial` | group_by with single/composite keys + per-column agg lists, group_by_transform, group_by_size, pivot_table aggfuncs; not full pandas groupby API |
 | join / merge / concat | `implemented` | Common how-modes; not full multi-key parity |
 | DataFrame ↔ Warp numeric interchange | `partial` | Tested 1D/2D copying path; rejects null/non-numeric values; zero-copy not claimed |
 | Series + explicit index / MultiIndex foundation | `partial` | Series helpers + multi-level foundation; not complete MultiIndex |

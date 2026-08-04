@@ -35,7 +35,13 @@ pub fn array_typed(data, shape, dtype_name) {
         if dtype_name != "object" && (value == null || (kind != "bool" && kind != "int" && kind != "float")) {
             return Err("warp.array_typed expects numeric values for this dtype")
         }
-        casted = push(casted, _cast_value(value, dtype_name))
+        converted := _cast_value(value, dtype_name)
+        if _wkind(converted) == "result" {
+            if !converted.ok { return converted }
+            casted = push(casted, converted.value)
+        } else {
+            casted = push(casted, converted)
+        }
     }
     _make_array(casted, s, dtype_name)
 }
@@ -74,7 +80,14 @@ pub fn full_dtype(shape, value, dtype_name) {
     n := _prod(shape)
     let mut d = []
     let mut i = 0
-    while i < n { d = push(d, _cast_value(value, dtype_name))
+    while i < n {
+        converted := _cast_value(value, dtype_name)
+        if _wkind(converted) == "result" {
+            if !converted.ok { return converted }
+            d = push(d, converted.value)
+        } else {
+            d = push(d, converted)
+        }
         i = i + 1 }
     array_typed(d, shape, dtype_name)
 }
@@ -635,7 +648,10 @@ pub fn atan2(y, x) { _binop_with_dtype(y, x, fn(a, b) { math.atan2(a, b) }, "flo
 pub fn sinh(a) { _unaryop_with_dtype(a, fn(x) { (math.exp(x) - math.exp(-x)) / 2 }, "float64") }
 pub fn cosh(a) { _unaryop_with_dtype(a, fn(x) { (math.exp(x) + math.exp(-x)) / 2 }, "float64") }
 pub fn tanh(a) { _unaryop_with_dtype(a, fn(x) {
-    (math.exp(2 * x) - 1) / (math.exp(2 * x) + 1)
+    if x > 20.0 { return 1.0 }
+    if x < -20.0 { return -1.0 }
+    e := math.exp(2.0 * x)
+    return (e - 1.0) / (e + 1.0)
 }, "float64") }
 
 // ──────────────────────────────────────────────
@@ -888,8 +904,10 @@ pub fn matmul(a, b) {
         out := tensor.matmul(a._tid, b._tid)
         if !is_err(out) {
             handle := out?
-            values := tensor.to_list(handle)?
-            return _make_array(values, [sa[0], sb[1]], _promote_dtype(a, b))
+            values := tensor.to_list(handle)
+            tensor.free(handle)?
+            if is_err(values) { return values }
+            return _make_array(values?, [sa[0], sb[1]], _promote_dtype(a, b))
         }
     }
     if len(sa) == 1 && len(sb) == 1 {
@@ -1361,25 +1379,30 @@ fn _is_power_of_two(n) {
 // Normalize real or complex input into flat re/im float lists.
 fn _fft_parts(a) {
     if a != null && _wkind(a) == "map" && contains(keys(a), "re") {
-        rd := if _is_arr(a.re) { _data(a.re) } else if _wkind(a.re) == "list" { a.re } else {
+        if !_is_arr(a.re) && _wkind(a.re) != "list" {
             return Err("warp.fft_1d complex re must be array or list")
         }
+        rd := if _is_arr(a.re) { _data(a.re) } else { a.re }
         let mut id = []
         if contains(keys(a), "im") && a.im != null {
-            id = if _is_arr(a.im) { _data(a.im) } else if _wkind(a.im) == "list" { a.im } else {
+            if !_is_arr(a.im) && _wkind(a.im) != "list" {
                 return Err("warp.fft_1d complex im must be array or list")
             }
+            id = if _is_arr(a.im) { _data(a.im) } else { a.im }
         } else {
             let mut i = 0
-            while i < len(rd) { id = push(id, 0.0)
-                i = i + 1 }
+            while i < len(rd) {
+                id = push(id, 0.0)
+                i = i + 1
+            }
         }
         if len(rd) != len(id) { return Err("warp.fft_1d re/im length mismatch") }
         return {"re": rd, "im": id}
     }
-    data := if _is_arr(a) { _data(a) } else if _wkind(a) == "list" { a } else {
+    if !_is_arr(a) && _wkind(a) != "list" {
         return Err("warp.fft_1d expects an array, list, or {re, im} map")
     }
+    data := if _is_arr(a) { _data(a) } else { a }
     let mut re = []
     let mut im = []
     for x in data {
@@ -1915,6 +1938,13 @@ pub fn accelerator_run_tensor(plugin, operation, inputs) -> Result[any] {
     accelerator.run_tensor(plugin, operation, inputs)
 }
 
+/// Execution reporting for the plugin's most recent run: a map with
+/// status ("device" | "fallback" | "unavailable" | "unreported"), device,
+/// requested_device, fallback, and reported. Providers that omit the fields
+/// report status "unreported" and fail conformance; contradictory reports
+/// are rejected by the host before they reach here.
+pub fn accelerator_last_exec_info(plugin) -> Result[any] { accelerator.last_exec_info(plugin) }
+
 pub fn accelerator_close(plugin) { accelerator.close(plugin) }
 
 // ──────────────────────────────────────────────
@@ -2004,7 +2034,7 @@ fn _make_array(data, shape, dtype_name) {
 }
 
 fn _tensor_packable(dtype_name) {
-    dtype_name == "bool" || dtype_name == "int64" || dtype_name == "float32" || dtype_name == "float64"
+    dtype_name == "bool" || dtype_name == "int8" || dtype_name == "int16" || dtype_name == "int32" || dtype_name == "int64" || dtype_name == "uint8" || dtype_name == "uint16" || dtype_name == "uint32" || dtype_name == "uint64" || dtype_name == "float32" || dtype_name == "float64"
 }
 
 fn _has_tid(a) {
@@ -2027,10 +2057,17 @@ pub fn storage_kind(a) {
     if _has_tid(a) { "tensor" } else { "list" }
 }
 
+pub fn itemsize(a) {
+    if !_is_arr(a) { return Err("warp.itemsize expects an array") }
+    _itemsize(dtype(a))
+}
+
 fn _itemsize(dtype_name) {
     if dtype_name == "bool" { 1 }
-    else if dtype_name == "int64" { 8 }
-    else if dtype_name == "float32" { 4 }
+    else if dtype_name == "int8" || dtype_name == "uint8" { 1 }
+    else if dtype_name == "int16" || dtype_name == "uint16" { 2 }
+    else if dtype_name == "int32" || dtype_name == "uint32" || dtype_name == "float32" { 4 }
+    else if dtype_name == "int64" || dtype_name == "uint64" || dtype_name == "float64" { 8 }
     else { 8 }
 }
 
@@ -2510,18 +2547,87 @@ fn _promote_dtype(left, right) {
     l := if _is_arr(left) { dtype(left) } else { _scalar_dtype(left) }
     r := if _is_arr(right) { dtype(right) } else { _scalar_dtype(right) }
     if l == "object" || r == "object" { return "object" }
-    if ((l == "float32" && r == "int64") || (l == "int64" && r == "float32")) &&
-        _is_arr(left) && _is_arr(right) {
-        return "float64"
-    }
+    if _is_arr(left) && _is_arr(right) { return _promote_dtype_pair(l, r) }
+    // Scalar operands keep weak scalar semantics (float64/int64/bool).
     if l == "float64" || r == "float64" { return "float64" }
     if l == "float32" || r == "float32" { return "float32" }
-    if l == "int64" || r == "int64" { return "int64" }
-    "bool"
+    // uint64 cannot be represented exactly by a signed runtime integer when
+    // combined with a signed integer, so promote that pair to float64.
+    if (l == "uint64" && _signed_integer_dtype(r)) ||
+        (r == "uint64" && _signed_integer_dtype(l)) {
+        return "float64"
+    }
+    left_rank := _dtype_rank(l)
+    right_rank := _dtype_rank(r)
+    if left_rank >= right_rank { l } else { r }
+}
+
+// _promote_dtype_pair mirrors np.promote_types (NumPy 2.x) for two array
+// dtypes over the supported set. Keep in sync with promoteDType in
+// internal/tensor/ops.go; the conformance dtype fixture locks the full
+// 11x11 matrix against the NumPy oracle.
+fn _promote_dtype_pair(l, r) {
+    if l == r { return l }
+    // float64 dominates everything; float32 survives only against bool and
+    // integers of 16 bits or fewer.
+    if l == "float64" || r == "float64" { return "float64" }
+    if l == "float32" || r == "float32" {
+        other := if l == "float32" { r } else { l }
+        if other == "int32" || other == "int64" || other == "uint32" || other == "uint64" { return "float64" }
+        return "float32"
+    }
+    // bool mixed with a non-float dtype adopts the other operand's dtype.
+    if l == "bool" { return r }
+    if r == "bool" { return l }
+    l_signed := _signed_integer_dtype(l)
+    r_signed := _signed_integer_dtype(r)
+    if l_signed == r_signed {
+        if _dtype_width(l) >= _dtype_width(r) { return l }
+        return r
+    }
+    // Mixed sign: the result is the smallest signed dtype wide enough to hold
+    // both ranges. A 64-bit unsigned paired with any signed integer overflows
+    // int64 and promotes to float64.
+    signed := if l_signed { l } else { r }
+    unsigned := if l_signed { r } else { l }
+    let mut need := _dtype_width(signed)
+    unsigned_need := _dtype_width(unsigned) * 2
+    if unsigned_need > need { need = unsigned_need }
+    if need <= 16 { return "int16" }
+    if need <= 32 { return "int32" }
+    if need <= 64 { return "int64" }
+    "float64"
+}
+
+// _dtype_width reports the storage width in bits of an integer dtype.
+fn _dtype_width(dtype_name) {
+    if dtype_name == "int8" || dtype_name == "uint8" { 8 }
+    else if dtype_name == "int16" || dtype_name == "uint16" { 16 }
+    else if dtype_name == "int32" || dtype_name == "uint32" { 32 }
+    else { 64 }
+}
+
+fn _signed_integer_dtype(dtype_name) {
+    dtype_name == "int8" || dtype_name == "int16" || dtype_name == "int32" || dtype_name == "int64"
+}
+
+fn _dtype_rank(dtype_name) {
+    if dtype_name == "bool" { 1 }
+    else if dtype_name == "uint8" { 2 }
+    else if dtype_name == "int8" { 3 }
+    else if dtype_name == "uint16" { 4 }
+    else if dtype_name == "int16" { 5 }
+    else if dtype_name == "uint32" { 6 }
+    else if dtype_name == "int32" { 7 }
+    else if dtype_name == "uint64" { 8 }
+    else if dtype_name == "int64" { 9 }
+    else if dtype_name == "float32" { 10 }
+    else if dtype_name == "float64" { 11 }
+    else { 0 }
 }
 
 fn _valid_dtype(dtype_name) {
-    dtype_name == "bool" || dtype_name == "int64" || dtype_name == "float32" || dtype_name == "float64" || dtype_name == "object"
+    dtype_name == "bool" || dtype_name == "int8" || dtype_name == "int16" || dtype_name == "int32" || dtype_name == "int64" || dtype_name == "uint8" || dtype_name == "uint16" || dtype_name == "uint32" || dtype_name == "uint64" || dtype_name == "float32" || dtype_name == "float64" || dtype_name == "object"
 }
 
 fn _infer_dtype(data) {
@@ -2550,12 +2656,45 @@ fn _cast_value(value, dtype_name) {
     }
     // Coerce bool to 0/1 before numeric casts (Weft forbids bool+int arithmetic).
     num := if kind == "bool" { if value { 1 } else { 0 } } else { value }
+    if kind == "float" && (value != value || math.isinf(value)) {
+        if dtype_name != "float32" && dtype_name != "float64" {
+            return Err("warp integer dtype conversion requires a finite value")
+        }
+    }
     if dtype_name == "bool" {
         if kind == "bool" { value } else { num != 0 }
-    } else if dtype_name == "int64" {
-        if num < 0 { math.ceil(num) } else { math.floor(num) }
-    } else {
+    } else if dtype_name == "float32" || dtype_name == "float64" {
         num + 0.0
+    } else {
+        // Range-check the pre-truncation float: math.floor/ceil saturate to
+        // the int64 extremes, so checking after truncation would never fire.
+        if kind == "float" && (num < -9.223372036854776e18 || num > 9.223372036854776e18) {
+            return Err("warp integer dtype conversion is out of int64 range")
+        }
+        integer := if kind == "float" {
+            if num < 0 { math.ceil(num) } else { math.floor(num) }
+        } else { num }
+        if integer < -9.223372036854776e18 || integer > 9.223372036854776e18 {
+            return Err("warp integer dtype conversion is out of int64 range")
+        }
+        if dtype_name == "int8" {
+            if integer < -128 || integer > 127 { return Err("warp int8 conversion is out of range") }
+        } else if dtype_name == "int16" {
+            if integer < -32768 || integer > 32767 { return Err("warp int16 conversion is out of range") }
+        } else if dtype_name == "int32" {
+            if integer < -2147483648 || integer > 2147483647 { return Err("warp int32 conversion is out of range") }
+        } else if dtype_name == "uint8" {
+            if integer < 0 || integer > 255 { return Err("warp uint8 conversion is out of range") }
+        } else if dtype_name == "uint16" {
+            if integer < 0 || integer > 65535 { return Err("warp uint16 conversion is out of range") }
+        } else if dtype_name == "uint32" {
+            if integer < 0 || integer > 4294967295 { return Err("warp uint32 conversion is out of range") }
+        } else if dtype_name == "uint64" {
+            if integer < 0 { return Err("warp uint64 conversion is out of range") }
+        } else if dtype_name != "int64" {
+            return Err("warp dtype conversion received unsupported dtype")
+        }
+        integer
     }
 }
 
@@ -2609,10 +2748,23 @@ fn _try_tensor_binop(a, b, op_name) {
     if is_err(out) { return null }
     handle := out?
     values := tensor.to_list(handle)
+    tensor.free(handle)?
     if is_err(values) { return null }
     shape := _broadcast_shape(a.shape, b.shape)
     if shape == null { return null }
     _make_array(values?, shape, result_dtype)
+}
+
+// release drops the optional host tensor backing this array. It is useful for
+// long-running programs that create many large temporary arrays. The array is
+// invalid for further native-backed operations after release; its portable
+// data cache remains available for inspection.
+pub fn release(a) -> Result[any] {
+    if !_is_arr(a) || !_has_tid(a) { return Ok(false) }
+    tensor.free(a._tid)?
+    a._tid = null
+    a._native = false
+    Ok(true)
 }
 
 fn _binop_with_dtype(a, b, op, forced_dtype) {

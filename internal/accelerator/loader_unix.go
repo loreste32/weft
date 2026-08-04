@@ -32,6 +32,14 @@ typedef struct {
 typedef int (*weft_accel_run_tensor_fn)(const char *, const weft_accel_tensor_input *,
                                         size_t, weft_accel_tensor_output *);
 typedef void (*weft_accel_free_tensor_fn)(weft_accel_tensor_output *);
+typedef char *(*weft_accel_exec_info_fn)(void);
+
+// Optional additive ABI v1 export: execution reporting for the last run.
+// Returns NULL when the provider does not export weft_accel_exec_info.
+static char *weft_accel_exec_info_query(weft_accel_handle handle) {
+    weft_accel_exec_info_fn fn = (weft_accel_exec_info_fn)dlsym(handle, "weft_accel_exec_info");
+    return fn == NULL ? NULL : fn();
+}
 
 static char *weft_accel_strdup(const char *value) {
     if (value == NULL) return NULL;
@@ -154,6 +162,17 @@ func (p *nativeSharedLibrary) manifest() ([]byte, error) {
 	if value == nil {
 		return nil, fmt.Errorf("missing weft_accel_manifest symbol")
 	}
+	return []byte(C.GoString(value)), nil
+}
+
+// execInfo implements nativeExecInfoPlugin. A missing symbol or null result
+// is an error here; the registry maps that to StatusUnreported.
+func (p *nativeSharedLibrary) execInfo() ([]byte, error) {
+	value := C.weft_accel_exec_info_query(p.handle)
+	if value == nil {
+		return nil, fmt.Errorf("missing weft_accel_exec_info symbol")
+	}
+	defer C.weft_accel_free(p.handle, value)
 	return []byte(C.GoString(value)), nil
 }
 

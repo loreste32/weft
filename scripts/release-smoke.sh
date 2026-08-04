@@ -8,12 +8,12 @@ echo "== go version =="
 go version
 
 echo "== full build =="
-go build -o /tmp/weft-release-full ./cmd/weft
+go build -trimpath -buildvcs=false -o /tmp/weft-release-full ./cmd/weft
 FULL_SIZE=$(wc -c </tmp/weft-release-full | tr -d ' ')
 echo "full binary: $FULL_SIZE bytes ($(ls -lah /tmp/weft-release-full | awk '{print $5}'))"
 
 echo "== slim build (-tags slim) =="
-go build -tags slim -o /tmp/weft-release-slim ./cmd/weft
+go build -tags slim -trimpath -buildvcs=false -o /tmp/weft-release-slim ./cmd/weft
 SLIM_SIZE=$(wc -c </tmp/weft-release-slim | tr -d ' ')
 echo "slim binary: $SLIM_SIZE bytes ($(ls -lah /tmp/weft-release-slim | awk '{print $5}'))"
 if [ "$SLIM_SIZE" -ge "$FULL_SIZE" ]; then
@@ -82,8 +82,16 @@ for pair in "linux/amd64" "linux/arm64" "darwin/amd64" "darwin/arm64" "windows/a
   ext=""
   [ "$goos" = "windows" ] && ext=".exe"
   echo "  $goos/$goarch"
-  GOOS=$goos GOARCH=$goarch go build -o "${out}${ext}" ./cmd/weft
-  GOOS=$goos GOARCH=$goarch go build -tags slim -o "${out}-slim${ext}" ./cmd/weft
+  GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=false -o "${out}${ext}" ./cmd/weft
+  GOOS=$goos GOARCH=$goarch go build -tags slim -trimpath -buildvcs=false -o "${out}-slim${ext}" ./cmd/weft
 done
+
+echo "== offline install + reproducible build =="
+# Same commit at two different paths, GOPROXY=off: must be byte-identical.
+bash scripts/reproducible-build-check.sh
+
+echo "== SBOM =="
+bash scripts/sbom.sh /tmp/weft-release-sbom.json
+python3 -c "import json; d=json.load(open('/tmp/weft-release-sbom.json')); assert d['packages'], 'empty sbom'; print('sbom packages:', len(d['packages']))"
 
 echo "OK release-smoke full=$FULL_SIZE slim=$SLIM_SIZE"

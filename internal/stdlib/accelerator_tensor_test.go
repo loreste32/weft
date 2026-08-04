@@ -40,6 +40,14 @@ use accelerator
 
 fn main -> Result {
     plugin := accelerator.load(%q)?
+    health := accelerator.run(plugin, "health", {})?
+    ensure(health.ok == true, "health failed")?
+    hinfo := accelerator.last_exec_info(plugin)?
+    ensure(hinfo.reported == true, "health exec info unreported")?
+    ensure(hinfo.device == "cpu", "health exec info device")?
+    ensure(hinfo.requested_device == "cpu", "health exec info requested device")?
+    ensure(hinfo.fallback == false, "health exec info fallback")?
+    ensure(hinfo.status == "device", "health exec info status")?
     result := accelerator.run_tensor(plugin, "tensor_matmul", [
         {"dtype": "float64", "shape": [2, 2], "data": [1.0, 2.0, 3.0, 4.0]},
         {"dtype": "float64", "shape": [2, 2], "data": [5.0, 6.0, 7.0, 8.0]},
@@ -48,7 +56,15 @@ fn main -> Result {
     ensure(result.shape == [2, 2], "unexpected shape")?
     ensure(result.data[0] == 19.0 && result.data[1] == 22.0, "unexpected first row")?
     ensure(result.data[2] == 43.0 && result.data[3] == 50.0, "unexpected second row")?
+    info := accelerator.last_exec_info(plugin)?
+    ensure(info.reported == true, "tensor exec info unreported")?
+    ensure(info.device == "cpu", "tensor exec info device")?
+    ensure(info.fallback == false, "tensor exec info fallback")?
+    ensure(info.status == "device", "tensor exec info status")?
     accelerator.close(plugin)?
+    gone := accelerator.last_exec_info(plugin)?
+    ensure(gone.status == "unavailable", "closed plugin must report unavailable")?
+    ensure(gone.reported == false, "closed plugin must not claim a report")?
 }
 `, pluginPath)
 	var output bytes.Buffer

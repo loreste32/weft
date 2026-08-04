@@ -101,26 +101,38 @@ differences of analytical first gradients. `hvp` remains finite-diff only.
 - `second_derivative`: scalar variable; e.g. \(f(x)=x^3\) yields \(f''=6x\).
 - `hvp`: Hessian-vector product \(Hv \approx (\nabla L(\theta+\varepsilon v)-\nabla L(\theta-\varepsilon v))/(2\varepsilon)\).
 
-## Device placement (advisory)
+## Device placement and plugin dispatch
 
 `device(name)` returns {"_device": true, "name": "cpu"|"cuda"|"rocm"|"mlx"}.
 `to_device(value, device)` returns a distinct warp array or node with a
 `_device` field. It does not mutate the caller's value or share a releasable
 native tensor handle. CPU always succeeds and returns the tagged value.
-Non-CPU requests are accepted honestly with a fallback wrapper
-`{"value", "fallback": true, "requested"}` — pure Weft has no GPU, so compute
-remains on the host. `device_of(value)` reports the logical name (`"cpu"` when
-unset). Placement is metadata until accelerator providers are bound; there is
-no fake GPU.
+Non-CPU requests without a plugin are accepted honestly with a fallback
+wrapper `{"value", "fallback": true, "requested", ...}` — compute remains on
+the host. `device_of(value)` reports the logical name (`"cpu"` when unset).
+There is no fake GPU.
+
+`device_with_plugin(name, path)` additionally loads a native accelerator
+provider (see `native/accelerator/`) through the accelerator stdlib. The load
+outcome is recorded on the handle (`plugin_available`, `plugin_error`) and
+never hidden. With a bound plugin, `to_device` retains the provider handle on
+placed arrays and reports the provider probe. `ml.matmul` dispatches through
+the binary `tensor_matmul` ABI when both operands use the same plugin; the
+returned array is marked as native-dispatched and `exec_info(device)` exposes
+the provider's report. Other ML operations and gradients remain explicit host
+fallbacks until their ABI operations are implemented.
+`exec_info(device)` returns the bound plugin's last execution report, or an
+explicit `{"status": "unavailable"}` map when no plugin ran.
 
 ## Status
 
 This is a tested numerical-autodiff foundation with SGD/Adam, linear/relu/
 sequential modules, checkpoints, deterministic seeds, **scalar nested
-reverse-mode** (`create_graph` / double backward), finite-diff HVP, and advisory
-device tags — not yet a complete PyTorch/JAX replacement. Sparse/complex
-autodiff, array-level nested higher-order reverse mode, bound accelerator
-execution, async pools, schedulers, and full NumPy dispatch remain separate work.
+reverse-mode** (`create_graph` / double backward), finite-diff HVP, and one
+tested plugin-backed tensor operation — not yet a complete PyTorch/JAX
+replacement. Sparse/complex autodiff, array-level nested higher-order reverse
+mode, broader accelerator operation coverage, async pools, schedulers, and
+full NumPy dispatch remain separate work.
 
 ## GPU and native training
 

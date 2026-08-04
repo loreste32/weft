@@ -2,7 +2,10 @@
 
 `warp` is a validated, row-major N-dimensional array module. Numeric arrays use
 host packed tensors (`tensor` stdlib / `internal/tensor`) as primary storage,
-with a portable list cache for views and object dtype. It provides NumPy-style
+with a portable list cache for views and object dtype. Supported packed dtypes
+are `bool`, `int8`, `int16`, `int32`, `int64`, `uint8`, `uint16`, `uint32`,
+`uint64`, `float32`, and `float64`; `uint64` values are limited by Weft's
+signed runtime integer representation. It provides NumPy-style
 broadcasting and shape manipulation, reductions, sorting, linear algebra, and
 explicit dispatch into a native accelerator plugin. It is a compatibility layer
 under active expansion, not yet a binary-compatible replacement for every NumPy
@@ -44,7 +47,8 @@ backend.
 - Linear algebra: 1D/2D `dot` and `matmul`, norms, `outer`, `cross`, `trace`,
   `det`, `inv`, and `solve`.
 - Native tensors: `accelerator_run_tensor` accepts bounded typed flat tensor
-  descriptors and dispatches through the binary provider ABI.
+  descriptors and dispatches through the binary provider ABI. Use `release(a)`
+  when a long-running program no longer needs a packed array's host handle.
 - Manipulation: `concat`, axis-aware `concatenate`, `stack`, equal-section
   `split`, `take`, validated `vstack`/`hstack`, `tile`, `repeat`,
   `repeat_axis`, `flip`, `flip_axis`, stable O(n log n) `sort`/`argsort`,
@@ -54,8 +58,10 @@ Arrays are immutable values: `set` and every arithmetic operation return new
 arrays. Shape mismatches, ragged nested lists, invalid indices, and invalid
 constructor parameters return errors instead of silently truncating data.
 Common result typing is preserved: comparisons and logical predicates produce
-`bool`, math functions produce `float64`, and arithmetic follows the supported
-`bool`/`int64`/`float32`/`float64` promotion rules. Axis and cumulative
+`bool`, math functions produce `float64`, and arithmetic result dtypes follow
+NumPy 2.x `promote_types` rules for every supported dtype pair (including
+mixed signed/unsigned pairs such as `int8 + uint8 → int16` and
+`int64 + uint64 → float64`). Axis and cumulative
 operations retain their array dtype where the result is an array.
 
 ## Strided views and indexing

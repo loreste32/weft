@@ -1,6 +1,7 @@
 use "./lib.weft" as ml
 use warp
 use fs
+use math
 
 
 fn test_dot { test.eq(ml.dot([1, 2, 3], [1, 2, 3]), 14) }
@@ -144,6 +145,17 @@ fn test_autograd_tensor_matmul {
     ml.backward(loss, null)?
     test.eq(warp.to_list(ml.grad(left)?), [11.0, 15.0, 11.0, 15.0])
     test.eq(warp.to_list(ml.grad(right)?), [4.0, 4.0, 6.0, 6.0])
+}
+
+fn test_matmul_without_plugin_is_explicit_cpu_fallback {
+    left := ml.to_device(warp.array([1.0, 2.0, 3.0, 4.0], [2, 2]), "cuda")?
+    right := ml.to_device(warp.array([5.0, 6.0, 7.0, 8.0], [2, 2]), "cuda")?
+    product := ml.matmul(left.value, right.value)?
+    result := ml.value(product)?
+    test.eq(warp.to_list(result), [19.0, 22.0, 43.0, 50.0])
+    // Without a bound provider, computation is host CPU work. The logical
+    // placement metadata is not allowed to turn into a false GPU claim.
+    test.eq(ml.device_of(result)?, "cpu")
 }
 
 fn test_autograd_tensor_elementwise_and_broadcast {
@@ -449,6 +461,34 @@ fn test_to_device_does_not_mutate_autograd_node {
     test.eq(warp.to_list(ml.value(placed)?), [1.0, 2.0])
 }
 
+fn test_device_with_missing_plugin_reports_truthfully {
+    arr := warp.array([1.0], [1])
+    cuda := ml.device_with_plugin("cuda", "/nonexistent/weft-cuda-provider.so")?
+    // The failed load is recorded, never hidden.
+    test.eq(cuda.plugin_available, false)
+    test.eq(cuda.plugin_error != null, true)
+    result := ml.to_device(arr, cuda)?
+    test.eq(result.fallback, true)
+    test.eq(result.requested, "cuda")
+    test.eq(result.plugin_available, false)
+    test.eq(result.plugin_error != null, true)
+    info := ml.exec_info(cuda)?
+    test.eq(info.status, "unavailable")
+    test.eq(info.reported, false)
+}
+
+fn test_exec_info_without_plugin_is_unavailable {
+    cpu := ml.device("cpu")?
+    info := ml.exec_info(cpu)?
+    test.eq(info.status, "unavailable")
+    test.eq(info.reported, false)
+}
+
+fn test_device_with_plugin_rejects_bad_path_arg {
+    r := ml.device_with_plugin("cuda", null)
+    test.eq(r.ok, false)
+}
+
 fn test_checkpoint_round_trip_restores_values_and_state {
     module := ml.linear_module(2, 1, null)?
     parameters := ml.module_parameters(module)?
@@ -466,4 +506,417 @@ fn test_checkpoint_round_trip_restores_values_and_state {
     test.eq(warp.to_list(restored[0]), [3.0, 4.0])
     test.eq(warp.to_list(restored[1]), [5.0])
     fs.remove(path)?
+}
+
+
+// ── Differentiable losses ──
+
+fn test_mse_loss_value_and_grad {
+    pred := ml.variable(warp.array([1.0, 2.0, 4.0], [3]))?
+    target := ml.constant(warp.array([1.0, 1.0, 1.0], [3]))?
+    loss := ml.mse_loss(pred, target)?
+    // ((0)^2 + 1^2 + 3^2) / 3 = 10/3
+    test.approx(ml.value(loss)?, 10.0 / 3.0, 1e-9)
+    ml.backward(loss, null)?
+    g := warp.to_list(ml.grad(pred)?)
+    test.approx(g[0], 0.0, 1e-9)
+    test.approx(g[1], 2.0 / 3.0, 1e-9)
+    test.approx(g[2], 2.0, 1e-9)
+}
+
+fn test_gradcheck_mse_loss {
+    w := ml.variable(warp.array([0.5, -1.5, 2.5], [3]))?
+    t := ml.constant(warp.array([1.0, 0.0, -1.0], [3]))?
+    mse_loss := ml.mse_loss
+    ok := ml.gradcheck(fn(params) { mse_loss(params[0], t) }, [w], 1e-5, 1e-4)?
+    test.is_true(ok)
+}
+
+fn test_bce_value_and_grad {
+    pred := ml.variable(warp.array([0.5, 0.25], [2]))?
+    target := ml.constant(warp.array([1.0, 0.0], [2]))?
+    loss := ml.binary_cross_entropy(pred, target, null)?
+    expected := 0.5 * (math.log(2.0) + math.log(4.0 / 3.0))
+    test.approx(ml.value(loss)?, expected, 1e-6)
+    ml.backward(loss, null)?
+    g := warp.to_list(ml.grad(pred)?)
+    // d/dp = -(1/n) [ t/(p+eps) - (1-t)/(1-p+eps) ]
+    test.approx(g[0], -1.0, 1e-6)
+    test.approx(g[1], 2.0 / 3.0, 1e-6)
+}
+
+fn test_gradcheck_bce {
+    p := ml.variable(warp.array([0.2, 0.7], [2]))?
+    t := ml.constant(warp.array([0.0, 1.0], [2]))?
+    bce := ml.binary_cross_entropy
+    ok := ml.gradcheck(fn(params) { bce(params[0], t, null) }, [p], 1e-5, 1e-4)?
+    test.is_true(ok)
+}
+
+fn test_bce_extreme_probabilities_stay_finite {
+    // Adversarial: predictions exactly 0 and 1, both correct and dead wrong.
+    pred := ml.variable(warp.array([0.0, 1.0], [2]))?
+    target := ml.constant(warp.array([0.0, 1.0], [2]))?
+    loss := ml.binary_cross_entropy(pred, target, null)?
+    v := ml.value(loss)?
+    test.is_true(v == v && !math.isinf(v))
+    ml.backward(loss, null)?
+    for g in warp.to_list(ml.grad(pred)?) {
+        test.is_true(g == g && !math.isinf(g))
+    }
+    wrong := ml.variable(warp.array([0.0, 1.0], [2]))?
+    wrong_target := ml.constant(warp.array([1.0, 0.0], [2]))?
+    wrong_loss := ml.binary_cross_entropy(wrong, wrong_target, null)?
+    wv := ml.value(wrong_loss)?
+    test.is_true(wv == wv && !math.isinf(wv))
+    test.is_true(wv > 20.0)
+    ml.backward(wrong_loss, null)?
+    for g in warp.to_list(ml.grad(wrong)?) {
+        test.is_true(g == g && !math.isinf(g))
+    }
+}
+
+fn test_bce_rejects_bad_eps {
+    p := ml.constant(0.5)?
+    t := ml.constant(1.0)?
+    zero := ml.binary_cross_entropy(p, t, 0.0)
+    test.eq(zero.ok, false)
+    large := ml.binary_cross_entropy(p, t, 0.9)
+    test.eq(large.ok, false)
+}
+
+fn test_cross_entropy_value_and_grad {
+    logits := ml.variable(warp.array([2.0, 0.0, -1.0], [1, 3]))?
+    loss := ml.cross_entropy(logits, [0])?
+    e2 := math.exp(2.0)
+    em1 := math.exp(-1.0)
+    z := e2 + 1.0 + em1
+    test.approx(ml.value(loss)?, math.log(z) - 2.0, 1e-9)
+    ml.backward(loss, null)?
+    g := warp.to_list(ml.grad(logits)?)
+    test.approx(g[0], e2 / z - 1.0, 1e-9)
+    test.approx(g[1], 1.0 / z, 1e-9)
+    test.approx(g[2], em1 / z, 1e-9)
+}
+
+fn test_gradcheck_cross_entropy {
+    logits := ml.variable(warp.array([0.5, -1.0, 2.0, 1.5, 0.0, -0.5], [2, 3]))?
+    ce := ml.cross_entropy
+    ok := ml.gradcheck(fn(params) { ce(params[0], [0, 2]) }, [logits], 1e-5, 1e-4)?
+    test.is_true(ok)
+}
+
+fn test_cross_entropy_extreme_logits_no_overflow {
+    // Adversarial: ±1000 logits would overflow a naive exp(softmax) pipeline.
+    logits := ml.variable(warp.array([1000.0, -1000.0], [1, 2]))?
+    confident := ml.cross_entropy(logits, [0])?
+    test.approx(ml.value(confident)?, 0.0, 1e-9)
+    ml.backward(confident, null)?
+    for g in warp.to_list(ml.grad(logits)?) {
+        test.is_true(g == g && !math.isinf(g))
+    }
+    wrong := ml.cross_entropy(logits, [1])?
+    wv := ml.value(wrong)?
+    test.is_true(wv == wv && !math.isinf(wv))
+    test.approx(wv, 2000.0, 1e-6)
+}
+
+fn test_cross_entropy_rejects_bad_inputs {
+    logits := ml.constant(warp.array([1.0, 2.0], [1, 2]))?
+    out_of_range := ml.cross_entropy(logits, [2])
+    test.eq(out_of_range.ok, false)
+    wrong_len := ml.cross_entropy(logits, [0, 1])
+    test.eq(wrong_len.ok, false)
+    non_int := ml.cross_entropy(logits, [0.5])
+    test.eq(non_int.ok, false)
+    negative := ml.cross_entropy(logits, [-1])
+    test.eq(negative.ok, false)
+    flat := ml.constant(warp.array([1.0, 2.0], [2]))?
+    not_2d := ml.cross_entropy(flat, [0])
+    test.eq(not_2d.ok, false)
+    empty := ml.constant(warp.array([], [0, 2]))?
+    empty_batch := ml.cross_entropy(empty, [])
+    test.eq(empty_batch.ok, false)
+}
+
+fn test_huber_loss_quadratic_and_linear_regions {
+    pred := ml.variable(warp.array([0.5, 3.0], [2]))?
+    target := ml.constant(warp.array([0.0, 0.0], [2]))?
+    loss := ml.huber_loss(pred, target, 1.0)?
+    // r=0.5 -> 0.5*0.25 = 0.125; r=3 -> 1*(3-0.5) = 2.5; mean = 1.3125
+    test.approx(ml.value(loss)?, 1.3125, 1e-9)
+    ml.backward(loss, null)?
+    g := warp.to_list(ml.grad(pred)?)
+    test.approx(g[0], 0.25, 1e-9)
+    test.approx(g[1], 0.5, 1e-9)
+}
+
+fn test_gradcheck_huber_loss {
+    // Residuals deliberately on both sides of the kink, none near it.
+    pred := ml.variable(warp.array([0.5, -3.0, 0.25], [3]))?
+    target := ml.constant(warp.array([0.0, 0.0, 0.0], [3]))?
+    huber_loss := ml.huber_loss
+    ok := ml.gradcheck(fn(params) { huber_loss(params[0], target, 1.0) }, [pred], 1e-5, 1e-4)?
+    test.is_true(ok)
+}
+
+fn test_huber_rejects_bad_delta {
+    pred := ml.constant(1.0)?
+    target := ml.constant(0.0)?
+    zero := ml.huber_loss(pred, target, 0.0)
+    test.eq(zero.ok, false)
+    negative := ml.huber_loss(pred, target, -1.0)
+    test.eq(negative.ok, false)
+}
+
+// ── Activations ──
+
+fn test_activation_values {
+    s := ml.sigmoid(ml.constant(0.0)?)?
+    test.approx(ml.value(s)?, 0.5, 1e-12)
+    t := ml.tanh(ml.constant(0.0)?)?
+    test.approx(ml.value(t)?, 0.0, 1e-12)
+    g0 := ml.gelu(ml.constant(0.0)?)?
+    test.approx(ml.value(g0)?, 0.0, 1e-12)
+    g1 := ml.gelu(ml.constant(1.0)?)?
+    test.approx(ml.value(g1)?, 0.8411919906, 1e-6)
+    sm := ml.softmax(ml.constant(warp.array([1.0, 2.0, 3.0], [1, 3]))?, 1)?
+    probs := warp.to_list(ml.value(sm)?)
+    test.approx(probs[0] + probs[1] + probs[2], 1.0, 1e-12)
+    test.approx(probs[2], math.exp(2.0) / (1.0 + math.exp(1.0) + math.exp(2.0)), 1e-9)
+}
+
+fn test_sigmoid_tanh_extreme_values_finite {
+    s := ml.sigmoid(ml.variable(warp.array([-1000.0, 1000.0], [2]))?)?
+    vals := warp.to_list(ml.value(s)?)
+    test.approx(vals[0], 0.0, 1e-12)
+    test.approx(vals[1], 1.0, 1e-12)
+    loss := ml.sum(s)?
+    ml.backward(loss, null)?
+    t := ml.tanh(ml.variable(warp.array([-1000.0, 1000.0], [2]))?)?
+    tvals := warp.to_list(ml.value(t)?)
+    test.eq(tvals, [-1.0, 1.0])
+}
+
+fn test_gradcheck_sigmoid_tanh_gelu_scalar {
+    x := ml.variable(0.7)?
+    sigmoid := ml.sigmoid
+    ok := ml.gradcheck(fn(params) { sigmoid(params[0]) }, [x], 1e-5, 1e-4)?
+    test.is_true(ok)
+    tanh_fn := ml.tanh
+    ok2 := ml.gradcheck(fn(params) { tanh_fn(params[0]) }, [x], 1e-5, 1e-4)?
+    test.is_true(ok2)
+    gelu := ml.gelu
+    ok3 := ml.gradcheck(fn(params) { gelu(params[0]) }, [x], 1e-5, 1e-4)?
+    test.is_true(ok3)
+}
+
+fn test_gradcheck_activations_arrays {
+    x := ml.variable(warp.array([-1.5, 0.25, 2.0], [3]))?
+    sum_fn := ml.sum
+    sigmoid := ml.sigmoid
+    ok := ml.gradcheck(fn(params) { sum_fn(sigmoid(params[0])?) }, [x], 1e-5, 1e-4)?
+    test.is_true(ok)
+    tanh_fn := ml.tanh
+    ok2 := ml.gradcheck(fn(params) { sum_fn(tanh_fn(params[0])?) }, [x], 1e-5, 1e-4)?
+    test.is_true(ok2)
+    gelu := ml.gelu
+    ok3 := ml.gradcheck(fn(params) { sum_fn(gelu(params[0])?) }, [x], 1e-5, 1e-4)?
+    test.is_true(ok3)
+}
+
+fn test_gradcheck_softmax {
+    x := ml.variable(warp.array([0.5, -1.0, 2.0, 1.0, 0.0, -0.5], [2, 3]))?
+    weights := ml.constant(warp.array([1.0, 2.0, 3.0, -1.0, 0.5, 2.0], [2, 3]))?
+    softmax := ml.softmax
+    mul := ml.mul
+    sum_fn := ml.sum
+    ok := ml.gradcheck(fn(params) {
+        probs := softmax(params[0], 1)?
+        sum_fn(mul(probs, weights)?)
+    }, [x], 1e-5, 1e-4)?
+    test.is_true(ok)
+}
+
+fn test_softmax_extreme_logits_stable {
+    sm := ml.softmax(ml.constant(warp.array([1000.0, 1001.0, 999.0], [1, 3]))?, 1)?
+    probs := warp.to_list(ml.value(sm)?)
+    // softmax([1000, 1001, 999]) = [e^-1, 1, e^-2] / (e^-1 + 1 + e^-2).
+    test.approx(probs[1], 1.0 / (1.0 + math.exp(-1.0) + math.exp(-2.0)), 1e-6)
+    for p in probs { test.is_true(p == p && !math.isinf(p)) }
+    bad_axis := ml.softmax(ml.constant(warp.array([1.0, 2.0], [1, 2]))?, 5)
+    test.eq(bad_axis.ok, false)
+    scalar := ml.softmax(ml.constant(1.0)?, null)
+    test.eq(scalar.ok, false)
+    // negative axis counts from the end
+    neg := ml.softmax(ml.constant(warp.array([1.0, 1.0], [1, 2]))?, -1)?
+    test.eq(warp.to_list(ml.value(neg)?), [0.5, 0.5])
+}
+
+fn test_activation_modules_in_sequential {
+    linear := ml.linear_module(2, 1, 11)?
+    model := ml.sequential([linear, ml.sigmoid_module()?])?
+    out := ml.module_forward(model, warp.array([0.0, 0.0], [1, 2]))?
+    // zero input => linear bias 0 => sigmoid(0)
+    test.eq(warp.to_list(ml.value(out)?), [0.5])
+    params := ml.module_parameters(ml.tanh_module()?)?
+    test.eq(params, [])
+    gelu_model := ml.sequential([linear, ml.gelu_module()?])?
+    gout := ml.module_forward(gelu_model, warp.array([0.0, 0.0], [1, 2]))?
+    test.eq(warp.to_list(ml.value(gout)?), [0.0])
+    softmax_model := ml.sequential([ml.softmax_module(null)?])?
+    sout := ml.module_forward(softmax_model, warp.array([1.0, 2.0, 3.0, 1.0, 1.0, 1.0], [2, 3]))?
+    probs := warp.to_list(ml.value(sout)?)
+    test.approx(probs[0] + probs[1] + probs[2], 1.0, 1e-12)
+    test.approx(probs[3], 1.0 / 3.0, 1e-9)
+}
+
+fn test_activation_module_gradient_flows {
+    linear := ml.linear_module(2, 1, 5)?
+    model := ml.sequential([linear, ml.tanh_module()?])?
+    out := ml.module_forward(model, warp.array([1.0, 2.0], [1, 2]))?
+    loss := ml.sum(out)?
+    ml.backward(loss, null)?
+    params := ml.module_parameters(model)?
+    g := warp.to_list(ml.grad(params[0])?)
+    // tanh' > 0 and inputs are nonzero, so both weight grads are nonzero.
+    test.is_true(g[0] != 0.0)
+    test.is_true(g[1] != 0.0)
+}
+
+
+// ── LR schedulers ──
+
+fn test_step_lr_schedule {
+    test.approx(ml.step_lr(0.1, 0, 10, 0.5), 0.1, 1e-12)
+    test.approx(ml.step_lr(0.1, 9, 10, 0.5), 0.1, 1e-12)
+    test.approx(ml.step_lr(0.1, 10, 10, 0.5), 0.05, 1e-12)
+    test.approx(ml.step_lr(0.1, 25, 10, 0.5), 0.025, 1e-12)
+    zero_step := ml.step_lr(0.1, 0, 0, 0.5)
+    test.eq(zero_step.ok, false)
+    bad_lr := ml.step_lr(-0.1, 0, 10, 0.5)
+    test.eq(bad_lr.ok, false)
+    bad_gamma := ml.step_lr(0.1, 0, 10, 0.0)
+    test.eq(bad_gamma.ok, false)
+}
+
+fn test_exponential_lr_schedule {
+    test.approx(ml.exponential_lr(0.1, 0, 0.9), 0.1, 1e-12)
+    test.approx(ml.exponential_lr(0.1, 3, 0.9), 0.0729, 1e-12)
+    bad_epoch := ml.exponential_lr(0.1, -1, 0.9)
+    test.eq(bad_epoch.ok, false)
+}
+
+fn test_cosine_lr_schedule {
+    test.approx(ml.cosine_lr(0.1, 0, 100, null), 0.1, 1e-12)
+    test.approx(ml.cosine_lr(0.1, 50, 100, null), 0.05, 1e-12)
+    test.approx(ml.cosine_lr(0.1, 100, 100, null), 0.0, 1e-12)
+    // epochs past the horizon clamp at min_lr
+    test.approx(ml.cosine_lr(0.1, 150, 100, null), 0.0, 1e-12)
+    test.approx(ml.cosine_lr(0.1, 100, 100, 0.01), 0.01, 1e-12)
+    floor_too_high := ml.cosine_lr(0.1, 0, 100, 0.2)
+    test.eq(floor_too_high.ok, false)
+    zero_total := ml.cosine_lr(0.1, 0, 0, null)
+    test.eq(zero_total.ok, false)
+}
+
+// ── Batched data loading ──
+
+fn test_batches_sequential_and_partial {
+    x := [[0.0], [1.0], [2.0], [3.0], [4.0]]
+    y := [0.0, 1.0, 2.0, 3.0, 4.0]
+    result := ml.batches(x, y, 2, null)?
+    test.eq(len(result), 3)
+    test.eq(result[0].indices, [0, 1])
+    test.eq(result[1].y, [2.0, 3.0])
+    test.eq(result[2].indices, [4])
+    dropped := ml.batches(x, y, 2, {"drop_last": true})?
+    test.eq(len(dropped), 2)
+    single := ml.batches(x, y, 10, null)?
+    test.eq(len(single), 1)
+    test.eq(len(single[0].indices), 5)
+}
+
+fn test_batches_shuffled_deterministic_coverage {
+    x := [[0.0], [1.0], [2.0], [3.0], [4.0], [5.0], [6.0]]
+    y := [0, 1, 2, 3, 4, 5, 6]
+    a := ml.batches(x, y, 3, {"shuffle": true, "seed": 42})?
+    b := ml.batches(x, y, 3, {"shuffle": true, "seed": 42})?
+    c := ml.batches(x, y, 3, {"shuffle": true, "seed": 7})?
+    let mut ia = []
+    for batch in a { for idx in batch.indices { ia = push(ia, idx) } }
+    let mut ib = []
+    for batch in b { for idx in batch.indices { ib = push(ib, idx) } }
+    // Same seed => identical epoch
+    test.eq(ia, ib)
+    // Different seed => different order
+    let mut ic = []
+    for batch in c { for idx in batch.indices { ic = push(ic, idx) } }
+    test.is_true(ia != ic)
+    // Adversarial coverage accounting: every sample exactly once per epoch
+    counts := [0, 0, 0, 0, 0, 0, 0]
+    for idx in ia { counts[idx] = counts[idx] + 1 }
+    test.eq(counts, [1, 1, 1, 1, 1, 1, 1])
+    counts2 := [0, 0, 0, 0, 0, 0, 0]
+    for idx in ic { counts2[idx] = counts2[idx] + 1 }
+    test.eq(counts2, [1, 1, 1, 1, 1, 1, 1])
+    // Payloads follow the shuffled indices
+    test.eq(a[0].y[0], ia[0])
+    test.eq(a[0].x[0][0] + 0.0, ia[0] * 1.0)
+}
+
+fn test_batches_shuffle_false_ignores_seed {
+    x := [[0.0], [1.0], [2.0]]
+    y := [0, 1, 2]
+    a := ml.batches(x, y, 2, {"shuffle": false, "seed": 99})?
+    test.eq(a[0].indices, [0, 1])
+    test.eq(a[1].indices, [2])
+}
+
+fn test_batches_rejects_bad_args {
+    zero_bs := ml.batches([[0.0]], [0.0], 0, null)
+    test.eq(zero_bs.ok, false)
+    mismatch := ml.batches([[0.0]], [0.0, 1.0], 1, null)
+    test.eq(mismatch.ok, false)
+    empty := ml.batches([], [], 1, null)
+    test.eq(empty.ok, false)
+}
+
+// ── Seeded, shuffled training ──
+
+fn test_shuffled_linear_fit_is_seed_deterministic {
+    x := [[0.0], [1.0], [2.0], [3.0], [4.0], [5.0], [6.0], [7.0]]
+    y := [1.0, 3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0]
+    opts := {"epochs": 30, "learning_rate": 0.02, "batch_size": 2, "shuffle": true, "seed": 42}
+    a := ml.linear_fit(x, y, opts)?
+    b := ml.linear_fit(x, y, opts)?
+    test.eq(a.weights, b.weights)
+    test.eq(a.bias, b.bias)
+    test.eq(a.loss, b.loss)
+    c := ml.linear_fit(x, y, {"epochs": 30, "learning_rate": 0.02, "batch_size": 2, "shuffle": true, "seed": 7})?
+    test.is_true(a.loss != c.loss || a.bias != c.bias)
+    // shuffled training still converges on the same data
+    predictions := ml.predict(a, [[8.0]])?
+    test.approx(predictions[0], 17.0, 0.5)
+}
+
+fn test_fit_default_matches_explicit_no_shuffle {
+    x := [[0.0], [1.0], [2.0], [3.0]]
+    y := [1.0, 3.0, 5.0, 7.0]
+    plain := ml.linear_fit(x, y, {"epochs": 20, "learning_rate": 0.05, "batch_size": 2})?
+    explicit := ml.linear_fit(x, y, {"epochs": 20, "learning_rate": 0.05, "batch_size": 2, "shuffle": false})?
+    test.eq(plain.weights, explicit.weights)
+    test.eq(plain.loss, explicit.loss)
+}
+
+fn test_shuffled_logistic_fit_deterministic {
+    x := [[-3.0], [-2.0], [-1.0], [1.0], [2.0], [3.0]]
+    y := [0, 0, 0, 1, 1, 1]
+    opts := {"epochs": 25, "learning_rate": 0.2, "batch_size": 2, "shuffle": true, "seed": 9}
+    a := ml.logistic_fit(x, y, opts)?
+    b := ml.logistic_fit(x, y, opts)?
+    test.eq(a.weights, b.weights)
+    test.eq(a.loss, b.loss)
+    classes := ml.predict_classes(a, [[-4.0], [4.0]], 0.5)?
+    test.eq(classes, [0, 1])
 }

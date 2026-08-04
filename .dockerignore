@@ -1,0 +1,15 @@
+# Keep the Docker build context small and reproducible.
+.git
+vendor
+node_modules
+**/node_modules
+wasm/node_modules
+tokensave
+.tokensave
+reports
+dist
+examples/viz_out
+examples/data/out
+*.vsix
+weft
+weft-wasm

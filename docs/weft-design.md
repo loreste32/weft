@@ -1135,6 +1135,7 @@ Plus **module type registry**: `map[string]*TypeInfo` (source of type-name expre
 |---------|---------|
 | HTTP client timeout | **30s** |
 | HTTP max response body | **32 MiB** |
+| HTTP max request body | **32 MiB** (rejected before send) |
 | HTTP max redirects | **10** |
 | Agent `max_steps` | **20** |
 | Agent `max_tool_calls` | **40** |

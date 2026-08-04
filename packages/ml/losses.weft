@@ -1,0 +1,48 @@
+use "./autograd.weft" as ag
+
+// Differentiable loss functions built on the autograd tape. Each accepts
+// autograd nodes, plain numbers, or warp arrays (broadcast like the binary
+// tape ops) and returns a scalar loss node, so backward() differentiates
+// through every trainable input.
+
+// Mean squared error: mean((pred - target)^2).
+pub fn mse_loss(pred, target) -> Result[any] {
+    diff := ag.sub(pred, target)?
+    squared := ag.mul(diff, diff)?
+    ag.mean(squared)
+}
+
+// Binary cross-entropy over probabilities. An epsilon inside each log keeps
+// predictions of exactly 0 or 1 finite instead of NaN/Inf; eps defaults to
+// 1e-12 and must stay well away from the probability scale.
+pub fn binary_cross_entropy(pred, target, eps) -> Result[any] {
+    e := if eps == null { 1e-12 } else { eps }
+    if !_number(e) || e <= 0 || e >= 0.5 {
+        return Err("ml.binary_cross_entropy eps must be a finite number in (0, 0.5)")
+    }
+    term_pos := ag.mul(target, ag.log(ag.add(pred, e)?)?)?
+    term_neg := ag.mul(ag.sub(1.0, target)?, ag.log(ag.add(ag.sub(1.0, pred)?, e)?)?)?
+    total := ag.add(term_pos, term_neg)?
+    ag.neg(ag.mean(total)?)
+}
+
+// Mean softmax cross-entropy. logits is a 2-D warp array (or node wrapping
+// one) of shape [batch, classes]; targets is a list of integer class indices.
+// Implemented with the log-sum-exp trick, so extreme logits stay finite.
+pub fn cross_entropy(logits, targets) -> Result[any] {
+    ag.cross_entropy(logits, targets)
+}
+
+// Mean Huber loss with kink at |pred - target| = delta (default 1.0):
+// quadratic inside the kink, linear outside, so outliers cannot dominate.
+pub fn huber_loss(pred, target, delta) -> Result[any] {
+    elementwise := ag.huber(pred, target, delta)?
+    ag.mean(elementwise)
+}
+
+fn _number(value) {
+    if value == null { return false }
+    k := type_of(value)
+    if k != "int" && k != "float" { return false }
+    value == value && !math.isinf(value)
+}

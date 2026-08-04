@@ -102,6 +102,10 @@ http.serve(":8080", fn(req) {
 Client: `get`, `get_json`, `post`, `put`, `patch`, `delete`, `fetch`, `post_form`.  
 Server helpers: `serve`, `text`, `json`.
 
+In browser Wasm, the client functions run through the browser Fetch API and require `runAsync()`; normal CORS and CSP rules apply. The 32 MiB response cap is enforced on decoded bytes as they stream in (gzip expansion counts), so a small compressed or under-declared body cannot smuggle an oversized payload through. Per-request deadlines come from `timeout_ms` (milliseconds) or `timeout` (seconds); expiry aborts the fetch and returns a deadline-exceeded `Err`. `http.serve` and `http.post_form` are unavailable in the browser and return explicit capability errors.
+
+Limits (explicit, host and browser): request and response bodies are capped at **32 MiB**. An over-limit request is rejected with `Err` before anything is sent; an over-limit response is an `Err` ("response body too large" / "exceeds 32 MiB limit"), never a silently truncated body. Browser Wasm additionally refuses body-bearing responses it cannot bound (no readable stream) and never trusts `Content-Length` as a memory guarantee. Client default timeout is 30s; override per call with `timeout`, `timeout_ms`, plus `retries`/`retry_ms` and circuit-breaker opts.
+
 ### socket
 
 `socket.dial(network, address, timeout?)` returns a raw TCP/UDP connection. An omitted timeout defaults to 30 seconds; a supplied timeout must be a positive finite number of seconds representing at least one nanosecond, or the call returns `Err`. `conn.read` and `conn.write` do not install hidden deadlines: they honor deadlines set by the caller. Use `conn.set_read_deadline`, `conn.set_write_deadline`, or `conn.set_deadline` for persistent limits; these setters accept the same validated duration values. `conn.read_timeout`, `conn.write_timeout`, and `conn.read_all_timeout` apply a temporary limit and restore the previous caller deadline afterward.

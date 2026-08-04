@@ -63,6 +63,14 @@ type nativeTensorPlugin interface {
 	runTensor(operation string, inputs []*tensor.Tensor) (*tensor.Tensor, error)
 }
 
+// nativeExecInfoPlugin is the optional additive ABI v1 export
+// weft_accel_exec_info: a JSON document describing the most recent run.
+// Providers that omit it load and run, but their tensor results report
+// StatusUnreported and they fail conformance.
+type nativeExecInfoPlugin interface {
+	execInfo() ([]byte, error)
+}
+
 // Plugin is a loaded, validated native provider.
 type Plugin struct {
 	path     string
@@ -333,50 +341,70 @@ func (p *Plugin) Manifest() Manifest { return p.manifest }
 // RunJSON executes one provider operation. The provider must return one JSON
 // value; providers must not return pointers into caller-owned memory.
 func (p *Plugin) RunJSON(op string, input []byte) ([]byte, error) {
+	out, _, err := p.RunJSONEx(op, input)
+	return out, err
+}
+
+// RunJSONEx is RunJSON plus execution reporting: the device, requested
+// device, and fallback fields are parsed from the provider result. A result
+// without those fields yields ExecInfo with Reported=false and
+// StatusUnreported; a contradictory report (device other than requested
+// without fallback) is an error.
+func (p *Plugin) RunJSONEx(op string, input []byte) ([]byte, ExecInfo, error) {
 	if p == nil || p.native == nil {
-		return nil, errors.New("accelerator plugin is not loaded")
+		return nil, UnavailableExecInfo(), errors.New("accelerator plugin is not loaded")
 	}
 	if strings.TrimSpace(op) == "" {
-		return nil, errors.New("accelerator operation is required")
+		return nil, ExecInfo{Status: StatusUnreported}, errors.New("accelerator operation is required")
 	}
 	if !supportsOperation(p.manifest.Operations, op) {
-		return nil, fmt.Errorf("accelerator operation %q is not declared by the provider", op)
+		return nil, ExecInfo{Status: StatusUnreported}, fmt.Errorf("accelerator operation %q is not declared by the provider", op)
 	}
 	if len(input) > MaxResultBytes {
-		return nil, fmt.Errorf("accelerator input exceeds %d bytes", MaxResultBytes)
+		return nil, ExecInfo{Status: StatusUnreported}, fmt.Errorf("accelerator input exceeds %d bytes", MaxResultBytes)
 	}
 	out, err := p.native.run(op, input)
 	if err != nil {
-		return nil, fmt.Errorf("accelerator %s: %w", op, err)
+		return nil, ExecInfo{Status: StatusUnreported}, fmt.Errorf("accelerator %s: %w", op, err)
 	}
 	if len(out) > MaxResultBytes {
-		return nil, fmt.Errorf("accelerator result exceeds %d bytes", MaxResultBytes)
+		return nil, ExecInfo{Status: StatusUnreported}, fmt.Errorf("accelerator result exceeds %d bytes", MaxResultBytes)
 	}
 	if !json.Valid(out) {
-		return nil, errors.New("accelerator returned invalid JSON")
+		return nil, ExecInfo{Status: StatusUnreported}, errors.New("accelerator returned invalid JSON")
 	}
-	return out, nil
+	info := parseExecInfo(out)
+	if err := validateExecInfo(p.manifest.Name, info); err != nil {
+		return nil, info, err
+	}
+	return out, info, nil
 }
 
 // RunTensor executes an optional binary tensor operation. Providers must
 // advertise the operation in their manifest and implement the binary ABI;
 // JSON-only providers fail explicitly instead of silently copying large
 // tensors through the compatibility path.
-func (p *Plugin) RunTensor(op string, inputs ...*tensor.Tensor) (output *tensor.Tensor, err error) {
+//
+// The returned ExecInfo comes from the provider's additive
+// weft_accel_exec_info export. A provider without the export (or with a
+// malformed document) yields Reported=false and StatusUnreported; a
+// contradictory report is an error.
+func (p *Plugin) RunTensor(op string, inputs ...*tensor.Tensor) (output *tensor.Tensor, info ExecInfo, err error) {
+	unreported := ExecInfo{Status: StatusUnreported}
 	if p == nil || p.native == nil {
-		return nil, errors.New("accelerator plugin is not loaded")
+		return nil, UnavailableExecInfo(), errors.New("accelerator plugin is not loaded")
 	}
 	if strings.TrimSpace(op) == "" {
-		return nil, errors.New("accelerator operation required")
+		return nil, unreported, errors.New("accelerator operation required")
 	}
 	if !supportsOperation(p.manifest.Operations, op) {
-		return nil, fmt.Errorf("accelerator operation %q is not declared by provider", op)
+		return nil, unreported, fmt.Errorf("accelerator operation %q is not declared by provider", op)
 	}
 	if len(inputs) == 0 {
-		return nil, errors.New("accelerator tensor operation requires at least one input")
+		return nil, unreported, errors.New("accelerator tensor operation requires at least one input")
 	}
 	if len(inputs) > MaxTensorInputs {
-		return nil, fmt.Errorf("accelerator tensor operation accepts at most %d inputs", MaxTensorInputs)
+		return nil, unreported, fmt.Errorf("accelerator tensor operation accepts at most %d inputs", MaxTensorInputs)
 	}
 	prepared := make([]*tensor.Tensor, len(inputs))
 	temporary := make([]*tensor.Tensor, 0, len(inputs))
@@ -392,35 +420,46 @@ func (p *Plugin) RunTensor(op string, inputs ...*tensor.Tensor) (output *tensor.
 	}()
 	for i, input := range inputs {
 		if input == nil {
-			return nil, errors.New("accelerator tensor operation received a nil input")
+			return nil, unreported, errors.New("accelerator tensor operation received a nil input")
 		}
 		contiguous, err := input.Contiguous()
 		if err != nil {
-			return nil, fmt.Errorf("prepare accelerator tensor input %d: %w", i, err)
+			return nil, unreported, fmt.Errorf("prepare accelerator tensor input %d: %w", i, err)
 		}
 		if contiguous != input {
 			temporary = append(temporary, contiguous)
 		}
 		if contiguous.ByteLen() > MaxResultBytes {
-			return nil, fmt.Errorf("accelerator tensor input exceeds %d bytes", MaxResultBytes)
+			return nil, unreported, fmt.Errorf("accelerator tensor input exceeds %d bytes", MaxResultBytes)
 		}
 		prepared[i] = contiguous
 	}
 	provider, ok := p.native.(nativeTensorPlugin)
 	if !ok {
-		return nil, errors.New("accelerator provider does not implement binary tensor ABI")
+		return nil, unreported, errors.New("accelerator provider does not implement binary tensor ABI")
 	}
 	output, err = provider.runTensor(op, prepared)
 	if err != nil {
-		return nil, fmt.Errorf("accelerator tensor %s: %w", op, err)
+		return nil, unreported, fmt.Errorf("accelerator tensor %s: %w", op, err)
 	}
 	if output == nil {
-		return nil, errors.New("accelerator tensor operation returned no result")
+		return nil, unreported, errors.New("accelerator tensor operation returned no result")
 	}
 	if output.ByteLen() > MaxResultBytes {
-		return nil, fmt.Errorf("accelerator tensor result exceeds %d bytes", MaxResultBytes)
+		tensor.Release(output)
+		return nil, unreported, fmt.Errorf("accelerator tensor result exceeds %d bytes", MaxResultBytes)
 	}
-	return output, nil
+	info = unreported
+	if reporter, ok := p.native.(nativeExecInfoPlugin); ok {
+		if raw, rerr := reporter.execInfo(); rerr == nil {
+			info = parseExecInfo(raw)
+		}
+	}
+	if verr := validateExecInfo(p.manifest.Name, info); verr != nil {
+		tensor.Release(output)
+		return nil, info, verr
+	}
+	return output, info, nil
 }
 
 func supportsOperation(operations []string, operation string) bool {

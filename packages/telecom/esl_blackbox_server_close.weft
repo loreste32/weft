@@ -1,0 +1,49 @@
+use "./esl.weft" as esl
+
+// Black-box client for server-initiated close scenarios. The Go mock server
+// kills the TCP connection while an operation is outstanding; the client must
+// observe an error (never hang) and every later operation must report the
+// dead connection immediately.
+
+fn close_during_command(conn) -> Result[any] {
+    pending := esl.api(conn, "freeze")
+    ensure(!pending.ok, "expected pending command to fail on server close")?
+    say("PENDING-FAILED: ${pending.error}")
+
+    after := esl.api(conn, "after-close")
+    ensure(!after.ok, "expected command after close to fail")?
+    say("AFTER-FAILED: ${after.error}")
+
+    evt := esl.recv_event(conn)
+    ensure(!evt.ok, "expected recv_event after close to fail")?
+    say("EVENT-FAILED: ${evt.error}")
+    Ok(null)
+}
+
+fn close_during_event_wait(conn) -> Result[any] {
+    blocked := esl.recv_event(conn)
+    ensure(!blocked.ok, "expected blocked recv_event to fail on server close")?
+    say("WAIT-FAILED: ${blocked.error}")
+
+    timed := esl.recv_event_timeout(conn, 5)
+    ensure(!timed.ok, "expected recv_event_timeout on dead connection to fail")?
+    ensure(!str.contains("" + timed.error, "timeout"), "dead connection must fail fast, not time out")?
+    say("TIMEOUT-FAILED: ${timed.error}")
+
+    cmd := esl.api(conn, "after-close")
+    ensure(!cmd.ok, "expected command after close to fail")?
+    say("COMMAND-FAILED: ${cmd.error}")
+    Ok(null)
+}
+
+fn main -> Result[any] {
+    port := env.get("ESL_TEST_PORT", "")
+    mode := env.get("ESL_TEST_MODE", "command")
+    conn := esl.connect("127.0.0.1", port, "pw")?
+    if mode == "event" {
+        close_during_event_wait(conn)?
+    } else {
+        close_during_command(conn)?
+    }
+    Ok(null)
+}

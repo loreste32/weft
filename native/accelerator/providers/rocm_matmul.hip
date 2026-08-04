@@ -14,6 +14,25 @@ using weft_accel_provider::parse_matrix;
 
 static std::string last_error;
 
+// Execution reporting for the most recent run (weft_accel_exec_info). This
+// provider never falls back to CPU: device ops either run on the ROCm device
+// or fail with an error, so fallback is always false here.
+static std::string last_exec_info;
+
+static std::string rocm_device_name() {
+  int device = 0;
+  if (hipGetDevice(&device) != hipSuccess) return "rocm";
+  return std::string("rocm:") + std::to_string(device);
+}
+
+static void record_exec_info(bool fallback) {
+  last_exec_info = weft_accel_provider::exec_info_json(rocm_device_name(), fallback);
+}
+
+extern "C" char* weft_accel_exec_info(void) {
+  return copy_output(last_exec_info);
+}
+
 __global__ void weft_matmul_kernel(const float* a, const float* b, float* out,
                                    size_t rows, size_t inner, size_t cols) {
   size_t row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -56,8 +75,11 @@ extern "C" int weft_accel_run(const char* operation, const char* input_json,
   if (std::strcmp(operation, "health") == 0) {
     int devices = 0;
     if (!hip_ok(hipGetDeviceCount(&devices), "hipGetDeviceCount")) return 1;
+    std::string device = rocm_device_name();
+    record_exec_info(false);
     *output_json = copy_output(std::string("{\"ok\":true,\"backend\":\"rocm\",\"devices\":") +
-                               std::to_string(devices) + "}");
+                               std::to_string(devices) + ",\"device\":\"" + device +
+                               "\",\"requested_device\":\"" + device + "\",\"fallback\":false}");
     return *output_json == nullptr;
   }
   if (std::strcmp(operation, "matmul") != 0) { last_error = "unsupported operation"; return 1; }
@@ -86,7 +108,8 @@ extern "C" int weft_accel_run(const char* operation, const char* input_json,
   if (ok) ok = hip_ok(hipMemcpy(result.data(), device_out, out_bytes, hipMemcpyDeviceToHost), "hipMemcpy(result)");
   hipFree(device_a); hipFree(device_b); hipFree(device_out);
   if (!ok) return 1;
-  *output_json = copy_output(matrix_json(result, a.rows, b.cols));
+  record_exec_info(false);
+  *output_json = copy_output(matrix_json(result, a.rows, b.cols, rocm_device_name(), false));
   if (*output_json == nullptr) { last_error = "result allocation failed"; return 1; }
   return 0;
 }
@@ -185,6 +208,7 @@ extern "C" int weft_accel_run_tensor(const char* operation,
       weft_accel_free_tensor(output);
       return 1;
     }
+    record_exec_info(false);
     return 0;
   }
   if (std::strcmp(operation, "tensor_matmul") != 0 ||
@@ -241,6 +265,7 @@ extern "C" int weft_accel_run_tensor(const char* operation,
     weft_accel_free_tensor(output);
     return 1;
   }
+  record_exec_info(false);
   return 0;
 }
 

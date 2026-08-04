@@ -1,0 +1,92 @@
+use "../../packages/warp/lib.weft" as warp
+use io
+use json
+
+// Property-harness driver: reads one JSON spec from stdin, builds inputs
+// deterministically from the seed (no unseeded randomness), applies the op,
+// and prints {"shape": ..., "dtype": ..., "data": ...} as JSON.
+//
+// Value patterns (mirrored exactly in scripts/conformance/run.py):
+//   a: (((seed * 31 + i * 7) % 21) - 10) / 4.0   in [-2.5, 2.5], step 0.25
+//   b: (((seed * 17 + i * 11) % 19) - 9) / 4.0   in [-2.25, 2.25], step 0.25
+//   d: (((seed * 13 + i * 3) % 16) + 4) / 8.0    in [0.5, 2.375] (divisor, never 0)
+// All values are exact binary fractions so both sides agree bit-for-bit
+// before any transcendental rounding.
+
+fn _prod(shape) {
+    let mut p = 1
+    for d in shape { p = p * d }
+    p
+}
+
+fn _aval(seed, i) { (((seed * 31 + i * 7) % 21) - 10) / 4.0 }
+
+fn _bval(seed, i) { (((seed * 17 + i * 11) % 19) - 9) / 4.0 }
+
+fn _dval(seed, i) { (((seed * 13 + i * 3) % 16) + 4) / 8.0 }
+
+fn _fill(seed, shape, kind) {
+    n := _prod(shape)
+    let mut data = []
+    let mut i = 0
+    while i < n {
+        if kind == "a" { data = push(data, _aval(seed, i)) }
+        else if kind == "b" { data = push(data, _bval(seed, i)) }
+        else { data = push(data, _dval(seed, i)) }
+        i = i + 1
+    }
+    warp.array(data, shape)
+}
+
+fn _emit(arr) {
+    say(json.stringify({"shape": warp.shape(arr), "dtype": warp.dtype(arr), "data": warp.to_list(arr)}))
+}
+
+fn main -> Result {
+    input := io.stdin()?
+    spec := json.parse(input)?
+    op := spec.op
+    seed := spec.seed
+    let mut a = _fill(seed, spec.a_shape, "a")
+    if spec.transpose_a == true { a = warp.transpose_view(a, null) }
+
+    if op == "add" || op == "sub" || op == "mul" || op == "less" || op == "greater" || op == "equal" || op == "less_equal" || op == "greater_equal" || op == "not_equal" {
+        b := _fill(seed, spec.b_shape, "b")
+        if op == "add" { _emit(warp.add(a, b)) }
+        else if op == "sub" { _emit(warp.sub(a, b)) }
+        else if op == "mul" { _emit(warp.mul(a, b)) }
+        else if op == "less" { _emit(warp.less(a, b)) }
+        else if op == "greater" { _emit(warp.greater(a, b)) }
+        else if op == "equal" { _emit(warp.equal(a, b)) }
+        else if op == "less_equal" { _emit(warp.less_equal(a, b)) }
+        else if op == "greater_equal" { _emit(warp.greater_equal(a, b)) }
+        else { _emit(warp.not_equal(a, b)) }
+        return Ok(null)
+    }
+    if op == "div" {
+        _emit(warp.div(a, _fill(seed, spec.b_shape, "d")))
+        return Ok(null)
+    }
+    if op == "sum" || op == "mean" || op == "min" || op == "max" {
+        axis := spec.axis
+        keepdims := spec.keepdims
+        if op == "sum" { _emit(warp.sum_axis_opts(a, axis, keepdims)) }
+        else if op == "mean" { _emit(warp.mean_axis_opts(a, axis, keepdims)) }
+        else if op == "min" { _emit(warp.min_axis_opts(a, axis, keepdims)) }
+        else { _emit(warp.max_axis_opts(a, axis, keepdims)) }
+        return Ok(null)
+    }
+    if op == "matmul" {
+        _emit(warp.matmul(a, _fill(seed, spec.b_shape, "b")))
+        return Ok(null)
+    }
+    if op == "reshape" {
+        _emit(warp.reshape(a, spec.new_shape))
+        return Ok(null)
+    }
+    if op == "transpose" {
+        _emit(warp.transpose(a, spec.axes))
+        return Ok(null)
+    }
+    Err("warp_property_case: unknown op " + op)
+}

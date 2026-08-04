@@ -2,7 +2,7 @@
   "name": "weft-wasm-browser-tests",
   "private": true,
   "scripts": {
-    "test:browser": "node playwright_test.js"
+    "test:browser": "node playwright_test.js && node playwright_adversarial_test.js"
   },
   "engines": {
     "node": ">=18"

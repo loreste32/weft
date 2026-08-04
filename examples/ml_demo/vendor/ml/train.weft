@@ -19,7 +19,7 @@ pub fn linear_fit(features, targets, opts) -> Result[any] {
     let mut epoch = 0
     let mut loss = 0.0
     while epoch < settings.epochs {
-    step := _linear_epoch(feature_rows, target_values, weights, bias, settings)
+    step := _linear_epoch(feature_rows, target_values, weights, bias, settings, epoch)
     loss = step.loss
     bias = step.bias
         epoch = epoch + 1
@@ -49,7 +49,7 @@ pub fn logistic_fit(features, targets, opts) -> Result[any] {
     let mut epoch = 0
     let mut loss = 0.0
     while epoch < settings.epochs {
-    step := _logistic_epoch(feature_rows, target_values, weights, bias, settings)
+    step := _logistic_epoch(feature_rows, target_values, weights, bias, settings, epoch)
     loss = step.loss
     bias = step.bias
         epoch = epoch + 1
@@ -108,6 +108,51 @@ pub fn score(model, features, targets) -> Result[any] {
     mse_value := met.mse(predictions, targets)
     if _kind(mse_value) == "map" { return mse_value }
     Ok(mse_value)
+}
+
+// batches(features, targets, batch_size, opts) materializes one epoch of
+// minibatches as a list of {"x", "y", "indices"} maps. opts:
+//   shuffle (bool, default false) — permute sample order with a seeded LCG
+//   seed    (int, default 1)      — same seed + data => identical batches
+//   drop_last (bool, default false) — drop a trailing partial batch
+// Every sample appears in exactly one batch per call, shuffled or not.
+pub fn batches(features, targets, batch_size, opts) -> Result[any] {
+    feature_rows := _feature_rows(features)
+    target_values := _target_values(targets)
+    shape := _validate_dataset(feature_rows, target_values)
+    if shape == null { return Err("ml.batches expects a non-empty numeric matrix and matching targets") }
+    if _kind(batch_size) != "int" || batch_size <= 0 {
+        return Err("ml.batches batch_size must be a positive integer")
+    }
+    n := shape[0]
+    shuffle := _option_bool(opts, "shuffle", false)
+    drop_last := _option_bool(opts, "drop_last", false)
+    order := if shuffle {
+        _permutation(n, _option_int(opts, "seed", 1, 0, 2147483646))
+    } else {
+        _sequential_order(n)
+    }
+    let mut result = []
+    let mut start = 0
+    while start < n {
+        stop := if start + batch_size < n { start + batch_size } else { n }
+        if drop_last && stop - start < batch_size { start = stop } else {
+            let mut batch_x = []
+            let mut batch_y = []
+            let mut indices = []
+            let mut i = start
+            while i < stop {
+                idx := order[i]
+                batch_x = push(batch_x, feature_rows[idx])
+                batch_y = push(batch_y, target_values[idx])
+                indices = push(indices, idx)
+                i = i + 1
+            }
+            result = push(result, {"x": batch_x, "y": batch_y, "indices": indices})
+            start = stop
+        }
+    }
+    Ok(result)
 }
 
 pub fn standardize(features) -> Result[any] {
@@ -203,7 +248,44 @@ fn _settings(opts) {
     batch_size := _option_int(opts, "batch_size", 256, 1, 1000000)
     learning_rate := _option_number(opts, "learning_rate", 0.01, 1e-12, 1e6)
     l2 := _option_number(opts, "l2", 0.0, 0.0, 1e6)
-    {"epochs": epochs, "batch_size": batch_size, "learning_rate": learning_rate, "l2": l2}
+    shuffle := _option_bool(opts, "shuffle", false)
+    seed := _option_int(opts, "seed", 1, 0, 2147483646)
+    {"epochs": epochs, "batch_size": batch_size, "learning_rate": learning_rate, "l2": l2, "shuffle": shuffle, "seed": seed}
+}
+
+fn _option_bool(opts, name, fallback) {
+    if opts == null || _kind(opts) != "map" || opts[name] == null { return fallback }
+    value := opts[name]
+    if value == true { return true }
+    if value == false { return false }
+    fallback
+}
+
+// Fisher-Yates shuffle driven by the same Numerical Recipes LCG as module
+// init, so a given seed always produces the same permutation.
+fn _permutation(n, seed) {
+    order := _sequential_order(n)
+    if n < 2 { return order }
+    let mut state = seed % 2147483647
+    if state <= 0 { state = state + 2147483646 }
+    let mut i = n - 1
+    while i > 0 {
+        state = (state * 1664525 + 1013904223) % 2147483647
+        if state < 0 { state = -state }
+        j := state % (i + 1)
+        tmp := order[i]
+        order[i] = order[j]
+        order[j] = tmp
+        i = i - 1
+    }
+    order
+}
+
+fn _sequential_order(n) {
+    let mut order = []
+    let mut i = 0
+    while i < n { order = push(order, i) i = i + 1 }
+    order
 }
 
 fn _option_int(opts, name, fallback, low, high) {
@@ -221,10 +303,11 @@ fn _option_number(opts, name, fallback, low, high) {
     value + 0.0
 }
 
-fn _linear_epoch(features, targets, weights, bias, settings) {
+fn _linear_epoch(features, targets, weights, bias, settings, epoch) {
     let mut total_loss = 0.0
     let mut start = 0
     let mut current_bias = bias
+    order := if settings.shuffle { _permutation(len(features), settings.seed + epoch) } else { null }
     while start < len(features) {
         stop := if start + settings.batch_size < len(features) { start + settings.batch_size } else { len(features) }
         let mut gradients = []
@@ -234,12 +317,13 @@ fn _linear_epoch(features, targets, weights, bias, settings) {
         count := stop - start
         let mut i = start
         while i < stop {
-            prediction := _row_dot(features[i], weights) + current_bias
-            error := prediction - targets[i]
+            idx := if order == null { i } else { order[i] }
+            prediction := _row_dot(features[idx], weights) + current_bias
+            error := prediction - targets[idx]
             total_loss = total_loss + error * error
             bias_gradient = bias_gradient + error
             j = 0
-            while j < len(weights) { gradients[j] = gradients[j] + error * features[i][j] j = j + 1 }
+            while j < len(weights) { gradients[j] = gradients[j] + error * features[idx][j] j = j + 1 }
             i = i + 1
         }
         j = 0
@@ -253,10 +337,11 @@ fn _linear_epoch(features, targets, weights, bias, settings) {
     {"loss": total_loss / len(features), "bias": current_bias}
 }
 
-fn _logistic_epoch(features, targets, weights, bias, settings) {
+fn _logistic_epoch(features, targets, weights, bias, settings, epoch) {
     let mut total_loss = 0.0
     let mut start = 0
     let mut current_bias = bias
+    order := if settings.shuffle { _permutation(len(features), settings.seed + epoch) } else { null }
     while start < len(features) {
         stop := if start + settings.batch_size < len(features) { start + settings.batch_size } else { len(features) }
         let mut gradients = []
@@ -266,13 +351,14 @@ fn _logistic_epoch(features, targets, weights, bias, settings) {
         count := stop - start
         let mut i = start
         while i < stop {
-            probability := _sigmoid(_row_dot(features[i], weights) + current_bias)
-            target := targets[i]
+            idx := if order == null { i } else { order[i] }
+            probability := _sigmoid(_row_dot(features[idx], weights) + current_bias)
+            target := targets[idx]
             total_loss = total_loss - (target * math.log(probability + 1e-12) + (1 - target) * math.log(1 - probability + 1e-12))
             error := probability - target
             bias_gradient = bias_gradient + error
             j = 0
-            while j < len(weights) { gradients[j] = gradients[j] + error * features[i][j] j = j + 1 }
+            while j < len(weights) { gradients[j] = gradients[j] + error * features[idx][j] j = j + 1 }
             i = i + 1
         }
         j = 0

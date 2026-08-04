@@ -28,11 +28,15 @@ const char *weft_accel_last_error(void);
 
 void weft_accel_free(char *output_json);
 
-// Optional binary tensor ABI. Providers that advertise `tensor_matmul` or
-// `tensor_add` must export these symbols. Shapes are dimensions; strides are
-// element strides. `tensor_add` is a bounded same-shape elementwise addition
-// operation; providers must reject unsupported broadcasting rather than
-// silently changing the requested shape.
+// Optional binary tensor ABI. Providers that advertise `tensor_` operations
+// must export these symbols. Shapes are dimensions; strides are element
+// strides. `tensor_add`, `tensor_sub`, `tensor_mul`, and `tensor_div` are
+// bounded same-shape elementwise operations; providers must reject
+// unsupported broadcasting rather than silently changing the requested shape.
+// `tensor_sum` is a full reduction over one input and returns a rank-0
+// tensor holding a single element of the input dtype (NumPy `np.sum`
+// semantics). Providers keep ops they cannot implement correctly out of
+// their manifests.
 // The provider owns output storage until weft_accel_free_tensor is called.
 enum {
   WEFT_TENSOR_BOOL = 1,
@@ -74,6 +78,26 @@ int weft_accel_run_tensor(const char *operation,
                           weft_accel_tensor_output *output);
 
 void weft_accel_free_tensor(weft_accel_tensor_output *output);
+
+// Optional execution reporting, additive to ABI v1 and REQUIRED for
+// conformance. After any weft_accel_run or weft_accel_run_tensor call,
+// returns a newly allocated UTF-8 JSON object describing the most recent
+// operation, for example:
+//   {"device":"cuda:0","requested_device":"cuda:0","fallback":false,"status":"device"}
+//
+// Fields:
+//   device           — where the operation actually executed.
+//   requested_device — the device the caller requested.
+//   fallback         — true when the operation fell back to host CPU compute.
+//   status           — "device" (ran on requested device), "fallback"
+//                      (fell back to CPU), or "unavailable".
+//
+// Silent fallback is not allowed: a provider that computes on CPU for a
+// non-CPU request must set fallback=true and device="cpu". The host rejects
+// contradictory reports (device != requested_device with fallback=false) and
+// treats a missing export or malformed document as "unreported", which fails
+// conformance. The caller releases the returned string via weft_accel_free.
+char *weft_accel_exec_info(void);
 
 #ifdef __cplusplus
 }

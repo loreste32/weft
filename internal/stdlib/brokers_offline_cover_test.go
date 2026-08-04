@@ -268,11 +268,7 @@ func TestNATS_LiveOptional(t *testing.T) {
 	}
 	p := packageNATS(env)
 	r := callPkg(t, p, "connect", runtime.Str("nats://127.0.0.1:4222"))
-	ro, ok := r.Obj.(*runtime.ResultObj)
-	if !ok || !ro.Ok {
-		t.Skip("no local NATS")
-	}
-	nc := ro.Val
+	nc := liveConnectResult(t, "nats", r)
 	mustOk(t, callMap(t, nc, "publish", runtime.Str("weft.test"), runtime.Str("hi")))
 	mustErr(t, callMap(t, nc, "publish", runtime.Str("only")))
 	// request will timeout

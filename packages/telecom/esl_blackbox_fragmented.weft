@@ -1,0 +1,27 @@
+use "./esl.weft" as esl
+
+// Black-box client for fragmented/coalesced delivery over real TCP. The Go
+// mock server dribbles every frame in awkward chunks (mid-header, mid
+// Content-Length digits, 1-byte body pieces) and coalesces frame boundaries;
+// the client must reassemble everything correctly.
+
+fn main -> Result[any] {
+    port := env.get("ESL_TEST_PORT", "")
+    conn := esl.connect("127.0.0.1", port, "pw")?
+
+    reply := esl.api(conn, "fragmented")?
+    ensure(reply == "fragmented-body-ok", "unexpected fragmented reply: $reply")?
+    say("REPLY-OK: $reply")
+
+    event := esl.recv_event(conn)?
+    ensure(event.Event == "FRAGMENTED", "unexpected fragmented event")?
+    ensure(event.seq == 1, "unexpected fragmented event payload")?
+    say("EVENT-OK: ${event.Event}")
+
+    second := esl.recv_event(conn)?
+    ensure(second.Event == "COALESCED", "unexpected coalesced event")?
+    say("EVENT2-OK: ${second.Event}")
+
+    esl.close(conn)?
+    Ok(null)
+}
