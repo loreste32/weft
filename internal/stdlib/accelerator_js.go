@@ -17,6 +17,9 @@ func packageAccelerator() runtime.Value {
 	set(p, "run", func(args []runtime.Value) (runtime.Value, error) {
 		return errRes("native accelerator plugins are unavailable in browser WASM", "accelerator"), nil
 	}, 3)
+	set(p, "run_tensor", func(args []runtime.Value) (runtime.Value, error) {
+		return errRes("native accelerator plugins are unavailable in browser WASM", "accelerator"), nil
+	}, 3)
 	set(p, "close", func(args []runtime.Value) (runtime.Value, error) {
 		return runtime.Ok(runtime.Bool(false)), nil
 	}, 1)

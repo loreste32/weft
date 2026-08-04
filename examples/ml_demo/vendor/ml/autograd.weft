@@ -1,0 +1,328 @@
+use json
+use str
+use warp
+
+// Small reverse-mode autodiff tape for scalar model expressions.
+// Nodes are ordinary Weft maps so the API remains portable and inspectable.
+// Gradients accumulate across backward calls; call zero_grad before a new pass.
+
+pub fn variable(value) -> Result[any] {
+    if !_supported_value(value) { return Err("ml.variable expects a finite numeric scalar or warp array") }
+    Ok(_node(value, true, [], null, null))
+}
+
+pub fn constant(value) -> Result[any] {
+    if !_supported_value(value) { return Err("ml.constant expects a finite numeric scalar or warp array") }
+    Ok(_node(value, false, [], null, null))
+}
+
+pub fn value(node) -> Result[any] {
+    if !_is_node(node) { return Err("ml.value expects an autograd node") }
+    node.value
+}
+
+pub fn grad(node) -> Result[any] {
+    if !_is_node(node) { return Err("ml.grad expects an autograd node") }
+    node.grad
+}
+
+pub fn zero_grad(node) -> Result[any] {
+    if !_is_node(node) { return Err("ml.zero_grad expects an autograd node") }
+    order := []
+    _collect(node, order)
+    for item in order { item.grad = _zero_like(item.value) }
+    for item in order { item._topo_mark = false }
+    Ok(null)
+}
+
+pub fn backward(node) -> Result[any] {
+    if !_is_node(node) { return Err("ml.backward expects an autograd node") }
+    if !_number(node.value) { return Err("ml.backward requires a scalar output; reduce arrays first") }
+    order := []
+    _collect(node, order)
+    node.grad = node.grad + 1.0
+    let mut i := len(order) - 1
+    while i >= 0 {
+        item := order[i]
+        if item.op != null { _propagate(item) }
+        i = i - 1
+    }
+    for item in order { item._topo_mark = false }
+    Ok(null)
+}
+
+pub fn add(left, right) -> Result[any] {
+    _binary(left, right, "add", fn(a, b) { _value_add(a, b) })
+}
+
+pub fn sub(left, right) -> Result[any] {
+    _binary(left, right, "sub", fn(a, b) { _value_sub(a, b) })
+}
+
+pub fn mul(left, right) -> Result[any] {
+    _binary(left, right, "mul", fn(a, b) { _value_mul(a, b) })
+}
+
+pub fn div(left, right) -> Result[any] {
+    _binary(left, right, "div", fn(a, b) { _value_div(a, b) })
+}
+
+pub fn neg(node) -> Result[any] {
+    _unary(node, "neg", fn(a) { _value_neg(a) }, null)
+}
+
+pub fn exp(node) -> Result[any] {
+    _unary(node, "exp", fn(a) { _value_exp(a) }, null)
+}
+
+pub fn log(node) -> Result[any] {
+    _unary(node, "log", fn(a) { _value_log(a) }, null)
+}
+
+pub fn relu(node) -> Result[any] {
+    _unary(node, "relu", fn(a) { _value_relu(a) }, null)
+}
+
+pub fn pow(node, exponent) -> Result[any] {
+    if !_number(exponent) { return Err("ml.pow exponent must be numeric") }
+    _unary(node, "pow", fn(a) { _value_pow(a, exponent) }, exponent)
+}
+
+pub fn sum(node) -> Result[any] {
+    _unary(node, "sum", fn(a) { _value_sum(a) }, null)
+}
+
+pub fn mean(node) -> Result[any] {
+    _unary(node, "mean", fn(a) { _value_sum(a) / _value_numel(a) }, null)
+}
+
+pub fn matmul(left, right) -> Result[any] {
+    x := _as_node(left)
+    y := _as_node(right)
+    if x == null || y == null || !_is_array(x.value) || !_is_array(y.value) {
+        return Err("ml.matmul expects two warp arrays")
+    }
+    if len(warp.shape(x.value)) != 2 || len(warp.shape(y.value)) != 2 {
+        return Err("ml.matmul autodiff currently supports two-dimensional arrays")
+    }
+    _binary(left, right, "matmul", fn(a, b) { _value_matmul(a, b) })
+}
+
+fn _binary(left, right, op, operation) -> Result[any] {
+    x := _as_node(left)
+    y := _as_node(right)
+    if x == null || y == null { return Err("ml autograd operations expect numeric scalars or nodes") }
+    result := operation(x.value, y.value)
+    if _failed(result) { return result }
+    out := _node(result, x.requires_grad || y.requires_grad, [x, y], op, null)
+    Ok(out)
+}
+
+fn _unary(node, op, operation, aux) -> Result[any] {
+    x := _as_node(node)
+    if x == null { return Err("ml autograd operation expects a numeric scalar or node") }
+    result := operation(x.value)
+    if _failed(result) { return result }
+    out := _node(result, x.requires_grad, [x], op, aux)
+    Ok(out)
+}
+
+fn _propagate(node) {
+    parents := node.parents
+    if node.op == "add" {
+        _add_grad(parents[0], _reduce_to_parent(node.grad, parents[0].value))
+        _add_grad(parents[1], _reduce_to_parent(node.grad, parents[1].value))
+    } else if node.op == "sub" {
+        _add_grad(parents[0], _reduce_to_parent(node.grad, parents[0].value))
+        _add_grad(parents[1], _reduce_to_parent(_value_neg(node.grad), parents[1].value))
+    } else if node.op == "mul" {
+        _add_grad(parents[0], _reduce_to_parent(_value_mul(node.grad, parents[1].value), parents[0].value))
+        _add_grad(parents[1], _reduce_to_parent(_value_mul(node.grad, parents[0].value), parents[1].value))
+    } else if node.op == "div" {
+        _add_grad(parents[0], _reduce_to_parent(_value_div(node.grad, parents[1].value), parents[0].value))
+        denominator := _value_mul(parents[1].value, parents[1].value)
+        right := _value_neg(_value_div(_value_mul(node.grad, parents[0].value), denominator))
+        _add_grad(parents[1], _reduce_to_parent(right, parents[1].value))
+    } else if node.op == "neg" {
+        _add_grad(parents[0], _reduce_to_parent(_value_neg(node.grad), parents[0].value))
+    } else if node.op == "exp" {
+        _add_grad(parents[0], _reduce_to_parent(_value_mul(node.grad, node.value), parents[0].value))
+    } else if node.op == "log" {
+        _add_grad(parents[0], _reduce_to_parent(_value_div(node.grad, parents[0].value), parents[0].value))
+    } else if node.op == "relu" {
+        mask := _value_relu_derivative(parents[0].value)
+        _add_grad(parents[0], _reduce_to_parent(_value_mul(node.grad, mask), parents[0].value))
+    } else if node.op == "pow" {
+        exponent := node.aux
+        factor := _value_pow(parents[0].value, exponent - 1.0)
+        _add_grad(parents[0], _reduce_to_parent(_value_mul(node.grad, _value_mul(exponent, factor)), parents[0].value))
+    } else if node.op == "sum" {
+        _add_grad(parents[0], _expand_like(node.grad, parents[0].value))
+    } else if node.op == "mean" {
+        _add_grad(parents[0], _value_div(_expand_like(node.grad, parents[0].value), _value_numel(parents[0].value)))
+    } else if node.op == "matmul" {
+        left := parents[0].value
+        right := parents[1].value
+        _add_grad(parents[0], _value_matmul(node.grad, warp.T(right)))
+        _add_grad(parents[1], _value_matmul(warp.T(left), node.grad))
+    }
+}
+
+fn _add_grad(node, amount) {
+    if node.requires_grad { node.grad = _value_add(node.grad, amount) }
+}
+
+fn _as_node(value) {
+    if _is_node(value) { return value }
+    if !_supported_value(value) { return null }
+    _node(value, false, [], null, null)
+}
+
+fn _node(value, requires_grad, parents, op, aux) {
+    {
+        "_autograd": true,
+        "value": value,
+        "grad": _zero_like(value),
+        "requires_grad": requires_grad,
+        "parents": parents,
+        "op": op,
+        "aux": aux,
+        "_topo_mark": false,
+    }
+}
+
+fn _collect(node, order) {
+    if !_is_node(node) || node._topo_mark { return }
+    node._topo_mark = true
+    for parent in node.parents { _collect(parent, order) }
+    push(order, node)
+}
+
+fn _supported_value(value) { _number(value) || _is_array(value) }
+
+fn _is_array(value) {
+    value != null && _kind(value) == "map" && value._warp == true
+}
+
+fn _zero_like(value) {
+    if _is_array(value) { return warp.zeros(warp.shape(value)) }
+    0.0
+}
+
+fn _expand_like(value, target) {
+    if _is_array(target) {
+        return warp.full(warp.shape(target), value)
+    }
+    value
+}
+
+fn _reduce_to_parent(value, parent) {
+    if _is_array(value) && !_is_array(parent) { return warp.sum(value) }
+    if !_is_array(value) && _is_array(parent) { return _expand_like(value, parent) }
+    if _is_array(value) && _is_array(parent) {
+        output_shape := warp.shape(value)
+        target_shape := warp.shape(parent)
+        let mut result := value
+        let mut axis := len(output_shape) - 1
+        while axis >= 0 {
+            aligned := axis - (len(output_shape) - len(target_shape))
+            if aligned < 0 || target_shape[aligned] == 1 && output_shape[axis] != 1 {
+                result = warp.sum_axis_opts(result, axis, true)
+            }
+            axis = axis - 1
+        }
+        return warp.reshape(result, target_shape)
+    }
+    value
+}
+
+fn _value_add(a, b) {
+    if _is_array(a) || _is_array(b) { return warp.add(a, b) }
+    a + b
+}
+
+fn _value_sub(a, b) {
+    if _is_array(a) || _is_array(b) { return warp.sub(a, b) }
+    a - b
+}
+
+fn _value_mul(a, b) {
+    if _is_array(a) || _is_array(b) { return warp.mul(a, b) }
+    a * b
+}
+
+fn _value_div(a, b) {
+    if _is_array(a) || _is_array(b) { return warp.div(a, b) }
+    a / b
+}
+
+fn _value_neg(a) {
+    if _is_array(a) { return warp.neg(a) }
+    -a
+}
+
+fn _value_exp(a) {
+    if _is_array(a) { return warp.exp(a) }
+    math.exp(a)
+}
+
+fn _value_log(a) {
+    if _is_array(a) { return warp.log_(a) }
+    math.log(a)
+}
+
+fn _value_relu(a) {
+    if _is_array(a) { return warp.maximum(a, 0.0) }
+    if a > 0.0 { a } else { 0.0 }
+}
+
+fn _value_relu_derivative(a) {
+    if _is_array(a) { return warp.greater(a, 0.0) }
+    if a > 0.0 { 1.0 } else { 0.0 }
+}
+
+fn _value_pow(a, exponent) {
+    if _is_array(a) { return warp.pow_(a, exponent) }
+    math.pow(a, exponent)
+}
+
+fn _value_sum(a) {
+    if _is_array(a) { return warp.sum(a) }
+    a
+}
+
+fn _value_numel(a) {
+    if _is_array(a) { return warp.size(a) }
+    1.0
+}
+
+fn _value_matmul(a, b) {
+    if _is_array(a) || _is_array(b) { return warp.matmul(a, b) }
+    a * b
+}
+
+fn _failed(value) {
+    is_err(value)
+}
+
+fn _is_node(value) {
+    value != null && _kind(value) == "map" && value._autograd == true
+}
+
+fn _number(value) {
+    if value == null { return false }
+    k := _kind(value)
+    if k != "int" && k != "float" { return false }
+    value == value && !math.isinf(value)
+}
+
+fn _kind(value) {
+    if value == null { return "null" }
+    text := json.stringify(value)
+    if text == "true" || text == "false" { return "bool" }
+    if str.starts_with(text, "\"") { return "str" }
+    if str.starts_with(text, "[") { return "list" }
+    if str.starts_with(text, "{") { return "map" }
+    if str.contains(text, ".") || str.contains(text, "e") || str.contains(text, "E") { return "float" }
+    "int"
+}

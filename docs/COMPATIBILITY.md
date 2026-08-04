@@ -30,9 +30,9 @@ offline reference oracle for tests, but it is not a Weft runtime dependency.
 
 ### `warp`
 
-- `internal/tensor` now provides the first typed/strided host primitive and a
-  binary provider ABI; the public `packages/warp` module still uses its
-  portable list representation until the runtime bridge is complete;
+- `internal/tensor` provides the typed/strided host primitive; `packages/warp`
+  now exposes an explicit bounded binary tensor-provider bridge, while its
+  general array value remains the portable list representation;
 - typed, strided storage with views, offsets, C/F order, and buffer export;
 - complete dtype promotion/casting and scalar behavior;
 - basic, advanced, boolean, and broadcasted indexing;
@@ -52,7 +52,9 @@ offline reference oracle for tests, but it is not a Weft runtime dependency.
 
 ### ML and providers
 
-- tensor/autograd/optimizer/model serialization APIs;
+- `packages/ml` now has tested scalar/array reverse-mode primitives, but
+  optimizer, module, serialization, sparse/complex, and higher-order
+  autodiff behavior is still required;
 - device selection, streams, asynchronous execution, memory pools, and
   deterministic fallback behavior;
 - real hardware conformance jobs for every declared vendor provider.

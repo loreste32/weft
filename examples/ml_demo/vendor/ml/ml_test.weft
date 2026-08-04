@@ -1,4 +1,5 @@
 use "./lib.weft" as ml
+use warp
 
 
 fn test_dot { test.eq(ml.dot([1, 2, 3], [1, 2, 3]), 14) }
@@ -71,4 +72,83 @@ fn test_linear_fit_handles_100k_rows {
     }
     model := ml.linear_fit(features, targets, {"epochs": 2, "learning_rate": 1e-12, "batch_size": 1024})
     test.eq(model.ok, true)
+}
+
+fn test_autograd_chain_rule {
+    x := ml.variable(3.0)?
+    x2 := ml.mul(x, x)?
+    y := ml.mul(2.0, x)?
+    output := ml.add(x2, y)?
+    test.approx(ml.value(output)?, 15.0, 1e-9)
+    ml.backward(output)?
+    test.approx(ml.grad(x)?, 8.0, 1e-9)
+}
+
+fn test_autograd_shared_subgraph_and_accumulation {
+    x := ml.variable(2.0)?
+    square := ml.mul(x, x)?
+    output := ml.add(square, square)?
+    ml.backward(output)?
+    test.approx(ml.grad(x)?, 8.0, 1e-9)
+    ml.zero_grad(output)?
+    test.approx(ml.grad(x)?, 0.0, 1e-9)
+}
+
+fn test_autograd_transcendental_and_relu {
+    x := ml.variable(2.0)?
+    y := ml.exp(x)?
+    z := ml.log(y)?
+    out := ml.relu(z)?
+    ml.backward(out)?
+    test.approx(ml.value(out)?, 2.0, 1e-9)
+    test.approx(ml.grad(x)?, 1.0, 1e-9)
+}
+
+fn test_autograd_rejects_invalid_values {
+    r := ml.variable("not a number")
+    test.eq(r.ok, false)
+    x := ml.variable(1.0)?
+    bad := ml.add(x, "bad")
+    test.eq(bad.ok, false)
+}
+
+fn test_autograd_tensor_sum_and_mean {
+    x := ml.variable(warp.array([1.0, 2.0, 3.0], [3]))?
+    total := ml.sum(x)?
+    test.approx(ml.value(total)?, 6.0, 1e-9)
+    ml.backward(total)?
+    test.eq(warp.to_list(ml.grad(x)?), [1.0, 1.0, 1.0])
+
+    ml.zero_grad(total)?
+    average := ml.mean(x)?
+    ml.backward(average)?
+    test.eq(warp.to_list(ml.grad(x)?), [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0])
+}
+
+fn test_autograd_tensor_matmul {
+    left := ml.variable(warp.array([1.0, 2.0, 3.0, 4.0], [2, 2]))?
+    right := ml.variable(warp.array([5.0, 6.0, 7.0, 8.0], [2, 2]))?
+    product := ml.matmul(left, right)?
+    loss := ml.sum(product)?
+    ml.backward(loss)?
+    test.eq(warp.to_list(ml.grad(left)?), [11.0, 15.0, 11.0, 15.0])
+    test.eq(warp.to_list(ml.grad(right)?), [4.0, 4.0, 6.0, 6.0])
+}
+
+fn test_autograd_tensor_elementwise_and_broadcast {
+    values := ml.variable(warp.array([1.0, -2.0, 3.0, -4.0], [2, 2]))?
+    bias := ml.variable(2.0)?
+    shifted := ml.add(values, bias)?
+    squared := ml.mul(shifted, shifted)?
+    loss := ml.sum(squared)?
+    ml.backward(loss)?
+    test.eq(warp.to_list(ml.grad(values)?), [6.0, 0.0, 10.0, -4.0])
+    test.approx(ml.grad(bias)?, 12.0, 1e-9)
+}
+
+fn test_autograd_tensor_shape_errors_are_results {
+    left := ml.variable(warp.array([1.0, 2.0], [2]))?
+    right := ml.variable(warp.array([1.0, 2.0, 3.0], [3]))?
+    result := ml.matmul(left, right)
+    test.eq(result.ok, false)
 }

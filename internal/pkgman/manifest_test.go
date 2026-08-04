@@ -228,6 +228,35 @@ func TestFindInstalledPackageNotFound(t *testing.T) {
 	}
 }
 
+func TestFindInstalledPackageDeclaredPathDependency(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "ml")
+	dependency := filepath.Join(root, "warp")
+	if err := os.MkdirAll(project, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dependency, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dependency, "lib.weft"), []byte("pub fn ok { 1 }"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveManifest(project, &Manifest{
+		Name: "ml",
+		Deps: map[string]DepSpec{"warp": {Path: "../warp"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	dir, entry, err := FindInstalledPackage(project, "warp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir != dependency || entry != filepath.Join(dependency, "lib.weft") {
+		t.Fatalf("resolved declared dependency to %q / %q", dir, entry)
+	}
+}
+
 func TestLockRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	SaveManifest(dir, &Manifest{Name: "test", Deps: map[string]DepSpec{}})

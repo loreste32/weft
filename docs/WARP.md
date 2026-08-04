@@ -40,6 +40,13 @@ ROCm/HIP, and MLX are separate provider implementations; each provider must
 declare its actual vendor, supported operations, dtypes, layouts, and device
 constraints. The checked-in example library is only an ABI smoke test.
 
+For binary tensor dispatch, pass flat tensor descriptors to
+`warp.accelerator_run_tensor(plugin, operation, inputs)`. Each descriptor has
+`dtype`, `shape`, and `data`; the operation returns the same descriptor shape.
+This path is bounded, validates dtype/shape/byte limits, and avoids JSON tensor
+serialization. It is currently an explicit provider operation contract, not a
+general NumPy device array or asynchronous stream API.
+
 ```weft
 use warp
 

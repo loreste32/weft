@@ -370,6 +370,23 @@ func FindInstalledPackage(projectDir, name string) (dir string, entry string, er
 			}
 		}
 	}
+	// A package's declared path dependencies are also valid during source-tree
+	// checks. Installation still vendors them for reproducible applications;
+	// this fallback lets `mod check --tests` compile a package before install
+	// without weakening the package-root path-import restriction.
+	if manifest, loadErr := LoadManifest(projectDir); loadErr == nil {
+		if spec, ok := manifest.Deps[name]; ok && spec.Path != "" {
+			candidate := ResolveDepPaths(spec, projectDir).Path
+			if st, statErr := os.Stat(candidate); statErr == nil && st.IsDir() {
+				entry, entryErr := FindPackageEntry(candidate)
+				if entryErr == nil {
+					return candidate, entry, nil
+				}
+				return "", "", fmt.Errorf("declared dependency %q has no valid package entry: %w", name, entryErr)
+			}
+			return "", "", fmt.Errorf("declared dependency %q path does not exist: %s", name, candidate)
+		}
+	}
 	// Auto-fetch: registry first, then git for URL paths
 	if os.Getenv("WEFT_NO_AUTO_FETCH") != "1" {
 		// try git clone for URL-like paths (github.com/user/repo)

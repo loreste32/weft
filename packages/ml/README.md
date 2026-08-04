@@ -31,8 +31,8 @@ fn main -> Result {
 
 Options are validated and bounded: `epochs`, `batch_size`, `learning_rate`,
 and `l2`. The implementation uses minibatches and has a regression test that
-trains over 100,000 rows. It is a classical CPU model layer, not a complete
-deep-learning/autodiff framework.
+trains over 100,000 rows. It is a classical CPU model layer; the differentiable
+array API below is separate from this trainer.
 
 ## Other APIs
 
@@ -40,6 +40,21 @@ deep-learning/autodiff framework.
 providers, and the JSON vector index are available from the package entry.
 Embedding calls use the configured OpenAI-compatible/Ollama provider and may
 require network capabilities.
+
+## Autodiff
+
+The package provides a portable reverse-mode tape over scalars and `warp`
+arrays. In addition to `variable`, `constant`, `backward`, `grad`, and
+`zero_grad`, the differentiable operations are `add`, `sub`, `mul`, `div`,
+`neg`, `exp`, `log`, `relu`, `pow`, `sum`, `mean`, and two-dimensional `matmul`.
+Elementwise broadcasting is supported and gradients are reduced back to each
+parent shape. Gradients accumulate across backward calls; clear a graph with
+`zero_grad` before an independent pass.
+
+This is a tested numerical-autodiff foundation, not yet a complete
+PyTorch/JAX replacement: optimizers, modules, serialization, sparse/complex
+autodiff, higher-order derivatives, and full NumPy dispatch remain separate
+work.
 
 ## GPU and native training
 

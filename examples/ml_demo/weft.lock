@@ -4,9 +4,16 @@
     {
       "name": "ml",
       "source": "path:/Users/loreste/weft/packages/ml",
-      "version": "0.4.0",
-      "sum": "sha256:3c29750ae45a84884ebbba70a3aa6bf6439159179d45ba6226c6b8c02fcfa533",
+      "version": "0.6.0",
+      "sum": "sha256:80873d421281c66f104d3f54261cc1dd8113aaff85aaef073a7ebbaee4b2760d",
       "dir": "vendor/ml"
+    },
+    {
+      "name": "warp",
+      "source": "path:/Users/loreste/weft/packages/warp",
+      "version": "0.8.0",
+      "sum": "sha256:1517a941cf297cbaea32a37017252358f01aa4583612c954b171e73357bce343",
+      "dir": "vendor/warp"
     }
   ]
 }

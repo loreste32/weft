@@ -9,6 +9,7 @@ use "./index.weft" as idx
 
 use "./metrics.weft" as met
 use "./train.weft" as tr
+use "./autograd.weft" as ag
 
 
 pub fn cosine(a, b) { vec.cosine(a, b) }
@@ -66,3 +67,21 @@ pub fn predict(model, features) -> Result[any] { tr.predict(model, features) }
 pub fn predict_classes(model, features, threshold) -> Result[any] { tr.predict_classes(model, features, threshold) }
 pub fn score(model, features, targets) -> Result[any] { tr.score(model, features, targets) }
 pub fn standardize(features) -> Result[any] { tr.standardize(features) }
+pub fn variable(value) -> Result[any] { ag.variable(value) }
+pub fn constant(value) -> Result[any] { ag.constant(value) }
+pub fn value(node) -> Result[any] { ag.value(node) }
+pub fn grad(node) -> Result[any] { ag.grad(node) }
+pub fn zero_grad(node) -> Result[any] { ag.zero_grad(node) }
+pub fn backward(node) -> Result[any] { ag.backward(node) }
+pub fn add(left, right) -> Result[any] { ag.add(left, right) }
+pub fn sub(left, right) -> Result[any] { ag.sub(left, right) }
+pub fn mul(left, right) -> Result[any] { ag.mul(left, right) }
+pub fn div(left, right) -> Result[any] { ag.div(left, right) }
+pub fn neg(node) -> Result[any] { ag.neg(node) }
+pub fn exp(node) -> Result[any] { ag.exp(node) }
+pub fn log(node) -> Result[any] { ag.log(node) }
+pub fn relu(node) -> Result[any] { ag.relu(node) }
+pub fn pow(node, exponent) -> Result[any] { ag.pow(node, exponent) }
+pub fn sum(node) -> Result[any] { ag.sum(node) }
+pub fn mean(node) -> Result[any] { ag.mean(node) }
+pub fn matmul(left, right) -> Result[any] { ag.matmul(left, right) }
