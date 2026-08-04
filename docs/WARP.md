@@ -1,8 +1,9 @@
 # warp — validated NumPy-style arrays
 
 `warp` provides row-major arrays represented as `{_warp: true, data, shape,
-_dtype}`. Dtypes are logical metadata over ordinary Weft values, not a claim
-of packed native storage.
+_dtype, _strides, _offset}`. Dtypes are logical metadata over ordinary Weft
+values, not a claim of packed native storage. Strides and offsets support
+immutable logical views over shared portable backing lists.
 It is a portable CPU numerical layer for Weft with explicit error handling and
 an optional native accelerator ABI.
 
@@ -60,6 +61,10 @@ fn main -> Result {
     warp.accelerator_close(plugin)?
 }
 ```
+
+## Strided views and indexing
+
+Arrays carry element strides and an element offset. `transpose_view` and `view` are immutable zero-copy logical views; `strides` reports byte strides and `element_strides` reports element strides. Existing value-producing operations materialize logical view order, and `contiguous` creates a row-major copy. `index` supports integer, negative, integer-list, boolean-mask, and full-axis selectors with bounded one-advanced-axis semantics.
 
 ## API surface
 

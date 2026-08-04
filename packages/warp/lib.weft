@@ -13,7 +13,7 @@ pub fn array(data, shape) {
     s := if shape == null { [len(data)] } else { shape }
     if !_valid_shape(s) { return Err("warp.array expects non-negative integer dimensions") }
     if _prod(s) != len(data) { return Err("warp.array data length does not match shape") }
-    {"_warp": true, "data": data, "shape": s, "_dtype": _infer_dtype(data)}
+    {"_warp": true, "data": data, "shape": s, "_dtype": _infer_dtype(data), "_strides": _contiguous_strides(s), "_offset": 0}
 }
 
 // Logical dtypes follow NumPy's common scalar names. Values remain ordinary
@@ -32,17 +32,17 @@ pub fn array_typed(data, shape, dtype_name) {
         }
         casted = push(casted, _cast_value(value, dtype_name))
     }
-    {"_warp": true, "data": casted, "shape": s, "_dtype": dtype_name}
+    {"_warp": true, "data": casted, "shape": s, "_dtype": dtype_name, "_strides": _contiguous_strides(s), "_offset": 0}
 }
 
 pub fn astype(a, dtype_name) {
     if !_is_arr(a) { return Err("warp.astype expects an array") }
-    array_typed(a.data, a.shape, dtype_name)
+    array_typed(_data(a), a.shape, dtype_name)
 }
 
 pub fn dtype(a) {
     if !_is_arr(a) { return _infer_dtype([a]) }
-    if a._dtype == null { _infer_dtype(a.data) } else { a._dtype }
+    if a._dtype == null { _infer_dtype(_data(a)) } else { a._dtype }
 }
 
 pub fn zeros(shape) { full(shape, 0.0) }
@@ -208,9 +208,54 @@ pub fn randint(low, high, shape) {
 
 pub fn shape(a) { a.shape }
 
-pub fn size(a) { len(a.data) }
+pub fn size(a) { if !_is_arr(a) { len(a) } else { _prod(a.shape) } }
 
 pub fn ndim(a) { len(a.shape) }
+
+// Strides are measured in elements by element_strides and in bytes by
+// strides, matching NumPy's public metadata. The portable implementation
+// keeps element strides internally so views do not depend on host word size.
+pub fn element_strides(a) {
+    if !_is_arr(a) { return Err("warp.element_strides expects an array") }
+    _copy(a._strides)
+}
+
+pub fn strides(a) {
+    if !_is_arr(a) { return Err("warp.strides expects an array") }
+    itemsize := _itemsize(dtype(a))
+    let mut result = []
+    for stride in a._strides { result = push(result, stride * itemsize) }
+    result
+}
+
+pub fn offset(a) {
+    if !_is_arr(a) { return Err("warp.offset expects an array") }
+    a._offset
+}
+
+pub fn is_contiguous(a) {
+    _is_arr(a) && a._strides == _contiguous_strides(a.shape)
+}
+
+// view creates a zero-copy logical view over the source backing list.
+// Strides are measured in elements; negative strides are valid.
+pub fn view(a, new_shape, element_strides, view_offset) {
+    if !_is_arr(a) { return Err("warp.view expects an array") }
+    if !_valid_shape(new_shape) || _wkind(element_strides) != "list" || len(new_shape) != len(element_strides) {
+        return Err("warp.view expects matching shape and element strides")
+    }
+    if _wkind(view_offset) != "int" { return Err("warp.view offset must be an integer") }
+    for stride in element_strides { if _wkind(stride) != "int" { return Err("warp.view strides must be integers") } }
+    if !_view_in_bounds(new_shape, element_strides, view_offset, len(a.data)) {
+        return Err("warp.view exceeds the source storage")
+    }
+    {"_warp": true, "data": a.data, "shape": new_shape, "_dtype": dtype(a), "_strides": _copy(element_strides), "_offset": view_offset}
+}
+
+pub fn contiguous(a) {
+    if !_is_arr(a) { return Err("warp.contiguous expects an array") }
+    array_typed(_data(a), a.shape, dtype(a))
+}
 
 pub fn reshape(a, new_shape) {
     if _wkind(new_shape) != "list" { return Err("warp.reshape expects a shape list") }
@@ -226,26 +271,27 @@ pub fn reshape(a, new_shape) {
     let mut target = []
     for dim in new_shape { target = push(target, dim) }
     if unknowns == 1 {
-        if known == 0 || len(a.data) % known != 0 { return Err("warp.reshape cannot infer a dimension") }
-        inferred = len(a.data) / known
+        if known == 0 || size(a) % known != 0 { return Err("warp.reshape cannot infer a dimension") }
+        inferred = size(a) / known
         let mut i = 0
         while i < len(target) { if target[i] == -1 { target[i] = inferred }
             i = i + 1 }
     }
-    if !_valid_shape(target) || _prod(target) != len(a.data) {
+if !_valid_shape(target) || _prod(target) != size(a) {
         return Err("warp.reshape shape must preserve the number of elements")
     }
-    _array_like(a.data, target, a)
+    if is_contiguous(a) { return view(a, target, _contiguous_strides(target), a._offset) }
+    _array_like(_data(a), target, a)
 }
 
-pub fn flatten(a) { _array_like(a.data, [len(a.data)], a) }
+pub fn flatten(a) { _array_like(_data(a), [size(a)], a) }
 
 pub fn ravel(a) { flatten(a) }
 
 pub fn squeeze(a) {
     let mut s = []
     for dim in a.shape { if dim != 1 { s = push(s, dim) } }
-    _array_like(a.data, s, a)
+    _array_like(_data(a), s, a)
 }
 
 pub fn expand_dims(a, axis) {
@@ -258,7 +304,7 @@ pub fn expand_dims(a, axis) {
         if i < len(a.shape) { s = push(s, a.shape[i]) }
         i = i + 1
     }
-    _array_like(a.data, s, a)
+    _array_like(_data(a), s, a)
 }
 
 pub fn transpose(a, axes) {
@@ -292,7 +338,7 @@ pub fn transpose(a, axes) {
         j = 0
         while j < rank { source_index[order[j]] = out_index[j]
             j = j + 1 }
-        d = push(d, a.data[_flat_index(source_index, a.shape)])
+        d = push(d, _logical_value_at(a, source_index))
         i = i + 1
     }
     _array_like(d, out_shape, a)
@@ -307,69 +353,104 @@ pub fn T(a) {
     let mut c = 0
     while c < cols {
         let mut r = 0
-        while r < rows { d = push(d, a.data[r * cols + c])
+    while r < rows { d = push(d, _logical_value_at(a, [r, c]))
         r = r + 1 }
         c = c + 1
     }
     array(d, [cols, rows])
 }
 
+pub fn transpose_view(a, axes) {
+    if !_is_arr(a) { return Err("warp.transpose_view expects an array") }
+    order := _transpose_order(len(a.shape), axes)
+    if order == null { return Err("warp.transpose_view axes must be a permutation") }
+    let mut out_shape = []
+    let mut out_strides = []
+    for axis in order {
+        out_shape = push(out_shape, a.shape[axis])
+        out_strides = push(out_strides, a._strides[axis])
+    }
+    view(a, out_shape, out_strides, a._offset)
+}
+
+// NumPy-style indexing for one-dimensional selectors. Each selector may be
+// an integer (including negative indices), a list of integer positions, a
+// boolean mask list, or null to select the complete axis. Missing trailing
+// selectors are treated as null. One advanced axis is supported per call.
+pub fn index(a, selectors) {
+    if !_is_arr(a) || _wkind(selectors) != "list" { return Err("warp.index expects an array and selector list") }
+    if len(selectors) > len(a.shape) { return Err("warp.index has too many selectors") }
+    let mut specs = []
+    let mut axis = 0
+    while axis < len(a.shape) {
+        selector := if axis < len(selectors) { selectors[axis] } else { null }
+        spec := _index_spec(selector, a.shape[axis])
+        if spec == null { return Err("warp.index selector is invalid or out of range") }
+        specs = push(specs, spec)
+        axis = axis + 1
+    }
+    let mut out_shape = []
+    let mut all_scalar = true
+    for spec in specs {
+        if spec.kind == "scalar" { continue }
+        all_scalar = false
+        if spec.kind == "all" { out_shape = push(out_shape, spec.size) }
+        else { out_shape = push(out_shape, len(spec.positions)) }
+    }
+    let mut values = []
+    values = _collect_index_values(a, specs, 0, [], values)
+    if all_scalar { return values[0] }
+    _array_with_dtype(values, out_shape, dtype(a))
+}
+
 pub fn get(a, indices) {
     // get(a, [1, 2]) → element at row 1, col 2
     if len(indices) != len(a.shape) { return Err("warp.get requires one index per dimension") }
-    s := a.shape
-    let mut idx = 0
-    let mut stride = len(a.data)
-    let mut i = 0
-    while i < len(indices) {
-        if indices[i] < 0 || indices[i] >= s[i] { return Err("warp.get index is out of range") }
-        stride = stride / s[i]
-        idx = idx + indices[i] * stride
-        i = i + 1
-    }
-    a.data[idx]
+    index(a, indices)
 }
 
 pub fn set(a, indices, value) {
     if len(indices) != len(a.shape) { return Err("warp.set requires one index per dimension") }
-    s := a.shape
-    let mut idx = 0
-    let mut stride = len(a.data)
+    for selector in indices { if _wkind(selector) != "int" { return Err("warp.set requires integer indices") } }
+    let mut d = _data(a)
+    let mut normalized = []
     let mut i = 0
     while i < len(indices) {
-        if indices[i] < 0 || indices[i] >= s[i] { return Err("warp.set index is out of range") }
-        stride = stride / s[i]
-        idx = idx + indices[i] * stride
+        position := _normalize_index(indices[i], a.shape[i])
+        if position == null { return Err("warp.set index is out of range") }
+        normalized = push(normalized, position)
         i = i + 1
     }
-    let mut d = _copy(a.data)
+    idx := _flat_index(normalized, a.shape)
     d[idx] = value
-    array(d, s)
+    _array_with_dtype(d, a.shape, dtype(a))
 }
 
 pub fn row(a, r) {
     if len(a.shape) != 2 || r < 0 || r >= a.shape[0] { return Err("warp.row expects a valid 2D row") }
+    data := _data(a)
     cols := a.shape[1]
     let mut d = []
     let mut c = 0
-    while c < cols { d = push(d, a.data[r * cols + c])
+    while c < cols { d = push(d, data[r * cols + c])
         c = c + 1 }
     array(d, [cols])
 }
 
 pub fn col(a, c) {
     if len(a.shape) != 2 || c < 0 || c >= a.shape[1] { return Err("warp.col expects a valid 2D column") }
+    data := _data(a)
     rows := a.shape[0]
     cols := a.shape[1]
     let mut d = []
     let mut r = 0
-    while r < rows { d = push(d, a.data[r * cols + c])
+    while r < rows { d = push(d, data[r * cols + c])
         r = r + 1 }
     array(d, [rows])
 }
 
 pub fn slice(a, start, stop) {
-    data := a.data
+    data := _data(a)
     s := if stop == null { len(data) } else { stop }
     if start < 0 || start > len(data) { return Err("warp.slice start is out of range") }
     if s < start || s > len(data) { return Err("warp.slice stop is out of range") }
@@ -464,12 +545,12 @@ pub fn where(cond, x, y) {
 }
 
 pub fn all_(a) {
-    for x in a.data { if !x { return false } }
+    for x in _data(a) { if !x { return false } }
     true
 }
 
 pub fn any_(a) {
-    for x in a.data { if x { return true } }
+    for x in _data(a) { if x { return true } }
     false
 }
 
@@ -571,7 +652,7 @@ pub fn cumprod(a) {
 pub fn median(a) {
     if len(_data(a)) == 0 { return null }
     sorted := sort(a)
-    data := sorted.data
+    data := _data(sorted)
     n := len(data)
     if n % 2 == 1 { data[n / 2] }
     else { (data[n / 2 - 1] + data[n / 2]) / 2.0 }
@@ -581,7 +662,7 @@ pub fn percentile(a, p) {
     if len(_data(a)) == 0 { return null }
     if p < 0 || p > 100 { return Err("warp.percentile requires p between 0 and 100") }
     sorted := sort(a)
-    data := sorted.data
+    data := _data(sorted)
     n := len(data)
     k := (p / 100.0) * (n - 1)
     lo := math.floor(k)
@@ -651,7 +732,7 @@ pub fn matmul(a, b) {
         let mut result = 0.0
         let mut i = 0
         while i < sa[0] {
-            result = result + a.data[i] * b.data[i]
+        result = result + _data(a)[i] * _data(b)[i]
             i = i + 1
         }
         return result
@@ -666,7 +747,7 @@ pub fn matmul(a, b) {
             let mut result = 0.0
             let mut j = 0
             while j < cols {
-                result = result + a.data[r * cols + j] * b.data[j]
+        result = result + _data(a)[r * cols + j] * _data(b)[j]
                 j = j + 1
             }
             d = push(d, result)
@@ -684,7 +765,7 @@ pub fn matmul(a, b) {
             let mut result = 0.0
             let mut i = 0
             while i < rows {
-                result = result + a.data[i] * b.data[i * cols + c]
+        result = result + _data(a)[i] * _data(b)[i * cols + c]
                 i = i + 1
             }
             d = push(d, result)
@@ -705,7 +786,7 @@ pub fn matmul(a, b) {
             let mut result = 0.0
             let mut j = 0
             while j < k {
-                result = result + a.data[r * k + j] * b.data[j * n + c]
+            result = result + _data(a)[r * k + j] * _data(b)[j * n + c]
                 j = j + 1
             }
             d = push(d, result)
@@ -739,7 +820,7 @@ pub fn trace(a) {
     n := a.shape[0]
     let mut s = 0.0
     let mut i = 0
-    while i < n { s = s + a.data[i * n + i]
+    while i < n { s = s + _logical_value_at(a, [i, i])
         i = i + 1 }
     s
 }
@@ -750,7 +831,7 @@ fn _lu(a) -> Result[any] {
     n := a.shape[0]
     // copy matrix data into mutable flat array
     let mut m = []
-    for x in a.data { m = push(m, x + 0.0) }
+    for x in _data(a) { m = push(m, x + 0.0) }
     // permutation vector
     let mut perm = []
     let mut i = 0
@@ -843,9 +924,9 @@ fn _lu_solve(lu, b_data) {
 
 pub fn det(a) -> Result[any] {
     ensure(len(a.shape) == 2 && a.shape[0] == a.shape[1], "det: matrix must be square 2D")?
-    ensure(len(a.data) == a.shape[0] * a.shape[1], "det: data/shape mismatch")?
+    ensure(size(a) == a.shape[0] * a.shape[1], "det: data/shape mismatch")?
     n := a.shape[0]
-    d := a.data
+    d := _data(a)
     if n == 1 { return Ok(d[0]) }
     if n == 2 { return Ok(d[0] * d[3] - d[1] * d[2]) }
     // General case via LU
@@ -862,7 +943,7 @@ pub fn det(a) -> Result[any] {
 pub fn inv(a) -> Result[any] {
     ensure(len(a.shape) == 2 && a.shape[0] == a.shape[1], "inv: matrix must be square 2D")?
     n := a.shape[0]
-    d := a.data
+    d := _data(a)
     // 2x2 fast path
     if n == 2 {
         dt := d[0] * d[3] - d[1] * d[2] + 0.0
@@ -1001,7 +1082,7 @@ pub fn concatenate(arrays, axis) {
         }
         source_index := _copy(out_index)
         source_index[normalized] = source_index[normalized] - offset
-        d = push(d, selected.data[_flat_index(source_index, selected.shape)])
+            d = push(d, _logical_value_at(selected, source_index))
         flat = flat + 1
     }
     array(d, out_shape)
@@ -1039,8 +1120,9 @@ pub fn take(a, indices, axis) {
     if axis_arg == null {
         let mut d = []
         for index in indices {
-            if _wkind(index) != "int" || index < 0 || index >= len(a.data) { return Err("warp.take index is out of range") }
-            d = push(d, a.data[index])
+    normalized_index := _normalize_index(index, size(a))
+    if normalized_index == null { return Err("warp.take index is out of range") }
+    d = push(d, _data(a)[normalized_index])
         }
         return array(d, [len(d)])
     }
@@ -1056,7 +1138,7 @@ pub fn take(a, indices, axis) {
         out_index := _unravel(flat, out_shape)
         source_index := _copy(out_index)
         source_index[normalized] = indices[out_index[normalized]]
-        d = push(d, a.data[_flat_index(source_index, a.shape)])
+        d = push(d, _logical_value_at(a, source_index))
         flat = flat + 1
     }
     array(d, out_shape)
@@ -1074,7 +1156,7 @@ pub fn vstack(arrays) {
         if len(first_shape) == 1 && a.shape[0] != cols { return Err("warp.vstack vectors must have equal lengths") }
         if len(first_shape) == 2 && a.shape[1] != cols { return Err("warp.vstack matrices must have equal columns") }
         rows = rows + if len(first_shape) == 1 { 1 } else { a.shape[0] }
-        for x in a.data { all_data = push(all_data, x) }
+        for x in _data(a) { all_data = push(all_data, x) }
     }
     if len(first_shape) == 1 { array(all_data, [len(arrays), cols]) }
     else { array(all_data, [rows, cols]) }
@@ -1086,7 +1168,7 @@ pub fn hstack(arrays) {
     first_shape := arrays[0].shape
     if len(first_shape) != 1 && len(first_shape) != 2 { return Err("warp.hstack supports 1D or 2D arrays") }
     if len(first_shape) == 1 {
-        for a in arrays { for x in a.data { all_data = push(all_data, x) } }
+    for a in arrays { for x in _data(a) { all_data = push(all_data, x) } }
         return array(all_data, [len(all_data)])
     }
     rows := first_shape[0]
@@ -1101,7 +1183,7 @@ pub fn hstack(arrays) {
             start := r * a.shape[1]
             stop := start + a.shape[1]
             let mut c = start
-            while c < stop { all_data = push(all_data, a.data[c]) c = c + 1 }
+        while c < stop { all_data = push(all_data, _data(a)[c]) c = c + 1 }
         }
         r = r + 1
     }
@@ -1141,7 +1223,7 @@ pub fn tile(a, reps) {
         j = 0
         while j < rank { source_index = push(source_index, if source_shape[j] == 0 { 0 } else { out_index[j] % source_shape[j] })
             j = j + 1 }
-        d = push(d, a.data[_flat_index(_tail(source_index, rank - len(a.shape)), a.shape)])
+            d = push(d, _logical_value_at(a, _tail(source_index, rank - len(a.shape))))
         flat = flat + 1
     }
     array(d, out_shape)
@@ -1150,7 +1232,7 @@ pub fn tile(a, reps) {
 pub fn repeat(a, n) {
     if !_is_arr(a) || _wkind(n) != "int" || n < 0 { return Err("warp.repeat requires a non-negative integer count") }
     let mut d = []
-    for x in a.data {
+    for x in _data(a) {
         let mut i = 0
         while i < n { d = push(d, x)
             i = i + 1 }
@@ -1171,7 +1253,7 @@ pub fn repeat_axis(a, n, axis) {
         out_index := _unravel(flat, out_shape)
         source_index := _copy(out_index)
         source_index[normalized] = out_index[normalized] / n
-        d = push(d, a.data[_flat_index(source_index, a.shape)])
+    d = push(d, _logical_value_at(a, source_index))
         flat = flat + 1
     }
     array(d, out_shape)
@@ -1179,7 +1261,7 @@ pub fn repeat_axis(a, n, axis) {
 
 pub fn flip(a) {
     if !_is_arr(a) { return Err("warp.flip expects an array") }
-    data := a.data
+    data := _data(a)
     let mut d = []
     let mut i = len(data) - 1
     while i >= 0 { d = push(d, data[i])
@@ -1197,7 +1279,7 @@ pub fn flip_axis(a, axis) {
     while flat < n {
         out_index := _unravel(flat, a.shape)
         out_index[normalized] = a.shape[normalized] - 1 - out_index[normalized]
-        d = push(d, a.data[_flat_index(out_index, a.shape)])
+        d = push(d, _logical_value_at(a, out_index))
         flat = flat + 1
     }
     array(d, a.shape)
@@ -1205,11 +1287,11 @@ pub fn flip_axis(a, axis) {
 
 pub fn sort(a) {
     // Stable merge sort keeps large array sorting O(n log n).
-    array(_merge_sort_values(a.data), a.shape)
+    array(_merge_sort_values(_data(a)), a.shape)
 }
 
 pub fn argsort(a) {
-    data := a.data
+    data := _data(a)
     let mut indices = []
     let mut i = 0
     while i < len(data) { indices = push(indices, i)
@@ -1218,9 +1300,9 @@ pub fn argsort(a) {
 }
 
 pub fn unique(a) {
-    if len(a.data) == 0 { return array([], [0]) }
+    if size(a) == 0 { return array([], [0]) }
     sorted := sort(a)
-    data := sorted.data
+    data := _data(sorted)
     let mut d = [data[0]]
     let mut i = 1
     while i < len(data) {
@@ -1244,9 +1326,9 @@ pub fn apply2(a, b, f) { _binop(a, b, f) }
 
 pub fn mask(a, cond_arr) {
     // Return elements where cond_arr != 0
-    data := a.data
-    if !_is_arr(cond_arr) || len(cond_arr.data) != len(a.data) { return Err("warp.mask expects equal-size arrays") }
-    cd := cond_arr.data
+    data := _data(a)
+    if !_is_arr(cond_arr) || size(cond_arr) != size(a) { return Err("warp.mask expects equal-size arrays") }
+    cd := _data(cond_arr)
     let mut d = []
     let mut i = 0
     while i < len(data) {
@@ -1258,7 +1340,7 @@ pub fn mask(a, cond_arr) {
 
 pub fn count_nonzero(a) {
     let mut c = 0
-    for x in a.data { if x { c = c + 1 } }
+    for x in _data(a) { if x { c = c + 1 } }
     c
 }
 
@@ -1266,12 +1348,12 @@ pub fn count_nonzero(a) {
 // Convenience
 // ──────────────────────────────────────────────
 
-pub fn to_list(a) { a.data }
+pub fn to_list(a) { _data(a) }
 
 pub fn print_(a) {
     s := a.shape
     if len(s) == 1 {
-        say(a.data)
+        say(_data(a))
     } else if len(s) == 2 {
         rows := s[0]
         cols := s[1]
@@ -1279,13 +1361,13 @@ pub fn print_(a) {
         while r < rows {
             let mut row_data = []
             let mut c = 0
-            while c < cols { row_data = push(row_data, a.data[r * cols + c])
+            while c < cols { row_data = push(row_data, _logical_value_at(a, [r, c]))
         c = c + 1 }
             say(row_data)
             r = r + 1
         }
     } else {
-        say("warp<shape=" + str(s) + " size=" + str(len(a.data)) + ">")
+        say("warp<shape=" + str(s) + " size=" + str(size(a)) + ">")
     }
 }
 
@@ -1406,7 +1488,7 @@ fn _slice_axis(a, start, stop, axis) {
         out_index := _unravel(flat, out_shape)
         source_index := _copy(out_index)
         source_index[axis] = source_index[axis] + start
-        d = push(d, a.data[_flat_index(source_index, a.shape)])
+        d = push(d, _logical_value_at(a, source_index))
         flat = flat + 1
     }
     array(d, out_shape)
@@ -1418,11 +1500,151 @@ fn _copy(data) {
     result
 }
 
-fn _data(a) { if _is_arr(a) { a.data } else { a } }
+fn _data(a) { if _is_arr(a) { _flat_values(a) } else { a } }
+
+fn _itemsize(dtype_name) {
+    if dtype_name == "bool" { 1 }
+    else if dtype_name == "int64" { 8 }
+    else if dtype_name == "float32" { 4 }
+    else { 8 }
+}
+
+fn _contiguous_strides(shape) {
+    let mut result = []
+    let mut stride = 1
+    let mut i = len(shape) - 1
+    while i >= 0 {
+        result = push(result, stride)
+        stride = stride * shape[i]
+        i = i - 1
+    }
+    _reverse_values(result)
+}
+
+fn _view_in_bounds(shape, strides, view_offset, storage_len) {
+    if _wkind(view_offset) != "int" || view_offset < 0 || view_offset > storage_len { return false }
+    if len(shape) != len(strides) { return false }
+    if _prod(shape) == 0 { return true }
+    if view_offset >= storage_len { return false }
+    let mut min_index = view_offset
+    let mut max_index = view_offset
+    let mut i = 0
+    while i < len(shape) {
+        if _wkind(shape[i]) != "int" || _wkind(strides[i]) != "int" { return false }
+        if shape[i] > 0 {
+            span := (shape[i] - 1) * strides[i]
+            if span < 0 { min_index = min_index + span } else { max_index = max_index + span }
+        }
+        i = i + 1
+    }
+    min_index >= 0 && max_index < storage_len
+}
+
+fn _storage_index(a, indices) {
+    let mut index = a._offset
+    let mut i = 0
+    while i < len(indices) {
+        index = index + indices[i] * a._strides[i]
+        i = i + 1
+    }
+    index
+}
+
+fn _logical_value_at(a, indices) { a.data[_storage_index(a, indices)] }
+
+fn _flat_values(a) {
+    let mut result = []
+    n := _prod(a.shape)
+    let mut flat = 0
+    while flat < n {
+        result = push(result, _logical_value_at(a, _unravel(flat, a.shape)))
+        flat = flat + 1
+    }
+    result
+}
+
+fn _normalize_index(index, size) {
+    if _wkind(index) != "int" { return null }
+    result := if index < 0 { index + size } else { index }
+    if result < 0 || result >= size { null } else { result }
+}
+
+fn _transpose_order(rank, axes) {
+    axis_arg := if _wkind(axes) == "unit" { null } else { axes }
+    let mut order = []
+    if axis_arg == null {
+        let mut i = rank - 1
+        while i >= 0 { order = push(order, i) i = i - 1 }
+        return order
+    }
+    if _wkind(axis_arg) != "list" || len(axis_arg) != rank { return null }
+    for axis in axis_arg {
+        normalized := _normalize_axis(axis, rank, false)
+        if normalized == null || contains(order, normalized) { return null }
+        order = push(order, normalized)
+    }
+    order
+}
+
+fn _index_spec(selector, size) {
+    if selector == null { return {"kind": "all", "size": size} }
+    if _wkind(selector) == "int" {
+        normalized := _normalize_index(selector, size)
+        if normalized == null { return null }
+        return {"kind": "scalar", "value": normalized}
+    }
+    if _wkind(selector) != "list" { return null }
+    if len(selector) == 0 { return {"kind": "list", "positions": []} }
+    first_kind := _wkind(selector[0])
+    if first_kind != "bool" && first_kind != "int" { return null }
+    let mut positions = []
+    if first_kind == "bool" {
+        let mut i = 0
+        for flag in selector {
+            if _wkind(flag) != "bool" { return null }
+            if flag { positions = push(positions, i) }
+            i = i + 1
+        }
+        if len(selector) != size { return null }
+    } else {
+        for item in selector {
+            if _wkind(item) != "int" { return null }
+            normalized := _normalize_index(item, size)
+            if normalized == null { return null }
+            positions = push(positions, normalized)
+        }
+    }
+    {"kind": "list", "positions": positions}
+}
+
+fn _collect_index_values(a, specs, axis, source_index, result) {
+    if axis == len(specs) { return push(result, _logical_value_at(a, source_index)) }
+    spec := specs[axis]
+    if spec.kind == "scalar" {
+        next_index := push(_copy(source_index), spec.value)
+        return _collect_index_values(a, specs, axis + 1, next_index, result)
+    }
+    if spec.kind == "all" {
+        let mut i = 0
+        let mut output = result
+        while i < spec.size {
+            next_index := push(_copy(source_index), i)
+            output = _collect_index_values(a, specs, axis + 1, next_index, output)
+            i = i + 1
+        }
+        return output
+    }
+    let mut output = result
+    for position in spec.positions {
+        next_index := push(_copy(source_index), position)
+        output = _collect_index_values(a, specs, axis + 1, next_index, output)
+    }
+    output
+}
 
 fn _array_like(data, shape, source) {
     if _is_arr(source) {
-        {"_warp": true, "data": data, "shape": shape, "_dtype": dtype(source)}
+        {"_warp": true, "data": data, "shape": shape, "_dtype": dtype(source), "_strides": _contiguous_strides(shape), "_offset": 0}
     } else {
         array(data, shape)
     }
@@ -1497,7 +1719,7 @@ fn _cast_value(value, dtype_name) {
 fn _validate_2d(a) -> Result[any] {
     ensure(a != null && _is_arr(a), "expected warp array")?
     ensure(len(a.shape) == 2, "expected 2D array")?
-    ensure(len(a.data) == a.shape[0] * a.shape[1], "data/shape mismatch")?
+    ensure(size(a) == a.shape[0] * a.shape[1], "data/shape mismatch")?
     Ok(null)
 }
 
@@ -1538,13 +1760,15 @@ fn _binop_with_dtype(a, b, op, forced_dtype) {
     } else if _is_arr(a) {
         let mut d = []
         let mut i = 0
-        while i < len(a.data) { d = push(d, op(a.data[i], b))
+    data := _data(a)
+    while i < len(data) { d = push(d, op(data[i], b))
         i = i + 1 }
         _array_with_dtype(d, a.shape, result_dtype)
     } else if _is_arr(b) {
         let mut d = []
         let mut i = 0
-        while i < len(b.data) { d = push(d, op(a, b.data[i]))
+    data := _data(b)
+    while i < len(data) { d = push(d, op(a, data[i]))
         i = i + 1 }
         _array_with_dtype(d, b.shape, result_dtype)
     } else {
@@ -1562,7 +1786,7 @@ fn _unaryop_with_dtype(a, op, forced_dtype) {
         return value
     }
     result_dtype := if forced_dtype == null { dtype(a) } else { forced_dtype }
-    data := a.data
+    data := _data(a)
     let mut d = []
     let mut i = 0
     while i < len(data) { d = push(d, op(data[i]))
@@ -1709,7 +1933,7 @@ fn _broadcast_value(a, output_index, output_shape) {
         flat_index = flat_index + coord * stride
         i = i + 1
     }
-    a.data[flat_index]
+    _logical_value_at(a, _unravel(flat_index, a.shape))
 }
 
 fn _operand_value(value, output_index, output_shape) {
@@ -1728,7 +1952,7 @@ fn _reduce_axis(a, axis, op, init) {
         while c < cols {
             let mut acc = init
             let mut r = 0
-            while r < rows { acc = op(acc, a.data[r * cols + c])
+        while r < rows { acc = op(acc, _logical_value_at(a, [r, c]))
         r = r + 1 }
             d = push(d, acc)
             c = c + 1
@@ -1741,7 +1965,7 @@ fn _reduce_axis(a, axis, op, init) {
         while r < rows {
             let mut acc = init
             let mut c = 0
-            while c < cols { acc = op(acc, a.data[r * cols + c])
+        while c < cols { acc = op(acc, _logical_value_at(a, [r, c]))
         c = c + 1 }
             d = push(d, acc)
             r = r + 1
@@ -1790,7 +2014,7 @@ fn _reduce_axis_nd_opts(a, axis, op, init, keepdims) {
         let mut k = 0
         while k < a.shape[normalized] {
             source_index := _insert_axis_index(output_index, normalized, k)
-            acc = op(acc, a.data[_flat_index(source_index, a.shape)])
+        acc = op(acc, _logical_value_at(a, source_index))
             k = k + 1
         }
         d = push(d, acc)

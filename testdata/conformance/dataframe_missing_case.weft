@@ -1,0 +1,11 @@
+use "../../packages/dataframe/lib.weft" as df
+use json
+
+fn main -> Result {
+    t := df.from_rows([{"a": 1}, {"b": 2}])
+    say(json.stringify({
+        "columns": df.columns(t),
+        "a": df.col(t, "a"),
+        "b": df.col(t, "b"),
+    }))
+}

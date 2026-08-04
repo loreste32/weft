@@ -30,6 +30,13 @@ fn test_from_rows {
     test.eq(df.ncols(t), 4)
 }
 
+fn test_from_rows_normalizes_missing_columns {
+    t := df.from_rows([{"a": 1}, {"b": 2}])
+    test.eq(df.columns(t), ["a", "b"])
+    test.eq(df.col(t, "a"), [1, null])
+    test.eq(df.col(t, "b"), [null, 2])
+}
+
 fn test_from_columns {
     t := _columns({"x": [1, 2, 3], "y": [4, 5, 6]})
     test.eq(df.nrows(t), 3)

@@ -26,7 +26,7 @@
       "name": "warp",
       "source": "path:/Users/loreste/weft/packages/warp",
       "version": "0.8.0",
-      "sum": "sha256:2e9f21f956b1b7330529d8f7cf7a4046beb7acc8b385bcd4d469c32c467b00eb",
+      "sum": "sha256:f7a522d4d7f62aa0c6392eea44ffec793bcfdaf64023b2474385e9fcc05a672b",
       "dir": "vendor/warp"
     }
   ]

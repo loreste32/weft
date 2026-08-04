@@ -56,6 +56,12 @@ Common result typing is preserved: comparisons and logical predicates produce
 `bool`/`int64`/`float32`/`float64` promotion rules. Axis and cumulative
 operations retain their array dtype where the result is an array.
 
+## Strided views and indexing
+
+`transpose_view(a, axes?)`, `reshape`, and `view(a, shape, element_strides, offset)` expose immutable logical views over shared backing storage. `element_strides` reports element units; `strides` reports byte units. `to_list`, `get`, arithmetic, reductions, sorting, masking, and linear algebra read views in logical order, including negative strides. `contiguous` materializes a row-major copy when a packed result is required.
+
+`index(a, selectors)` accepts integer selectors (including negative indices), integer-position lists, boolean masks, and `null` full-axis selectors. Missing trailing selectors mean full axes. This is a bounded NumPy-style indexing surface; advanced multi-axis broadcasting, assignment views, and the complete slicing grammar remain outside the current compatibility profile.
+
 ## Boundaries
 
 The CPU path is designed for scripting, ETL, classical ML, and moderate arrays.

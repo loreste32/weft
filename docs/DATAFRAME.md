@@ -48,6 +48,8 @@ t := df.read_csv("data.csv", null)?
 t := df.read_jsonl("data.jsonl")?
 ```
 
+`from_rows` derives the first-seen union of row keys and normalizes absent fields to `null`, so a sparse record list remains column-accessible and deterministic.
+
 ## Shape & info
 
 | Function | Returns |

@@ -1,0 +1,23 @@
+use "../../packages/warp/lib.weft" as warp
+use json
+
+fn main -> Result {
+    base := warp.array_typed([1, 2, 3, 4, 5, 6, 7, 8, 9], [3, 3], "int64")
+    transposed := warp.transpose_view(base, null)
+    rows := warp.index(base, [[2, 0], null])
+    cols := warp.index(base, [null, [-1, 0]])
+    masked := warp.index(base, [[true, false, true], null])
+    reversed := warp.view(base, [3], [-1], 2)
+    say(json.stringify({
+        "transposed_shape": transposed.shape,
+        "transposed_element_strides": warp.element_strides(transposed),
+        "transposed_strides": warp.strides(transposed),
+        "transposed": warp.to_list(transposed),
+        "rows": rows.data,
+        "cols": cols.data,
+        "masked": masked.data,
+        "reversed": warp.to_list(reversed),
+        "negative_get": warp.get(transposed, [-1, -1]),
+        "is_contiguous": warp.is_contiguous(transposed),
+    }))
+}

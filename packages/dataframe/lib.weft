@@ -26,7 +26,15 @@ pub fn from_rows(rows) {
             }
         }
     }
-    {"_df": true, "columns": columns, "rows": rows}
+    let mut normalized = []
+    for row in rows {
+        let mut result = {}
+        for column in columns {
+            result[column] = if contains(keys(row), column) { row[column] } else { null }
+        }
+        normalized = push(normalized, result)
+    }
+    {"_df": true, "columns": columns, "rows": normalized}
 }
 
 pub fn from_columns(col_map) -> Result[any] {

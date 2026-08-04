@@ -101,6 +101,32 @@ def warp_expected() -> dict[str, Any]:
     }
 
 
+def warp_strides_expected() -> dict[str, Any]:
+    base = np.arange(1, 10, dtype=np.int64).reshape(3, 3)
+    transposed = base.T
+    return {
+        "transposed_shape": list(transposed.shape),
+        "transposed_element_strides": [1, 3],
+        "transposed_strides": list(transposed.strides),
+        "transposed": transposed.reshape(-1).tolist(),
+        "rows": base[[2, 0], :].reshape(-1).tolist(),
+        "cols": base[:, [-1, 0]].reshape(-1).tolist(),
+        "masked": base[[True, False, True], :].reshape(-1).tolist(),
+        "reversed": base.reshape(-1)[2::-1].tolist(),
+        "negative_get": int(transposed[-1, -1]),
+        "is_contiguous": False,
+    }
+
+
+def dataframe_missing_expected() -> dict[str, Any]:
+    frame = pd.DataFrame([{"a": 1}, {"b": 2}])
+    return {
+        "columns": frame.columns.tolist(),
+        "a": [1, None],
+        "b": [None, 2],
+    }
+
+
 def records(frame: pd.DataFrame) -> list[dict[str, Any]]:
     return json.loads(frame.to_json(orient="records"))
 
@@ -153,8 +179,12 @@ def main() -> None:
     args = parser.parse_args()
     actual_warp = run_weft(args.weft, "warp_case.weft")
     assert_equal(actual_warp, warp_expected(), "warp")
+    actual_strides = run_weft(args.weft, "warp_strides_case.weft")
+    assert_equal(actual_strides, warp_strides_expected(), "warp_strides")
     actual_dataframe = run_weft(args.weft, "dataframe_case.weft")
     assert_equal(actual_dataframe, dataframe_expected(), "dataframe")
+    actual_missing = run_weft(args.weft, "dataframe_missing_case.weft")
+    assert_equal(actual_missing, dataframe_missing_expected(), "dataframe_missing")
     print(f"conformance ok: NumPy {np.__version__}, pandas {pd.__version__}")
 
 
