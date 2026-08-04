@@ -232,11 +232,40 @@ func installListOps(env *runtime.Env) {
 	}))
 
 	// sort(list) -> list  numbers/strings ascending (stable copy)
-	env.SetShared("sort", runtime.MakeBuiltin("sort", 1, func(args []runtime.Value) (runtime.Value, error) {
+	env.SetShared("sort", runtime.MakeBuiltin("sort", -1, func(args []runtime.Value) (runtime.Value, error) {
 		if len(args) < 1 || args[0].Kind != runtime.KindList {
-			return errRes("sort(list)", "pipe"), nil
+			return errRes("sort(list, key_fn?)", "pipe"), nil
 		}
 		items := append([]runtime.Value(nil), args[0].Obj.(*runtime.ListObj).Items...)
+		if len(args) >= 2 && (args[1].Kind == runtime.KindFunc || args[1].Kind == runtime.KindBuiltin) {
+			// Sort by key function: compute keys, sort by key values
+			keyFn := args[1]
+			type keyed struct {
+				key runtime.Value
+				val runtime.Value
+			}
+			pairs := make([]keyed, len(items))
+			for i, it := range items {
+				k, err := env.Call(keyFn, []runtime.Value{it})
+				if err != nil {
+					return errRes("sort key function error: "+err.Error(), "pipe"), nil
+				}
+				pairs[i] = keyed{key: k, val: it}
+			}
+			// stable insertion sort by key
+			for i := 1; i < len(pairs); i++ {
+				j := i
+				for j > 0 && compareValues(pairs[j].key, pairs[j-1].key) < 0 {
+					pairs[j], pairs[j-1] = pairs[j-1], pairs[j]
+					j--
+				}
+			}
+			result := make([]runtime.Value, len(pairs))
+			for i, p := range pairs {
+				result[i] = p.val
+			}
+			return runtime.List(result...), nil
+		}
 		sortValues(items)
 		return runtime.List(items...), nil
 	}))

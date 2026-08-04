@@ -104,7 +104,11 @@ func compileFile(file *ast.File, env *runtime.Env, requireMain, replMode bool) (
 			}
 			c.typeFields[d.Name] = d.Fields
 		case *ast.ConstDecl:
-			if lit, ok := d.Value.(*ast.BasicLit); ok {
+			if v, ok := constEval(d.Value); ok {
+				if env != nil {
+					env.Set(d.Name, v)
+				}
+			} else if lit, ok := d.Value.(*ast.BasicLit); ok {
 				v, err := litValue(lit)
 				if err != nil {
 					c.errorf(d.Pos(), "%v", err)
@@ -112,7 +116,7 @@ func compileFile(file *ast.File, env *runtime.Env, requireMain, replMode bool) (
 					env.Set(d.Name, v)
 				}
 			} else {
-				c.errorf(d.Pos(), "top-level const must be a literal")
+				c.errorf(d.Pos(), "top-level const must be a constant expression (literals, negation, lists, maps)")
 			}
 		case *ast.EnumDecl:
 			// enum Status { Ok, Err } → global map Status with Status.Ok == "Ok"
@@ -1319,6 +1323,72 @@ func (c *Compiler) compileOr(e *ast.BinaryExpr) {
 	c.emit(OpPop, e.Pos())
 	c.compileExpr(e.Y)
 	c.patchJump(elseJ)
+}
+
+// constEval evaluates constant expressions at compile time: literals, unary minus,
+// list literals, and map literals. Returns (value, true) on success.
+func constEval(expr ast.Expr) (runtime.Value, bool) {
+	switch e := expr.(type) {
+	case *ast.BasicLit:
+		v, err := litValue(e)
+		if err != nil {
+			return runtime.Null(), false
+		}
+		return v, true
+	case *ast.UnaryExpr:
+		if e.Op == token.Minus {
+			inner, ok := constEval(e.X)
+			if !ok {
+				return runtime.Null(), false
+			}
+			if inner.Kind == runtime.KindInt {
+				return runtime.Int(-inner.I), true
+			}
+			if inner.Kind == runtime.KindFloat {
+				return runtime.Float(-inner.F), true
+			}
+		}
+	case *ast.BinaryExpr:
+		lv, lok := constEval(e.X)
+		rv, rok := constEval(e.Y)
+		if lok && rok && lv.Kind == runtime.KindInt && rv.Kind == runtime.KindInt {
+			switch e.Op {
+			case token.Plus:
+				return runtime.Int(lv.I + rv.I), true
+			case token.Minus:
+				return runtime.Int(lv.I - rv.I), true
+			case token.Star:
+				return runtime.Int(lv.I * rv.I), true
+			}
+		}
+	case *ast.ListLit:
+		items := make([]runtime.Value, len(e.Elts))
+		for i, el := range e.Elts {
+			v, ok := constEval(el)
+			if !ok {
+				return runtime.Null(), false
+			}
+			items[i] = v
+		}
+		return runtime.List(items...), true
+	case *ast.MapLit:
+		m := runtime.NewMap()
+		mo := m.Obj.(*runtime.MapObj)
+		for i, keyExpr := range e.Keys {
+			keyLit, ok := keyExpr.(*ast.BasicLit)
+			if !ok {
+				return runtime.Null(), false
+			}
+			v, vok := constEval(e.Vals[i])
+			if !vok {
+				return runtime.Null(), false
+			}
+			mo.Keys = append(mo.Keys, keyLit.Value)
+			mo.Vals[keyLit.Value] = v
+		}
+		return m, true
+	}
+	return runtime.Null(), false
 }
 
 func litValue(e *ast.BasicLit) (runtime.Value, error) {

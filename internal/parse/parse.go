@@ -295,7 +295,13 @@ func (p *Parser) parseParams() []*ast.Param {
 			p.errorf(p.tok.Pos, "expected parameter name")
 			break
 		}
-		pr := &ast.Param{Pos_: p.tok.Pos, Name: p.tok.Lit}
+		name := p.tok.Lit
+		// Reject reserved names as parameters — they shadow builtins and cause confusing runtime errors
+		switch name {
+		case "unit", "null", "true", "false", "Ok", "Err":
+			p.errorf(p.tok.Pos, "%q is a reserved name and cannot be used as a parameter", name)
+		}
+		pr := &ast.Param{Pos_: p.tok.Pos, Name: name}
 		p.next()
 		if p.tok.Kind == token.Colon {
 			p.next()

@@ -553,11 +553,12 @@ func newWebApp(env *runtime.Env) runtime.Value {
 	}
 	put("listen", 1, listen)
 	put("run", 1, listen)
-	// app.handle(method, path, body?) — in-process dispatch for tests
-	put("handle", 3, func(args []runtime.Value) (runtime.Value, error) {
+	// app.handle(method, path, body?, headers?) — in-process dispatch for tests
+	put("handle", -1, func(args []runtime.Value) (runtime.Value, error) {
 		method := "GET"
 		pathStr := "/"
 		body := ""
+		var headers map[string]string
 		if len(args) >= 1 {
 			method = strings.ToUpper(args[0].String())
 		}
@@ -567,7 +568,14 @@ func newWebApp(env *runtime.Env) runtime.Value {
 		if len(args) >= 3 {
 			body = args[2].String()
 		}
-		return app.dispatch(method, pathStr, body, nil), nil
+		if len(args) >= 4 && args[3].Kind == runtime.KindMap {
+			headers = make(map[string]string)
+			mo := args[3].Obj.(*runtime.MapObj)
+			for _, k := range mo.Keys {
+				headers[k] = mo.Vals[k].String()
+			}
+		}
+		return app.dispatch(method, pathStr, body, headers), nil
 	})
 	return m
 }

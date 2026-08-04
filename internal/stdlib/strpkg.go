@@ -446,6 +446,32 @@ func packageStr() runtime.Value {
 		return runtime.Str(strings.TrimRight(args[0].String(), " \t\n\r")), nil
 	}, 1)
 
+	// str.builder() -> builder object with .write(s) and .string() methods
+	// O(1) amortised append — use instead of s = s + x in loops
+	set(p, "builder", func(args []runtime.Value) (runtime.Value, error) {
+		var sb strings.Builder
+		m := runtime.NewMap()
+		mo := m.Obj.(*runtime.MapObj)
+		mo.Keys = append(mo.Keys, "write", "string", "len", "reset")
+		mo.Vals["write"] = runtime.MakeBuiltin("builder.write", 1, func(args []runtime.Value) (runtime.Value, error) {
+			if len(args) >= 1 {
+				sb.WriteString(args[0].String())
+			}
+			return runtime.Unit(), nil
+		})
+		mo.Vals["string"] = runtime.MakeBuiltin("builder.string", 0, func(args []runtime.Value) (runtime.Value, error) {
+			return runtime.Str(sb.String()), nil
+		})
+		mo.Vals["len"] = runtime.MakeBuiltin("builder.len", 0, func(args []runtime.Value) (runtime.Value, error) {
+			return runtime.Int(int64(sb.Len())), nil
+		})
+		mo.Vals["reset"] = runtime.MakeBuiltin("builder.reset", 0, func(args []runtime.Value) (runtime.Value, error) {
+			sb.Reset()
+			return runtime.Unit(), nil
+		})
+		return m, nil
+	}, 0)
+
 	return p
 }
 
