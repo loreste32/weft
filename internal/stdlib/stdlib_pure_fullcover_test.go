@@ -438,6 +438,8 @@ func TestPure_IOHelpers(t *testing.T) {
 	mem(t, p, "eprint", runtime.Str("a"), runtime.Str("b"))
 	mem(t, p, "eprintln", runtime.Str("c"))
 	_ = mem(t, p, "is_tty")
+	_ = mem(t, p, "is_tty", runtime.Str("stdout"))
+	_ = mem(t, p, "is_tty", runtime.Str("stderr"))
 	if !strings.Contains(sb.String(), "a") {
 		t.Fatal(sb.String())
 	}

@@ -478,6 +478,16 @@ func TestIO_EprintAndTTY(t *testing.T) {
 		t.Fatal(stderr.String())
 	}
 	_ = callPkg(t, p, "is_tty")
+	_ = callPkg(t, p, "is_tty", runtime.Str("stdin"))
+	_ = callPkg(t, p, "is_tty", runtime.Str("stdout"))
+	_ = callPkg(t, p, "is_tty", runtime.Str("stderr"))
+
+	// bad stream name should error
+	fn := p.Obj.(*runtime.MapObj).Vals["is_tty"]
+	_, err := fn.Obj.(*runtime.BuiltinObj).Fn([]runtime.Value{runtime.Str("bogus")})
+	if err == nil {
+		t.Fatal("is_tty(\"bogus\") should error")
+	}
 }
 
 func TestSocket_ListenDialLoopback(t *testing.T) {

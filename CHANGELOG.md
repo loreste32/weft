@@ -2,6 +2,12 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
+## [0.5.3] — 2026-08-04
+
+### Fixed
+- **`io.is_tty()` misclassified `/dev/null` as terminal** — used `os.ModeCharDevice` which returns true for char devices that are not terminals; now uses `term.IsTerminal()` from `golang.org/x/term` for proper `isatty(2)` semantics (#8)
+- **`io.is_tty()` hardcoded stdout** — now accepts an optional stream name parameter: `io.is_tty()` defaults to stdin, `io.is_tty("stdout")` and `io.is_tty("stderr")` check the named stream
+
 ## [0.5.1] — 2026-08-04
 
 ### Added

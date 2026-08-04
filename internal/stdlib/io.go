@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/loreste/weft/internal/runtime"
+	"golang.org/x/term"
 )
 
 // packageIO covers stdin/stdout helpers for pipe-friendly CLIs.
@@ -57,14 +58,27 @@ func packageIO(env *runtime.Env) runtime.Value {
 		return runtime.Unit(), nil
 	}, -1)
 
-	// io.is_tty() -> bool  (stdout)
+	// io.is_tty()          -> bool  (stdin)
+	// io.is_tty("stdout")  -> bool
+	// io.is_tty("stderr")  -> bool
 	set(p, "is_tty", func(args []runtime.Value) (runtime.Value, error) {
-		fi, err := os.Stdout.Stat()
-		if err != nil {
-			return runtime.Bool(false), nil
+		stream := "stdin"
+		if len(args) >= 1 && args[0].Kind == runtime.KindStr {
+			stream = args[0].S
 		}
-		return runtime.Bool((fi.Mode() & os.ModeCharDevice) != 0), nil
-	}, 0)
+		var fd uintptr
+		switch stream {
+		case "stdin":
+			fd = os.Stdin.Fd()
+		case "stdout":
+			fd = os.Stdout.Fd()
+		case "stderr":
+			fd = os.Stderr.Fd()
+		default:
+			return runtime.Bool(false), fmt.Errorf("is_tty: unknown stream %q (use \"stdin\", \"stdout\", or \"stderr\")", stream)
+		}
+		return runtime.Bool(term.IsTerminal(int(fd))), nil
+	}, -1)
 
 	return p
 }
