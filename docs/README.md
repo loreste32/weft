@@ -12,7 +12,7 @@ Your app
    ↑
 23 registry modules    telecom · auth · router · config · …   (packages/ → vendor/)
    ↑
-81 stdlib packages     llm · mcp · dns · tls · os · http · …  (in the weft binary)
+83 stdlib packages     llm · mcp · dns · tls · os · http · …  (in the weft binary)
    ↑
 Language + VM          Result/? · concurrency · auto-fetch
 ```

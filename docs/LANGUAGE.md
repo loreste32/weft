@@ -432,7 +432,7 @@ Packages not in `vendor/` are downloaded from the registry on first `use`. Disab
 
 Resolution order (simplified):
 
-1. Stdlib (`http`, `json`, `fs`, …) — 81 packages  
+1. Stdlib (`http`, `json`, `fs`, …) — 83 packages  
 2. `vendor/<name>/`  
 3. `WEFT_PATH`  
 4. `packages/<name>/`  

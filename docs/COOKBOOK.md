@@ -158,7 +158,7 @@ fn main -> Result {
 ```weft
 fn main -> Result {
     data := json.parse(fs.read("config.json")?)?
-    data.version = "0.4.10"
+    data.version = "0.5.0"
     fs.write("config.json", json.pretty(data) + "\n")?
 }
 ```
@@ -267,7 +267,7 @@ fn main {
     http.serve(":8080", fn(req) {
         match req.path {
             "/health" { http.json({"ok": true}) }
-            "/version" { http.json({"version": "0.4.10"}) }
+            "/version" { http.json({"version": "0.5.0"}) }
             _ { http.text(404, "not found") }
         }
     })
