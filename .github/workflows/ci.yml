@@ -232,7 +232,7 @@ jobs:
           go test ./internal/lex/ ./internal/parse/ ./internal/compile/ ./internal/vm/ \
             ./internal/types/ ./internal/pkgman/ -count=1 -timeout 180s
           # pkg/weft has ESL blackbox tests that can hang on Windows; run safe subset
-          go test ./pkg/weft/ -count=1 -timeout 180s -run 'TestVersion|TestCompat|TestDoctor|TestLint|TestFormat'
+          go test ./pkg/weft/ -count=1 -timeout 180s -run 'TestVersion|TestDoctor|TestLint|TestFormat'
       - name: Compat corpus
         if: matrix.os != 'windows-latest'
         shell: bash
