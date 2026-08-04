@@ -432,8 +432,25 @@ pub fn tail(t, n) {
 }
 
 pub fn iloc(t, idx) {
-    // Single row by position
-    t.rows[idx]
+    // Scalar position returns a row; a list of positions returns a frame.
+    if _kind(idx) == "int" {
+        let mut position = idx
+        if position < 0 { position = position + len(t.rows) }
+        if position < 0 || position >= len(t.rows) { return Err("dataframe.iloc row position out of range") }
+        return t.rows[position]
+    }
+    if _kind(idx) == "list" {
+        let mut selected = []
+        for raw in idx {
+            if _kind(raw) != "int" { return Err("dataframe.iloc positions must be integers") }
+            let mut position = raw
+            if position < 0 { position = position + len(t.rows) }
+            if position < 0 || position >= len(t.rows) { return Err("dataframe.iloc row position out of range") }
+            selected = push(selected, t.rows[position])
+        }
+        return _with_columns(t, selected)
+    }
+    Err("dataframe.iloc expects an integer or list of integers")
 }
 
 pub fn loc(t, start, stop) {
@@ -458,7 +475,7 @@ pub fn select_(t, cols) {
         for c in cols { nr[c] = r[c] }
         new_rows = push(new_rows, nr)
     }
-    {"_df": true, "columns": cols, "rows": new_rows}
+    _with_same_index(t, cols, new_rows)
 }
 
 pub fn drop(t, cols) {
@@ -560,7 +577,7 @@ pub fn add_column(t, name, f) {
         nr[name] = f(r)
         new_rows = push(new_rows, nr)
     }
-    {"_df": true, "columns": new_cols, "rows": new_rows}
+    _with_same_index(t, new_cols, new_rows)
 }
 
 pub fn assign(t, assignments) {
@@ -589,7 +606,7 @@ pub fn rename(t, mapping) {
         }
         new_rows = push(new_rows, nr)
     }
-    {"_df": true, "columns": new_cols, "rows": new_rows}
+    _with_same_index(t, new_cols, new_rows)
 }
 
 pub fn apply_(t, column, f) {
@@ -604,7 +621,7 @@ pub fn apply_(t, column, f) {
     let mut cols = []
     for c in t.columns { cols = push(cols, c) }
     if !contains(cols, column) { cols = push(cols, column) }
-    {"_df": true, "columns": cols, "rows": new_rows}
+    _with_same_index(t, cols, new_rows)
 }
 
 pub fn apply_row(t, f) {
@@ -1550,7 +1567,50 @@ fn _series_binary(left, right, fill_value, op) {
 }
 
 fn _with_columns(t, rows) {
-    {"_df": true, "columns": t.columns, "rows": rows}
+    _with_named_columns(t, t.columns, rows)
+}
+
+fn _with_named_columns(t, columns, rows) {
+    let mut result = {"_df": true, "columns": columns, "rows": rows}
+    if contains(keys(t), "_index") && t._index != null {
+        result["_index"] = _index_for_rows(t, rows)
+        result["_index_name"] = t._index_name
+    }
+    result
+}
+
+fn _with_same_index(t, columns, rows) {
+    let mut result = {"_df": true, "columns": columns, "rows": rows}
+    if contains(keys(t), "_index") && t._index != null {
+        result["_index"] = t._index
+        result["_index_name"] = t._index_name
+    }
+    result
+}
+
+fn _index_for_rows(t, rows) {
+    let mut used = []
+    let mut i = 0
+    while i < len(t.rows) {
+        used = push(used, false)
+        i = i + 1
+    }
+    let mut result = []
+    for row in rows {
+        let mut found = false
+        let mut j = 0
+        while j < len(t.rows) {
+            if !used[j] && json.stringify(t.rows[j]) == json.stringify(row) {
+                result = push(result, index(t)[j])
+                used[j] = true
+                found = true
+                break
+            }
+            j = j + 1
+        }
+        if !found { result = push(result, null) }
+    }
+    result
 }
 
 fn _has_columns(t, cols) {

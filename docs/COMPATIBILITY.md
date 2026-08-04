@@ -57,6 +57,11 @@ claiming support for a new operation, dtype, edge case, or performance tier.
 - complete groupby/aggregation/transform/window/join/reshape semantics;
 - Arrow/Parquet/SQL-class I/O and memory-efficient 100k+ row execution.
 
+The current DataFrame slice preserves explicit indexes through filtering,
+sorting, `head`, `tail`, and positional selection; `iloc` accepts scalar,
+negative, and list positions. These behaviors are covered by the pinned
+conformance fixture, but they do not imply complete pandas indexing parity.
+
 ### ML and providers
 
 - `packages/ml` now has tested scalar/array reverse-mode primitives, but

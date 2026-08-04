@@ -72,14 +72,28 @@ def warp_expected() -> dict[str, Any]:
     b = np.array([10.0, 20.0, 30.0])
     left = np.array([[1.0, 2.0], [3.0, 4.0]])
     right = np.array([[5.0, 6.0], [7.0, 8.0]])
+    ints = np.array([[1, 2], [3, 4]], dtype=np.int64)
+    floats = np.array([[1, 2], [3, 4]], dtype=np.float32)
+    typed_added = floats + 1
+    comparison = a > 3.0
+    selected = np.where(comparison, a, 0.0)
     return {
         "shape": [2, 3],
-        "dtype": "float64",
-        "typed_dtype": "float32",
+        "dtype": str(a.dtype),
+        "typed_dtype": str(floats.dtype),
+        "typed_added_dtype": str(typed_added.dtype),
+        "comparison_dtype": str(comparison.dtype),
+        "comparison": comparison.reshape(-1).tolist(),
         "broadcast_add": (a + b).reshape(-1).tolist(),
         "sum_axis1": {"shape": [2, 1], "data": a.sum(axis=1, keepdims=True).reshape(-1).tolist()},
         "matmul": {"shape": [2, 2], "data": (left @ right).reshape(-1).tolist()},
-        "where": np.where(a > 3.0, a, 0.0).reshape(-1).tolist(),
+        "where": selected.reshape(-1).tolist(),
+        "where_dtype": str(selected.dtype),
+        "sum_int_dtype": str(ints.sum(axis=0).dtype),
+        "sum_float32_dtype": str(floats.sum(axis=0).dtype),
+        "mean_int_dtype": str(ints.mean(axis=0).dtype),
+        "mean_float32_dtype": str(floats.mean(axis=0).dtype),
+        "cumsum_int_dtype": str(ints.cumsum().dtype),
         "reshape": a.reshape(3, 2).reshape(-1).tolist(),
         "reshape_shape": [3, 2],
         "total": float(a.sum()),
@@ -121,6 +135,9 @@ def dataframe_expected() -> dict[str, Any]:
     return {
         "columns": ["name", "age", "dept", "salary"],
         "sorted_names": source.sort_values("age", kind="stable")["name"].tolist(),
+        "filtered_index": source.loc[source["age"] > 28, "name"].tolist(),
+        "sorted_index": source.loc[source["age"] > 28].sort_values("age", ascending=False, kind="stable").index.map(source["name"]).tolist(),
+        "iloc_index": source.iloc[[3, 0, -1]]["name"].tolist(),
         "grouped": records(grouped),
         "joined": records(left.merge(right, on="id", how="left")),
         "pivot_columns": pivoted.columns.tolist(),

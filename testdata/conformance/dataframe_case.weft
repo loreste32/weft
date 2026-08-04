@@ -10,6 +10,10 @@ fn main -> Result {
         {"name": "Eve", "age": 32, "dept": "eng", "salary": 95000},
     ])
     sorted := df.sort_by(source, "age", false)
+    indexed := df.set_index(source, "name", null)
+    filtered_indexed := df.query(indexed, "age", ">", 28)
+    sorted_indexed := df.sort_by(filtered_indexed, "age", true)
+    selected_indexed := df.iloc(indexed, [3, 0, -1])
     grouped := df.group_by(source, "dept", {
         "salary_sum": {"col": "salary", "op": "sum"},
         "age_mean": {"col": "age", "op": "mean"},
@@ -31,6 +35,9 @@ fn main -> Result {
     say(json.stringify({
         "columns": df.columns(source),
         "sorted_names": df.col(sorted, "name"),
+        "filtered_index": df.index(filtered_indexed),
+        "sorted_index": df.index(sorted_indexed),
+        "iloc_index": df.index(selected_indexed),
         "grouped": df.rows(grouped),
         "joined": df.rows(joined),
         "pivot_columns": df.columns(pivoted),

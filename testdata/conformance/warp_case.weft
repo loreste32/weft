@@ -11,15 +11,28 @@ fn main -> Result {
     product := warp.matmul(left, right)
     selected := warp.where(warp.greater(a, 3.0), a, 0.0)
     typed := warp.array_typed([1, 2, 3, 4], [2, 2], "float32")
+    typed_added := warp.add(typed, 1)
+    comparison := warp.greater(a, 3.0)
+    int_values := warp.array_typed([1, 2, 3, 4], [2, 2], "int64")
+    float_values := warp.array_typed([1, 2, 3, 4], [2, 2], "float32")
     reshaped := warp.reshape(a, [3, 2])
     say(json.stringify({
         "shape": warp.shape(a),
         "dtype": warp.dtype(a),
         "typed_dtype": warp.dtype(typed),
+        "typed_added_dtype": warp.dtype(typed_added),
+        "comparison_dtype": warp.dtype(comparison),
+        "comparison": comparison.data,
         "broadcast_add": added.data,
         "sum_axis1": {"shape": reduced.shape, "data": reduced.data},
         "matmul": {"shape": product.shape, "data": product.data},
         "where": selected.data,
+        "where_dtype": warp.dtype(selected),
+        "sum_int_dtype": warp.dtype(warp.sum_axis(int_values, 0)),
+        "sum_float32_dtype": warp.dtype(warp.sum_axis(float_values, 0)),
+        "mean_int_dtype": warp.dtype(warp.mean_axis(int_values, 0)),
+        "mean_float32_dtype": warp.dtype(warp.mean_axis(float_values, 0)),
+        "cumsum_int_dtype": warp.dtype(warp.cumsum(int_values)),
         "reshape": reshaped.data,
         "reshape_shape": reshaped.shape,
         "total": warp.sum(a),

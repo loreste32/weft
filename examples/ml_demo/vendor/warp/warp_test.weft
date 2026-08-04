@@ -36,6 +36,27 @@ fn test_logical_dtypes {
     test.eq(warp.dtype(warp.zeros_dtype([2], "float64")), "float64")
 }
 
+fn test_dtype_promotion_and_result_kinds {
+    ints := warp.array_typed([1, 2, 3], [3], "int64")
+    floats := warp.array_typed([1, 2, 3], [3], "float32")
+    test.eq(warp.dtype(warp.add(ints, floats)), "float64")
+    test.eq(warp.dtype(warp.mul(floats, 2)), "float32")
+    test.eq(warp.dtype(warp.equal(ints, 2)), "bool")
+    test.eq(warp.dtype(warp.logical_and(ints, 1)), "bool")
+    test.eq(warp.dtype(warp.sqrt(ints)), "float64")
+    test.eq(warp.to_list(warp.equal(ints, 2)), [false, true, false])
+    int_matrix := warp.reshape(ints, [1, 3])
+    float_matrix := warp.reshape(floats, [1, 3])
+    test.eq(warp.dtype(warp.sum_axis(int_matrix, 1)), "int64")
+    test.eq(warp.dtype(warp.sum_axis(float_matrix, 1)), "float32")
+ test.eq(warp.dtype(warp.mean_axis(int_matrix, 1)), "float64")
+ test.eq(warp.dtype(warp.mean_axis(float_matrix, 1)), "float32")
+ test.eq(warp.dtype(warp.cumsum(ints)), "int64")
+ test.eq(warp.dtype(warp.floor_(ints)), "float64")
+ test.eq(warp.dtype(warp.floor_(floats)), "float32")
+ test.eq(warp.dtype(warp.atan2(ints, ints)), "float64")
+}
+
 fn test_arange {
     a := warp.arange(0, 5, null)
     test.eq(warp.to_list(a), [0, 1, 2, 3, 4])
@@ -404,16 +425,16 @@ fn test_unique {
 fn test_equal {
     a := warp.array([1, 2, 3], [3])
     b := warp.array([1, 0, 3], [3])
-    test.eq(warp.to_list(warp.equal(a, b)), [1, 0, 1])
+    test.eq(warp.to_list(warp.equal(a, b)), [true, false, true])
 }
 
 fn test_comparisons {
     a := warp.array([1, 5, 3], [3])
     b := warp.array([2, 2, 3], [3])
-    test.eq(warp.to_list(warp.less(a, b)), [1, 0, 0])
-    test.eq(warp.to_list(warp.less_equal(a, b)), [1, 0, 1])
-    test.eq(warp.to_list(warp.greater(a, b)), [0, 1, 0])
-    test.eq(warp.to_list(warp.greater_equal(a, b)), [0, 1, 1])
+    test.eq(warp.to_list(warp.less(a, b)), [true, false, false])
+    test.eq(warp.to_list(warp.less_equal(a, b)), [true, false, true])
+    test.eq(warp.to_list(warp.greater(a, b)), [false, true, false])
+    test.eq(warp.to_list(warp.greater_equal(a, b)), [false, true, true])
 }
 
 fn test_where {

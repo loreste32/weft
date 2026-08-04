@@ -403,8 +403,8 @@ pub fn round_(a, decimals) {
     _unaryop(a, fn(x) { math.round(x * factor) / factor })
 }
 
-pub fn floor_(a) { _unaryop(a, fn(x) { math.floor(x) }) }
-pub fn ceil_(a) { _unaryop(a, fn(x) { math.ceil(x) }) }
+pub fn floor_(a) { _unaryop_with_dtype(a, fn(x) { math.floor(x) }, _float_result_dtype(a)) }
+pub fn ceil_(a) { _unaryop_with_dtype(a, fn(x) { math.ceil(x) }, _float_result_dtype(a)) }
 pub fn clip(a, lo, hi) { _unaryop(a, fn(x) { math.clamp(x, lo, hi) }) }
 pub fn sign(a) { _unaryop(a, fn(x) { if x > 0 { 1.0 } else if x < 0 { -1.0 } else { 0.0 } }) }
 
@@ -412,36 +412,36 @@ pub fn sign(a) { _unaryop(a, fn(x) { if x > 0 { 1.0 } else if x < 0 { -1.0 } els
 // Math functions (element-wise)
 // ──────────────────────────────────────────────
 
-pub fn sqrt(a) { _unaryop(a, fn(x) { math.sqrt(x) }) }
-pub fn exp(a) { _unaryop(a, fn(x) { math.exp(x) }) }
-pub fn log_(a) { _unaryop(a, fn(x) { math.log(x) }) }
-pub fn log2(a) { _unaryop(a, fn(x) { math.log(x) / math.log(2) }) }
-pub fn log10(a) { _unaryop(a, fn(x) { math.log(x) / math.log(10) }) }
+pub fn sqrt(a) { _unaryop_with_dtype(a, fn(x) { math.sqrt(x) }, "float64") }
+pub fn exp(a) { _unaryop_with_dtype(a, fn(x) { math.exp(x) }, "float64") }
+pub fn log_(a) { _unaryop_with_dtype(a, fn(x) { math.log(x) }, "float64") }
+pub fn log2(a) { _unaryop_with_dtype(a, fn(x) { math.log(x) / math.log(2) }, "float64") }
+pub fn log10(a) { _unaryop_with_dtype(a, fn(x) { math.log(x) / math.log(10) }, "float64") }
 
-pub fn sin(a) { _unaryop(a, fn(x) { math.sin(x) }) }
-pub fn cos(a) { _unaryop(a, fn(x) { math.cos(x) }) }
-pub fn tan(a) { _unaryop(a, fn(x) { math.tan(x) }) }
-pub fn asin(a) { _unaryop(a, fn(x) { math.asin(x) }) }
-pub fn acos(a) { _unaryop(a, fn(x) { math.acos(x) }) }
-pub fn atan(a) { _unaryop(a, fn(x) { math.atan(x) }) }
-pub fn atan2(y, x) { _binop(y, x, fn(a, b) { math.atan2(a, b) }) }
+pub fn sin(a) { _unaryop_with_dtype(a, fn(x) { math.sin(x) }, "float64") }
+pub fn cos(a) { _unaryop_with_dtype(a, fn(x) { math.cos(x) }, "float64") }
+pub fn tan(a) { _unaryop_with_dtype(a, fn(x) { math.tan(x) }, "float64") }
+pub fn asin(a) { _unaryop_with_dtype(a, fn(x) { math.asin(x) }, "float64") }
+pub fn acos(a) { _unaryop_with_dtype(a, fn(x) { math.acos(x) }, "float64") }
+pub fn atan(a) { _unaryop_with_dtype(a, fn(x) { math.atan(x) }, "float64") }
+pub fn atan2(y, x) { _binop_with_dtype(y, x, fn(a, b) { math.atan2(a, b) }, "float64") }
 
-pub fn sinh(a) { _unaryop(a, fn(x) { (math.exp(x) - math.exp(-x)) / 2 }) }
-pub fn cosh(a) { _unaryop(a, fn(x) { (math.exp(x) + math.exp(-x)) / 2 }) }
-pub fn tanh(a) { _unaryop(a, fn(x) {
+pub fn sinh(a) { _unaryop_with_dtype(a, fn(x) { (math.exp(x) - math.exp(-x)) / 2 }, "float64") }
+pub fn cosh(a) { _unaryop_with_dtype(a, fn(x) { (math.exp(x) + math.exp(-x)) / 2 }, "float64") }
+pub fn tanh(a) { _unaryop_with_dtype(a, fn(x) {
     (math.exp(2 * x) - 1) / (math.exp(2 * x) + 1)
-}) }
+}, "float64") }
 
 // ──────────────────────────────────────────────
-// Comparisons (element-wise, return 0/1 arrays)
+// Comparisons (element-wise, return boolean arrays)
 // ──────────────────────────────────────────────
 
-pub fn equal(a, b) { _binop(a, b, fn(x, y) { if x == y { 1 } else { 0 } }) }
-pub fn not_equal(a, b) { _binop(a, b, fn(x, y) { if x != y { 1 } else { 0 } }) }
-pub fn less(a, b) { _binop(a, b, fn(x, y) { if x < y { 1 } else { 0 } }) }
-pub fn less_equal(a, b) { _binop(a, b, fn(x, y) { if x <= y { 1 } else { 0 } }) }
-pub fn greater(a, b) { _binop(a, b, fn(x, y) { if x > y { 1 } else { 0 } }) }
-pub fn greater_equal(a, b) { _binop(a, b, fn(x, y) { if x >= y { 1 } else { 0 } }) }
+pub fn equal(a, b) { _binop_with_dtype(a, b, fn(x, y) { if x == y { 1 } else { 0 } }, "bool") }
+pub fn not_equal(a, b) { _binop_with_dtype(a, b, fn(x, y) { if x != y { 1 } else { 0 } }, "bool") }
+pub fn less(a, b) { _binop_with_dtype(a, b, fn(x, y) { if x < y { 1 } else { 0 } }, "bool") }
+pub fn less_equal(a, b) { _binop_with_dtype(a, b, fn(x, y) { if x <= y { 1 } else { 0 } }, "bool") }
+pub fn greater(a, b) { _binop_with_dtype(a, b, fn(x, y) { if x > y { 1 } else { 0 } }, "bool") }
+pub fn greater_equal(a, b) { _binop_with_dtype(a, b, fn(x, y) { if x >= y { 1 } else { 0 } }, "bool") }
 
 pub fn where(cond, x, y) {
     cs := _operand_shape(cond)
@@ -457,19 +457,19 @@ pub fn where(cond, x, y) {
         cv := _operand_value(cond, index, shape)
         xv := _operand_value(x, index, shape)
         yv := _operand_value(y, index, shape)
-        d = push(d, if cv != 0 { xv } else { yv })
+        d = push(d, if cv { xv } else { yv })
         i = i + 1
     }
-    array(d, shape)
+    _array_with_dtype(d, shape, _promote_dtype(x, y))
 }
 
 pub fn all_(a) {
-    for x in a.data { if x == 0 { return false } }
+    for x in a.data { if !x { return false } }
     true
 }
 
 pub fn any_(a) {
-    for x in a.data { if x != 0 { return true } }
+    for x in a.data { if x { return true } }
     false
 }
 
@@ -478,13 +478,13 @@ pub fn any_(a) {
 // ──────────────────────────────────────────────
 
 pub fn sum(a) {
-    let mut s = 0.0
+    let mut s = 0
     for x in _data(a) { s = s + x }
     s
 }
 
 pub fn prod(a) {
-    let mut s = 1.0
+    let mut s = 1
     for x in _data(a) { s = s * x }
     s
 }
@@ -492,7 +492,7 @@ pub fn prod(a) {
 pub fn mean(a) {
     data := _data(a)
     if len(data) == 0 { return null }
-    sum(a) / len(data)
+    sum(a) / (len(data) + 0.0)
 }
 
 pub fn var_(a) {
@@ -553,19 +553,19 @@ pub fn argmax(a) {
 pub fn cumsum(a) {
     data := _data(a)
     let mut d = []
-    let mut s = 0.0
+    let mut s = 0
     for x in data { s = s + x
         d = push(d, s) }
-    array(d, a.shape)
+    _array_with_dtype(d, a.shape, if _is_arr(a) { dtype(a) } else { null })
 }
 
 pub fn cumprod(a) {
     data := _data(a)
     let mut d = []
-    let mut s = 1.0
+    let mut s = 1
     for x in data { s = s * x
         d = push(d, s) }
-    array(d, a.shape)
+    _array_with_dtype(d, a.shape, if _is_arr(a) { dtype(a) } else { null })
 }
 
 pub fn median(a) {
@@ -594,7 +594,7 @@ pub fn percentile(a, p) {
 // every rank, including a rank-1 reduction to a scalar.
 
 pub fn sum_axis(a, axis) {
-    _reduce_axis_nd(a, axis, fn(acc, x) { acc + x }, 0.0)
+    _reduce_axis_nd(a, axis, fn(acc, x) { acc + x }, 0)
 }
 
 pub fn mean_axis(a, axis) {
@@ -603,7 +603,7 @@ pub fn mean_axis(a, axis) {
     if normalized == null { return Err("warp.mean_axis axis is out of range") }
     result := sum_axis(a, normalized)
     n := a.shape[normalized]
-    div(result, n)
+    _mean_result(result, a, n)
 }
 
 pub fn min_axis(a, axis) {
@@ -615,7 +615,7 @@ pub fn max_axis(a, axis) {
 }
 
 pub fn sum_axis_opts(a, axis, keepdims) {
-    _reduce_axis_nd_opts(a, axis, fn(acc, x) { acc + x }, 0.0, keepdims)
+    _reduce_axis_nd_opts(a, axis, fn(acc, x) { acc + x }, 0, keepdims)
 }
 
 pub fn mean_axis_opts(a, axis, keepdims) {
@@ -623,7 +623,8 @@ pub fn mean_axis_opts(a, axis, keepdims) {
     normalized := _normalize_axis(axis, len(a.shape), false)
     if normalized == null { return Err("warp.mean_axis_opts axis is out of range") }
     result := sum_axis_opts(a, normalized, keepdims)
-    div(result, a.shape[normalized])
+    if !_is_arr(result) { return result / (a.shape[normalized] + 0.0) }
+    _mean_result(result, a, a.shape[normalized])
 }
 
 pub fn min_axis_opts(a, axis, keepdims) {
@@ -1249,7 +1250,7 @@ pub fn mask(a, cond_arr) {
     let mut d = []
     let mut i = 0
     while i < len(data) {
-        if cd[i] != 0 { d = push(d, data[i]) }
+        if cd[i] { d = push(d, data[i]) }
         i = i + 1
     }
     array(d, [len(d)])
@@ -1257,7 +1258,7 @@ pub fn mask(a, cond_arr) {
 
 pub fn count_nonzero(a) {
     let mut c = 0
-    for x in a.data { if x != 0 { c = c + 1 } }
+    for x in a.data { if x { c = c + 1 } }
     c
 }
 
@@ -1315,21 +1316,21 @@ pub fn allclose(a, b, atol) {
     true
 }
 
-pub fn isnan(a) { _unaryop(a, fn(x) { if x != x { 1 } else { 0 } }) }
+pub fn isnan(a) { _unaryop_with_dtype(a, fn(x) { if x != x { 1 } else { 0 } }, "bool") }
 
-pub fn isinf(a) { _unaryop(a, fn(x) { if x == 1.0/0.0 || x == -1.0/0.0 { 1 } else { 0 } }) }
+pub fn isinf(a) { _unaryop_with_dtype(a, fn(x) { if x == 1.0/0.0 || x == -1.0/0.0 { 1 } else { 0 } }, "bool") }
 
-pub fn isfinite(a) { _unaryop(a, fn(x) { if x == x && x != 1.0/0.0 && x != -1.0/0.0 { 1 } else { 0 } }) }
+pub fn isfinite(a) { _unaryop_with_dtype(a, fn(x) { if x == x && x != 1.0/0.0 && x != -1.0/0.0 { 1 } else { 0 } }, "bool") }
 
 pub fn maximum(a, b) { _binop(a, b, fn(x, y) { if x > y { x } else { y } }) }
 
 pub fn minimum(a, b) { _binop(a, b, fn(x, y) { if x < y { x } else { y } }) }
 
-pub fn logical_and(a, b) { _binop(a, b, fn(x, y) { if x != 0 && y != 0 { 1 } else { 0 } }) }
+pub fn logical_and(a, b) { _binop_with_dtype(a, b, fn(x, y) { if x && y { 1 } else { 0 } }, "bool") }
 
-pub fn logical_or(a, b) { _binop(a, b, fn(x, y) { if x != 0 || y != 0 { 1 } else { 0 } }) }
+pub fn logical_or(a, b) { _binop_with_dtype(a, b, fn(x, y) { if x || y { 1 } else { 0 } }, "bool") }
 
-pub fn logical_not(a) { _unaryop(a, fn(x) { if x == 0 { 1 } else { 0 } }) }
+pub fn logical_not(a) { _unaryop_with_dtype(a, fn(x) { if !x { 1 } else { 0 } }, "bool") }
 
 pub fn nan_to_num(a, nan_val, posinf, neginf) {
     nv := if nan_val == null { 0.0 } else { nan_val }
@@ -1427,6 +1428,39 @@ fn _array_like(data, shape, source) {
     }
 }
 
+fn _array_with_dtype(data, shape, dtype_name) {
+    if dtype_name == null { return array(data, shape) }
+    array_typed(data, shape, dtype_name)
+}
+
+fn _mean_result(result, source, count) {
+    target_dtype := if dtype(source) == "float32" { "float32" } else { "float64" }
+    if !_is_arr(result) { return result / (count + 0.0) }
+    let mut data = []
+    for value in result.data { data = push(data, value / (count + 0.0)) }
+    _array_with_dtype(data, result.shape, target_dtype)
+}
+
+fn _scalar_dtype(value) { _infer_dtype([value]) }
+
+fn _float_result_dtype(value) {
+    if _is_arr(value) && dtype(value) == "float32" { "float32" } else { "float64" }
+}
+
+fn _promote_dtype(left, right) {
+    l := if _is_arr(left) { dtype(left) } else { _scalar_dtype(left) }
+    r := if _is_arr(right) { dtype(right) } else { _scalar_dtype(right) }
+    if l == "object" || r == "object" { return "object" }
+    if ((l == "float32" && r == "int64") || (l == "int64" && r == "float32")) &&
+        _is_arr(left) && _is_arr(right) {
+        return "float64"
+    }
+    if l == "float64" || r == "float64" { return "float64" }
+    if l == "float32" || r == "float32" { return "float32" }
+    if l == "int64" || r == "int64" { return "int64" }
+    "bool"
+}
+
 fn _valid_dtype(dtype_name) {
     dtype_name == "bool" || dtype_name == "int64" || dtype_name == "float32" || dtype_name == "float64" || dtype_name == "object"
 }
@@ -1485,7 +1519,10 @@ fn _prod(shape) {
     p
 }
 
-fn _binop(a, b, op) {
+fn _binop(a, b, op) { _binop_with_dtype(a, b, op, null) }
+
+fn _binop_with_dtype(a, b, op, forced_dtype) {
+    result_dtype := if forced_dtype == null { _promote_dtype(a, b) } else { forced_dtype }
     if _is_arr(a) && _is_arr(b) {
         shape := _broadcast_shape(a.shape, b.shape)
         if shape == null { return Err("warp operands could not be broadcast together") }
@@ -1497,30 +1534,40 @@ fn _binop(a, b, op) {
             d = push(d, op(_broadcast_value(a, index, shape), _broadcast_value(b, index, shape)))
             i = i + 1
         }
-        array(d, shape)
+        _array_with_dtype(d, shape, result_dtype)
     } else if _is_arr(a) {
         let mut d = []
         let mut i = 0
         while i < len(a.data) { d = push(d, op(a.data[i], b))
         i = i + 1 }
-        array(d, a.shape)
+        _array_with_dtype(d, a.shape, result_dtype)
     } else if _is_arr(b) {
         let mut d = []
         let mut i = 0
         while i < len(b.data) { d = push(d, op(a, b.data[i]))
         i = i + 1 }
-        array(d, b.shape)
-    } else { op(a, b) }
+        _array_with_dtype(d, b.shape, result_dtype)
+    } else {
+        value := op(a, b)
+        if result_dtype == "bool" { value != 0 } else { value }
+    }
 }
 
-fn _unaryop(a, op) {
-    if !_is_arr(a) { return op(a) }
+fn _unaryop(a, op) { _unaryop_with_dtype(a, op, null) }
+
+fn _unaryop_with_dtype(a, op, forced_dtype) {
+    if !_is_arr(a) {
+        value := op(a)
+        if forced_dtype == "bool" { return value != 0 }
+        return value
+    }
+    result_dtype := if forced_dtype == null { dtype(a) } else { forced_dtype }
     data := a.data
     let mut d = []
     let mut i = 0
     while i < len(data) { d = push(d, op(data[i]))
         i = i + 1 }
-    array(d, a.shape)
+    _array_with_dtype(d, a.shape, result_dtype)
 }
 
 fn _operand_shape(value) {
@@ -1749,9 +1796,10 @@ fn _reduce_axis_nd_opts(a, axis, op, init, keepdims) {
         d = push(d, acc)
         flat = flat + 1
     }
+    result_dtype := if dtype(a) == "bool" { "int64" } else { dtype(a) }
     if keepdims {
         kept_shape := _copy(a.shape)
         kept_shape[normalized] = 1
-        array(d, kept_shape)
-    } else if len(out_shape) == 0 { d[0] } else { array(d, out_shape) }
+        _array_with_dtype(d, kept_shape, result_dtype)
+    } else if len(out_shape) == 0 { d[0] } else { _array_with_dtype(d, out_shape, result_dtype) }
 }

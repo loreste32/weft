@@ -144,6 +144,21 @@ fn test_label_selection_and_reindex {
     test.eq(df.col(filled, "age"), [25, null])
 }
 
+fn test_index_preserved_by_row_transformations {
+    indexed := df.set_index(_sample_df(), "name", null)
+    filtered := df.query(indexed, "age", ">", 28)
+    test.eq(df.index(filtered), ["Alice", "Carol", "Eve"])
+    sorted := df.sort_by(filtered, "age", true)
+    test.eq(df.index(sorted), ["Carol", "Eve", "Alice"])
+    test.eq(df.index(df.head(sorted, 2)), ["Carol", "Eve"])
+    test.eq(df.index(df.tail(sorted, 1)), ["Alice"])
+    test.eq(df.index(df.loc(sorted, 1, 3)), ["Eve", "Alice"])
+    test.eq(df.index(df.select_(sorted, ["age"])), ["Carol", "Eve", "Alice"])
+    test.eq(df.index(df.rename(sorted, {"age": "years"})), ["Carol", "Eve", "Alice"])
+    added := df.add_column(sorted, "adult", fn(r) { r.age >= 18 })
+    test.eq(df.index(added), ["Carol", "Eve", "Alice"])
+}
+
 fn test_head_tail {
     t := _sample_df()
     h := df.head(t, 2)
@@ -163,6 +178,12 @@ fn test_iloc {
     t := _sample_df()
     row := df.iloc(t, 2)
     test.eq(row.name, "Carol")
+    last := df.iloc(t, -1)
+    test.eq(last.name, "Eve")
+    selected := df.iloc(t, [3, 0, -1])
+    test.eq(df.col(selected, "name"), ["Dan", "Alice", "Eve"])
+    bad := df.iloc(t, [99])
+    test.is_false(bad.ok)
 }
 
 fn test_loc {

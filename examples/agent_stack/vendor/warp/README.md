@@ -51,6 +51,10 @@ backend.
 Arrays are immutable values: `set` and every arithmetic operation return new
 arrays. Shape mismatches, ragged nested lists, invalid indices, and invalid
 constructor parameters return errors instead of silently truncating data.
+Common result typing is preserved: comparisons and logical predicates produce
+`bool`, math functions produce `float64`, and arithmetic follows the supported
+`bool`/`int64`/`float32`/`float64` promotion rules. Axis and cumulative
+operations retain their array dtype where the result is an array.
 
 ## Boundaries
 
