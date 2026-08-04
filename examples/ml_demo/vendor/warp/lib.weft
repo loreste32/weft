@@ -394,7 +394,7 @@ pub fn index(a, selectors) {
     for spec in specs {
         if spec.kind == "scalar" { continue }
         all_scalar = false
-        if spec.kind == "all" { out_shape = push(out_shape, spec.size) }
+        if spec.kind == "all" || spec.kind == "slice" { out_shape = push(out_shape, spec.size) }
         else { out_shape = push(out_shape, len(spec.positions)) }
     }
     let mut values = []
@@ -450,15 +450,38 @@ pub fn col(a, c) {
 }
 
 pub fn slice(a, start, stop) {
-    data := _data(a)
-    s := if stop == null { len(data) } else { stop }
-    if start < 0 || start > len(data) { return Err("warp.slice start is out of range") }
-    if s < start || s > len(data) { return Err("warp.slice stop is out of range") }
-    let mut d = []
-    let mut i = start
-    while i < s { d = push(d, data[i])
-        i = i + 1 }
-    array(d, [len(d)])
+    source := if len(a.shape) == 1 { a } else { flatten(a) }
+    slice_step(source, start, stop, 1)
+}
+
+// slice_step applies Python/NumPy slice bounds to a one-dimensional array.
+// The result is a strided immutable view and supports negative steps.
+pub fn slice_step(a, start, stop, step) {
+    if !_is_arr(a) || len(a.shape) != 1 { return Err("warp.slice_step expects a one-dimensional array") }
+    bounds := _slice_bounds(a.shape[0], start, stop, step)
+    if bounds == null { return Err("warp.slice_step has invalid bounds or a zero step") }
+    view_offset := if bounds.count == 0 { a._offset } else { a._offset + bounds.start * a._strides[0] }
+    view(a, [bounds.count], [a._strides[0] * bounds.step], view_offset)
+}
+
+// slice_axis applies a Python/NumPy slice to one axis of an N-dimensional
+// array and returns a zero-copy view whenever the selected storage is valid.
+pub fn slice_axis(a, start, stop, step, axis) {
+    if !_is_arr(a) { return Err("warp.slice_axis expects an array") }
+    normalized_axis := _normalize_axis(axis, len(a.shape), false)
+    if normalized_axis == null { return Err("warp.slice_axis axis is out of range") }
+    bounds := _slice_bounds(a.shape[normalized_axis], start, stop, step)
+    if bounds == null { return Err("warp.slice_axis has invalid bounds or a zero step") }
+    let mut shape = _copy(a.shape)
+    let mut strides = _copy(a._strides)
+    shape[normalized_axis] = bounds.count
+    strides[normalized_axis] = strides[normalized_axis] * bounds.step
+    view_offset := if bounds.count == 0 { a._offset } else { a._offset + bounds.start * a._strides[normalized_axis] }
+    view(a, shape, strides, view_offset)
+}
+
+pub fn slice_selector(start, stop, step) {
+    {"_slice": true, "start": start, "stop": stop, "step": if step == null { 1 } else { step }}
 }
 
 // ──────────────────────────────────────────────
@@ -1586,8 +1609,50 @@ fn _transpose_order(rank, axes) {
     order
 }
 
+fn _slice_bounds(length, start, stop, step) {
+    actual_step := if step == null { 1 } else { step }
+    if _wkind(actual_step) != "int" || actual_step == 0 { return null }
+    let mut first = 0
+    let mut last = length
+    if actual_step > 0 {
+        first = if start == null { 0 } else { start }
+        if _wkind(first) != "int" { return null }
+        if first < 0 { first = first + length }
+        if first < 0 { first = 0 }
+        if first > length { first = length }
+        last = if stop == null { length } else { stop }
+        if _wkind(last) != "int" { return null }
+        if last < 0 { last = last + length }
+        if last < 0 { last = 0 }
+        if last > length { last = length }
+        count := if last <= first { 0 } else { 1 + (last - 1 - first) / actual_step }
+        {"start": first, "stop": last, "step": actual_step, "count": count}
+    } else {
+        first = if start == null { length - 1 } else { start }
+        if _wkind(first) != "int" { return null }
+        if first < 0 { first = first + length }
+        if first < -1 { first = -1 }
+        if first >= length { first = length - 1 }
+        if stop == null { last = -1 }
+        else {
+            last = stop
+            if _wkind(last) != "int" { return null }
+            if last < 0 { last = last + length }
+            if last < -1 { last = -1 }
+            if last >= length { last = length - 1 }
+        }
+        count := if first <= last { 0 } else { 1 + (first - 1 - last) / (-actual_step) }
+        {"start": first, "stop": last, "step": actual_step, "count": count}
+    }
+}
+
 fn _index_spec(selector, size) {
     if selector == null { return {"kind": "all", "size": size} }
+    if _wkind(selector) == "map" && contains(keys(selector), "_slice") && selector._slice == true {
+        bounds := _slice_bounds(size, selector.start, selector.stop, selector.step)
+        if bounds == null { return null }
+        return {"kind": "slice", "start": bounds.start, "step": bounds.step, "size": bounds.count}
+    }
     if _wkind(selector) == "int" {
         normalized := _normalize_index(selector, size)
         if normalized == null { return null }
@@ -1629,6 +1694,16 @@ fn _collect_index_values(a, specs, axis, source_index, result) {
         let mut output = result
         while i < spec.size {
             next_index := push(_copy(source_index), i)
+            output = _collect_index_values(a, specs, axis + 1, next_index, output)
+            i = i + 1
+        }
+        return output
+    }
+    if spec.kind == "slice" {
+        let mut output = result
+        let mut i = 0
+        while i < spec.size {
+            next_index := push(_copy(source_index), spec.start + i * spec.step)
             output = _collect_index_values(a, specs, axis + 1, next_index, output)
             i = i + 1
         }
