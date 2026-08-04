@@ -2,7 +2,7 @@
 
 Weft is for agent scripts, telecom, HTTP glue, and ops tooling. It stays small on purpose.
 
-## Where we are now (0.4.10)
+## Where we are now (0.4.11)
 
 Weft is on the **0.4.x** line (0.3.x complete — see [VERSIONING.md](VERSIONING.md)). Positioning and maturity: [STABILITY.md](STABILITY.md). You can build the binary, write real scripts, and run them on a single Go runtime.
 
@@ -145,7 +145,51 @@ The **0.3.x line is complete** (0.3.31–0.4.10). Everything shipped.
 - More telecom (SIP REFER already partially in-module)  
 - More production-quality reference apps (initial set shipped in 0.4.2; polish and expand)  
 
-**Probably never in core**
+## Numerical, dataframe, and native-runtime replacement program
+
+This is a package/runtime program, not a promise to put heavyweight scientific dependencies into the small `weft` core binary. `packages/warp` and `packages/dataframe` are useful validated profiles today; they are not yet drop-in replacements for all of NumPy and pandas. Until the gates below are green, documentation must use “NumPy-style,” “pandas-inspired,” or a named supported subset rather than “100% replacement.”
+
+### N1 — compatibility contract and complete CPU semantics
+
+- Maintain a generated capability matrix for NumPy, pandas, Weft, and every deliberate deviation; pin the oracle versions and record expected error/NaN/null behavior.
+- Complete array semantics: all scalar dtypes and casting rules, complex numbers, datetime/timedelta, structured data, byte order, views, ownership, strides, zero-sized dimensions, memory order, object-free serialization, and exact shape/broadcast validation.
+- Complete indexing semantics: ellipsis, new axes, mixed basic/advanced indexing, broadcasted integer and boolean indexing, assignment, take/put, views versus copies, and aliasing tests.
+- Complete numerical surface: ufunc families, reductions and accumulators, random generators, FFT, polynomial helpers, statistics, sorting/searching, masked arrays, sparse formats, and linear-algebra edge cases.
+- Add package-level property tests and differential tests for every supported API, including exceptions and dtype results, against pinned NumPy versions.
+
+### N2 — dataframe replacement semantics and scale
+
+- Complete `Index`, `MultiIndex`, `Series`, and `DataFrame` alignment, duplicate-label, nullable-dtype, categorical, timezone, and missing-value behavior.
+- Cover `loc`/`iloc`, assignment, broadcasting, groupby/agg/transform, joins/merges, pivot/reshape, rolling/expanding/resampling, ranking, window statistics, and stable ordering.
+- Add production IO coverage for CSV, JSON/JSONL, Parquet/Arrow-compatible interchange, SQL, and chunked streaming with explicit type and null policies.
+- Establish performance and memory budgets for 100k, 1M, and 10M-row workloads; include repeated operations, wide frames, joins, groupby, and failure/cleanup behavior.
+- Provide a stable interchange path between dataframe columns and Warp arrays without copies when layout and dtype permit, with tests when copies are required.
+
+### N3 — ML and autodiff completeness
+
+- Finish reverse- and forward-mode autodiff, higher-order derivatives, gradient checking, broadcasting, view/alias behavior, checkpointing, and numerical stability diagnostics.
+- Implement the training surface needed for practical replacement: modules/layers, losses, optimizers and schedulers, batching, metrics, serialization, checkpoint resume, and deterministic seeds.
+- Add classical ML algorithms and preprocessing with scikit-learn differential coverage, including sparse and categorical inputs where supported.
+- Validate end-to-end model training on CPU and each native backend, including a 100k+ row dataframe-to-model pipeline and explicit CPU fallback behavior.
+
+### N4 — native accelerator plugin runtime
+
+- Stabilize a versioned plugin ABI for devices, dtypes, shapes, strides, allocation/ownership, host-device transfers, streams, synchronization, errors, capability discovery, and cancellation.
+- Implement and test a real CUDA provider using the CUDA Runtime API plus the required kernel/library primitives; compile and run it against pinned toolkit versions on NVIDIA hardware.
+- Implement and test a real ROCm/HIP provider with the corresponding memory, stream, kernel, and math-library paths on AMD hardware.
+- Implement and test a native Apple MLX provider with explicit macOS/device capability reporting and no silent claim of support when MLX is unavailable.
+- Define operation coverage and fallback rules for every provider: elementwise/broadcast operations, reductions, matmul, convolutions, transfers, random, linalg, dataframe kernels, and synchronization.
+- Add allocator, stream-ordering, device-loss, dtype/stride, multi-device, concurrent-request, and leak tests. A provider is not release-ready if it only loads or returns a CPU result.
+
+### N5 — release confidence and CI
+
+- Keep fast parser/unit/differential tests on every change; add scheduled longer fuzzing, randomized property tests, and leak/resource-lifecycle runs.
+- Add hardware CI or reproducible self-hosted jobs for NVIDIA CUDA, AMD ROCm, and Apple MLX, with capability-gated tests that report “unavailable” separately from “failed.”
+- Add browser Playwright coverage for WASM numerical/dataframe execution, HTTP limits, cancellation, repeated timeouts, and filesystem/resource cleanup; WASM must document its intentional native-backend limits.
+- Publish reproducible benchmark results, exact dependency/toolkit pins, SBOMs, signed artifacts, and a compatibility report for every release.
+- The final replacement gate requires zero unexplained differential failures across the declared API, documented deviations for unsupported APIs, green scale benchmarks, and successful model/dataframe workflows on CPU plus every claimed accelerator.
+
+**Core binary exclusions (still apply)**
 
 - Heavy scientific array / dataframe stacks  
 - In-process deep-learning training  
