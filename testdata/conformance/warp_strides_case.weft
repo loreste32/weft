@@ -15,6 +15,7 @@ fn main -> Result {
  indexed_slice := warp.index(vector, [warp.slice_selector(1, null, 2)])
  paired := warp.index(base, [[0, 2], [1, 0]])
  broadcasted := warp.index(base, [[[0], [2]], [0, 2]])
+ assigned := warp.set(base, [[[0], [2]], [0, 2]], warp.array([40, 50], [2, 1]))
     say(json.stringify({
         "transposed_shape": transposed.shape,
         "transposed_element_strides": warp.element_strides(transposed),
@@ -32,5 +33,6 @@ fn main -> Result {
  "indexed_slice": warp.to_list(indexed_slice),
  "paired": warp.to_list(paired),
  "broadcasted": warp.to_list(broadcasted),
+ "assigned": warp.to_list(assigned),
     }))
 }

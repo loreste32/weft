@@ -104,6 +104,8 @@ def warp_expected() -> dict[str, Any]:
 def warp_strides_expected() -> dict[str, Any]:
     base = np.arange(1, 10, dtype=np.int64).reshape(3, 3)
     transposed = base.T
+    assigned = base.copy()
+    assigned[np.array([[0], [2]]), np.array([0, 2])] = np.array([[40], [50]])
     return {
         "transposed_shape": list(transposed.shape),
         "transposed_element_strides": [1, 3],
@@ -121,6 +123,7 @@ def warp_strides_expected() -> dict[str, Any]:
         "indexed_slice": np.arange(10)[1::2].tolist(),
         "paired": base[[0, 2], [1, 0]].tolist(),
         "broadcasted": base[np.array([[0], [2]]), np.array([0, 2])].reshape(-1).tolist(),
+        "assigned": assigned.reshape(-1).tolist(),
     }
 
 

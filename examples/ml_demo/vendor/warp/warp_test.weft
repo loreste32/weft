@@ -360,6 +360,26 @@ fn test_get_set {
     test.eq(warp.get(b, [1, 1]), 99)
 }
 
+fn test_broadcasted_index_assignment {
+    a := warp.array([1, 2, 3, 4, 5, 6, 7, 8, 9], [3, 3])
+    rows := warp.set(a, [[0, 2], null], 10)
+    test.eq(warp.to_list(rows), [10, 10, 10, 4, 5, 6, 10, 10, 10])
+    test.eq(warp.to_list(a), [1, 2, 3, 4, 5, 6, 7, 8, 9])
+    paired := warp.set(a, [[0, 2], [1, 0]], warp.array([20, 30], [2]))
+    test.eq(warp.to_list(paired), [1, 20, 3, 4, 5, 6, 30, 8, 9])
+    broadcasted := warp.set(a, [[[0], [2]], [0, 2]], warp.array([40, 50], [2, 1]))
+    test.eq(warp.to_list(broadcasted), [40, 2, 40, 4, 5, 6, 50, 8, 50])
+    masked := warp.set(a, [[true, false, true], null], -1)
+    test.eq(warp.to_list(masked), [-1, -1, -1, 4, 5, 6, -1, -1, -1])
+    empty := warp.set(a, [[false, false, false], null], 77)
+    test.eq(warp.to_list(empty), warp.to_list(a))
+    vector := warp.arange(0, 6, 1)
+    sliced := warp.set(vector, [warp.slice_selector(1, null, 2)], warp.array([10, 20, 30], [3]))
+    test.eq(warp.to_list(sliced), [0, 10, 2, 20, 4, 30])
+    bad := warp.set(a, [[0, 2], null], [1, 2, 3, 4])
+    test.is_false(bad.ok)
+}
+
 fn test_row_col {
     a := warp.array([1, 2, 3, 4, 5, 6], [2, 3])
     test.eq(warp.to_list(warp.row(a, 0)), [1, 2, 3])
@@ -610,6 +630,8 @@ fn test_array_validation_and_broadcast {
     result := warp.add(left, right)
     test.eq(warp.shape(result), [2, 3])
     test.eq(warp.to_list(result), [11, 21, 31, 12, 22, 32])
+    empty := warp.add(warp.zeros([0]), warp.ones([1]))
+    test.eq(warp.shape(empty), [0])
 }
 
 fn test_matmul_vector_forms {

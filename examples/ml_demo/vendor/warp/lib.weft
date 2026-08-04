@@ -413,19 +413,29 @@ pub fn get(a, indices) {
 }
 
 pub fn set(a, indices, value) {
-    if len(indices) != len(a.shape) { return Err("warp.set requires one index per dimension") }
-    for selector in indices { if _wkind(selector) != "int" { return Err("warp.set requires integer indices") } }
-    let mut d = _data(a)
-    let mut normalized = []
-    let mut i = 0
-    while i < len(indices) {
-        position := _normalize_index(indices[i], a.shape[i])
-        if position == null { return Err("warp.set index is out of range") }
-        normalized = push(normalized, position)
-        i = i + 1
+    if !_is_arr(a) || _wkind(indices) != "list" { return Err("warp.set expects an array and selector list") }
+    if len(indices) != len(a.shape) { return Err("warp.set requires one selector per dimension") }
+    let mut specs = []
+    let mut axis = 0
+    while axis < len(a.shape) {
+        spec := _index_spec(indices[axis], a.shape[axis])
+        if spec == null { return Err("warp.set selector is invalid or out of range") }
+        specs = push(specs, spec)
+        axis = axis + 1
     }
-    idx := _flat_index(normalized, a.shape)
-    d[idx] = value
+    target := _selection_targets(specs)
+    if target == null { return Err("warp.set selectors could not be broadcast together") }
+    if _is_arr(value) && _broadcast_shape(value.shape, target.shape) == null {
+        return Err("warp.set value could not be broadcast to the selected shape")
+    }
+    let mut d = _data(a)
+    let mut flat = 0
+    while flat < len(target.indices) {
+        output_index := _unravel(flat, target.shape)
+        replacement := if _is_arr(value) { _broadcast_value(value, output_index, target.shape) } else { value }
+        d[_flat_index(target.indices[flat], a.shape)] = replacement
+        flat = flat + 1
+    }
     _array_with_dtype(d, a.shape, dtype(a))
 }
 
@@ -1850,6 +1860,136 @@ fn _collect_index_values(a, specs, axis, source_index, result) {
     output
 }
 
+// Return the logical output shape and source coordinates selected by a set of
+// selectors. Coordinates are in the array's logical row-major index space, so
+// callers can apply immutable updates to contiguous arrays and strided views
+// alike after materializing the source values.
+fn _selection_targets(specs) {
+    for spec in specs {
+        if spec.kind == "advanced" { return _advanced_target_map(specs) }
+    }
+    let mut output_shape = []
+    for spec in specs {
+        if spec.kind != "scalar" { output_shape = push(output_shape, spec.size) }
+    }
+    let mut indices = []
+    indices = _collect_index_targets(specs, 0, [], indices)
+    {"shape": output_shape, "indices": indices}
+}
+
+fn _collect_index_targets(specs, axis, source_index, result) {
+    if axis == len(specs) { return push(result, _copy(source_index)) }
+    spec := specs[axis]
+    if spec.kind == "scalar" {
+        next_index := push(_copy(source_index), spec.value)
+        return _collect_index_targets(specs, axis + 1, next_index, result)
+    }
+    if spec.kind == "all" {
+        let mut i = 0
+        let mut output = result
+        while i < spec.size {
+            next_index := push(_copy(source_index), i)
+            output = _collect_index_targets(specs, axis + 1, next_index, output)
+            i = i + 1
+        }
+        return output
+    }
+    if spec.kind == "slice" {
+        let mut i = 0
+        let mut output = result
+        while i < spec.size {
+            next_index := push(_copy(source_index), spec.start + i * spec.step)
+            output = _collect_index_targets(specs, axis + 1, next_index, output)
+            i = i + 1
+        }
+        return output
+    }
+    result
+}
+
+// Build source coordinates for NumPy-style broadcasted advanced selectors.
+// A null result means that the advanced selector shapes are incompatible.
+fn _advanced_target_map(specs) {
+    let mut advanced_axes = []
+    let mut axis = 0
+    while axis < len(specs) {
+        if specs[axis].kind == "advanced" { advanced_axes = push(advanced_axes, axis) }
+        axis = axis + 1
+    }
+    if len(advanced_axes) == 0 { return null }
+    let mut advanced_shape = []
+    for advanced_axis in advanced_axes {
+        next_shape := _broadcast_shape(advanced_shape, specs[advanced_axis].shape)
+        if next_shape == null { return null }
+        advanced_shape = next_shape
+    }
+    first_advanced := advanced_axes[0]
+    last_advanced := advanced_axes[len(advanced_axes) - 1]
+    let mut contiguous = true
+    axis = first_advanced
+    while axis <= last_advanced {
+        if specs[axis].kind != "advanced" { contiguous = false }
+        axis = axis + 1
+    }
+    let mut output_shape = []
+    if !contiguous { for dim in advanced_shape { output_shape = push(output_shape, dim) } }
+    axis = 0
+    while axis < len(specs) {
+        if contiguous && axis == first_advanced { for dim in advanced_shape { output_shape = push(output_shape, dim) } }
+        spec := specs[axis]
+        if spec.kind != "scalar" && spec.kind != "advanced" {
+            if !contiguous || axis < first_advanced || axis > last_advanced {
+                output_shape = push(output_shape, spec.size)
+            }
+        }
+        axis = axis + 1
+    }
+    let mut indices = []
+    output_count := _prod(output_shape)
+    let mut flat = 0
+    while flat < output_count {
+        output_index := _unravel(flat, output_shape)
+        let mut advanced_index = []
+        let mut basic_cursor = 0
+        if contiguous {
+            axis = 0
+            while axis < first_advanced {
+                if specs[axis].kind != "scalar" { basic_cursor = basic_cursor + 1 }
+                axis = axis + 1
+            }
+            advanced_index = _index_coord_segment(output_index, basic_cursor, len(advanced_shape))
+            basic_cursor = 0
+        } else {
+            advanced_index = _index_coord_segment(output_index, 0, len(advanced_shape))
+            basic_cursor = len(advanced_shape)
+        }
+        let mut source_index = []
+        let mut advanced_consumed = false
+        axis = 0
+        while axis < len(specs) {
+            spec := specs[axis]
+            if spec.kind == "scalar" {
+                source_index = push(source_index, spec.value)
+            } else if spec.kind == "advanced" {
+                if contiguous && !advanced_consumed {
+                    basic_cursor = basic_cursor + len(advanced_shape)
+                    advanced_consumed = true
+                }
+                source_index = push(source_index, _advanced_index_value(spec, advanced_index, advanced_shape))
+            } else {
+                coordinate := output_index[basic_cursor]
+                basic_cursor = basic_cursor + 1
+                source_position := if spec.kind == "slice" { spec.start + coordinate * spec.step } else { coordinate }
+                source_index = push(source_index, source_position)
+            }
+            axis = axis + 1
+        }
+        indices = push(indices, _copy(source_index))
+        flat = flat + 1
+    }
+    {"shape": output_shape, "indices": indices}
+}
+
 fn _array_like(data, shape, source) {
     if _is_arr(source) {
         {"_warp": true, "data": data, "shape": shape, "_dtype": dtype(source), "_strides": _contiguous_strides(shape), "_offset": 0}
@@ -2015,7 +2155,8 @@ fn _broadcast_shape(left, right) {
         ld := if li >= 0 { left[li] } else { 1 }
         rd := if ri >= 0 { right[ri] } else { 1 }
         if ld != rd && ld != 1 && rd != 1 { return null }
-        result = push(result, if ld > rd { ld } else { rd })
+        dimension := if ld == rd { ld } else if ld == 1 { rd } else { ld }
+        result = push(result, dimension)
         li = li - 1
         ri = ri - 1
     }
