@@ -70,6 +70,12 @@ Comments: `//` to end of line.
 | `Result` | `Ok(v)` / `Err(msg)` |
 | `unit` | empty success / no value |
 
+`type_of(value)` returns the runtime kind as a string (`null`, `unit`, `bool`,
+`int`, `float`, `str`, `list`, `map`, `struct`, `result`, `func`, `type`, or
+`iter`). It preserves the distinction between `1` and `1.0`; JSON
+serialization does not, so numeric libraries should use `type_of` for kind
+checks.
+
 Lists and maps are mutable when held under a `mut` binding and mutated through ops like `push`. Prefer not to share mutable collections across concurrent tasks — pass copies or use channels.
 
 ### Optional type annotations

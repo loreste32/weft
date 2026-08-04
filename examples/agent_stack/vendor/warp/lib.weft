@@ -1364,14 +1364,7 @@ pub fn accelerator_close(plugin) { accelerator.close(plugin) }
 // ──────────────────────────────────────────────
 
 fn _wkind(v) {
-    if v == null { return "null" }
-    s := json.stringify(v)
-    if s == "true" || s == "false" { return "bool" }
-    if str.starts_with(s, "\"") { return "str" }
-    if str.starts_with(s, "[") { return "list" }
-    if str.starts_with(s, "{") { return "map" }
-    if str.contains(s, ".") || str.contains(s, "e") || str.contains(s, "E") { return "float" }
-    "int"
+    type_of(v)
 }
 
 fn _valid_shape(shape) {

@@ -204,6 +204,7 @@ func (inf *inferrer) installPrelude() {
 	inf.globals["bail"] = tyFn([]*Type{tyAny()}, tyResult(tyAny()))
 	inf.globals["is_ok"] = tyFn([]*Type{tyAny()}, tyBool())
 	inf.globals["is_err"] = tyFn([]*Type{tyAny()}, tyBool())
+	inf.globals["type_of"] = tyFn([]*Type{tyAny()}, tyStr())
 	inf.globals["unit"] = tyUnit()
 	inf.globals["int"] = tyNamed("package:int")
 	inf.globals["Error"] = tyNamed("package:Error")

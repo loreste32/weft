@@ -381,6 +381,40 @@ func TestIsOkIsErr(t *testing.T) {
 	}
 }
 
+func TestTypeOfPreservesNumericKind(t *testing.T) {
+	env := runtime.NewEnv()
+	cases := []struct {
+		name  string
+		value runtime.Value
+		want  string
+	}{
+		{"null", runtime.Null(), "null"},
+		{"unit", runtime.Unit(), "unit"},
+		{"bool", runtime.Bool(true), "bool"},
+		{"int", runtime.Int(1), "int"},
+		{"float", runtime.Float(1), "float"},
+		{"str", runtime.Str("x"), "str"},
+		{"list", runtime.List(runtime.Int(1)), "list"},
+		{"map", runtime.NewMap(), "map"},
+		{"struct", runtime.Struct("Point", nil, nil), "struct"},
+		{"result", runtime.Ok(runtime.Int(1)), "result"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := callBuiltin(env, "type_of", []runtime.Value{tc.value})
+			if err != nil {
+				t.Fatalf("type_of(%s): %v", tc.name, err)
+			}
+			if got.Kind != runtime.KindStr || got.S != tc.want {
+				t.Fatalf("type_of(%s) = %#v, want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+	if _, err := callBuiltin(env, "type_of", nil); err == nil {
+		t.Fatal("type_of should reject invalid arity")
+	}
+}
+
 func TestIntParse(t *testing.T) {
 	env := runtime.NewEnv()
 	v, _ := callMapBuiltin(env, "int", "parse", []runtime.Value{runtime.Str("42")})

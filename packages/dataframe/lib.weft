@@ -1440,7 +1440,7 @@ fn _agg(op, vals) {
     match op {
         "sum" { reduce(clean, 0, fn(a, x) { a + x }) }
         "mean" {
-            s := reduce(clean, 0, fn(a, x) { a + x })
+            s := reduce(clean, 0.0, fn(a, x) { a + x })
             s / len(clean)
         }
         "min" { reduce(clean, clean[0], fn(a, x) { if x < a { x } else { a } }) }
@@ -1450,7 +1450,7 @@ fn _agg(op, vals) {
         "std" {
             n := len(clean)
             if n < 2 { return null }
-            m := reduce(clean, 0, fn(a, x) { a + x }) / n
+            m := reduce(clean, 0.0, fn(a, x) { a + x }) / n
             let mut s = 0.0
             for x in clean { s = s + (x - m) * (x - m) }
             math.sqrt(s / (n - 1))
@@ -1561,14 +1561,7 @@ fn _has_columns(t, cols) {
 }
 
 fn _kind(v) {
-    if v == null { return "null" }
-    s := json.stringify(v)
-    if s == "true" || s == "false" { return "bool" }
-    if str.starts_with(s, "\"") { return "str" }
-    if str.starts_with(s, "[") { return "list" }
-    if str.starts_with(s, "{") { return "map" }
-    if str.contains(s, ".") || str.contains(s, "e") || str.contains(s, "E") { return "float" }
-    "int"
+    type_of(v)
 }
 
 fn _value_key(v) {

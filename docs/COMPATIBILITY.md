@@ -21,10 +21,17 @@ replacement status.
 
 ## Compatibility profile
 
-The conformance harness will pin one NumPy and one pandas release per support
-branch. The exact versions belong in the lockfile and CI artifact; unpinned
-“latest” comparisons are not release evidence. Python is allowed as an
-offline reference oracle for tests, but it is not a Weft runtime dependency.
+The checked-in differential harness is `scripts/conformance/run.py`. It runs
+the Weft programs in `testdata/conformance/` and compares their JSON results
+with pinned offline NumPy and pandas oracles from
+`scripts/conformance/requirements.txt`. The GitHub
+`numpy-pandas-conformance` job installs those exact versions and gates changes
+to `main`.
+
+Python is only the reference oracle; it is not a Weft runtime dependency. The
+current corpus is a representative smoke suite, not proof of complete API
+parity. Add a case to both the Weft fixture and the Python oracle before
+claiming support for a new operation, dtype, edge case, or performance tier.
 
 ## Required foundations
 

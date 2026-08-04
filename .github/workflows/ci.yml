@@ -33,6 +33,35 @@ jobs:
       - name: Run CI
         run: bash scripts/ci.sh
 
+  # Pinned NumPy/pandas are an offline oracle only; this job compares their
+  # results with the checked-in Weft warp/dataframe programs.
+  conformance:
+    name: numpy-pandas-conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install pinned oracle dependencies
+        run: python -m pip install --disable-pip-version-check -r scripts/conformance/requirements.txt
+
+      - name: Run differential conformance
+        run: |
+          go build -o /tmp/weft-conformance ./cmd/weft
+          python scripts/conformance/run.py --weft /tmp/weft-conformance
+
   # Explicit reliability slice (visible as its own check; overlaps ci.sh intentionally)
   reliability:
     name: reliability

@@ -50,6 +50,10 @@ What we keep vs won’t: **[STDLIB_GAPS.md](STDLIB_GAPS.md)**.
 
 Always available (non-exhaustive):
 
+`type_of(value)` returns the stable runtime kind (`int`, `float`, `list`,
+`map`, and so on). Use it for numeric kind checks; JSON serialization can
+represent both `1` and `1.0` as the same text.
+
 | Name | Role |
 |------|------|
 | `say` / `println` | Print |

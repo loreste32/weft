@@ -317,12 +317,5 @@ fn _number(value) {
 }
 
 fn _kind(value) {
-    if value == null { return "null" }
-    text := json.stringify(value)
-    if text == "true" || text == "false" { return "bool" }
-    if str.starts_with(text, "\"") { return "str" }
-    if str.starts_with(text, "[") { return "list" }
-    if str.starts_with(text, "{") { return "map" }
-    if str.contains(text, ".") || str.contains(text, "e") || str.contains(text, "E") { return "float" }
-    "int"
+    type_of(value)
 }

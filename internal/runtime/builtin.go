@@ -20,6 +20,42 @@ type ToolCall struct {
 	ArgsJSON string
 }
 
+// valueTypeName is the stable, language-level spelling used by type_of.
+// Libraries that need to preserve numeric intent must use this instead of
+// inspecting JSON: JSON has no distinction between 1 and 1.0.
+func valueTypeName(v Value) string {
+	switch v.Kind {
+	case KindNull:
+		return "null"
+	case KindUnit:
+		return "unit"
+	case KindBool:
+		return "bool"
+	case KindInt:
+		return "int"
+	case KindFloat:
+		return "float"
+	case KindStr:
+		return "str"
+	case KindList:
+		return "list"
+	case KindMap:
+		return "map"
+	case KindStruct:
+		return "struct"
+	case KindResult:
+		return "result"
+	case KindFunc, KindClosure, KindBuiltin:
+		return "func"
+	case KindTypeInfo:
+		return "type"
+	case KindIter:
+		return "iter"
+	default:
+		return "unknown"
+	}
+}
+
 // Env is the global environment for a Weft program.
 type Env struct {
 	Globals map[string]Value
@@ -255,6 +291,15 @@ func (e *Env) RegisterPrelude() {
 			return Bool(!v.Obj.(*ResultObj).Ok), nil
 		}
 		return Bool(IsError(v)), nil
+	})
+	// type_of(v) exposes the runtime kind without lossy serialization. This is
+	// intentionally small and stable so numeric libraries can distinguish an
+	// integer-valued float (1.0) from an integer (1).
+	e.Globals["type_of"] = MakeBuiltin("type_of", 1, func(args []Value) (Value, error) {
+		if len(args) != 1 {
+			return Null(), fmt.Errorf("type_of expects 1 arg")
+		}
+		return Str(valueTypeName(args[0])), nil
 	})
 
 	// int.parse
