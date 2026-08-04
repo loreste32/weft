@@ -116,8 +116,10 @@ func TestDefaultCacheDir(t *testing.T) {
 }
 
 func TestVendorDir(t *testing.T) {
-	if VendorDir("/project") != "/project/vendor" {
-		t.Fatal("vendor dir")
+	got := VendorDir("/project")
+	want := filepath.Join("/project", "vendor")
+	if got != want {
+		t.Fatalf("vendor dir: got %q, want %q", got, want)
 	}
 }
 
@@ -197,8 +199,9 @@ func TestResolveSearchPaths(t *testing.T) {
 	if len(paths) < 2 {
 		t.Fatal("should have vendor + packages")
 	}
-	if paths[0] != "/project/vendor" {
-		t.Fatalf("first should be vendor: %s", paths[0])
+	want := filepath.Join("/project", "vendor")
+	if paths[0] != want {
+		t.Fatalf("first should be vendor: got %s, want %s", paths[0], want)
 	}
 }
 

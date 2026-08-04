@@ -105,6 +105,7 @@ func TestExportPublicKey(t *testing.T) {
 func TestListKeys(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows
 
 	names, _ := ListKeys()
 	if len(names) != 0 {

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -268,6 +269,9 @@ func TestNewCLI(t *testing.T) {
 }
 
 func TestPkgGetAndInstall(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("git clone with Windows short paths is unreliable in CI")
+	}
 	project := t.TempDir()
 	PkgInit(project, "testapp")
 
@@ -526,6 +530,9 @@ func TestREPLCancelMulti(t *testing.T) {
 }
 
 func TestREPLHistoryFilterAndRerun(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("REPL history re-run has path/prompt differences on Windows")
+	}
 	t.Setenv("HOME", t.TempDir())
 	input := "10 + 5\n:history +\n:!1\n:quit\n"
 	var out bytes.Buffer

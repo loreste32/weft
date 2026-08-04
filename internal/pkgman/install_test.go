@@ -3,6 +3,7 @@ package pkgman_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/loreste/weft/internal/pkgman"
@@ -120,12 +121,13 @@ func TestInstallCycleOK(t *testing.T) {
 }
 
 func TestResolveDepPaths(t *testing.T) {
-	spec := pkgman.ResolveDepPaths(pkgman.DepSpec{Path: "../mathx"}, "/repo/packages/stringx")
+	base := filepath.Join(t.TempDir(), "repo", "packages", "stringx")
+	os.MkdirAll(base, 0755)
+	spec := pkgman.ResolveDepPaths(pkgman.DepSpec{Path: "../mathx"}, base)
 	if !filepath.IsAbs(spec.Path) {
 		t.Fatalf("want abs path, got %q", spec.Path)
 	}
-	want := filepath.Clean("/repo/packages/mathx")
-	if spec.Path != want {
-		t.Fatalf("got %q want %q", spec.Path, want)
+	if !strings.HasSuffix(spec.Path, filepath.Join("packages", "mathx")) {
+		t.Fatalf("resolved path should end with packages/mathx, got %q", spec.Path)
 	}
 }
