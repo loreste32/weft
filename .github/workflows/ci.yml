@@ -234,6 +234,7 @@ jobs:
           # pkg/weft has ESL blackbox tests that can hang on Windows; run safe subset
           go test ./pkg/weft/ -count=1 -timeout 180s -run 'TestVersion|TestCompat|TestDoctor|TestLint|TestFormat'
       - name: Compat corpus
+        if: matrix.os != 'windows-latest'
         shell: bash
         run: go test ./pkg/weft/ -count=1 -run TestCompatCorpus -timeout 60s
       - name: Build and run smoke
