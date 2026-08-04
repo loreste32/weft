@@ -8,6 +8,10 @@ import (
 	"github.com/loreste/weft/internal/runtime"
 )
 
+// ToolchainVersion is set by pkg/weft during init to avoid a circular import.
+// Used by MCP serverInfo and other stdlib code that needs the version string.
+var ToolchainVersion = "0.0.0"
+
 // Options tune stdlib (tests inject HTTP/env).
 type Options struct {
 	HTTPClient *http.Client

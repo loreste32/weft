@@ -51,6 +51,7 @@ func New(opts Options) *Context {
 	if opts.Stderr != nil {
 		env.Stderr = opts.Stderr
 	}
+	stdlib.ToolchainVersion = Version
 	stdlib.Register(env, stdlib.Options{
 		HTTPClient: opts.HTTPClient,
 		Environ:    opts.Environ,
