@@ -57,6 +57,19 @@ or Warp-array variables. `adam_state(parameters)` creates moment state and
 steps mutate parameter nodes explicitly; ordinary array operations remain
 immutable, and gradients remain accumulated until cleared.
 
+## Modules and checkpoints
+
+`linear_module(in_features, out_features)` creates a trainable linear module
+with Warp-array weight and bias nodes. `linear_forward(module, input)` builds
+an autograd-compatible two-dimensional forward pass, and
+`module_parameters(module)` returns the parameter nodes for an optimizer.
+
+`state_dict(parameters)` extracts values without graph links.
+`save_checkpoint(path, parameters, optimizer_state, metadata)` writes a
+versioned JSON checkpoint, and `load_checkpoint(path)` validates and returns
+it for `load_state_dict`. Checkpoints are intentionally value-only and do not
+serialize executable functions or autograd graph links.
+
 This is a tested numerical-autodiff and optimizer foundation, not yet a
 complete PyTorch/JAX replacement: modules, serialization, sparse/complex
 autodiff, higher-order derivatives, schedulers, and full NumPy dispatch remain

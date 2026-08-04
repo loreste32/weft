@@ -10,6 +10,7 @@ use "./index.weft" as idx
 use "./metrics.weft" as met
 use "./train.weft" as tr
 use "./autograd.weft" as ag
+use "./modules.weft" as mods
 
 
 pub fn cosine(a, b) { vec.cosine(a, b) }
@@ -89,3 +90,10 @@ pub fn pow(node, exponent) -> Result[any] { ag.pow(node, exponent) }
 pub fn sum(node) -> Result[any] { ag.sum(node) }
 pub fn mean(node) -> Result[any] { ag.mean(node) }
 pub fn matmul(left, right) -> Result[any] { ag.matmul(left, right) }
+pub fn linear_module(in_features, out_features) -> Result[any] { mods.linear_module(in_features, out_features) }
+pub fn module_parameters(module) -> Result[any] { mods.module_parameters(module) }
+pub fn linear_forward(module, input) -> Result[any] { mods.linear_forward(module, input) }
+pub fn state_dict(parameters) -> Result[any] { mods.state_dict(parameters) }
+pub fn load_state_dict(parameters, values) -> Result[any] { mods.load_state_dict(parameters, values) }
+pub fn save_checkpoint(path, parameters, optimizer_state, metadata) -> Result[any] { mods.save_checkpoint(path, parameters, optimizer_state, metadata) }
+pub fn load_checkpoint(path) -> Result[any] { mods.load_checkpoint(path) }

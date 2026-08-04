@@ -38,8 +38,11 @@ classical CPU implementation. `ml` also exposes a tested reverse-mode tape
 for scalars and `warp` arrays, including elementwise broadcasting, reductions,
 and two-dimensional matrix multiplication. `sgd_step` and stateful `adam_step`
 provide validated optimizer updates for scalar and Warp-array parameters.
-Modules, serialization, schedulers, sparse/complex autodiff, higher-order
-derivatives, and a complete deep-learning framework remain future work.
+`linear_module` and `linear_forward` provide a tested trainable two-dimensional
+module. `state_dict`, `save_checkpoint`, and `load_checkpoint` persist values,
+optimizer state, and metadata without serializing executable graph links.
+Schedulers, sparse/complex autodiff, higher-order derivatives, and a complete
+deep-learning framework remain future work.
 
 ## Native GPU/provider execution
 

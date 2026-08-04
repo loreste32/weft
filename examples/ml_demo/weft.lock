@@ -5,7 +5,7 @@
       "name": "ml",
       "source": "path:/Users/loreste/weft/packages/ml",
       "version": "0.6.0",
-      "sum": "sha256:19332b1517107ddb29a0946cbde8e9db23d33c1f027e048f2f9f8dfe1ed67dbd",
+      "sum": "sha256:1b5da2535dc1a8b8e8bfab1b5890fe3aa35ec28ac20119859fa4834f09397872",
       "dir": "vendor/ml"
     },
     {

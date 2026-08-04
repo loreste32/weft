@@ -1,0 +1,109 @@
+use json
+use fs
+use warp
+use "./autograd.weft" as ag
+
+// Small composable trainable modules and checkpoint boundaries. Module maps
+// contain autograd nodes at runtime; checkpoint files contain only plain
+// parameter values, optimizer state, and user metadata, never graph links.
+
+pub fn linear_module(in_features, out_features) -> Result[any] {
+    if _kind(in_features) != "int" || in_features <= 0 { return Err("ml.linear_module in_features must be positive") }
+    if _kind(out_features) != "int" || out_features <= 0 { return Err("ml.linear_module out_features must be positive") }
+    weight := ag.variable(warp.zeros([in_features, out_features]))?
+    bias := ag.variable(warp.zeros([out_features]))?
+    Ok({
+        "kind": "linear",
+        "in_features": in_features,
+        "out_features": out_features,
+        "weight": weight,
+        "bias": bias,
+        "parameters": [weight, bias],
+    })
+}
+
+pub fn module_parameters(module) -> Result[any] {
+    if !_is_linear(module) { return Err("ml.module_parameters expects a supported module") }
+    Ok(module.parameters)
+}
+
+pub fn linear_forward(module, input) -> Result[any] {
+    if !_is_linear(module) { return Err("ml.linear_forward expects a linear module") }
+    if !_is_array(input) || len(warp.shape(input)) != 2 || warp.shape(input)[1] != module.in_features {
+        return Err("ml.linear_forward input shape does not match in_features")
+    }
+    input_node := ag.constant(input)?
+    product := ag.matmul(input_node, module.weight)?
+    ag.add(product, module.bias)
+}
+
+pub fn state_dict(parameters) -> Result[any] {
+    if !_parameter_list(parameters) { return Err("ml.state_dict expects a non-empty list of trainable variables") }
+    let mut values = []
+    for parameter in parameters { values = push(values, ag.value(parameter)?) }
+    Ok(values)
+}
+
+pub fn load_state_dict(parameters, values) -> Result[any] {
+    if !_parameter_list(parameters) || _kind(values) != "list" || len(values) != len(parameters) {
+        return Err("ml.load_state_dict parameter count does not match")
+    }
+    let mut validated = []
+    for value in values {
+        candidate := ag.variable(value)
+        if !candidate.ok { return Err("ml.load_state_dict contains an invalid parameter value") }
+        validated = push(validated, candidate.value.value)
+    }
+    let mut i = 0
+    while i < len(parameters) {
+        parameters[i].value = validated[i]
+        i = i + 1
+    }
+    Ok(null)
+}
+
+pub fn save_checkpoint(path, parameters, optimizer_state, metadata) -> Result[any] {
+    if path == null || path == "" { return Err("ml.save_checkpoint expects a path") }
+    values := state_dict(parameters)?
+    payload := {
+        "format": "weft.ml.checkpoint",
+        "version": 1,
+        "parameters": values,
+        "optimizer": if optimizer_state == null { {} } else { optimizer_state },
+        "metadata": if metadata == null { {} } else { metadata },
+    }
+    fs.write(path, json.stringify(payload))?
+    Ok(path)
+}
+
+pub fn load_checkpoint(path) -> Result[any] {
+    if path == null || path == "" { return Err("ml.load_checkpoint expects a path") }
+    raw := fs.read(path)?
+    payload := json.parse(raw)?
+    if _kind(payload) != "map" || payload.format != "weft.ml.checkpoint" || payload.version != 1 {
+        return Err("ml.load_checkpoint has an unsupported format or version")
+    }
+    if _kind(payload.parameters) != "list" || payload.optimizer == null || payload.metadata == null {
+        return Err("ml.load_checkpoint is missing required fields")
+    }
+    Ok(payload)
+}
+
+fn _is_linear(module) {
+    module != null && _kind(module) == "map" && module.kind == "linear" && _parameter_list(module.parameters)
+}
+
+fn _parameter_list(parameters) {
+    if _kind(parameters) != "list" || len(parameters) == 0 { return false }
+    for parameter in parameters {
+        current := ag.value(parameter)
+        if !current.ok { return false }
+    }
+    true
+}
+
+fn _is_array(value) {
+    value != null && _kind(value) == "map" && value._warp == true
+}
+
+fn _kind(value) { type_of(value) }

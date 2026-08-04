@@ -1,5 +1,6 @@
 use "./lib.weft" as ml
 use warp
+use fs
 
 
 fn test_dot { test.eq(ml.dot([1, 2, 3], [1, 2, 3]), 14) }
@@ -196,4 +197,37 @@ fn test_adam_step_state_and_validation {
     test.eq(bad_params.ok, false)
     bad_state := ml.adam_step([x], {"step": 0}, 0.1, null, null, null, null)
     test.eq(bad_state.ok, false)
+}
+
+fn test_linear_module_forward_and_gradients {
+    module := ml.linear_module(2, 1)?
+    parameters := ml.module_parameters(module)?
+    ml.load_state_dict(parameters, [warp.array([1.0, 2.0], [2, 1]), warp.array([0.0], [1])])?
+    input := warp.array([1.0, 2.0, 3.0, 4.0], [2, 2])
+    output := ml.linear_forward(module, input)?
+    test.eq(warp.shape(ml.value(output)?), [2, 1])
+    test.eq(warp.to_list(ml.value(output)?), [5.0, 11.0])
+    loss := ml.sum(output)?
+    ml.backward(loss)?
+    test.eq(warp.to_list(ml.grad(parameters[0])?), [4.0, 6.0])
+    test.eq(warp.to_list(ml.grad(parameters[1])?), [2.0])
+}
+
+fn test_checkpoint_round_trip_restores_values_and_state {
+    module := ml.linear_module(2, 1)?
+    parameters := ml.module_parameters(module)?
+    values := [warp.array([3.0, 4.0], [2, 1]), warp.array([5.0], [1])]
+    ml.load_state_dict(parameters, values)?
+    optimizer := ml.adam_state(parameters)?
+    path := fs.temp_file("weft-ml-", ".json")?
+    ml.save_checkpoint(path, parameters, optimizer, {"epoch": 7, "name": "linear"})?
+    checkpoint := ml.load_checkpoint(path)?
+    test.eq(checkpoint.version, 1)
+    test.eq(checkpoint.metadata.epoch, 7)
+    ml.load_state_dict(parameters, [warp.array([0.0, 0.0], [2, 1]), warp.array([0.0], [1])])?
+    ml.load_state_dict(parameters, checkpoint.parameters)?
+    restored := ml.state_dict(parameters)?
+    test.eq(warp.to_list(restored[0]), [3.0, 4.0])
+    test.eq(warp.to_list(restored[1]), [5.0])
+    fs.remove(path)?
 }
