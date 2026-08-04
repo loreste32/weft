@@ -72,7 +72,11 @@ pub fn constant(value) -> Result[any] { ag.constant(value) }
 pub fn value(node) -> Result[any] { ag.value(node) }
 pub fn grad(node) -> Result[any] { ag.grad(node) }
 pub fn zero_grad(node) -> Result[any] { ag.zero_grad(node) }
+pub fn zero_grad_many(parameters) -> Result[any] { ag.zero_grad_many(parameters) }
 pub fn backward(node) -> Result[any] { ag.backward(node) }
+pub fn sgd_step(parameters, learning_rate, weight_decay) -> Result[any] { ag.sgd_step(parameters, learning_rate, weight_decay) }
+pub fn adam_state(parameters) -> Result[any] { ag.adam_state(parameters) }
+pub fn adam_step(parameters, state, learning_rate, beta1, beta2, epsilon, weight_decay) -> Result[any] { ag.adam_step(parameters, state, learning_rate, beta1, beta2, epsilon, weight_decay) }
 pub fn add(left, right) -> Result[any] { ag.add(left, right) }
 pub fn sub(left, right) -> Result[any] { ag.sub(left, right) }
 pub fn mul(left, right) -> Result[any] { ag.mul(left, right) }

@@ -49,12 +49,18 @@ arrays. In addition to `variable`, `constant`, `backward`, `grad`, and
 `neg`, `exp`, `log`, `relu`, `pow`, `sum`, `mean`, and two-dimensional `matmul`.
 Elementwise broadcasting is supported and gradients are reduced back to each
 parent shape. Gradients accumulate across backward calls; clear a graph with
-`zero_grad` before an independent pass.
+`zero_grad` or `zero_grad_many` before an independent pass.
 
-This is a tested numerical-autodiff foundation, not yet a complete
-PyTorch/JAX replacement: optimizers, modules, serialization, sparse/complex
-autodiff, higher-order derivatives, and full NumPy dispatch remain separate
-work.
+`sgd_step(parameters, learning_rate, weight_decay?)` updates trainable scalar
+or Warp-array variables. `adam_state(parameters)` creates moment state and
+`adam_step(...)` performs validated bias-corrected Adam updates. Optimizer
+steps mutate parameter nodes explicitly; ordinary array operations remain
+immutable, and gradients remain accumulated until cleared.
+
+This is a tested numerical-autodiff and optimizer foundation, not yet a
+complete PyTorch/JAX replacement: modules, serialization, sparse/complex
+autodiff, higher-order derivatives, schedulers, and full NumPy dispatch remain
+separate work.
 
 ## GPU and native training
 

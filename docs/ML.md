@@ -36,8 +36,10 @@ binary cross-entropy. Options are bounded, input matrices are validated, and
 the test suite trains a model over 100,000 rows. This is a deterministic
 classical CPU implementation. `ml` also exposes a tested reverse-mode tape
 for scalars and `warp` arrays, including elementwise broadcasting, reductions,
-and two-dimensional matrix multiplication. Optimizers, modules, sparse/complex
-autodiff, and a complete deep-learning framework remain future work.
+and two-dimensional matrix multiplication. `sgd_step` and stateful `adam_step`
+provide validated optimizer updates for scalar and Warp-array parameters.
+Modules, serialization, schedulers, sparse/complex autodiff, higher-order
+derivatives, and a complete deep-learning framework remain future work.
 
 ## Native GPU/provider execution
 
@@ -87,7 +89,7 @@ fn main -> Result {
 
 Weft can replace Python for the supported classical training, tabular, array,
 and provider-dispatch workflows. It is not yet a drop-in replacement for all
-NumPy/pandas APIs, dtype systems, sparse arrays, FFTs, optimizer/module APIs,
+NumPy/pandas APIs, dtype systems, sparse arrays, FFTs, module/scheduler APIs,
 higher-order autodiff, or Python ecosystem libraries. Each native provider must be benchmarked and numerically
 validated independently; an ABI load success is not evidence that a GPU
 operation is correct.

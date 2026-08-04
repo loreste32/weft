@@ -152,3 +152,48 @@ fn test_autograd_tensor_shape_errors_are_results {
     result := ml.matmul(left, right)
     test.eq(result.ok, false)
 }
+
+fn test_sgd_step_updates_scalar_and_tensor_parameters {
+    x := ml.variable(3.0)?
+    loss := ml.mul(x, x)?
+    ml.backward(loss)?
+    ml.sgd_step([x], 0.1, null)?
+    test.approx(ml.value(x)?, 2.4, 1e-9)
+    ml.zero_grad_many([x])?
+    test.approx(ml.grad(x)?, 0.0, 1e-9)
+
+    weights := ml.variable(warp.array([1.0, 2.0], [2]))?
+    tensor_loss := ml.sum(ml.mul(weights, weights)?)?
+    ml.backward(tensor_loss)?
+    ml.sgd_step([weights], 0.1, null)?
+    test.eq(warp.to_list(ml.value(weights)?), [0.8, 1.6])
+}
+
+fn test_adam_step_state_and_validation {
+    x := ml.variable(1.0)?
+    state := ml.adam_state([x])?
+    ml.backward(x)?
+    ml.adam_step([x], state, 0.1, null, null, null, null)?
+    test.approx(ml.value(x)?, 0.9, 1e-8)
+    ml.zero_grad_many([x])?
+    ml.backward(x)?
+    ml.adam_step([x], state, 0.1, null, null, null, null)?
+    test.approx(ml.value(x)?, 0.8, 1e-8)
+
+    weights := ml.variable(warp.array([1.0, 2.0], [2]))?
+    tensor_state := ml.adam_state([weights])?
+    tensor_loss := ml.sum(weights)?
+    ml.backward(tensor_loss)?
+    ml.adam_step([weights], tensor_state, 0.1, null, null, null, null)?
+    updated_weights := warp.to_list(ml.value(weights)?)
+    test.approx(updated_weights[0], 0.9, 1e-7)
+    test.approx(updated_weights[1], 1.9, 1e-7)
+
+    bad_rate := ml.sgd_step([x], 0.0, null)
+    test.eq(bad_rate.ok, false)
+    constant := ml.constant(1.0)?
+    bad_params := ml.sgd_step([constant], 0.1, null)
+    test.eq(bad_params.ok, false)
+    bad_state := ml.adam_step([x], {"step": 0}, 0.1, null, null, null, null)
+    test.eq(bad_state.ok, false)
+}

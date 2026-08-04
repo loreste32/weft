@@ -108,6 +108,75 @@ pub fn matmul(left, right) -> Result[any] {
     _binary(left, right, "matmul", fn(a, b) { _value_matmul(a, b) })
 }
 
+// Optimizer primitives operate on variable nodes in place. The node graph
+// remains inspectable, while parameter values change only through an explicit
+// optimizer step. Gradients are intentionally retained until zero_grad_many
+// is called, matching the accumulation behavior of backward().
+pub fn zero_grad_many(parameters) -> Result[any] {
+    if !_optimizer_parameters(parameters) { return Err("ml.zero_grad_many expects a list of trainable variables") }
+    for parameter in parameters { parameter.grad = _zero_like(parameter.value) }
+    Ok(null)
+}
+
+pub fn sgd_step(parameters, learning_rate, weight_decay) -> Result[any] {
+    if !_optimizer_parameters(parameters) { return Err("ml.sgd_step expects a list of trainable variables") }
+    if !_number(learning_rate) || learning_rate <= 0 { return Err("ml.sgd_step learning_rate must be finite and positive") }
+    decay := if weight_decay == null { 0.0 } else { weight_decay }
+    if !_number(decay) || decay < 0 { return Err("ml.sgd_step weight_decay must be finite and non-negative") }
+    for parameter in parameters {
+        gradient := if decay == 0 { parameter.grad } else { _value_add(parameter.grad, _value_mul(decay, parameter.value)) }
+        parameter.value = _value_sub(parameter.value, _value_mul(learning_rate, gradient))
+    }
+    Ok(null)
+}
+
+pub fn adam_state(parameters) -> Result[any] {
+    if !_optimizer_parameters(parameters) { return Err("ml.adam_state expects a list of trainable variables") }
+    let mut first_moments = []
+    let mut second_moments = []
+    for parameter in parameters {
+        first_moments = push(first_moments, _zero_like(parameter.value))
+        second_moments = push(second_moments, _zero_like(parameter.value))
+    }
+    Ok({"step": 0, "m": first_moments, "v": second_moments})
+}
+
+pub fn adam_step(parameters, state, learning_rate, beta1, beta2, epsilon, weight_decay) -> Result[any] {
+    if !_optimizer_parameters(parameters) { return Err("ml.adam_step expects a list of trainable variables") }
+    if _kind(state) != "map" || !contains(keys(state), "step") || !contains(keys(state), "m") || !contains(keys(state), "v") {
+        return Err("ml.adam_step expects state returned by adam_state")
+    }
+    if len(state.m) != len(parameters) || len(state.v) != len(parameters) { return Err("ml.adam_step state does not match parameters") }
+    if !_number(learning_rate) || learning_rate <= 0 { return Err("ml.adam_step learning_rate must be finite and positive") }
+    b1 := if beta1 == null { 0.9 } else { beta1 }
+    b2 := if beta2 == null { 0.999 } else { beta2 }
+    eps := if epsilon == null { 1e-8 } else { epsilon }
+    decay := if weight_decay == null { 0.0 } else { weight_decay }
+    if !_number(b1) || b1 < 0 || b1 >= 1 { return Err("ml.adam_step beta1 must be in [0, 1)") }
+    if !_number(b2) || b2 < 0 || b2 >= 1 { return Err("ml.adam_step beta2 must be in [0, 1)") }
+    if !_number(eps) || eps <= 0 { return Err("ml.adam_step epsilon must be finite and positive") }
+    if !_number(decay) || decay < 0 { return Err("ml.adam_step weight_decay must be finite and non-negative") }
+    state.step = state.step + 1
+    step := state.step
+    bias_first := 1.0 - math.pow(b1, step)
+    bias_second := 1.0 - math.pow(b2, step)
+    let mut i = 0
+    while i < len(parameters) {
+        parameter := parameters[i]
+        gradient := if decay == 0 { parameter.grad } else { _value_add(parameter.grad, _value_mul(decay, parameter.value)) }
+        first := _value_add(_value_mul(b1, state.m[i]), _value_mul(1.0 - b1, gradient))
+        second := _value_add(_value_mul(b2, state.v[i]), _value_mul(1.0 - b2, _value_mul(gradient, gradient)))
+        state.m[i] = first
+        state.v[i] = second
+        first_hat := _value_div(first, bias_first)
+        second_hat := _value_div(second, bias_second)
+        denominator := _value_add(_value_sqrt(second_hat), eps)
+        parameter.value = _value_sub(parameter.value, _value_div(_value_mul(learning_rate, first_hat), denominator))
+        i = i + 1
+    }
+    Ok(null)
+}
+
 fn _binary(left, right, op, operation) -> Result[any] {
     x := _as_node(left)
     y := _as_node(right)
@@ -261,6 +330,11 @@ fn _value_neg(a) {
     -a
 }
 
+fn _value_sqrt(a) {
+    if _is_array(a) { return warp.sqrt(a) }
+    math.sqrt(a)
+}
+
 fn _value_exp(a) {
     if _is_array(a) { return warp.exp(a) }
     math.exp(a)
@@ -314,6 +388,14 @@ fn _number(value) {
     k := _kind(value)
     if k != "int" && k != "float" { return false }
     value == value && !math.isinf(value)
+}
+
+fn _optimizer_parameters(parameters) {
+    if _kind(parameters) != "list" || len(parameters) == 0 { return false }
+    for parameter in parameters {
+        if !_is_node(parameter) || !parameter.requires_grad { return false }
+    }
+    true
 }
 
 fn _kind(value) {
