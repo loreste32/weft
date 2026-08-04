@@ -705,10 +705,10 @@ func callAgentRun(env *runtime.Env, agent runtime.Value, prompt string) (runtime
 	if !ok {
 		return errRes("not an agent", "llm"), nil
 	}
-	if run.Kind != runtime.KindBuiltin {
+	if run.Kind != runtime.KindBuiltin && run.Kind != runtime.KindFunc {
 		return errRes("agent.run missing", "llm"), nil
 	}
-	return run.Obj.(*runtime.BuiltinObj).Fn([]runtime.Value{runtime.Str(prompt)})
+	return callWeftFn(env, run, []runtime.Value{runtime.Str(prompt)})
 }
 
 type agentState struct {
