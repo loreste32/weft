@@ -54,6 +54,35 @@ weft run examples/todoapp/main.weft        # web app with SQLite
 weft run examples/sysops_host.weft -- info # devops host checks
 ```
 
+## Numerical, data, and ML stack
+
+Weft now includes a practical, tested alternative to Python for supported numerical and tabular workflows:
+
+- [`warp`](packages/warp/): validated NumPy-style arrays with broadcasting, reductions, linear algebra, FFTs, dtype handling, and explicit CPU/native-provider dispatch.
+- [`dataframe`](packages/dataframe/): pandas-inspired tabular operations with null-aware statistics, joins, rolling/expanding windows, CSV/JSON/JSONL, and a SQL bridge.
+- [`ml`](packages/ml/): classical linear/logistic training, minibatches, optimizers, forward- and reverse-mode autodiff, Jacobian-vector products, and selected higher-order derivatives.
+- [`accelerator`](native/accelerator/): a capability-gated plugin ABI for CUDA, ROCm/HIP, and Apple MLX providers.
+
+The provider ABI is deliberately explicit: a plugin must report whether an operation ran on the requested device or fell back. Weft does not claim complete NumPy, pandas, or deep-learning ecosystem compatibility, and vendor GPU claims require hardware-specific builds and conformance runs. See [`docs/ML.md`](docs/ML.md), [`docs/DATAFRAME.md`](docs/DATAFRAME.md), [`docs/ACCELERATORS.md`](docs/ACCELERATORS.md), and [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) for the supported surface and current boundaries.
+
+```weft
+use dataframe as df
+use ml
+
+fn main -> Result {
+    frame := df.from_rows([
+        {"hours": 1.0, "sales": 3.0},
+        {"hours": 2.0, "sales": 5.0},
+    ])?
+    model := ml.fit("linear", [[1.0], [2.0]], [3.0, 5.0], {
+        "epochs": 100,
+        "learning_rate": 0.05,
+    })?
+    say(df.describe(frame, "sales"))
+    say(ml.predict(model, [[3.0]])?)
+}
+```
+
 ## The language
 
 ```weft
@@ -194,7 +223,7 @@ Plus: `weft new module|app|cli <name>`, `weft get`, `weft install`, `weft publis
 - Glue benchmarks vs Python (output parity)
 - Browser WASM: async execution, Fetch HTTP, bounded virtual filesystem (path traversal blocked, 16MB/file, 64MB total, 10k file cap)
 - Slim build (`-tags slim`) for smaller binaries
-- 1410 Go tests, 22 of 23 registry modules tested
+- Go and package-level tests run in CI; 23 registry modules are cataloged and checked for freshness
 - See [docs/STABILITY.md](docs/STABILITY.md)
 
 ### Security

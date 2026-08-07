@@ -1,0 +1,324 @@
+use "./lib.weft" as df
+
+fn _mem() {
+    r := db.open("sqlite::memory:", {"max_open": 1})
+    test.is_true(r.ok)
+    r.value
+}
+
+fn _quote(name) {
+    "\"" + str.replace(name, "\"", "\"\"") + "\""
+}
+
+// === SQL bridge: round trips ===
+
+fn test_sql_round_trip_values_and_types {
+    conn := _mem()
+    t := df.from_rows([
+        {"i": 1, "f": 1.5, "s": "alice", "n": null},
+        {"i": 2, "f": 2.5, "s": "bob", "n": null},
+        {"i": 3, "f": 3.5, "s": "carol", "n": null},
+    ])
+    w := df.to_sql(t, conn, "people", null)
+    test.is_true(w.ok)
+    test.eq(w.value.rows_written, 3)
+    back := df.read_sql(conn, "SELECT i, f, s, n FROM people ORDER BY i")
+    test.is_true(back.ok)
+    test.eq(df.columns(back.value), ["i", "f", "s", "n"])
+    test.eq(df.col(back.value, "i"), [1, 2, 3])
+    test.eq(df.col(back.value, "f"), [1.5, 2.5, 3.5])
+    test.eq(df.col(back.value, "s"), ["alice", "bob", "carol"])
+    test.eq(df.col(back.value, "n"), [null, null, null])
+    dt := df.dtypes(back.value)
+    test.eq(dt.i, "int")
+    test.eq(dt.f, "float")
+    test.eq(dt.s, "str")
+    test.eq(dt.n, "null")
+    conn.close()
+}
+
+fn test_sql_round_trip_mixed_null_column {
+    conn := _mem()
+    t := df.from_rows([
+        {"a": 1, "b": "x"},
+        {"a": null, "b": null},
+        {"a": 3, "b": "z"},
+    ])
+    w := df.to_sql(t, conn, "mixed_nulls", null)
+    test.is_true(w.ok)
+    back := df.read_sql(conn, "SELECT a, b FROM mixed_nulls")
+    test.is_true(back.ok)
+    test.eq(df.col(back.value, "a"), [1, null, 3])
+    test.eq(df.col(back.value, "b"), ["x", null, "z"])
+    test.eq(df.dtypes(back.value).a, "int")
+    conn.close()
+}
+
+fn test_read_sql_with_conninfo_string {
+    r := df.read_sql(":memory:", "SELECT 1 AS i, 2.5 AS f, 'x' AS s, NULL AS n")
+    test.is_true(r.ok)
+    test.eq(df.nrows(r.value), 1)
+    test.eq(df.col(r.value, "i"), [1])
+    test.eq(df.col(r.value, "f"), [2.5])
+    test.eq(df.col(r.value, "s"), ["x"])
+    test.eq(df.col(r.value, "n"), [null])
+}
+
+fn test_to_sql_with_conninfo_string {
+    t := df.from_rows([{"a": 1}, {"a": 2}])
+    w := df.to_sql(t, ":memory:", "via_string", null)
+    test.is_true(w.ok)
+    test.eq(w.value.rows_written, 2)
+}
+
+fn test_read_sql_type_mapping {
+    conn := _mem()
+    test.is_true(conn.exec("CREATE TABLE t(i INTEGER, r REAL, s TEXT, n TEXT)").ok)
+    test.is_true(conn.exec("INSERT INTO t VALUES (?, ?, ?, ?)", [42, 0.25, "hi", null]).ok)
+    r := df.read_sql(conn, "SELECT i, r, s, n FROM t")
+    test.is_true(r.ok)
+    test.eq(df.col(r.value, "i"), [42])
+    test.eq(df.col(r.value, "r"), [0.25])
+    test.eq(df.col(r.value, "s"), ["hi"])
+    test.eq(df.col(r.value, "n"), [null])
+    conn.close()
+}
+
+// Documented caveats inherited from the db stdlib: SQLite has no boolean
+// storage class (true/false come back as int 1/0), and TEXT that looks like
+// a JSON object/array is auto-parsed by db.query into maps/lists.
+fn test_read_sql_bool_and_json_text_caveats {
+    conn := _mem()
+    t := df.from_rows([{"flag": true, "payload": "[1,2]"}, {"flag": false, "payload": "plain"}])
+    w := df.to_sql(t, conn, "caveats", null)
+    test.is_true(w.ok)
+    back := df.read_sql(conn, "SELECT flag, payload FROM caveats")
+    test.is_true(back.ok)
+    // booleans read back as ints
+    test.eq(df.col(back.value, "flag"), [1, 0])
+    // JSON-looking TEXT is auto-parsed by the db stdlib
+    rows := df.rows(back.value)
+    test.eq(rows[0].payload, [1, 2])
+    test.eq(rows[1].payload, "plain")
+    conn.close()
+}
+
+// === SQL bridge: if_exists policies ===
+
+fn test_to_sql_if_exists_fail {
+    conn := _mem()
+    t := df.from_rows([{"a": 1}])
+    test.is_true(df.to_sql(t, conn, "t1", null).ok)
+    again := df.to_sql(t, conn, "t1", null)
+    test.is_false(again.ok)
+    test.contains("" + again.error, "already exists")
+    explicit := df.to_sql(t, conn, "t1", {"if_exists": "fail"})
+    test.is_false(explicit.ok)
+    // original data untouched
+    back := df.read_sql(conn, "SELECT a FROM t1")
+    test.eq(df.col(back.value, "a"), [1])
+    conn.close()
+}
+
+fn test_to_sql_if_exists_replace {
+    conn := _mem()
+    test.is_true(df.to_sql(df.from_rows([{"a": 1}, {"a": 2}]), conn, "t2", null).ok)
+    w := df.to_sql(df.from_rows([{"b": "new"}]), conn, "t2", {"if_exists": "replace"})
+    test.is_true(w.ok)
+    back := df.read_sql(conn, "SELECT b FROM t2")
+    test.is_true(back.ok)
+    test.eq(df.columns(back.value), ["b"])
+    test.eq(df.col(back.value, "b"), ["new"])
+    conn.close()
+}
+
+fn test_to_sql_if_exists_append {
+    conn := _mem()
+    test.is_true(df.to_sql(df.from_rows([{"a": 1}]), conn, "t3", null).ok)
+    w := df.to_sql(df.from_rows([{"a": 2}, {"a": 3}]), conn, "t3", {"if_exists": "append"})
+    test.is_true(w.ok)
+    back := df.read_sql(conn, "SELECT a FROM t3 ORDER BY a")
+    test.eq(df.col(back.value, "a"), [1, 2, 3])
+    missing := df.to_sql(df.from_rows([{"a": 9}]), conn, "nope", {"if_exists": "append"})
+    test.is_false(missing.ok)
+    test.contains("" + missing.error, "does not exist")
+    conn.close()
+}
+
+// === SQL bridge: adversarial identifiers ===
+
+fn test_to_sql_malicious_identifiers {
+    conn := _mem()
+    evil_table := "evil\"; DROP TABLE sqlite_master; --"
+    t := df.from_rows([{"na\"me": 1, "select": "kw"}])
+    w := df.to_sql(t, conn, evil_table, null)
+    test.is_true(w.ok)
+    // the injection is inert: sqlite_master still works and the oddly-named
+    // table holds the data
+    back := df.read_sql(conn, "SELECT * FROM " + _quote(evil_table))
+    test.is_true(back.ok)
+    test.eq(df.columns(back.value), ["na\"me", "select"])
+    test.eq(df.col(back.value, "na\"me"), [1])
+    test.eq(df.col(back.value, "select"), ["kw"])
+    // schema still intact — the DROP never executed
+    check := conn.query("SELECT name FROM sqlite_master WHERE type='table'")
+    test.is_true(check.ok)
+    test.eq(len(check.value), 1)
+    // existence checks use bound parameters, so fail-detection works on the
+    // malicious name too
+    again := df.to_sql(t, conn, evil_table, null)
+    test.is_false(again.ok)
+    test.contains("" + again.error, "already exists")
+    conn.close()
+}
+
+fn test_to_sql_rejects_bad_frames_and_args {
+    conn := _mem()
+    not_df := df.to_sql({"rows": []}, conn, "x", null)
+    test.is_false(not_df.ok)
+    empty_name := df.to_sql(df.from_rows([{"a": 1}]), conn, "", null)
+    test.is_false(empty_name.ok)
+    bad_mode := df.to_sql(df.from_rows([{"a": 1}]), conn, "x", {"if_exists": "clobber"})
+    test.is_false(bad_mode.ok)
+    test.contains("" + bad_mode.error, "if_exists")
+    bad_query := df.read_sql(conn, "")
+    test.is_false(bad_query.ok)
+    bad_source := df.read_sql(42, "SELECT 1")
+    test.is_false(bad_source.ok)
+    conn.close()
+}
+
+fn test_to_sql_rejects_mixed_and_unsupported_types {
+    conn := _mem()
+    mixed := df.to_sql(df.from_rows([{"a": 1}, {"a": "s"}]), conn, "m1", null)
+    test.is_false(mixed.ok)
+    test.contains("" + mixed.error, "mixed types")
+    nested := df.to_sql(df.from_rows([{"a": [1, 2]}]), conn, "m2", null)
+    test.is_false(nested.ok)
+    test.contains("" + nested.error, "unsupported type")
+    // int+float mixes are fine and become REAL
+    ok := df.to_sql(df.from_rows([{"a": 1}, {"a": 2.5}]), conn, "m3", null)
+    test.is_true(ok.ok)
+    back := df.read_sql(conn, "SELECT a FROM m3 ORDER BY a")
+    test.eq(df.dtypes(back.value).a, "float")
+    conn.close()
+}
+
+// === CSV dtype/null policies ===
+
+fn test_csv_opts_default_byte_identical {
+    text := "name,age,note\nAlice,30,\n\"007\",null,\"1.5\"\nx,,true\n"
+    plain := df.from_csv(text, null)
+    test.is_true(plain.ok)
+    with_null_opts := df.from_csv_opts(text, null, null)
+    test.is_true(with_null_opts.ok)
+    test.eq(df.to_csv(plain.value, null), df.to_csv(with_null_opts.value, null))
+    // spot-check legacy inference is untouched
+    test.eq(df.col(plain.value, "age"), [30, null, null])
+    test.eq(df.col(plain.value, "name"), ["Alice", "007", "x"])
+}
+
+fn test_csv_opts_dtypes_str_keeps_quoted_numerals {
+    text := "a,b\n\"123\",045\n\"007\",-9\n"
+    r := df.from_csv_opts(text, null, {"dtypes": {"a": "str", "b": "str"}})
+    test.is_true(r.ok)
+    test.eq(df.col(r.value, "a"), ["123", "007"])
+    test.eq(df.col(r.value, "b"), ["045", "-9"])
+    test.eq(df.dtypes(r.value).a, "str")
+    test.eq(df.dtypes(r.value).b, "str")
+}
+
+fn test_csv_opts_strict_int_rejects_bad_values {
+    float_in_int := df.from_csv_opts("a\n1\n1.5\n", null, {"dtypes": {"a": "int"}})
+    test.is_false(float_in_int.ok)
+    test.contains("" + float_in_int.error, "row 3")
+    test.contains("" + float_in_int.error, "'a'")
+    test.contains("" + float_in_int.error, "as int")
+    alpha_in_int := df.from_csv_opts("a,b\n1,x\nabc,y\n", null, {"dtypes": {"a": "int"}})
+    test.is_false(alpha_in_int.ok)
+    test.contains("" + alpha_in_int.error, "row 3")
+    test.contains("" + alpha_in_int.error, "abc")
+}
+
+fn test_csv_opts_strict_int_accepts_valid {
+    r := df.from_csv_opts("a\n1\n-2\n\"30\"\n", null, {"dtypes": {"a": "int"}})
+    test.is_true(r.ok)
+    test.eq(df.col(r.value, "a"), [1, -2, 30])
+    test.eq(df.dtypes(r.value).a, "int")
+}
+
+fn test_csv_opts_float_dtype {
+    r := df.from_csv_opts("a\n3\n1.5\n-0.25\n", null, {"dtypes": {"a": "float"}})
+    test.is_true(r.ok)
+    test.eq(df.col(r.value, "a"), [3.0, 1.5, -0.25])
+    test.eq(df.dtypes(r.value).a, "float")
+    bad := df.from_csv_opts("a\n1e\n", null, {"dtypes": {"a": "float"}})
+    test.is_false(bad.ok)
+}
+
+fn test_csv_opts_bool_dtype {
+    r := df.from_csv_opts("a\ntrue\nFALSE\n", null, {"dtypes": {"a": "bool"}})
+    test.is_true(r.ok)
+    test.eq(df.col(r.value, "a"), [true, false])
+    bad := df.from_csv_opts("a\nyes\n", null, {"dtypes": {"a": "bool"}})
+    test.is_false(bad.ok)
+    test.contains("" + bad.error, "as bool")
+}
+
+fn test_csv_opts_custom_null_values {
+    text := "a,b\nNA,5\nnil,-\n7,3.5\n"
+    r := df.from_csv_opts(text, null, {"null_values": ["NA", "nil", "-"]})
+    test.is_true(r.ok)
+    test.eq(df.col(r.value, "a"), [null, null, 7])
+    test.eq(df.col(r.value, "b"), [5, null, 3.5])
+    // sentinels combine with strict dtypes
+    typed := df.from_csv_opts(text, null, {"null_values": ["NA", "nil", "-"], "dtypes": {"a": "int", "b": "float"}})
+    test.is_true(typed.ok)
+    test.eq(df.col(typed.value, "a"), [null, null, 7])
+    test.eq(df.col(typed.value, "b"), [5.0, null, 3.5])
+    // a non-sentinel still fails the strict dtype
+    bad := df.from_csv_opts("a\nN/A\n", null, {"null_values": ["NA"], "dtypes": {"a": "int"}})
+    test.is_false(bad.ok)
+}
+
+fn test_csv_opts_quoted_sentinel_stays_string {
+    text := "a\n\"NA\"\nNA\n"
+    r := df.from_csv_opts(text, null, {"null_values": ["NA"], "dtypes": {"a": "str"}})
+    test.is_true(r.ok)
+    test.eq(df.col(r.value, "a"), ["NA", null])
+}
+
+fn test_csv_opts_keep_default_null_values_false {
+    text := "a,b\n,null\nNA,x\n"
+    r := df.from_csv_opts(text, null, {"keep_default_null_values": false, "null_values": ["NA"]})
+    test.is_true(r.ok)
+    // default sentinels no longer null: "" stays an empty string and
+    // "null" stays the string "null"; the custom sentinel still applies
+    test.eq(df.col(r.value, "a"), ["", null])
+    test.eq(df.col(r.value, "b"), ["null", "x"])
+}
+
+fn test_csv_opts_validation_errors {
+    unknown_col := df.from_csv_opts("a\n1\n", null, {"dtypes": {"zzz": "int"}})
+    test.is_false(unknown_col.ok)
+    test.contains("" + unknown_col.error, "unknown column")
+    bad_dtype := df.from_csv_opts("a\n1\n", null, {"dtypes": {"a": "date"}})
+    test.is_false(bad_dtype.ok)
+    bad_nulls := df.from_csv_opts("a\n1\n", null, {"null_values": "NA"})
+    test.is_false(bad_nulls.ok)
+    not_map := df.from_csv_opts("a\n1\n", null, [1])
+    test.is_false(not_map.ok)
+}
+
+fn test_csv_null_sentinels_round_trip_through_sql {
+    conn := _mem()
+    r := df.from_csv_opts("a,b\nNA,1\n5,NA\n", null, {"null_values": ["NA"], "dtypes": {"a": "int", "b": "int"}})
+    test.is_true(r.ok)
+    w := df.to_sql(r.value, conn, "nulls", null)
+    test.is_true(w.ok)
+    back := df.read_sql(conn, "SELECT a, b FROM nulls")
+    test.is_true(back.ok)
+    test.eq(df.col(back.value, "a"), [null, 5])
+    test.eq(df.col(back.value, "b"), [1, null])
+    conn.close()
+}

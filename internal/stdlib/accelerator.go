@@ -240,6 +240,11 @@ func tensorFromRuntime(value runtime.Value) (*tensor.Tensor, error) {
 	if err != nil {
 		return nil, err
 	}
+	if dtype == tensor.Float16 {
+		// The native tensor ABI dtype codes are frozen at 1-11; float16 has
+		// no code and must not reach run_tensor.
+		return nil, fmt.Errorf("tensor dtype float16 is not supported by the native accelerator ABI")
+	}
 	shapeValue, ok := mo.Vals["shape"]
 	if !ok || shapeValue.Kind != runtime.KindList {
 		return nil, fmt.Errorf("tensor descriptor shape must be an integer list")

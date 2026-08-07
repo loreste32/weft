@@ -1,0 +1,401 @@
+use "./lib.weft" as ml
+use warp
+use math
+
+// Array-level nested reverse-mode (create_graph double-backward) tests.
+//
+// The core is three-way agreement on second-order quantities for a battery of
+// array functions:
+//   (a) nested reverse mode: backward(loss, create_graph=true), then
+//       backward(sum(grad * v)) to get the exact Hessian-vector product H v;
+//   (b) forward mode: ml.jvp of the gradient function (hand-derived with
+//       fwd_* ops — an independent implementation of the same math);
+//   (c) finite differences of the analytic first gradient (ml.hvp, eps=1e-6).
+//
+// Tolerances: (a) and (b) are both exact analytic computations that differ
+// only in operation order, so they agree to float64 rounding (~1e-12); the
+// tests use 1e-6 as a comfortable-but-tight bound. (c) is a central
+// difference: truncation is O(eps^2) ~ 1e-12 and roundoff is
+// O(machine_eps / eps) ~ 1e-9 at eps=1e-6, so 1e-6 absolute is justified for
+// quantities of magnitude ~1e2. A wrong second-order term in any VJP breaks
+// at least one of these comparisons.
+//
+// Note: Weft closures capture enclosing locals only (not imports or top-level
+// functions), so every closure below first binds what it needs to a local.
+
+fn _arr_approx(actual, expected, tol) {
+    test.eq(len(actual), len(expected))
+    let mut i = 0
+    while i < len(actual) {
+        test.approx(actual[i], expected[i], tol)
+        i = i + 1
+    }
+}
+
+// (a) Nested reverse-mode HVP: exact H v via create_graph double-backward.
+// Returns a flat numeric list per parameter.
+fn _nested_hvp(loss_fn, params, dirs) -> Result[any] {
+    loss := loss_fn(params)?
+    ml.zero_grad(loss)?
+    ml.backward(loss, true)?
+    if contains(keys(loss), "_graph_complete") && loss._graph_complete == false {
+        return Err("nested HVP requires a graph-complete loss (no numeric-only VJPs)")
+    }
+    let mut dot = null
+    let mut i = 0
+    while i < len(params) {
+        term := ml.sum(ml.mul(ml.grad(params[i])?, ml.constant(dirs[i])?)?)?
+        if dot == null { dot = term } else { dot = ml.add(dot, term)? }
+        i = i + 1
+    }
+    ml.zero_grad(dot)?
+    ml.backward(dot, null)?
+    let mut out = []
+    for p in params {
+        g := ml.grad(p)?
+        if type_of(g) == "map" { out = push(out, warp.to_list(g)) } else { out = push(out, g) }
+    }
+    Ok(out)
+}
+
+fn _scalar_tanh(x) {
+    if x > 20.0 { return 1.0 }
+    if x < -20.0 { return -1.0 }
+    e := math.exp(2.0 * x)
+    return (e - 1.0) / (e + 1.0)
+}
+
+fn test_nested_sum_of_squares_three_way {
+    // f(x) = sum(x^2) => grad = 2x, H = 2I, H v = 2v.
+    m := ml
+    loss_fn := fn(params) {
+        m.sum(m.mul(params[0], params[0])?)
+    }
+    xv := warp.array([1.0, 2.0, 3.0], [3])
+    vv := warp.array([0.5, -1.0, 2.0], [3])
+    x := ml.variable(xv)?
+    nested := _nested_hvp(loss_fn, [x], [vv])?
+    _arr_approx(nested[0], [1.0, -2.0, 4.0], 1e-12)
+    // (b) forward-mode jvp of grad g(x) = 2x.
+    fwd := ml.jvp(fn(d) { m.fwd_mul(2.0, d) }, xv, vv)?
+    _arr_approx(warp.to_list(fwd.jvp), nested[0], 1e-6)
+    // (c) finite difference of analytic first gradients.
+    fd := ml.hvp(loss_fn, [x], [vv], 1e-6)?
+    _arr_approx(fd[0], nested[0], 1e-6)
+    test.eq(warp.to_list(ml.value(x)?), [1.0, 2.0, 3.0])
+}
+
+// Hand-derived gradient of the elementwise chain below, in forward-mode ops:
+// f(x) = sum(tanh(x^2) sigmoid(x)) + sum(log(1 + x^2)) + sum(x / (2 + x^2))
+// g(x) = (1-t^2) 2x s + t s (1-s) + 2x/(1+x^2) + (2-x^2)/(2+x^2)^2
+// with t = tanh(x^2), s = sigmoid(x), all elementwise.
+fn _chain_grad_fwd(x) -> Result[any] {
+    x2 := ml.fwd_mul(x, x)?
+    t := ml.fwd_tanh(x2)?
+    s := ml.fwd_sigmoid(x)?
+    one_minus_t2 := ml.fwd_sub(1.0, ml.fwd_mul(t, t)?)?
+    g1 := ml.fwd_mul(ml.fwd_mul(one_minus_t2, ml.fwd_mul(2.0, x)?)?, s)?
+    g2 := ml.fwd_mul(t, ml.fwd_mul(s, ml.fwd_sub(1.0, s)?)?)?
+    g3 := ml.fwd_div(ml.fwd_mul(2.0, x)?, ml.fwd_add(1.0, ml.fwd_pow(x, 2.0)?)?)?
+    num := ml.fwd_sub(2.0, x2)?
+    den := ml.fwd_add(2.0, x2)?
+    g4 := ml.fwd_div(num, ml.fwd_mul(den, den)?)?
+    ml.fwd_add(ml.fwd_add(g1, g2)?, ml.fwd_add(g3, g4)?)
+}
+
+fn test_nested_elementwise_chain_three_way {
+    m := ml
+    loss_fn := fn(params) {
+        x := params[0]
+        x2 := m.mul(x, x)?
+        t := m.tanh(x2)?
+        s := m.sigmoid(x)?
+        l1 := m.sum(m.mul(t, s)?)?
+        l2 := m.sum(m.log(m.add(1.0, m.pow(x, 2.0)?)?)?)?
+        l3 := m.sum(m.div(x, m.add(2.0, m.mul(x, x)?)?)?)?
+        m.add(m.add(l1, l2)?, l3)
+    }
+    xv := warp.array([0.5, -1.0, 1.5], [3])
+    vv := warp.array([0.25, 0.75, -0.5], [3])
+    x := ml.variable(xv)?
+    nested := _nested_hvp(loss_fn, [x], [vv])?
+    fwd := ml.jvp(_chain_grad_fwd, xv, vv)?
+    _arr_approx(warp.to_list(fwd.jvp), nested[0], 1e-6)
+    fd := ml.hvp(loss_fn, [x], [vv], 1e-6)?
+    _arr_approx(fd[0], nested[0], 1e-6)
+}
+
+// grad of f(W) = sum((A W)^2) is 2 A^T (A W); A^T is a plain constant array.
+fn _matmul_grad_fwd(a, at, w) -> Result[any] {
+    ml.fwd_mul(2.0, ml.fwd_matmul(at, ml.fwd_matmul(a, w)?)?)
+}
+
+fn test_nested_matmul_reduce_three_way {
+    m := ml
+    av := warp.array([1.0, 0.0, 2.0, -1.0, 1.0, 0.5], [2, 3])
+    at := warp.T(av)
+    loss_fn := fn(params) {
+        m.sum(m.pow(m.matmul(av, params[0])?, 2.0)?)
+    }
+    wv := warp.array([0.5, -1.0, 1.5, 2.0, -0.5, 1.0], [3, 2])
+    vw := warp.array([1.0, 0.0, 0.0, 1.0, -1.0, 0.5], [3, 2])
+    w := ml.variable(wv)?
+    nested := _nested_hvp(loss_fn, [w], [vw])?
+    gfwd := _matmul_grad_fwd
+    fwd := ml.jvp(fn(d) { gfwd(av, at, d) }, wv, vw)?
+    _arr_approx(warp.to_list(fwd.jvp), nested[0], 1e-6)
+    fd := ml.hvp(loss_fn, [w], [vw], 1e-6)?
+    _arr_approx(fd[0], nested[0], 1e-6)
+}
+
+// One-hidden-layer tanh MLP with broadcast bias and mean-squared loss:
+//   z = X W + b   (b [3] broadcasts over the 4 rows)
+//   h = tanh(z);  o = h V;  loss = mean((o - y)^2)
+//   dz = ((2 (o - y) / 4) V^T) * (1 - h^2)
+//   G_W = X^T dz [2,3];  G_b = ones[1,4] dz [1,3] (reshaped to [3])
+fn _mlp_dz(c, w, b) -> Result[any] {
+    z := ml.fwd_add(ml.fwd_matmul(c.x, w)?, b)?
+    h := ml.fwd_tanh(z)?
+    o := ml.fwd_matmul(h, c.v)?
+    dlo := ml.fwd_mul(0.5, ml.fwd_sub(o, c.y)?)?
+    dh := ml.fwd_matmul(dlo, c.vt)?
+    h2 := ml.fwd_mul(h, h)?
+    ml.fwd_mul(dh, ml.fwd_sub(1.0, h2)?)
+}
+
+fn _mlp_gw(c, w, b) -> Result[any] {
+    ml.fwd_matmul(c.xt, _mlp_dz(c, w, b)?)
+}
+
+fn _mlp_gb(c, w, b) -> Result[any] {
+    ml.fwd_matmul(c.ones, _mlp_dz(c, w, b)?)
+}
+
+fn test_nested_mlp_loss_three_way {
+    m := ml
+    c := {
+        "x": warp.array([0.5, -1.0, 1.0, 0.5, -0.5, 1.5, 2.0, -0.5], [4, 2]),
+        "v": warp.array([0.5, -1.0, 0.7], [3, 1]),
+        "y": warp.array([1.0, -0.5, 0.3, 0.9], [4, 1]),
+    }
+    c.xt = warp.T(c.x)
+    c.vt = warp.T(c.v)
+    c.ones = warp.ones([1, 4])
+    loss_fn := fn(params) {
+        z := m.add(m.matmul(c.x, params[0])?, params[1])?
+        h := m.tanh(z)?
+        o := m.matmul(h, c.v)?
+        d := m.sub(o, c.y)?
+        m.mean(m.pow(d, 2.0)?)
+    }
+    wv := warp.array([0.3, -0.2, 0.1, 0.4, -0.1, 0.2], [2, 3])
+    bv := warp.array([0.1, -0.3, 0.2], [3])
+    vw := warp.array([0.2, 0.0, -0.1, 0.3, 0.1, -0.2], [2, 3])
+    vb := warp.array([0.5, -0.5, 1.0], [3])
+    w := ml.variable(wv)?
+    b := ml.variable(bv)?
+    // (a) nested reverse over both parameters (bias exercises broadcast VJPs).
+    nested := _nested_hvp(loss_fn, [w, b], [vw, vb])?
+    // (b) forward mode per Hessian block: H v = sum over input blocks of the
+    // jvp of each gradient block. G_b comes back [1,3] and is reshaped to [3].
+    gw := _mlp_gw
+    gb := _mlp_gb
+    ww := ml.jvp(fn(d) { gw(c, d, bv) }, wv, vw)?
+    wb := ml.jvp(fn(d) { gw(c, wv, d) }, bv, vb)?
+    hw := warp.add(ww.jvp, wb.jvp)
+    bw := ml.jvp(fn(d) { gb(c, d, bv) }, wv, vw)?
+    bb := ml.jvp(fn(d) { gb(c, wv, d) }, bv, vb)?
+    hb := warp.reshape(warp.add(bw.jvp, bb.jvp), [3])
+    _arr_approx(warp.to_list(hw), nested[0], 1e-6)
+    _arr_approx(warp.to_list(hb), nested[1], 1e-6)
+    // (c) finite differences over both parameters.
+    fd := ml.hvp(loss_fn, [w, b], [vw, vb], 1e-6)?
+    _arr_approx(fd[0], nested[0], 1e-6)
+    _arr_approx(fd[1], nested[1], 1e-6)
+}
+
+// Hand-derived gradient of the Swish/SiLU sum f(x) = sum(x sigmoid(x)):
+// g(x) = s + x s (1 - s), H diagonal with H_ii = s(1-s)(2 + x(1-2s)).
+fn _swish_grad_fwd(x) -> Result[any] {
+    s := ml.fwd_sigmoid(x)?
+    xs := ml.fwd_mul(x, s)?
+    ml.fwd_add(s, ml.fwd_mul(xs, ml.fwd_sub(1.0, s)?)?)
+}
+
+fn test_nested_hessian_diagonal_swish {
+    m := ml
+    loss_fn := fn(params) {
+        m.sum(m.mul(params[0], m.sigmoid(params[0])?)?)
+    }
+    xv := warp.array([0.5, -1.0, 1.5], [3])
+    x := ml.variable(xv)?
+    xs := [0.5, -1.0, 1.5]
+    let mut i = 0
+    while i < 3 {
+        let mut edir = [0.0, 0.0, 0.0]
+        edir[i] = 1.0
+        ev := warp.array(edir, [3])
+        // (a) nested reverse H e_i, element i is the Hessian diagonal entry.
+        nested := _nested_hvp(loss_fn, [x], [ev])?
+        // Analytic diagonal: s(1-s)(2 + x(1-2s)).
+        s := 1.0 / (1.0 + math.exp(-xs[i]))
+        expected := s * (1.0 - s) * (2.0 + xs[i] * (1.0 - 2.0 * s))
+        test.approx(nested[0][i], expected, 1e-9)
+        // (b) forward-mode jvp of the gradient function.
+        fwd := ml.jvp(_swish_grad_fwd, xv, ev)?
+        test.approx(warp.to_list(fwd.jvp)[i], nested[0][i], 1e-6)
+        // (c) finite differences.
+        fd := ml.hvp(loss_fn, [x], [ev], 1e-6)?
+        test.approx(fd[0][i], nested[0][i], 1e-6)
+        i = i + 1
+    }
+}
+
+fn test_nested_broadcast_row_three_way {
+    // f(X, b) = sum((X * b)^2) with X [2,3] constant, b [3]: the VJP reduces
+    // over the broadcast row axis in BOTH backward passes.
+    // grad_j = 2 b_j sum_i X_ij^2, H = 2 diag([17, 29, 45]).
+    m := ml
+    xv := warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+    loss_fn := fn(params) {
+        m.sum(m.pow(m.mul(xv, params[0])?, 2.0)?)
+    }
+    bv := warp.array([1.0, 2.0, 3.0], [3])
+    vb := warp.array([0.5, -1.0, 2.0], [3])
+    b := ml.variable(bv)?
+    nested := _nested_hvp(loss_fn, [b], [vb])?
+    _arr_approx(nested[0], [17.0, -58.0, 180.0], 1e-9)
+    // (b) grad g(b) = 2 colsum(X^2) * b, jvp => 2 colsum(X^2) * v.
+    colsum := warp.array([17.0, 29.0, 45.0], [3])
+    fwd := ml.jvp(fn(d) { m.fwd_mul(m.fwd_mul(2.0, colsum)?, d) }, bv, vb)?
+    _arr_approx(warp.to_list(fwd.jvp), nested[0], 1e-6)
+    // (c) finite differences.
+    fd := ml.hvp(loss_fn, [b], [vb], 1e-6)?
+    _arr_approx(fd[0], nested[0], 1e-6)
+    // First-order gradient reduces to the parent shape [3], not [2,3].
+    bb := ml.variable(bv)?
+    l := loss_fn([bb])?
+    ml.backward(l, true)?
+    g := ml.grad(bb)?
+    test.eq(warp.shape(ml.value(g)?), [3])
+    _arr_approx(warp.to_list(ml.value(g)?), [34.0, 116.0, 270.0], 1e-9)
+}
+
+fn test_nested_broadcast_scalar_three_way {
+    // f(X, s) = sum((X + s)^2) with X [2,3] constant, s scalar: the array
+    // gradient reduces through a differentiable sum node to the scalar parent.
+    // f'' = 2 * numel(X) = 12.
+    m := ml
+    xv := warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+    loss_fn := fn(params) {
+        m.sum(m.pow(m.add(xv, params[0])?, 2.0)?)
+    }
+    s := ml.variable(0.5)?
+    // (a) nested double-backward on the scalar gradient node directly.
+    loss := loss_fn([s])?
+    ml.backward(loss, true)?
+    g := ml.grad(s)?
+    test.eq(g._autograd, true)
+    test.approx(ml.value(g)?, 2.0 * (21.0 + 6.0 * 0.5), 1e-9)
+    ml.zero_grad(g)?
+    ml.backward(g, null)?
+    test.approx(ml.grad(s)?, 12.0, 1e-9)
+    // (b) forward-mode jvp of g(s) = 2 (sum(X) + 6 s).
+    fwd := ml.jvp(fn(d) { m.fwd_mul(2.0, m.fwd_add(21.0, m.fwd_mul(6.0, d)?)?) }, 0.5, 1.0)?
+    test.approx(fwd.jvp, 12.0, 1e-9)
+    // (c) finite differences (exact for this quadratic).
+    fd := ml.hvp(loss_fn, [s], [1.0], 1e-6)?
+    test.approx(fd[0], 12.0, 1e-6)
+}
+
+fn test_nested_third_order_array {
+    // f(x) = sum(x^4): f' = 4x^3, H v = 12 x^2 v, and one more pass gives
+    // 24 x v w. The second backward also runs with create_graph=true, so the
+    // gradient-plumbing nodes (expand_to) must themselves build graph VJPs.
+    x := ml.variable(warp.array([0.5, 1.5], [2]))?
+    loss := ml.sum(ml.pow(x, 4.0)?)?
+    ml.backward(loss, true)?
+    g := ml.grad(x)?
+    test.eq(g._autograd, true)
+    _arr_approx(warp.to_list(ml.value(g)?), [0.5, 13.5], 1e-12)
+    v := ml.constant(warp.array([1.0, -1.0], [2]))?
+    dot := ml.sum(ml.mul(g, v)?)?
+    ml.zero_grad(dot)?
+    ml.backward(dot, true)?
+    g2 := ml.grad(x)?
+    test.eq(g2._autograd, true)
+    _arr_approx(warp.to_list(ml.value(g2)?), [3.0, -27.0], 1e-12)
+    w := ml.constant(warp.array([2.0, 1.0], [2]))?
+    dot2 := ml.sum(ml.mul(g2, w)?)?
+    ml.zero_grad(dot2)?
+    ml.backward(dot2, null)?
+    _arr_approx(warp.to_list(ml.grad(x)?), [24.0, -36.0], 1e-12)
+}
+
+fn test_nested_first_grad_values_match_numeric_path {
+    // create_graph must not change first-order values: the graph-mode VJPs
+    // issue the same warp operations in the same order as the numeric path.
+    m := ml
+    build := fn(x) {
+        x2 := m.mul(x, x)?
+        t := m.tanh(x2)?
+        s := m.sigmoid(x)?
+        m.sum(m.add(m.mul(t, s)?, m.pow(x, 2.0)?)?)
+    }
+    xv := warp.array([0.5, -1.0, 1.5], [3])
+    x1 := ml.variable(xv)?
+    l1 := build(x1)?
+    ml.backward(l1, null)?
+    numeric := ml.grad(x1)?
+    x2 := ml.variable(xv)?
+    l2 := build(x2)?
+    ml.backward(l2, true)?
+    graphed := ml.value(ml.grad(x2)?)?
+    test.eq(warp.to_list(graphed), warp.to_list(numeric))
+}
+
+fn test_nested_numeric_only_ops_are_flagged {
+    // gelu keeps a numeric VJP under create_graph: the first gradient is
+    // correct, but backward flags the graph as incomplete so higher-order
+    // callers fall back instead of silently dropping second-order terms.
+    x := ml.variable(0.7)?
+    l := ml.gelu(x)?
+    ml.backward(l, true)?
+    test.eq(l._graph_complete, false)
+    // First-order value still matches the numeric path exactly.
+    x2 := ml.variable(0.7)?
+    l2 := ml.gelu(x2)?
+    ml.backward(l2, null)?
+    test.approx(ml.grad(x)?, ml.grad(x2)?, 1e-15)
+    // grad_fn refuses to hand out a truncated gradient graph.
+    r := ml.grad_fn(l, [x])
+    test.eq(r.ok, false)
+    // second_derivative falls back to finite differences (not a silent 0).
+    gelu := ml.gelu
+    sd := ml.second_derivative(fn(p) { gelu(p) }, x, 1e-5)?
+    // Analytic gelu'' (tanh approximation): with u = c(x + 0.044715 x^3),
+    // u' = c(1 + 0.134145 x^2), u'' = 0.26829 c x, t = tanh(u):
+    // gelu'' = (1 - t^2) (u' - x t (u')^2 + 0.5 x u'').
+    c := 0.7978845608028654
+    u := c * (0.7 + 0.044715 * 0.7 * 0.7 * 0.7)
+    du := c * (1.0 + 0.134145 * 0.7 * 0.7)
+    ddu := 0.26829 * c * 0.7
+    t := _scalar_tanh(u)
+    expected := (1.0 - t * t) * (du - 0.7 * t * du * du + 0.5 * 0.7 * ddu)
+    test.approx(sd, expected, 1e-6)
+}
+
+fn test_second_derivative_sigmoid_tanh_exact_nested {
+    // sigmoid/tanh now build graph VJPs for scalars too, so second_derivative
+    // takes the exact nested path instead of the finite-difference fallback.
+    sig := ml.sigmoid
+    x1 := ml.variable(0.7)?
+    sd1 := ml.second_derivative(fn(p) { sig(p) }, x1, 1e-5)?
+    s := 1.0 / (1.0 + math.exp(-0.7))
+    test.approx(sd1, s * (1.0 - s) * (1.0 - 2.0 * s), 1e-9)
+    th := ml.tanh
+    x2 := ml.variable(0.7)?
+    sd2 := ml.second_derivative(fn(p) { th(p) }, x2, 1e-5)?
+    t := _scalar_tanh(0.7)
+    test.approx(sd2, -2.0 * t * (1.0 - t * t), 1e-9)
+}

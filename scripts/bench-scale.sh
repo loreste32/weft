@@ -34,6 +34,9 @@ BUDGET_WARP_MATMUL_MS="${BUDGET_WARP_MATMUL_MS:-120000}"
 BUDGET_WARP_ELEM_MS="${BUDGET_WARP_ELEM_MS:-60000}"
 BUDGET_DF_100K_MS="${BUDGET_DF_100K_MS:-120000}"
 BUDGET_DF_250K_MS="${BUDGET_DF_250K_MS:-300000}"
+BUDGET_DF_WIDE_MS="${BUDGET_DF_WIDE_MS:-120000}"
+BUDGET_DF_JOIN_MS="${BUDGET_DF_JOIN_MS:-120000}"
+BUDGET_DF_1M_MS="${BUDGET_DF_1M_MS:-1200000}"
 BUDGET_PEAK_RSS_KB="${BUDGET_PEAK_RSS_KB:-4194304}" # 4 GiB advisory
 
 tmpdir=$(mktemp -d)
@@ -219,17 +222,34 @@ run_named "dataframe_100k" "testdata/bench/dataframe_scale.weft" "$BUDGET_DF_100
 run_named "dataframe_250k" "testdata/bench/dataframe_scale_1m.weft" "$BUDGET_DF_250K_MS" \
   "default 250k; WEFT_DF_ROWS=1000000 for full million"
 
+run_named "dataframe_wide_100k" "testdata/bench/dataframe_scale_wide.weft" "$BUDGET_DF_WIDE_MS" \
+  "100k rows x 13 cols, derivations + groupby"
+
+run_named "dataframe_join_100k" "testdata/bench/dataframe_scale_join.weft" "$BUDGET_DF_JOIN_MS" \
+  "100k x 20k inner join + groupby"
+
+# Opt-in heavy tier (WEFT_SCALE_BIG=1): full 1M-row run. 10M rows is
+# aspirational pending columnar storage (row-list frames grow linearly in
+# memory) — see testdata/bench/README.md.
+if [[ "${WEFT_SCALE_BIG:-0}" == "1" ]]; then
+  export WEFT_DF_ROWS=1000000
+  run_named "dataframe_1m" "testdata/bench/dataframe_scale_1m.weft" "$BUDGET_DF_1M_MS" \
+    "opt-in WEFT_SCALE_BIG=1 full million rows"
+  unset WEFT_DF_ROWS
+fi
+
 # Write final report
 if command -v "$PYTHON" >/dev/null 2>&1; then
   "$PYTHON" - "$OUT" "$RESULTS_JSONL" "$STRICT" "$overall_ok" "$budget_warnings" "$budget_failures" \
-    "$BUDGET_WARP_MATMUL_MS" "$BUDGET_WARP_ELEM_MS" "$BUDGET_DF_100K_MS" "$BUDGET_DF_250K_MS" "$BUDGET_PEAK_RSS_KB" <<'PY'
+    "$BUDGET_WARP_MATMUL_MS" "$BUDGET_WARP_ELEM_MS" "$BUDGET_DF_100K_MS" "$BUDGET_DF_250K_MS" "$BUDGET_PEAK_RSS_KB" \
+    "$BUDGET_DF_WIDE_MS" "$BUDGET_DF_JOIN_MS" <<'PY'
 import json, platform, sys
 from datetime import datetime, timezone
 
 (
     out, results_path, strict, overall_ok, warnings, failures,
-    b_warp_m, b_warp_e, b_df100, b_df250, b_rss,
-) = sys.argv[1:12]
+    b_warp_m, b_warp_e, b_df100, b_df250, b_rss, b_dfwide, b_dfjoin,
+) = sys.argv[1:14]
 
 rows = []
 with open(results_path, encoding="utf-8") as fh:
@@ -249,6 +269,8 @@ report = {
         "warp_elementwise": int(b_warp_e),
         "dataframe_100k": int(b_df100),
         "dataframe_250k": int(b_df250),
+        "dataframe_wide_100k": int(b_dfwide),
+        "dataframe_join_100k": int(b_dfjoin),
     },
     "budgets_peak_rss_kb": int(b_rss),
     "budget_policy": {

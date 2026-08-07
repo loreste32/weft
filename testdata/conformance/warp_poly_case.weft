@@ -1,0 +1,30 @@
+use "../../packages/warp/lib.weft" as warp
+use json
+
+// Polynomial helpers vs np.polyfit/polyval/polyder/polyint/roots.
+fn main -> Result {
+    r2 := warp.roots([1.0, -3.0, 2.0])
+    rc := warp.roots([1.0, 0.0, 1.0])
+    say(json.stringify({
+        "fit2": warp.to_list(warp.polyfit([0.0, 1.0, 2.0, 3.0, 4.0], [1.0, 3.0, 7.0, 13.0, 21.0], 2)),
+        "fit1": warp.to_list(warp.polyfit([0.0, 1.0, 2.0, 3.0], [1.0, 3.0, 5.0, 7.0], 1)),
+        "fit1_noisy": warp.to_list(warp.polyfit([0.0, 1.0, 2.0, 3.0, 4.0], [1.1, 2.9, 5.2, 6.8, 9.1], 1)),
+        "val": warp.to_list(warp.polyval([2.0, -3.0, 1.0], [0.0, 1.0, 2.5])),
+        "val_scalar": warp.polyval([2.0, -3.0, 1.0], 2.5),
+        "der": warp.to_list(warp.polyder([2.0, -3.0, 1.0])),
+        "der_const": warp.to_list(warp.polyder([5.0])),
+        "integ": warp.to_list(warp.polyint([2.0, -3.0, 1.0])),
+        "roots2_re": warp.to_list(r2.re),
+        "roots2_im": warp.to_list(r2.im),
+        "roots1_re": warp.to_list(warp.roots([2.0, -6.0]).re),
+        "roots_complex_re": warp.to_list(rc.re),
+        "roots_complex_im": warp.to_list(rc.im),
+        "roots_trim_re": warp.to_list(warp.roots([0.0, 1.0, 2.0]).re),
+        "roots_const_re": warp.to_list(warp.roots([5.0]).re),
+        // Weft-only contracts: NumPy computes degree-3 roots and warns (not
+        // raises) on underdetermined fits; warp is explicit instead.
+        "roots_deg3_unsupported": !warp.roots([1.0, 0.0, -1.0, 0.0]).ok,
+        "polyfit_underdetermined_err": !warp.polyfit([0.0, 1.0], [1.0, 2.0], 2).ok,
+        "polyfit_mismatch_err": !warp.polyfit([0.0, 1.0, 2.0], [1.0], 1).ok,
+    }))
+}

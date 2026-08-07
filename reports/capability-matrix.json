@@ -1,7 +1,7 @@
 {
   "format": "weft.capability.matrix",
   "version": 1,
-  "generated_at": "2026-08-04T16:42:16Z",
+  "generated_at": "2026-08-07T19:37:27Z",
   "honesty": "Statuses are conservative. implemented \u2260 complete NumPy/pandas/ML framework parity. See docs/COMPATIBILITY.md.",
   "status_vocabulary": {
     "implemented": "Present and covered at smoke/semantics level for the claim",
@@ -9,21 +9,21 @@
     "unsupported": "Not implemented or deliberately out of scope for replacement claims"
   },
   "export_counts": {
-    "warp": 155,
-    "dataframe": 115,
-    "ml": 84
+    "warp": 204,
+    "dataframe": 134,
+    "ml": 114
   },
   "exports": {
     "warp": {
-      "count": 155,
+      "count": 204,
       "package_path": "packages/warp/weft.json"
     },
     "dataframe": {
-      "count": 115,
+      "count": 134,
       "package_path": "packages/dataframe/weft.json"
     },
     "ml": {
-      "count": 84,
+      "count": 114,
       "package_path": "packages/ml/weft.json"
     }
   },
@@ -56,7 +56,19 @@
       "area": "warp",
       "claim": "reductions (sum/mean/min/max/axis)",
       "status": "implemented",
-      "notes": "Axis opts partial (keepdims yes; where/initial/out no)"
+      "notes": "Axis opts: keepdims/initial/where/ddof yes; out no"
+    },
+    {
+      "area": "warp",
+      "claim": "statistics extras (histogram/bincount/cov/corrcoef/average/quantile)",
+      "status": "implemented",
+      "notes": "NumPy half-open histogram with closed last bin; ddof=1 cov/corrcoef; linear-interpolation quantile"
+    },
+    {
+      "area": "warp",
+      "claim": "polynomial + searching helpers (polyfit/polyval/roots/searchsorted/digitize)",
+      "status": "partial",
+      "notes": "Normal-equations polyfit (no SVD centering/scaling); analytic roots degree <= 2 only; 1-D searchsorted/digitize assume sorted/monotonic input"
     },
     {
       "area": "warp",
@@ -74,7 +86,13 @@
       "area": "warp",
       "claim": "1D FFT / IFFT / fft_freq",
       "status": "partial",
-      "notes": "1D only; power-of-2 Cooley\u2013Tukey or naive; not multi-dim/sparse/masked"
+      "notes": "1D only; rfft/irfft/rfft_freq/fftshift/ifftshift included; power-of-2 Cooley\u2013Tukey or naive; not multi-dim/sparse/masked"
+    },
+    {
+      "area": "warp",
+      "claim": "seeded RNG (default_rng)",
+      "status": "partial",
+      "notes": "Deterministic per seed, independent generators; combined L'Ecuyer MRG, not PCG64 \u2014 no NumPy bit parity"
     },
     {
       "area": "warp",
@@ -102,15 +120,15 @@
     },
     {
       "area": "dataframe",
-      "claim": "from_rows / from_columns / CSV/JSON I/O",
+      "claim": "from_rows / from_columns / CSV/JSON/SQL I/O",
       "status": "implemented",
-      "notes": "Row-list storage; quoted CSV"
+      "notes": "Row-list storage; quoted CSV; from_csv_opts/read_csv_opts dtype+null policies; read_sql/to_sql SQLite bridge via stdlib db (quoted identifiers, bound params)"
     },
     {
       "area": "dataframe",
       "claim": "filter / query / sort / head/tail/iloc",
       "status": "implemented",
-      "notes": "iloc scalar/list; not full .loc label engine"
+      "notes": "iloc scalar/list; loc_label/loc_set/iloc_set give label selection + assignment with pandas-observed broadcasting; positional loc kept for compat"
     },
     {
       "area": "dataframe",
@@ -138,9 +156,9 @@
     },
     {
       "area": "dataframe",
-      "claim": "pivot / melt / rolling / expanding",
+      "claim": "pivot / melt / rolling / expanding / ewm",
       "status": "implemented",
-      "notes": "Present; window ops limited vs pandas"
+      "notes": "rolling+expanding over sum/mean/count/min/max/first/last/std/var; ewm_mean/sum/var/std with alpha/span/halflife, adjust, ignore_na, bias matched to pandas 3.0 recursions (ewm_sum adjust=true only, as pandas); resample still open"
     },
     {
       "area": "dataframe",
@@ -192,15 +210,27 @@
     },
     {
       "area": "ml",
-      "claim": "SGD / Adam optimizers",
+      "claim": "forward-mode autodiff (dual numbers / JVP)",
       "status": "implemented",
-      "notes": "Scalar + Warp parameters"
+      "notes": "Exact jvp/jacobian/derivative over scalars + warp arrays; jacobian costs one evaluation per input; nested duals give scalar second derivatives; three-way checked vs reverse mode + gradcheck"
     },
     {
       "area": "ml",
-      "claim": "modules (linear/relu/sequential) + checkpoints",
+      "claim": "SGD / Adam optimizers",
       "status": "implemented",
-      "notes": "Advisory; not PyTorch parity"
+      "notes": "Scalar + Warp parameters; skip frozen params; grad clipping (global-norm PyTorch formula + elementwise value)"
+    },
+    {
+      "area": "ml",
+      "claim": "modules (linear/activations/sequential) + checkpoints",
+      "status": "implemented",
+      "notes": "linear + relu/sigmoid/tanh/gelu/softmax; advisory; not PyTorch parity; named freeze/unfreeze; v2 checkpoints resume bit-identically (weights + Adam state + epoch)"
+    },
+    {
+      "area": "ml",
+      "claim": "differentiable losses + LR schedules + seeded batching",
+      "status": "implemented",
+      "notes": "mse/bce/cross-entropy/huber gradchecked; step/exponential/cosine LR; seeded shuffle + drop_last batches"
     },
     {
       "area": "ml",
@@ -228,8 +258,8 @@
     }
   ],
   "counts": {
-    "implemented": 16,
-    "partial": 11,
+    "implemented": 19,
+    "partial": 13,
     "unsupported": 6
   }
 }

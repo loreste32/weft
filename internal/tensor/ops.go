@@ -354,15 +354,15 @@ func broadcastValue(t *Tensor, outIndex, outShape []int) (any, error) {
 }
 
 // promoteDType mirrors NumPy 2.x type promotion (np.promote_types) for the
-// supported dtype set: bool, int8-64, uint8-64, float32/64. Keep it in sync
-// with _promote_dtype in packages/warp/lib.weft; TestPromoteDTypeNumPyMatrix
-// locks the full 11x11 matrix against the NumPy oracle.
+// supported dtype set: bool, int8-64, uint8-64, float16/32/64. Keep it in
+// sync with _promote_dtype in packages/warp/lib.weft; TestPromoteDTypeNumPyMatrix
+// locks the full 12x12 matrix against the NumPy oracle.
 func promoteDType(a, b DType) DType {
 	if a == b {
 		return a
 	}
-	// float64 dominates everything; float32 survives only against bool and
-	// integers of 16 bits or fewer.
+	// float64 dominates everything; float32 survives only against bool,
+	// float16, and integers of 16 bits or fewer.
 	if a == Float64 || b == Float64 {
 		return Float64
 	}
@@ -376,6 +376,22 @@ func promoteDType(a, b DType) DType {
 			return Float64
 		default:
 			return Float32
+		}
+	}
+	// float16 survives only against bool and 8-bit integers; 16-bit integers
+	// promote to float32 and wider integers to float64.
+	if a == Float16 || b == Float16 {
+		other := a
+		if a == Float16 {
+			other = b
+		}
+		switch other {
+		case Int16, UInt16:
+			return Float32
+		case Int32, Int64, UInt32, UInt64:
+			return Float64
+		default:
+			return Float16
 		}
 	}
 	// bool mixed with a non-float dtype adopts the other operand's dtype.
@@ -481,6 +497,8 @@ func castToDType(value any, dtype DType) any {
 		return uint64(truncTowardZero(f))
 	case Float32:
 		return float32(f)
+	case Float16:
+		return float32(Float16ToFloat64(Float16FromFloat64(f)))
 	default:
 		return f
 	}

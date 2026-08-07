@@ -23,6 +23,7 @@ const (
 	UInt16  DType = "uint16"
 	UInt32  DType = "uint32"
 	UInt64  DType = "uint64"
+	Float16 DType = "float16"
 	Float32 DType = "float32"
 	Float64 DType = "float64"
 )
@@ -37,7 +38,7 @@ func (d DType) ItemSize() int {
 	switch d {
 	case Bool, Int8, UInt8:
 		return 1
-	case Int16, UInt16:
+	case Int16, UInt16, Float16:
 		return 2
 	case Int32, UInt32, Float32:
 		return 4
@@ -282,6 +283,8 @@ func (t *Tensor) Value(indices ...int) (any, error) {
 		return binary.LittleEndian.Uint64(t.storage[offset : offset+8]), nil
 	case Float32:
 		return math.Float32frombits(binary.LittleEndian.Uint32(t.storage[offset : offset+4])), nil
+	case Float16:
+		return float32(Float16ToFloat64(binary.LittleEndian.Uint16(t.storage[offset : offset+2]))), nil
 	case Float64:
 		return math.Float64frombits(binary.LittleEndian.Uint64(t.storage[offset : offset+8])), nil
 	default:
@@ -463,6 +466,12 @@ func (t *Tensor) setElement(position int64, value any) error {
 			return fmt.Errorf("cannot store %T in float32 tensor", value)
 		}
 		binary.LittleEndian.PutUint32(t.storage[offset:offset+4], math.Float32bits(float32(v)))
+	case Float16:
+		v, ok := numericFloat64(value)
+		if !ok {
+			return fmt.Errorf("cannot store %T in float16 tensor", value)
+		}
+		binary.LittleEndian.PutUint16(t.storage[offset:offset+2], Float16FromFloat64(v))
 	case Float64:
 		v, ok := numericFloat64(value)
 		if !ok {

@@ -84,29 +84,30 @@ func TestFromListToListRoundTrip(t *testing.T) {
 
 // numpyPromotionMatrix is the NumPy 2.4.3 np.promote_types result for every
 // ordered pair of the supported dtypes, indexed by
-// [bool,int8,int16,int32,int64,uint8,uint16,uint32,uint64,float32,float64].
+// [bool,int8,int16,int32,int64,uint8,uint16,uint32,uint64,float16,float32,float64].
 // Generated from the pinned conformance venv; regenerate with:
 //
-//	python3 -c 'import numpy as np; ds=["bool","int8","int16","int32","int64","uint8","uint16","uint32","uint64","float32","float64"]; print([[np.promote_types(a,b).name for b in ds] for a in ds])'
+//	python3 -c 'import numpy as np; ds=["bool","int8","int16","int32","int64","uint8","uint16","uint32","uint64","float16","float32","float64"]; print([[np.promote_types(a,b).name for b in ds] for a in ds])'
 //
 // The Weft-side _promote_dtype in packages/warp/lib.weft must agree with this
 // table; scripts/conformance/run.py locks that path against NumPy directly.
-var numpyPromotionMatrix = [11][11]DType{
-	{Bool, Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, Float64},
-	{Int8, Int8, Int16, Int32, Int64, Int16, Int32, Int64, Float64, Float32, Float64},
-	{Int16, Int16, Int16, Int32, Int64, Int16, Int32, Int64, Float64, Float32, Float64},
-	{Int32, Int32, Int32, Int32, Int64, Int32, Int32, Int64, Float64, Float64, Float64},
-	{Int64, Int64, Int64, Int64, Int64, Int64, Int64, Int64, Float64, Float64, Float64},
-	{UInt8, Int16, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, Float64},
-	{UInt16, Int32, Int32, Int32, Int64, UInt16, UInt16, UInt32, UInt64, Float32, Float64},
-	{UInt32, Int64, Int64, Int64, Int64, UInt32, UInt32, UInt32, UInt64, Float64, Float64},
-	{UInt64, Float64, Float64, Float64, Float64, UInt64, UInt64, UInt64, UInt64, Float64, Float64},
-	{Float32, Float32, Float32, Float64, Float64, Float32, Float32, Float64, Float64, Float32, Float64},
-	{Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64},
+var numpyPromotionMatrix = [12][12]DType{
+	{Bool, Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float16, Float32, Float64},
+	{Int8, Int8, Int16, Int32, Int64, Int16, Int32, Int64, Float64, Float16, Float32, Float64},
+	{Int16, Int16, Int16, Int32, Int64, Int16, Int32, Int64, Float64, Float32, Float32, Float64},
+	{Int32, Int32, Int32, Int32, Int64, Int32, Int32, Int64, Float64, Float64, Float64, Float64},
+	{Int64, Int64, Int64, Int64, Int64, Int64, Int64, Int64, Float64, Float64, Float64, Float64},
+	{UInt8, Int16, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float16, Float32, Float64},
+	{UInt16, Int32, Int32, Int32, Int64, UInt16, UInt16, UInt32, UInt64, Float32, Float32, Float64},
+	{UInt32, Int64, Int64, Int64, Int64, UInt32, UInt32, UInt32, UInt64, Float64, Float64, Float64},
+	{UInt64, Float64, Float64, Float64, Float64, UInt64, UInt64, UInt64, UInt64, Float64, Float64, Float64},
+	{Float16, Float16, Float32, Float64, Float64, Float16, Float32, Float64, Float64, Float16, Float32, Float64},
+	{Float32, Float32, Float32, Float64, Float64, Float32, Float32, Float64, Float64, Float32, Float32, Float64},
+	{Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64},
 }
 
 func TestPromoteDTypeNumPyMatrix(t *testing.T) {
-	dtypes := []DType{Bool, Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, Float64}
+	dtypes := []DType{Bool, Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float16, Float32, Float64}
 	for i, a := range dtypes {
 		for j, b := range dtypes {
 			if got := promoteDType(a, b); got != numpyPromotionMatrix[i][j] {

@@ -11,9 +11,11 @@
 #
 # Exit codes:
 #   0  — CPU reference path ok (built + health/identity/matmul/tensor tests
-#        pass + execution reporting classified "honest")
-#   1  — CPU path failed (compile, load, numerical/conformance failure, or
-#        missing/contradictory device/fallback reporting)
+#        pass + per-op manifest coverage passes + execution reporting
+#        classified "honest")
+#   1  — CPU path failed (compile, load, numerical/conformance failure, a
+#        declared op failing its coverage probe, or missing/contradictory
+#        device/fallback reporting)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -58,6 +60,8 @@ json_test="skipped"
 tensor_test="skipped"
 tensor_add_test="skipped"
 reporting_test="skipped"
+coverage_test="skipped"
+coverage_ops=""
 reporting="not_run"
 health_ok=false
 identity_ok=false
@@ -85,6 +89,14 @@ tensor_add_rc=$?
     -run '^TestExternalProviderReporting$' -count=1 -timeout=60s \
     >"${tmpdir}/reporting_test.out" 2>&1
   reporting_rc=$?
+  # Per-op coverage gate: every tensor op the provider declares in its
+  # manifest is probed through RunTensor. A declared op that errors (or is
+  # declared but unimplemented) fails here. Verbose output carries one
+  # "OP_COVERED <op>" line per passing op for the report.
+  WEFT_ACCELERATOR_PLUGIN="$cpu_path" go test ./internal/accelerator \
+    -run '^TestExternalProviderTensorCoverage$' -count=1 -timeout=60s -v \
+    >"${tmpdir}/coverage_test.out" 2>&1
+  coverage_rc=$?
   set -e
 
   if [[ $json_rc -eq 0 ]]; then
@@ -142,13 +154,26 @@ if [[ "$cpu_status" == "built" ]]; then
       cpu_detail=$(tr '\n' ' ' <"${tmpdir}/reporting_test.out" | head -c 400)
     fi
   fi
+
+  # Per-op coverage: a provider whose manifest declares ops that fail their
+  # probes is classified failed, and the passing op set is recorded.
+  if [[ $coverage_rc -eq 0 ]]; then
+    coverage_test="passed"
+    coverage_ops=$(grep -o 'OP_COVERED [A-Za-z0-9_]*' "${tmpdir}/coverage_test.out" \
+      | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')
+  else
+    coverage_test="failed"
+    if [[ "$json_test" == "passed" && "$tensor_test" == "passed" && "$tensor_add_test" == "passed" && "$reporting" == "honest" ]]; then
+      cpu_detail=$(tr '\n' ' ' <"${tmpdir}/coverage_test.out" | head -c 400)
+    fi
+  fi
 fi
 
 # Overall CPU path status. Reporting is part of conformance: a provider that
 # runs correctly but does not say where it ran does not pass.
 cpu_conformance="skipped"
 if [[ "$cpu_status" == "built" ]]; then
-if [[ "$json_test" == "passed" && "$tensor_test" == "passed" && "$tensor_add_test" == "passed" && "$reporting" == "honest" ]]; then
+if [[ "$json_test" == "passed" && "$tensor_test" == "passed" && "$tensor_add_test" == "passed" && "$coverage_test" == "passed" && "$reporting" == "honest" ]]; then
     cpu_conformance="passed"
   else
     cpu_conformance="failed"
@@ -171,7 +196,7 @@ python3 - "$OUT" \
   "$health_ok" "$identity_ok" "$matmul_ok" "$tensor_ok" "$tensor_add_ok" \
   "$cpu_fallback" \
   "$cuda_status" "$rocm_status" "$mlx_status" \
-  "$reporting" "$reporting_test" <<'PY'
+  "$reporting" "$reporting_test" "$coverage_test" "$coverage_ops" <<'PY'
 import json, platform, shutil, subprocess, sys
 from datetime import datetime, timezone
 
@@ -194,7 +219,9 @@ from datetime import datetime, timezone
     mlx_status,
     reporting,
     reporting_test,
-) = sys.argv[1:19]
+    coverage_test,
+    coverage_ops,
+) = sys.argv[1:21]
 
 def which(name):
     return shutil.which(name)
@@ -237,6 +264,14 @@ report = {
     "tensor_ops": tensor_test,
     "tensor_add_ops": tensor_add_test,
     "reporting_ops": reporting_test,
+    "coverage_ops": coverage_test,
+        },
+        # Per-op manifest coverage: every tensor op the provider declares was
+        # probed through RunTensor; ops_passed is the set that passed. A
+        # declared op that fails its probe fails conformance above.
+        "coverage": {
+            "test": coverage_test,
+            "ops_passed": coverage_ops.split() if coverage_ops.strip() else [],
         },
     },
     "vendors": {
@@ -276,6 +311,7 @@ with open(out, "w", encoding="utf-8") as fh:
 print(out)
 print(f"cpu_reference: status={cpu_status} conformance={cpu_conformance} reporting={reporting}")
 print(f"  json_ops={json_test} tensor_ops={tensor_test} fallback={cpu_fallback}")
+print(f"  coverage={coverage_test} ops=[{coverage_ops}]")
 print(f"vendors: cuda={cuda_status} rocm={rocm_status} mlx={mlx_status}")
 PY
 

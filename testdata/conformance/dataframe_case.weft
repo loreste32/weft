@@ -32,6 +32,13 @@ fn main -> Result {
     left_series := df.series([10, 20], "value", ["a", "b"])
     right_series := df.series([1, 3], "other", ["b", "c"])
     aligned := df.series_add(left_series, right_series, null)
+    ew_source := df.from_rows([
+        {"x": 1}, {"x": 2}, {"x": null}, {"x": 4}, {"x": 5},
+    ])
+    ewma_adjust := df.ewm_mean(ew_source, "x", {"alpha": 0.5})
+    ewma_recursive := df.ewm_mean(ew_source, "x", {"alpha": 0.5, "adjust": false, "ignore_na": true})
+    ewmv := df.ewm_var(ew_source, "x", {"span": 3})
+    ewms := df.ewm_sum(ew_source, "x", {"halflife": 1})
     say(json.stringify({
         "columns": df.columns(source),
         "sorted_names": df.col(sorted, "name"),
@@ -44,5 +51,9 @@ fn main -> Result {
         "pivot": df.rows(pivoted),
         "aligned_index": df.series_index(aligned),
         "aligned_values": df.series_values(aligned),
+        "ewma_adjust": df.col(ewma_adjust, "x"),
+        "ewma_recursive": df.col(ewma_recursive, "x"),
+        "ewm_var": df.col(ewmv, "x"),
+        "ewm_sum": df.col(ewms, "x"),
     }))
 }

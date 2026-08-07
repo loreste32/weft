@@ -1,0 +1,65 @@
+use "../../packages/warp/lib.weft" as warp
+use json
+
+// Seeded-RNG conformance. Cross-implementation bit parity with
+// np.random.default_rng is impossible (warp uses a combined L'Ecuyer MRG, not
+// PCG64), so this fixture locks only deterministic properties: per-seed
+// reproducibility against hard-coded draws from the current algorithm,
+// independence between generators, coverage of shuffle/permutation/choice,
+// and wide distribution-shape bounds. See docs/COMPATIBILITY.md.
+fn main -> Result {
+    g := warp.default_rng(42)
+    r := g.random
+    draws := warp.to_list(r([4]))
+    n := g.normal
+    normals := warp.to_list(n([3]))
+    i := g.integers
+    ints := warp.to_list(i(0, 100, [5]))
+    s := g.shuffle
+    shuffled := s([1, 2, 3, 4, 5, 6])
+    p := g.permutation
+    perm := warp.to_list(p(8))
+    c := g.choice
+    picks := c([10, 20, 30, 40, 50], 3)
+
+    // A second generator with the same seed replays the identical stream even
+    // after the first generator advanced, and a different seed diverges.
+    g_same := warp.default_rng(42)
+    rs := g_same.random
+    replay := warp.to_list(rs([4]))
+    g_diff := warp.default_rng(43)
+    rd := g_diff.random
+    divergent := warp.to_list(rd([4]))
+
+    // Distribution smoke on a large seeded sample (deterministic bounds).
+    big := warp.default_rng(20240817)
+    br := big.random
+    u := br([4000])
+    bn := big.normal
+    z := bn([4000])
+    um := warp.mean(u)
+    us := warp.std_(u)
+    zm := warp.mean(z)
+    zs := warp.std_(z)
+
+    say(json.stringify({
+        "draws_replay_equal": draws == replay,
+        "draws_seed_diverges": draws != divergent,
+        // Algorithm lock: first draws for seed 42 (regeneration requires a
+        // deliberate PRNG change, not an accidental one).
+        "locked_uniform": draws == [0.6697857398222145, 0.8136352254818167, 0.03826974670073412, 0.12866038500151258],
+        "locked_normal": normals == [0.27451246671770335, -1.4588011241880954, 0.17882972367911734],
+        "locked_integers": ints == [68, 90, 68, 46, 54],
+        "locked_shuffle": shuffled == [6, 2, 4, 5, 1, 3],
+        "locked_permutation": perm == [6, 0, 3, 4, 7, 2, 5, 1],
+        "locked_choice": picks == [40, 30, 10],
+        "shuffle_is_permutation": warp.to_list(warp.sort(warp.array(shuffled, [6]))) == [1, 2, 3, 4, 5, 6],
+        "permutation_covers": warp.to_list(warp.sort(warp.array(perm, [8]))) == [0, 1, 2, 3, 4, 5, 6, 7],
+        "choice_distinct": picks[0] != picks[1] && picks[1] != picks[2] && picks[0] != picks[2],
+        "integers_in_bounds": warp.min_(warp.array(ints, [5])) >= 0 && warp.max_(warp.array(ints, [5])) < 100,
+        "uniform_mean_in_bounds": um > 0.47 && um < 0.53,
+        "uniform_std_in_bounds": us > 0.27 && us < 0.31,
+        "normal_mean_in_bounds": zm > -0.1 && zm < 0.1,
+        "normal_std_in_bounds": zs > 0.92 && zs < 1.08,
+    }))
+}

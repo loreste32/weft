@@ -2,9 +2,10 @@ use "../../packages/warp/lib.weft" as warp
 use json
 
 // Exhaustive dtype promotion differential vs np.promote_types (NumPy 2.x):
-// every ordered pair of the 11 supported dtypes, plus representative
+// every ordered pair of the 12 supported dtypes, plus representative
 // range-checked casting cases (overflow -> Err, negative -> unsigned -> Err,
-// float -> int truncation toward zero, bool mixing).
+// float -> int truncation toward zero, bool mixing) and float16 rounding
+// semantics (round-to-nearest-even, overflow -> inf, subnormal flush).
 fn _cast_ok(data, dtype_name) {
     r := warp.array_typed(data, [len(data)], dtype_name)
     if is_err(r) { false } else { true }
@@ -25,9 +26,9 @@ fn main -> Result {
     f32_f64 := warp.add(f32, f64)
     bool_f32 := warp.add(bools, f32_half)
 
-    // Full 11x11 promotion matrix: add of two 1-element typed arrays exposes
+    // Full 12x12 promotion matrix: add of two 1-element typed arrays exposes
     // the promoted result dtype through warp.dtype.
-    dtypes := ["bool", "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "float32", "float64"]
+    dtypes := ["bool", "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "float16", "float32", "float64"]
     let mut promoted = {}
     for a in dtypes {
         for b in dtypes {
@@ -44,6 +45,15 @@ fn main -> Result {
 
     trunc := warp.array_typed([2.7, -2.7], [2], "int8")
     bool_cast := warp.array_typed([0, 2], [2], "bool")
+
+    // float16: values are stored rounded to binary16 (round-to-nearest-even)
+    // exactly like np.float16; overflow produces ±inf rather than an Err.
+    f16 := warp.array_typed([0.1, 1.5, 65504.0, 2048.0001], [4], "float16")
+    f16_sub := warp.array_typed([5.960464477539063e-08, 2.9802322387695312e-08, 8.940696716308594e-08, 1.0e-10], [4], "float16")
+    f16_ties := warp.array_typed([1.00048828125, 1.00146484375, 0.999755859375, 0.9996337890625], [4], "float16")
+    f16_over := warp.array_typed([1.0e10, -1.0e10, 65519.0, 65520.0], [4], "float16")
+    f16_sum := warp.add(warp.array_typed([0.1], [1], "float16"), warp.array_typed([0.2], [1], "float16"))
+    f16_roundtrip := warp.astype(warp.astype(warp.array_typed([0.1, 1.5, 65504.0, 2048.0001], [4], "float64"), "float16"), "float64")
 
     say(json.stringify({
         "bool_plus_int64_dtype": warp.dtype(bool_int),
@@ -70,5 +80,19 @@ fn main -> Result {
         "float_to_int8_trunc_dtype": warp.dtype(trunc),
         "bool_cast": bool_cast.data,
         "bool_cast_dtype": warp.dtype(bool_cast),
+        "float16_dtype": warp.dtype(f16),
+        "float16_itemsize": warp.itemsize(f16),
+        "float16_round": f16.data,
+        "float16_subnormal": f16_sub.data,
+        "float16_ties": f16_ties.data,
+        "float16_overflow_pos_inf": math.isinf(f16_over.data[0]) && f16_over.data[0] > 0,
+        "float16_overflow_neg_inf": math.isinf(f16_over.data[1]) && f16_over.data[1] < 0,
+        "float16_below_max": f16_over.data[2],
+        "float16_midpoint_inf": math.isinf(f16_over.data[3]),
+        "float16_sum": f16_sum.data,
+        "float16_sum_dtype": warp.dtype(f16_sum),
+        "float16_int_scalar_dtype": warp.dtype(warp.add(f16, 1)),
+        "float16_roundtrip": f16_roundtrip.data,
+        "float16_roundtrip_dtype": warp.dtype(f16_roundtrip),
     }))
 }

@@ -1,0 +1,16 @@
+use warp
+
+fn main -> Result {
+    x0 := warp.array([-1.0], [1])
+    e0 := warp.full([1], 1.0)
+    m0 := warp.mul(x0, x0)
+    v0 := warp.add(2.0, m0)
+    y0 := warp.mul(v0, v0)
+    n0 := warp.mul(e0, x0)
+    say("n0.data:", n0.data, " types:", type_of(n0.data[0]))
+    say("y0.data:", y0.data, " types:", type_of(y0.data[0]))
+    say("x0.data:", x0.data, " types:", type_of(x0.data[0]))
+    say("e0.data:", e0.data, " types:", type_of(e0.data[0]))
+    say("v0.data:", v0.data, " types:", type_of(v0.data[0]))
+    say("n0 / y0 manual:", n0.data[0] / y0.data[0])
+}

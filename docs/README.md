@@ -80,6 +80,18 @@ weft get mold
 
 ---
 
+## Numerical, data, and ML workflows
+
+| Topic | Doc | Scope |
+|-------|-----|-------|
+| NumPy-style arrays | [ML.md](ML.md) · [`packages/warp/`](../packages/warp/) | Broadcasting, reductions, linear algebra, FFTs, dtypes, and explicit accelerator dispatch |
+| DataFrames | [DATAFRAME.md](DATAFRAME.md) · [`packages/dataframe/`](../packages/dataframe/) | Null-aware tabular operations, joins, windows, CSV/JSON/SQL, and documented pandas boundaries |
+| Classical ML and autodiff | [ML.md](ML.md) · [`packages/ml/`](../packages/ml/) | Linear/logistic models, minibatches, optimizers, forward/reverse autodiff, and selected higher-order tests |
+| Native CUDA, ROCm, and MLX | [ACCELERATORS.md](ACCELERATORS.md) · [native ABI](../native/accelerator/README.md) | Capability-gated plugins with explicit device/fallback reporting; hardware claims require provider conformance |
+| Compatibility boundaries | [COMPATIBILITY.md](COMPATIBILITY.md) | What is implemented, partial, unsupported, or still release-gated |
+
+These modules cover supported Weft workflows; they are not a claim of drop-in compatibility with every NumPy, pandas, or deep-learning API. Use the compatibility and accelerator documents when making production or hardware-specific claims.
+
 ## Web, data, ops
 
 | Topic | Doc |

@@ -77,6 +77,41 @@ Status vocabulary used in the JSON report:
 | `passed` | Conformance checks succeeded |
 | `skipped` | Conformance skipped because the provider was not built |
 
+## Operation coverage
+
+The binary tensor ABI (`weft_accel_run_tensor`) transports dtype (11 fixed
+codes), rank, shape, element strides, byte length, and data — so strided and
+broadcast layouts are representable on the wire. What each provider actually
+covers is a separate, manifest-declared claim, and the conformance gate
+checks it per op: `TestExternalProviderTensorCoverage` probes every `tensor_*`
+operation a manifest declares through `RunTensor` and fails the provider if a
+declared op errors (declared-but-missing is a lie). The passing op set is
+recorded in `reports/accelerator-conformance.json` under
+`cpu_reference.coverage.ops_passed`.
+
+Current coverage:
+
+| Operation | CPU reference | Vendor (CUDA / ROCm / MLX) |
+|-----------|---------------|-----------------------------|
+| `tensor_matmul` | float64 rank-2 | float32 rank-2 |
+| `tensor_add` / `tensor_sub` / `tensor_mul` / `tensor_div` | float32 + float64, same-shape, rank 1–2 | float32, same-shape, rank 1–2 |
+| `tensor_sum` (full reduction → rank-0, NumPy `np.sum` semantics) | float32 + float64, rank 1–2 | not declared |
+
+Deliberate non-claims (providers reject these with explicit errors rather
+than silent approximations):
+
+- **Broadcasting.** Elementwise ops are strictly same-shape. The ABI can
+  transport broadcastable layouts via strides, but no provider implements
+  trailing-dimension broadcasting yet; a wrong broadcast is worse than a
+  clear rejection.
+- **Axis reductions.** `tensor_sum` is full-reduction only; no `axis` /
+  `keepdims` parameter exists in the ABI.
+- **Convolutions, RNG, and linalg beyond `matmul`** (solve, svd, eig, …) are
+  not transported by any declared operation.
+- **`tensor_sum` on vendors** stays out of the CUDA/ROCm/MLX manifests until
+  a parallel reduction is validated on real hardware; the vendor provider
+  diffs are compile-unverified on hosts without their SDKs.
+
 ## Env trust model (summary)
 
 Native providers are **trusted host code**. `dlopen` loads them into the Weft
@@ -152,9 +187,12 @@ results when available.
 ### What “green” means
 
 The current vendor provider contract includes JSON matmul plus bounded,
-same-shape contiguous binary `tensor_matmul` and `tensor_add` for float32
-rank-1/rank-2 tensors. Broadcasting and other elementwise operations remain
-separate coverage claims.
+same-shape contiguous binary `tensor_matmul` and elementwise `tensor_add` /
+`tensor_sub` / `tensor_mul` / `tensor_div` for float32 rank-1/rank-2 tensors.
+The CPU reference additionally covers those elementwise ops in float64 and
+full-reduction `tensor_sum` (rank-0 output). Broadcasting, axis reductions,
+conv, RNG, and linalg beyond matmul remain separate coverage claims — see
+"Operation coverage" above.
 
 - CPU reference provider: `built` + conformance `passed` on ordinary CI hosts.
 - Vendor providers on hosts without the SDK/device: `unavailable` / `not_run` —
@@ -174,10 +212,12 @@ claims need self-hosted jobs.
 
 - [ ] `make accelerator-conformance` — CPU reference builds; `health`,
       `identity`, `matmul`, and `tensor_matmul` pass under
-      `WEFT_ACCELERATOR_PLUGIN`; the adversarial reporting gate
-      (`TestExternalProviderReporting`) classifies the provider `honest`;
-      report records `fallback: false` and `reporting: "honest"` for the CPU
-      reference.
+      `WEFT_ACCELERATOR_PLUGIN`; the per-op coverage gate
+      (`TestExternalProviderTensorCoverage`) passes every tensor op the
+      manifest declares and records the op set in the report; the adversarial
+      reporting gate (`TestExternalProviderReporting`) classifies the
+      provider `honest`; report records `fallback: false` and
+      `reporting: "honest"` for the CPU reference.
 - [ ] `make accelerator-report` / `make publish-accelerator-report` — vendors
       without toolchains show `unavailable` / `not_run` (not a failure).
 - [ ] `make capability-matrix` — refresh `reports/capability-matrix.md`; no

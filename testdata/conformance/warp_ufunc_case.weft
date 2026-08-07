@@ -1,0 +1,46 @@
+use "../../packages/warp/lib.weft" as warp
+use json
+
+fn main -> Result {
+    // Element-wise ufunc parity with NumPy (exact binary-friendly values).
+    h := warp.hypot(warp.array([3.0, 4.0], [2]), warp.array([4.0, 3.0], [2]))
+    e := warp.expm1(warp.array([1.0e-10, 1.0, -1.0, 0.25, -0.25], [5]))
+    l := warp.log1p(warp.array([1.0e-10, 1.0, -0.5, 0.0], [4]))
+    fd_int := warp.floor_divide(warp.array([-7, 7, -7, 7], [4]), warp.array([2, 2, -2, -2], [4]))
+    fd_float := warp.floor_divide(warp.array([-7.5, 7.5], [2]), warp.array([2.0, -2.0], [2]))
+    fd_zero_int := warp.floor_divide(warp.array([1, 2], [2]), warp.array([0, 2], [2]))
+    fd_zero_float := warp.floor_divide(warp.array([1.0], [1]), warp.array([0.0], [1]))
+    rem_int := warp.remainder(warp.array([-7, 7, -7, 7], [4]), warp.array([3, 3, -3, -3], [4]))
+    rem_float := warp.remainder(warp.array([-7.5, 7.5], [2]), warp.array([2.0, -2.0], [2]))
+    rem_zero_float := warp.remainder(warp.array([1.0], [1]), warp.array([0.0], [1]))
+    sq := warp.square(warp.array([-3, 2], [2]))
+    rec := warp.reciprocal(warp.array([4.0, -0.5], [2]))
+    d2r := warp.deg2rad(warp.array([0.0, 90.0, 180.0], [3]))
+    r2d := warp.rad2deg(warp.array([1.5707963267948966, 3.141592653589793], [2]))
+    cs := warp.copysign(warp.array([2.0, -2.0, 2.0], [3]), warp.array([-1.0, -1.0, 1.0], [3]))
+    ri := warp.rint(warp.array([0.5, 1.5, 2.5, -0.5, -1.5, -2.5, 2.3, 2.7], [8]))
+    fd0 := warp.to_list(fd_zero_float)[0]
+    rem0 := warp.to_list(rem_zero_float)[0]
+    say(json.stringify({
+        "hypot": warp.to_list(h),
+        "hypot_dtype": warp.dtype(h),
+        "expm1": warp.to_list(e),
+        "log1p": warp.to_list(l),
+        "floor_divide_int": warp.to_list(fd_int),
+        "floor_divide_int_dtype": warp.dtype(fd_int),
+        "floor_divide_float": warp.to_list(fd_float),
+        "floor_divide_zero_int": warp.to_list(fd_zero_int),
+        "floor_divide_zero_float_isinf": fd0 == math.inf,
+        "remainder_int": warp.to_list(rem_int),
+        "remainder_float": warp.to_list(rem_float),
+        "remainder_zero_float_isnan": rem0 != rem0,
+        "square": warp.to_list(sq),
+        "square_dtype": warp.dtype(sq),
+        "reciprocal": warp.to_list(rec),
+        "deg2rad": warp.to_list(d2r),
+        "rad2deg": warp.to_list(r2d),
+        "copysign": warp.to_list(cs),
+        "rint": warp.to_list(ri),
+        "rint_dtype": warp.dtype(ri),
+    }))
+}

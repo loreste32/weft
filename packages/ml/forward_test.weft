@@ -1,0 +1,327 @@
+use "./lib.weft" as ml
+use warp
+use math
+
+// Forward-mode (dual number) autodiff tests. The core is three-way agreement:
+// forward-mode jvp/derivative, reverse-mode backward gradients, and gradcheck
+// finite differences must all agree, which catches a wrong chain-rule term in
+// either mode.
+
+fn test_dual_constructor_and_accessors {
+    d := ml.dual(2.0, 1.0)?
+    test.is_true(ml.is_dual(d))
+    test.is_true(!ml.is_dual(2.0))
+    test.approx(ml.dual_value(d)?, 2.0, 1e-12)
+    test.approx(ml.dual_derivative(d)?, 1.0, 1e-12)
+    // Array value with a numeric tangent broadcasts the tangent.
+    a := ml.dual(warp.array([1.0, 2.0], [2]), 1.0)?
+    test.eq(warp.to_list(ml.dual_derivative(a)?), [1.0, 1.0])
+}
+
+fn test_dual_rejects_invalid_inputs {
+    test.eq(ml.dual("nope", 1.0).ok, false)
+    test.eq(ml.dual(1.0, "nope").ok, false)
+    // Array derivative must match the value shape.
+    test.eq(ml.dual(warp.array([1.0, 2.0], [2]), warp.array([1.0], [1])).ok, false)
+    // Scalar value cannot carry an array tangent.
+    test.eq(ml.dual(1.0, warp.array([1.0], [1])).ok, false)
+    test.eq(ml.dual_value(3.0).ok, false)
+}
+
+fn test_forward_arithmetic_ops {
+    fmul := ml.fwd_mul
+    fadd := ml.fwd_add
+    // f(x) = (x + 2) * x at x = 3: value 15, f' = 2x + 2 = 8.
+    d := ml.dual(3.0, 1.0)?
+    y := fmul(fadd(d, 2.0)?, d)?
+    test.approx(ml.dual_value(y)?, 15.0, 1e-12)
+    test.approx(ml.dual_derivative(y)?, 8.0, 1e-12)
+    // Plain numbers wrap as constants: g(x) = 2x at x = 3 → g' = 2.
+    z := fmul(2.0, d)?
+    test.approx(ml.dual_derivative(z)?, 2.0, 1e-12)
+}
+
+fn test_forward_div_neg_pow_chain_rule {
+    fdiv := ml.fwd_div
+    fneg := ml.fwd_neg
+    fpow := ml.fwd_pow
+    // f(x) = -x^3 / x^2 = -x at x = 2: value -2, f' = -1.
+    d := ml.dual(2.0, 1.0)?
+    y := fdiv(fneg(fpow(d, 3.0)?)?, fpow(d, 2.0)?)?
+    test.approx(ml.dual_value(y)?, -2.0, 1e-9)
+    test.approx(ml.dual_derivative(y)?, -1.0, 1e-9)
+}
+
+fn test_forward_matches_reverse_cubic {
+    fmul := ml.fwd_mul
+    fadd := ml.fwd_add
+    // f(x) = x^3 + 2x at 1.5 → f' = 3x^2 + 2 = 8.75.
+    fwd := ml.derivative(fn(x) { fadd(fmul(fmul(x, x)?, x)?, fmul(2.0, x)?) }, 1.5)?
+    test.approx(fwd, 8.75, 1e-9)
+    x := ml.variable(1.5)?
+    tmul := ml.mul
+    tadd := ml.add
+    y := tadd(tmul(tmul(x, x)?, x)?, tmul(2.0, x)?)?
+    ml.backward(y, null)?
+    test.approx(fwd, ml.grad(x)?, 1e-8)
+    ok := ml.gradcheck(fn(p) { tadd(tmul(tmul(p[0], p[0])?, p[0])?, tmul(2.0, p[0])?) }, [x], 1e-5, 1e-4)?
+    test.is_true(ok)
+}
+
+fn test_forward_exp_sin_matches_analytic {
+    fmul := ml.fwd_mul
+    fexp := ml.fwd_exp
+    fsin := ml.fwd_sin
+    // f(x) = e^x sin(x) → f' = e^x (sin x + cos x).
+    fwd := ml.derivative(fn(x) { fmul(fexp(x)?, fsin(x)?) }, 0.7)?
+    expected := math.exp(0.7) * (math.sin(0.7) + math.cos(0.7))
+    test.approx(fwd, expected, 1e-9)
+}
+
+fn test_forward_matches_reverse_exp_log {
+    fmul := ml.fwd_mul
+    fexp := ml.fwd_exp
+    // g(x) = x e^x → g' = e^x (1 + x); the tape side routes x through
+    // log(exp(x)) since it has no identity-only op set difference.
+    fg := ml.derivative(fn(u) { fmul(fexp(u)?, u) }, 0.7)?
+    test.approx(fg, math.exp(0.7) * 1.7, 1e-9)
+    x := ml.variable(0.7)?
+    tmul := ml.mul
+    texp := ml.exp
+    tlog := ml.log
+    y := tmul(texp(x)?, tlog(texp(x)?)?)?
+    ml.backward(y, null)?
+    test.approx(fg, ml.grad(x)?, 1e-8)
+    ok := ml.gradcheck(fn(p) { tmul(texp(p[0])?, tlog(texp(p[0])?)?) }, [x], 1e-5, 1e-4)?
+    test.is_true(ok)
+}
+
+fn test_forward_sin_cos_three_way_finite_diff {
+    fsin := ml.fwd_sin
+    fcos := ml.fwd_cos
+    fmul := ml.fwd_mul
+    // Tape has no sin/cos; check forward against centered finite difference.
+    f := fn(x) { fmul(fsin(x)?, fcos(x)?) }
+    fwd := ml.derivative(f, 0.9)?
+    // f = sin cos = 0.5 sin(2x) → f' = cos(2x).
+    test.approx(fwd, math.cos(1.8), 1e-9)
+    eps := 1e-6
+    plus := ml.jvp(f, 0.9 + eps, 0.0)?
+    minus := ml.jvp(f, 0.9 - eps, 0.0)?
+    test.approx(fwd, (plus.value - minus.value) / (2.0 * eps), 1e-6)
+}
+
+fn test_forward_matches_reverse_tanh {
+    ftanh := ml.fwd_tanh
+    fwd := ml.derivative(fn(x) { ftanh(x) }, 0.9)?
+    t := 0.9
+    e := math.exp(2.0 * t)
+    th := (e - 1.0) / (e + 1.0)
+    test.approx(fwd, 1.0 - th * th, 1e-9)
+    x := ml.variable(0.9)?
+    ttanh := ml.tanh
+    y := ttanh(x)?
+    ml.backward(y, null)?
+    test.approx(fwd, ml.grad(x)?, 1e-8)
+    ok := ml.gradcheck(fn(p) { ttanh(p[0]) }, [x], 1e-5, 1e-4)?
+    test.is_true(ok)
+}
+
+fn test_forward_matches_reverse_sigmoid {
+    fsigmoid := ml.fwd_sigmoid
+    fwd := ml.derivative(fn(x) { fsigmoid(x) }, -1.3)?
+    s := 1.0 / (1.0 + math.exp(1.3))
+    test.approx(fwd, s * (1.0 - s), 1e-9)
+    x := ml.variable(-1.3)?
+    tsigmoid := ml.sigmoid
+    y := tsigmoid(x)?
+    ml.backward(y, null)?
+    test.approx(fwd, ml.grad(x)?, 1e-8)
+    ok := ml.gradcheck(fn(p) { tsigmoid(p[0]) }, [x], 1e-5, 1e-4)?
+    test.is_true(ok)
+}
+
+fn test_forward_matches_reverse_log_sqrt {
+    fmul := ml.fwd_mul
+    flog := ml.fwd_log
+    fsqrt := ml.fwd_sqrt
+    // f(x) = log(x) sqrt(x) → f' = 1/sqrt(x) + log(x) / (2 sqrt(x)).
+    fwd := ml.derivative(fn(x) { fmul(flog(x)?, fsqrt(x)?) }, 2.2)?
+    root := math.sqrt(2.2)
+    test.approx(fwd, 1.0 / root + math.log(2.2) / (2.0 * root), 1e-9)
+    x := ml.variable(2.2)?
+    tmul := ml.mul
+    tlog := ml.log
+    tpow := ml.pow
+    y := tmul(tlog(x)?, tpow(x, 0.5)?)?
+    ml.backward(y, null)?
+    test.approx(fwd, ml.grad(x)?, 1e-8)
+    ok := ml.gradcheck(fn(p) { tmul(tlog(p[0])?, tpow(p[0], 0.5)?) }, [x], 1e-5, 1e-4)?
+    test.is_true(ok)
+}
+
+fn test_forward_matches_reverse_div_relu {
+    fdiv := ml.fwd_div
+    frelu := ml.fwd_relu
+    fmul := ml.fwd_mul
+    // f(x) = relu(x) * x / 2 at 0.6 → x^2 / 2 → f' = x.
+    f := fn(x) { fdiv(fmul(frelu(x)?, x)?, 2.0) }
+    fwd := ml.derivative(f, 0.6)?
+    test.approx(fwd, 0.6, 1e-9)
+    x := ml.variable(0.6)?
+    tdiv := ml.div
+    trelu := ml.relu
+    tmul := ml.mul
+    y := tdiv(tmul(trelu(x)?, x)?, 2.0)?
+    ml.backward(y, null)?
+    test.approx(fwd, ml.grad(x)?, 1e-8)
+    ok := ml.gradcheck(fn(p) { tdiv(tmul(trelu(p[0])?, p[0])?, 2.0) }, [x], 1e-5, 1e-4)?
+    test.is_true(ok)
+}
+
+fn test_forward_jvp_array_matches_reverse_directional {
+    fmul := ml.fwd_mul
+    fmean := ml.fwd_mean
+    w0 := warp.array([0.5, -1.5, 2.5], [3])
+    v := warp.array([1.0, 0.5, -2.0], [3])
+    r := ml.jvp(fn(w) { fmean(fmul(w, w)?) }, w0, v)?
+    test.approx(r.value, (0.25 + 2.25 + 6.25) / 3.0, 1e-9)
+    // Reverse mode: directional derivative is grad · v.
+    w := ml.variable(w0)?
+    tmul := ml.mul
+    tmean := ml.mean
+    loss := tmean(tmul(w, w)?)?
+    ml.backward(loss, null)?
+    directional := warp.sum(warp.mul(ml.grad(w)?, v))
+    test.approx(r.jvp, directional, 1e-8)
+    // Exact: jvp = mean(2 w v).
+    test.approx(r.jvp, (2.0 * 0.5 * 1.0 + 2.0 * -1.5 * 0.5 + 2.0 * 2.5 * -2.0) / 3.0, 1e-9)
+    ok := ml.gradcheck(fn(p) { tmean(tmul(p[0], p[0])?) }, [w], 1e-5, 1e-4)?
+    test.is_true(ok)
+}
+
+fn test_forward_jacobian_list_inputs {
+    fmul := ml.fwd_mul
+    fadd := ml.fwd_add
+    // f(x) = x0*x1 + x2^2 → ∇f = [x1, x0, 2 x2].
+    f := fn(xs) { fadd(fmul(xs[0], xs[1])?, fmul(xs[2], xs[2])?) }
+    partials := ml.jacobian(f, [2.0, 3.0, 4.0])?
+    test.approx(partials[0], 3.0, 1e-9)
+    test.approx(partials[1], 2.0, 1e-9)
+    test.approx(partials[2], 8.0, 1e-9)
+    x0 := ml.variable(2.0)?
+    x1 := ml.variable(3.0)?
+    x2 := ml.variable(4.0)?
+    tmul := ml.mul
+    tadd := ml.add
+    y := tadd(tmul(x0, x1)?, tmul(x2, x2)?)?
+    ml.backward(y, null)?
+    test.approx(partials[0], ml.grad(x0)?, 1e-8)
+    test.approx(partials[1], ml.grad(x1)?, 1e-8)
+    test.approx(partials[2], ml.grad(x2)?, 1e-8)
+}
+
+fn test_forward_mlp_jvp_matches_reverse {
+    // Small MLP forward: linear → tanh → linear → mse, built from both the
+    // dual ops and the tape ops over identical data. Forward-mode jvp with
+    // per-parameter directions must equal the reverse-mode directional
+    // derivative sum(grad_p · v_p), and gradcheck validates the tape side.
+    x_in := warp.array([0.5, -0.25], [1, 2])
+    target := warp.array([1.0], [1, 1])
+    w1v := warp.array([0.2, -0.4, 0.6, 0.1, -0.3, 0.5], [2, 3])
+    b1v := warp.array([0.05, -0.02, 0.1], [3])
+    w2v := warp.array([0.7, -0.6, 0.4], [3, 1])
+    b2v := warp.array([-0.15], [1])
+    dw1 := warp.array([0.3, 0.1, -0.2, 0.4, 0.2, -0.1], [2, 3])
+    db1 := warp.array([0.2, -0.3, 0.1], [3])
+    dw2 := warp.array([-0.2, 0.3, 0.2], [3, 1])
+    db2 := warp.array([0.4], [1])
+
+    fmatmul := ml.fwd_matmul
+    fadd := ml.fwd_add
+    ftanh := ml.fwd_tanh
+    fsub := ml.fwd_sub
+    fmul := ml.fwd_mul
+    fmean := ml.fwd_mean
+    fwd_net := fn(p) {
+        h := ftanh(fadd(fmatmul(x_in, p[0])?, p[1])?)?
+        pred := fadd(fmatmul(h, p[2])?, p[3])?
+        diff := fsub(pred, target)?
+        fmean(fmul(diff, diff)?)
+    }
+    r := ml.jvp(fwd_net, [w1v, b1v, w2v, b2v], [dw1, db1, dw2, db2])?
+
+    w1 := ml.variable(w1v)?
+    b1 := ml.variable(b1v)?
+    w2 := ml.variable(w2v)?
+    b2 := ml.variable(b2v)?
+    tmatmul := ml.matmul
+    tadd := ml.add
+    ttanh := ml.tanh
+    tsub := ml.sub
+    tmul := ml.mul
+    tmean := ml.mean
+    tape_net := fn(p) {
+        h := ttanh(tadd(tmatmul(x_in, p[0])?, p[1])?)?
+        pred := tadd(tmatmul(h, p[2])?, p[3])?
+        diff := tsub(pred, target)?
+        tmean(tmul(diff, diff)?)
+    }
+    loss := tape_net([w1, b1, w2, b2])?
+    test.approx(ml.value(loss)?, r.value, 1e-12)
+    ml.backward(loss, null)?
+    let mut directional := warp.sum(warp.mul(ml.grad(w1)?, dw1))
+    directional = directional + warp.sum(warp.mul(ml.grad(b1)?, db1))
+    directional = directional + warp.sum(warp.mul(ml.grad(w2)?, dw2))
+    directional = directional + warp.sum(warp.mul(ml.grad(b2)?, db2))
+    test.approx(r.jvp, directional, 1e-8)
+    ok := ml.gradcheck(tape_net, [w1, b1, w2, b2], 1e-5, 1e-4)?
+    test.is_true(ok)
+}
+
+fn test_forward_second_derivative_via_nested_duals {
+    fmul := ml.fwd_mul
+    deriv := ml.derivative
+    // f(x) = x^3 → f''(2) = 12, exactly, through duals of duals.
+    f := fn(x) { fmul(fmul(x, x)?, x) }
+    second := deriv(fn(y) { deriv(f, y) }, 2.0)?
+    test.approx(second, 12.0, 1e-9)
+    // Cross-check against nested reverse mode (create_graph double backward).
+    x := ml.variable(2.0)?
+    tpow := ml.pow
+    rev := ml.second_derivative(fn(p) { tpow(p, 3.0) }, x, null)?
+    test.approx(second, rev, 1e-9)
+}
+
+fn test_forward_second_derivative_exp {
+    fexp := ml.fwd_exp
+    deriv := ml.derivative
+    // d²/dx² e^x = e^x.
+    f := fn(x) { fexp(x) }
+    second := deriv(fn(y) { deriv(f, y) }, 0.5)?
+    test.approx(second, math.exp(0.5), 1e-9)
+}
+
+fn test_forward_constant_function_has_zero_jvp {
+    r := ml.jvp(fn(x) { 42.0 }, 3.0, 1.0)?
+    test.approx(r.value, 42.0, 1e-12)
+    test.approx(r.jvp, 0.0, 1e-12)
+    test.approx(ml.derivative(fn(x) { 7.0 }, 3.0)?, 0.0, 1e-12)
+}
+
+fn test_forward_rejects_bad_jvp_inputs {
+    fmul := ml.fwd_mul
+    f := fn(x) { fmul(x, x) }
+    // Direction must mirror input structure.
+    test.eq(ml.jvp(f, [1.0, 2.0], [1.0]).ok, false)
+    test.eq(ml.jvp(f, "nope", 1.0).ok, false)
+    test.eq(ml.jvp(f, warp.array([1.0, 2.0], [2]), warp.array([1.0], [1])).ok, false)
+    // Non-scalar inputs for derivative.
+    test.eq(ml.derivative(f, warp.array([1.0], [1])).ok, false)
+    // jacobian needs a non-empty scalar list.
+    test.eq(ml.jacobian(f, []).ok, false)
+    test.eq(ml.jacobian(f, [warp.array([1.0], [1])]).ok, false)
+    // jacobian of an array-output function is an explicit error.
+    fbad := fn(xs) { fmul(warp.array([1.0], [1]), xs[0]) }
+    test.eq(ml.jacobian(fbad, [1.0]).ok, false)
+}

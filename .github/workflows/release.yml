@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write # keyless cosign signing via GitHub OIDC
 
 jobs:
   release:
@@ -78,6 +79,19 @@ jobs:
           bash scripts/package-vscode.sh
           cp editors/vscode/weft-*.vsix dist/
 
+      - name: Install cosign (keyless signing)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign release blobs
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          for f in dist/*.tar.gz dist/*.zip dist/*.vsix dist/SHA256SUMS dist/SBOM.json; do
+            cosign sign-blob --yes --bundle "${f}.cosign-bundle" "$f"
+          done
+          echo "signed artifacts: $(ls dist/*.cosign-bundle | wc -l)"
+
       - name: Artifacts
         run: ls -la dist
 
@@ -87,6 +101,10 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+          body: |
+            Built by GitHub Actions run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} (includes offline-install + byte-reproducibility gate, SBOM generation, and keyless cosign signing).
+            CI for this commit: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/ci.yml?query=sha%3A${{ github.sha }}
+            Verify: `cosign verify-blob --bundle <artifact>.cosign-bundle <artifact>` against the repo's GitHub OIDC identity; hashes in `SHA256SUMS`; dependency inventory in `SBOM.json`.
 
       - name: Upload artifacts (manual run)
         if: github.event_name == 'workflow_dispatch'

@@ -832,6 +832,162 @@ fn test_rank_averages_ties_and_apply_adds_column {
     test.is_true(contains(df.columns(added), "new"))
 }
 
+// === Exponentially-weighted windows (oracle: pandas 3.0.1) ===
+
+// Compare a result column against oracle values: null where expected is null,
+// elementwise approx otherwise.
+fn _approx_col(t, col_name, expected, tol) {
+    vals := df.col(t, col_name)
+    test.eq(len(vals), len(expected))
+    let mut i = 0
+    while i < len(expected) {
+        if expected[i] == null { test.eq(vals[i], null) }
+        else { test.approx(vals[i], expected[i], tol) }
+        i = i + 1
+    }
+}
+
+fn test_ewm_mean_adjust_true {
+    t := _columns({"x": [1, 2, 3, 4, 5]})
+    r := df.ewm_mean(t, "x", {"alpha": 0.5})
+    _approx_col(r, "x", [1.0, 1.6666666666666667, 2.4285714285714284, 3.2666666666666666, 4.161290322580645], 1e-12)
+}
+
+fn test_ewm_mean_adjust_false_recursive {
+    t := _columns({"x": [1, 2, 3, 4, 5]})
+    r := df.ewm_mean(t, "x", {"alpha": 0.5, "adjust": false})
+    _approx_col(r, "x", [1.0, 1.5, 2.25, 3.125, 4.0625], 1e-12)
+    // adjust=true and adjust=false must diverge after the first row
+    ra := df.ewm_mean(t, "x", {"alpha": 0.5})
+    test.is_true(df.col(ra, "x")[4] != df.col(r, "x")[4])
+}
+
+fn test_ewm_span_and_halflife_conversions {
+    t := _columns({"x": [1, 2, 3, 4, 5]})
+    // span=3 → alpha = 2/(3+1) = 0.5 exactly
+    span_r := df.ewm_mean(t, "x", {"span": 3})
+    _approx_col(span_r, "x", [1.0, 1.6666666666666667, 2.4285714285714284, 3.2666666666666666, 4.161290322580645], 1e-12)
+    // halflife=1 → alpha = 1 - exp(-ln2) = 0.5 → identical to alpha=0.5
+    hl_r := df.ewm_mean(t, "x", {"halflife": 1, "adjust": false})
+    _approx_col(hl_r, "x", [1.0, 1.5, 2.25, 3.125, 4.0625], 1e-12)
+    // halflife=1.5, adjust=true (oracle values)
+    hl15 := df.ewm_mean(t, "x", {"halflife": 1.5})
+    _approx_col(hl15, "x", [1.0, 1.6135117904356906, 2.297585616080685, 3.045304483602391, 3.8482847154214657], 1e-12)
+}
+
+fn test_ewm_mid_nulls_adjust_ignore_na_grid {
+    t := _columns({"x": [1, 2, null, 4, 5]})
+    r1 := df.ewm_mean(t, "x", {"alpha": 0.5})
+    _approx_col(r1, "x", [1.0, 1.6666666666666667, 1.6666666666666667, 3.3636363636363638, 4.333333333333333], 1e-12)
+    r2 := df.ewm_mean(t, "x", {"alpha": 0.5, "ignore_na": true})
+    _approx_col(r2, "x", [1.0, 1.6666666666666667, 1.6666666666666667, 3.0, 4.066666666666666], 1e-12)
+    r3 := df.ewm_mean(t, "x", {"alpha": 0.5, "adjust": false})
+    _approx_col(r3, "x", [1.0, 1.5, 1.5, 3.375, 4.1875], 1e-12)
+    r4 := df.ewm_mean(t, "x", {"alpha": 0.5, "adjust": false, "ignore_na": true})
+    _approx_col(r4, "x", [1.0, 1.5, 1.5, 2.75, 3.875], 1e-12)
+}
+
+fn test_ewm_leading_nulls {
+    t := _columns({"x": [null, null, 3, 4, 5]})
+    r := df.ewm_mean(t, "x", {"alpha": 0.5})
+    _approx_col(r, "x", [null, null, 3.0, 3.6666666666666665, 4.428571428571429], 1e-12)
+    rn := df.ewm_mean(t, "x", {"alpha": 0.5, "ignore_na": true})
+    _approx_col(rn, "x", [null, null, 3.0, 3.6666666666666665, 4.428571428571429], 1e-12)
+    rf := df.ewm_mean(t, "x", {"alpha": 0.5, "adjust": false})
+    _approx_col(rf, "x", [null, null, 3.0, 3.5, 4.25], 1e-12)
+    allnull := df.ewm_mean(_columns({"x": [null, null]}), "x", {"alpha": 0.5})
+    test.eq(df.col(allnull, "x"), [null, null])
+}
+
+fn test_ewm_var_and_std {
+    t := _columns({"x": [1, 2, 3, 4, 5]})
+    va := df.ewm_var(t, "x", {"alpha": 0.5})
+    _approx_col(va, "x", [null, 0.5, 0.9285714285714284, 1.385714285714286, 1.809677419354839], 1e-12)
+    vf := df.ewm_var(t, "x", {"alpha": 0.5, "adjust": false})
+    _approx_col(vf, "x", [null, 0.5, 1.1, 1.6904761904761905, 2.1588235294117646], 1e-12)
+    vb := df.ewm_var(t, "x", {"alpha": 0.5, "bias": true})
+    _approx_col(vb, "x", [0.0, 0.2222222222222222, 0.5306122448979591, 0.8622222222222223, 1.1675338189386057], 1e-12)
+    sd := df.ewm_std(t, "x", {"alpha": 0.5})
+    _approx_col(sd, "x", [null, 0.7071067811865476, 0.9636241116594314, 1.1771636613972951, 1.3452425132127066], 1e-12)
+    // std == sqrt(var) elementwise
+    vv := df.col(va, "x")
+    sv := df.col(sd, "x")
+    test.approx(sv[4], math.sqrt(vv[4]), 1e-12)
+}
+
+fn test_ewm_var_mid_nulls {
+    t := _columns({"x": [1, 2, null, 4, 5]})
+    v1 := df.ewm_var(t, "x", {"alpha": 0.5})
+    _approx_col(v1, "x", [null, 0.5, 0.5, 2.653846153846154, 2.0049504950495045], 1e-12)
+    v2 := df.ewm_var(t, "x", {"alpha": 0.5, "adjust": false})
+    _approx_col(v2, "x", [null, 0.5, 0.5, 2.944444444444444, 2.522222222222222], 1e-12)
+    v3 := df.ewm_var(t, "x", {"alpha": 0.5, "adjust": false, "ignore_na": true})
+    _approx_col(v3, "x", [null, 0.5, 0.5, 2.7, 3.214285714285714], 1e-12)
+    v4 := df.ewm_var(t, "x", {"alpha": 0.5, "ignore_na": true})
+    _approx_col(v4, "x", [null, 0.5, 0.5, 2.5, 2.6714285714285717], 1e-12)
+}
+
+fn test_ewm_single_row_and_constant_series {
+    one := _columns({"x": [7]})
+    test.eq(df.col(df.ewm_mean(one, "x", {"alpha": 0.5}), "x"), [7.0])
+    // bias=false (pandas default): single observation → null (NaN)
+    test.eq(df.col(df.ewm_var(one, "x", {"alpha": 0.5}), "x"), [null])
+    // bias=true: single observation → 0
+    test.eq(df.col(df.ewm_var(one, "x", {"alpha": 0.5, "bias": true}), "x"), [0.0])
+    test.eq(df.col(df.ewm_sum(one, "x", {"alpha": 0.5}), "x"), [7.0])
+    c := _columns({"x": [3, 3, 3, 3]})
+    test.eq(df.col(df.ewm_mean(c, "x", {"alpha": 0.5}), "x"), [3.0, 3.0, 3.0, 3.0])
+    _approx_col(df.ewm_var(c, "x", {"alpha": 0.5}), "x", [null, 0.0, 0.0, 0.0], 1e-12)
+}
+
+fn test_ewm_alpha_one {
+    t := _columns({"x": [1, 2, 3]})
+    test.eq(df.col(df.ewm_mean(t, "x", {"alpha": 1}), "x"), [1.0, 2.0, 3.0])
+    // alpha=1 → weights degenerate, unbiased var is always null
+    test.eq(df.col(df.ewm_var(t, "x", {"alpha": 1}), "x"), [null, null, null])
+}
+
+fn test_ewm_sum {
+    t := _columns({"x": [1, 2, 3, 4, 5]})
+    s := df.ewm_sum(t, "x", {"alpha": 0.5})
+    _approx_col(s, "x", [1.0, 2.5, 4.25, 6.125, 8.0625], 1e-12)
+    // pandas: sum is not implemented with adjust=False
+    bad := df.ewm_sum(t, "x", {"alpha": 0.5, "adjust": false})
+    test.is_false(bad.ok)
+    m := _columns({"x": [1, 2, null, 4, 5]})
+    _approx_col(df.ewm_sum(m, "x", {"alpha": 0.5}), "x", [1.0, 2.5, 1.25, 4.625, 7.3125], 1e-12)
+    _approx_col(df.ewm_sum(m, "x", {"alpha": 0.5, "ignore_na": true}), "x", [1.0, 2.5, 2.5, 5.25, 7.625], 1e-12)
+    lead := _columns({"x": [null, null, 3, 4]})
+    _approx_col(df.ewm_sum(lead, "x", {"alpha": 0.5}), "x", [null, null, 3.0, 5.5], 1e-12)
+}
+
+fn test_ewm_errors {
+    t := _columns({"x": [1, 2, 3], "s": ["a", "b", "c"]})
+    test.is_false(df.ewm_mean(t, "x", null).ok)
+    test.is_false(df.ewm_mean(t, "x", {}).ok)
+    test.is_false(df.ewm_mean(t, "x", {"alpha": 0.5, "span": 3}).ok)
+    test.is_false(df.ewm_mean(t, "x", {"alpha": 0}).ok)
+    test.is_false(df.ewm_mean(t, "x", {"alpha": 1.5}).ok)
+    test.is_false(df.ewm_mean(t, "x", {"alpha": "high"}).ok)
+    test.is_false(df.ewm_mean(t, "x", {"span": 0.5}).ok)
+    test.is_false(df.ewm_mean(t, "x", {"halflife": 0}).ok)
+    test.is_false(df.ewm_mean(t, "zzz", {"alpha": 0.5}).ok)
+    test.is_false(df.ewm_var(t, "s", {"alpha": 0.5}).ok)
+    test.is_false(df.ewm_std(t, "s", {"alpha": 0.5}).ok)
+}
+
+fn test_expanding_var_and_extras {
+    t := _columns({"x": [3, 1, 2, null, 4]})
+    _approx_col(df.expanding(t, "x", "var"), "x", [null, 2.0, 1.0, 1.0, 1.6666666666666667], 1e-12)
+    _approx_col(df.expanding(t, "x", "std"), "x", [null, 1.4142135623730951, 1.0, 1.0, 1.2909944487358056], 1e-12)
+    _approx_col(df.expanding(t, "x", "min"), "x", [3.0, 1.0, 1.0, 1.0, 1.0], 1e-12)
+    _approx_col(df.expanding(t, "x", "max"), "x", [3.0, 3.0, 3.0, 3.0, 4.0], 1e-12)
+    _approx_col(df.expanding(t, "x", "mean"), "x", [3.0, 2.0, 2.0, 2.0, 2.5], 1e-12)
+    r := _columns({"x": [1, 2, 3, 4]})
+    _approx_col(df.rolling(r, "x", 2, "var"), "x", [null, 0.5, 0.5, 0.5], 1e-12)
+    _approx_col(df.rolling(r, "x", 2, "std"), "x", [null, 0.7071067811865476, 0.7071067811865476, 0.7071067811865476], 1e-12)
+}
+
 fn test_100k_row_frame_operations {
     let mut values = []
     let mut i = 0
@@ -1276,4 +1432,667 @@ fn test_merge_empty_frames {
     test.eq(df.iloc(outer, 0).rv, 100)
     both := df.merge(left, df.empty(["a", "b", "rv"]), ["a", "b"], ["a", "b"], "outer")
     test.eq(df.nrows(both), 0)
+}
+
+// === Index set operations (pandas 3.0.1 semantics) ===
+
+fn test_index_union_sorted_unique {
+    test.eq(df.index_union([3, 1, 2], [2, 4]), [1, 2, 3, 4])
+    test.eq(df.index_union(["b", "a", "c"], ["c", "d"]), ["a", "b", "c", "d"])
+    // disjoint indexes still come back sorted
+    test.eq(df.index_union([3, 1], [4, 2]), [1, 2, 3, 4])
+}
+
+fn test_index_union_duplicate_multiplicity {
+    // non-unique inputs keep max(left, right) multiplicity per label
+    test.eq(df.index_union([1, 1, 2], [2, 2, 3]), [1, 1, 2, 2, 3])
+    test.eq(df.index_union([1, 1, 1, 2], [1, 2, 2]), [1, 1, 1, 2, 2])
+}
+
+fn test_index_union_empty_side_passthrough {
+    // pandas shortcut: union with an empty index returns the other AS-IS
+    // (unsorted, duplicates preserved)
+    test.eq(df.index_union([], [2, 1]), [2, 1])
+    test.eq(df.index_union([3, 1], []), [3, 1])
+    test.eq(df.index_union([], [2, 1, 1]), [2, 1, 1])
+    test.eq(df.index_union([], []), [])
+}
+
+fn test_index_union_nulls_and_mixed_types {
+    // null is an ordinary label and sorts last
+    test.eq(df.index_union([1, null, 3], [null, 2]), [1, 2, 3, null])
+    // pandas "safe" ordering: numbers (bools as 0/1) before strings
+    test.eq(df.index_union([1, "a", 2], ["b", 3]), [1, 2, 3, "a", "b"])
+    test.eq(df.index_union([1, true], [2, false]), [false, 1, true, 2])
+    // int 1 and bool true are distinct labels (kind-tagged keys)
+    test.eq(df.index_union([1], [true]), [1, true])
+}
+
+fn test_index_intersection {
+    test.eq(df.index_intersection([3, 1, 2, 2], [2, 1]), [1, 2])
+    test.eq(df.index_intersection(["b", "a", "c"], ["c", "b"]), ["b", "c"])
+    // duplicates always collapse, regardless of multiplicity
+    test.eq(df.index_intersection([1, 1, 2], [1, 2, 2]), [1, 2])
+    test.eq(df.index_intersection([1, 1, 1, 2], [1, 1, 3]), [1])
+    // nulls match nulls and sort last
+    test.eq(df.index_intersection([1, null, 3], [null, 1, 2]), [1, null])
+    // disjoint / empty
+    test.eq(df.index_intersection([1, 2], [3]), [])
+    test.eq(df.index_intersection([], [1]), [])
+    // mixed types: only genuinely common labels survive
+    test.eq(df.index_intersection([1, "a", 2], ["a", 3]), ["a"])
+}
+
+fn test_index_difference {
+    // sorted, unique labels of the left side not on the right
+    test.eq(df.index_difference([3, 1, 2, 2], [2, 1]), [3])
+    test.eq(df.index_difference([3, 1, 4], [2]), [1, 3, 4])
+    test.eq(df.index_difference(["b", "a", "c"], ["c", "b"]), ["a"])
+    test.eq(df.index_difference([1, 1, 2, 3], [2]), [1, 3])
+    // null on the right removes null from the left
+    test.eq(df.index_difference([1, null, 3], [null, 1, 2]), [3])
+    test.eq(df.index_difference([null, 1], [null]), [1])
+    test.eq(df.index_difference([1, "a", 2], ["a", 3]), [1, 2])
+    test.eq(df.index_difference([], [1, 2]), [])
+    test.eq(df.index_difference([1, 2], []), [1, 2])
+}
+
+fn test_index_set_ops_on_frames {
+    t := df.set_index(df.from_rows([{"v": 3}, {"v": 1}, {"v": 2}]), "v", null)
+    test.eq(df.index_union(t, [2, 9]), [1, 2, 3, 9])
+    test.eq(df.index_intersection(t, [2, 3, 8]), [2, 3])
+    test.eq(df.index_difference(t, [2]), [1, 3])
+    // frame on both sides
+    u := df.set_index(df.from_rows([{"v": 4}, {"v": 1}]), "v", null)
+    test.eq(df.index_union(t, u), [1, 2, 3, 4])
+    // a frame without an explicit index contributes its positional labels
+    plain := df.from_rows([{"v": 10}, {"v": 20}])
+    test.eq(df.index_union(plain, [5]), [0, 1, 5])
+    // empty frame = empty index
+    test.eq(df.index_union(df.empty(["a"]), [3, 1]), [3, 1])
+    test.eq(df.index_intersection(df.empty(["a"]), [3, 1]), [])
+    test.eq(df.index_difference(df.empty(["a"]), [3, 1]), [])
+    // non-frame, non-list input is an error
+    test.is_false(df.index_union({"nope": 1}, [1]).ok)
+    test.is_false(df.index_intersection([1], 7).ok)
+    test.is_false(df.index_difference("x", [1]).ok)
+}
+
+fn test_index_set_ops_all_null {
+    test.eq(df.index_union([null, null], [null]), [null, null])
+    test.eq(df.index_intersection([null, null], [null, null]), [null])
+    test.eq(df.index_difference([null], [null]), [])
+    test.eq(df.index_union([null], []), [null])
+}
+
+// === sort_index / is_monotonic ===
+
+fn test_sort_index_basic {
+    t := df.set_index(df.from_rows([
+        {"k": 3, "v": "c"},
+        {"k": 1, "v": "a"},
+        {"k": 2, "v": "b"},
+    ]), "k", null)
+    asc := df.sort_index(t, null)
+    test.eq(df.index(asc), [1, 2, 3])
+    test.eq(df.col(asc, "v"), ["a", "b", "c"])
+    desc := df.sort_index(t, true)
+    test.eq(df.index(desc), [3, 2, 1])
+    test.eq(df.col(desc, "v"), ["c", "b", "a"])
+    // index metadata survives the sort
+    test.eq(df.index_name(asc), "k")
+}
+
+fn test_sort_index_duplicate_labels_stable {
+    // ties keep original row order in BOTH directions
+    t := df.set_index(df.from_rows([
+        {"k": 2, "v": 10},
+        {"k": 1, "v": 20},
+        {"k": 2, "v": 30},
+        {"k": 1, "v": 40},
+    ]), "k", null)
+    asc := df.sort_index(t, null)
+    test.eq(df.index(asc), [1, 1, 2, 2])
+    test.eq(df.col(asc, "v"), [20, 40, 10, 30])
+    desc := df.sort_index(t, true)
+    test.eq(df.index(desc), [2, 2, 1, 1])
+    test.eq(df.col(desc, "v"), [10, 30, 20, 40])
+}
+
+fn test_sort_index_nulls {
+    t := df.set_index(df.from_rows([
+        {"k": null, "v": 1},
+        {"k": 1, "v": 2},
+        {"k": 0, "v": 3},
+    ]), "k", null)
+    // na_position="last" default holds in both directions
+    test.eq(df.index(df.sort_index(t, null)), [0, 1, null])
+    test.eq(df.index(df.sort_index(t, true)), [1, 0, null])
+    test.eq(df.index(df.sort_index_opts(t, {"na_position": "first"})), [null, 0, 1])
+    test.eq(df.index(df.sort_index_opts(t, {"ascending": false, "na_position": "first"})), [null, 1, 0])
+    test.is_false(df.sort_index_opts(t, {"na_position": "middle"}).ok)
+    test.is_false(df.sort_index_opts(t, {"ascending": "yes"}).ok)
+    test.is_false(df.sort_index_opts(t, "nope").ok)
+}
+
+fn test_sort_index_multi_level {
+    t := df.set_multi_index(df.from_rows([
+        {"g": "B", "n": 2, "v": 1},
+        {"g": "A", "n": 2, "v": 2},
+        {"g": "B", "n": 1, "v": 3},
+        {"g": "A", "n": 1, "v": 4},
+    ]), ["g", "n"], null)
+    asc := df.sort_index(t, null)
+    test.eq(df.index(asc), [["A", 1], ["A", 2], ["B", 1], ["B", 2]])
+    test.eq(df.col(asc, "v"), [4, 2, 3, 1])
+    // descending flips EVERY level
+    desc := df.sort_index(t, true)
+    test.eq(df.index(desc), [["B", 2], ["B", 1], ["A", 2], ["A", 1]])
+    test.eq(df.col(desc, "v"), [1, 3, 2, 4])
+    test.eq(df.index_levels(desc), ["g", "n"])
+}
+
+fn test_sort_index_multi_level_nulls_and_mixed {
+    // null level components sort last within their level
+    t := df.set_multi_index(df.from_rows([
+        {"g": "B", "n": null, "v": 1},
+        {"g": "A", "n": 2, "v": 2},
+        {"g": null, "n": 1, "v": 3},
+    ]), ["g", "n"], null)
+    test.eq(df.index(df.sort_index(t, null)), [["A", 2], ["B", null], [null, 1]])
+    // mixed-type levels use the safe ordering (pandas raises TypeError;
+    // documented Weft deviation: numbers before strings, no error)
+    m := df.set_multi_index(df.from_rows([
+        {"g": "B", "n": "x", "v": 1},
+        {"g": "A", "n": 1, "v": 2},
+        {"g": "A", "n": "x", "v": 3},
+    ]), ["g", "n"], null)
+    test.eq(df.index(df.sort_index(m, null)), [["A", 1], ["A", "x"], ["B", "x"]])
+}
+
+fn test_sort_index_edge_frames {
+    // no explicit index: sorting the positional range is the identity
+    plain := df.from_rows([{"v": 2}, {"v": 1}])
+    test.eq(df.col(df.sort_index(plain, null), "v"), [2, 1])
+    // empty frame
+    e := df.set_index(df.empty(["k", "v"]), "k", null)
+    test.eq(df.nrows(df.sort_index(e, null)), 0)
+    test.is_true(df.is_monotonic(e, null))
+}
+
+fn test_is_monotonic {
+    asc := df.set_index(df.from_rows([{"k": 1, "v": 1}, {"k": 2, "v": 2}, {"k": 3, "v": 3}]), "k", null)
+    test.is_true(df.is_monotonic(asc, null))
+    test.is_false(df.is_monotonic(asc, true))
+    // duplicates are monotonic (non-strict, like pandas)
+    dup := df.set_index(df.from_rows([{"k": 1, "v": 1}, {"k": 1, "v": 2}, {"k": 2, "v": 3}]), "k", null)
+    test.is_true(df.is_monotonic(dup, null))
+    desc := df.set_index(df.from_rows([{"k": 2, "v": 1}, {"k": 2, "v": 2}, {"k": 1, "v": 3}]), "k", null)
+    test.is_true(df.is_monotonic(desc, true))
+    test.is_false(df.is_monotonic(desc, null))
+    // any null label → not monotonic in either direction
+    nul := df.set_index(df.from_rows([{"k": 1, "v": 1}, {"k": null, "v": 2}]), "k", null)
+    test.is_false(df.is_monotonic(nul, null))
+    test.is_false(df.is_monotonic(nul, true))
+    nul_first := df.set_index(df.from_rows([{"k": null, "v": 1}, {"k": 1, "v": 2}]), "k", null)
+    test.is_false(df.is_monotonic(nul_first, null))
+    // multi-level: lexicographic
+    mi_ok := df.set_multi_index(df.from_rows([
+        {"g": "A", "n": 1, "v": 1},
+        {"g": "A", "n": 1, "v": 2},
+        {"g": "A", "n": 2, "v": 3},
+    ]), ["g", "n"], null)
+    test.is_true(df.is_monotonic(mi_ok, null))
+    mi_bad := df.set_multi_index(df.from_rows([
+        {"g": "A", "n": 2, "v": 1},
+        {"g": "A", "n": 1, "v": 2},
+    ]), ["g", "n"], null)
+    test.is_false(df.is_monotonic(mi_bad, null))
+    // positional index of a plain frame is monotonic
+    test.is_true(df.is_monotonic(df.from_rows([{"v": 1}, {"v": 2}]), null))
+}
+
+// === xs cross-sections ===
+
+fn _xs_frame {
+    df.set_multi_index(df.from_rows([
+        {"g": "B", "n": 2, "v": 1},
+        {"g": "A", "n": 2, "v": 2},
+        {"g": "B", "n": 1, "v": 3},
+        {"g": "A", "n": 1, "v": 4},
+    ]), ["g", "n"], null)
+}
+
+fn test_xs_scalar_key {
+    mi := _xs_frame()
+    // level 0 = "A", level 1 free; pandas default drops the selected level
+    x := df.xs(mi, "A", null)
+    test.eq(df.col(x, "v"), [2, 4])
+    test.eq(df.index(x), [2, 1])
+    test.eq(df.index_nlevels(x), 1)
+    test.eq(df.index_name(x), "n")
+    // explicit level by name and by negative position
+    x1 := df.xs(mi, 1, "n")
+    test.eq(df.col(x1, "v"), [3, 4])
+    test.eq(df.index(x1), ["B", "A"])
+    test.eq(df.index_name(x1), "g")
+    x2 := df.xs(mi, 1, -1)
+    test.eq(df.col(x2, "v"), [3, 4])
+}
+
+fn test_xs_drop_level_false {
+    mi := _xs_frame()
+    x := df.xs_opts(mi, "A", {"drop_level": false})
+    test.eq(df.index_nlevels(x), 2)
+    test.eq(df.index(x), [["A", 2], ["A", 1]])
+    test.eq(df.index_levels(x), ["g", "n"])
+    test.is_false(df.xs_opts(mi, "A", {"drop_level": "no"}).ok)
+    test.is_false(df.xs_opts(mi, "A", "nope").ok)
+}
+
+fn test_xs_map_key {
+    mi := _xs_frame()
+    // map keys: level names or numeric strings; all levels selected →
+    // default positional index
+    x := df.xs(mi, {"g": "A", "n": 2}, null)
+    test.eq(df.col(x, "v"), [2])
+    test.eq(df.index_nlevels(x), 1)
+    test.eq(df.index(x), [0])
+    x2 := df.xs(mi, {"0": "A"}, null)
+    test.eq(df.col(x2, "v"), [2, 4])
+    test.is_false(df.xs(mi, {}, null).ok)
+    test.is_false(df.xs(mi, {"g": "A"}, 0).ok)
+    test.is_false(df.xs(mi, {"nope": "A"}, null).ok)
+}
+
+fn test_xs_absent_key_errors {
+    // pandas xs raises KeyError; Weft returns Err (NOT an empty frame)
+    mi := _xs_frame()
+    test.is_false(df.xs(mi, "Z", null).ok)
+    test.is_false(df.xs(mi, 9, "n").ok)
+    // absent on ONE map key is still an error
+    test.is_false(df.xs(mi, {"g": "A", "n": 9}, null).ok)
+    // level errors
+    test.is_false(df.xs(mi, 1, 5).ok)
+    test.is_false(df.xs(mi, 1, "nope").ok)
+}
+
+fn test_xs_single_level_and_positional {
+    t := df.set_index(df.from_rows([
+        {"k": "a", "v": 1},
+        {"k": "b", "v": 2},
+        {"k": "a", "v": 3},
+    ]), "k", null)
+    // dropping the only level leaves a positional index
+    x := df.xs(t, "a", null)
+    test.eq(df.col(x, "v"), [1, 3])
+    test.eq(df.index(x), [0, 1])
+    kept := df.xs_opts(t, "a", {"drop_level": false})
+    test.eq(df.index(kept), ["a", "a"])
+    test.eq(df.index_name(kept), "k")
+    // level by index name
+    test.eq(df.col(df.xs(t, "b", "k"), "v"), [2])
+    // frame without an explicit index: labels are positional
+    plain := df.from_rows([{"v": 10}, {"v": 20}, {"v": 30}])
+    test.eq(df.col(df.xs(plain, 1, null), "v"), [20])
+    test.is_false(df.xs(plain, 9, null).ok)
+}
+
+fn test_xs_null_key_and_empty_frame {
+    // null is a valid key
+    t := df.set_index(df.from_rows([
+        {"k": null, "v": 1},
+        {"k": "a", "v": 2},
+    ]), "k", null)
+    test.eq(df.col(df.xs(t, null, null), "v"), [1])
+    // empty frame: no key can be present → Err (pandas KeyError)
+    e := df.set_index(df.empty(["k", "v"]), "k", null)
+    test.is_false(df.xs(e, "a", null).ok)
+}
+
+// === Label-based selection: loc_label ===
+
+fn _name_indexed {
+    df.set_index(_sample_df(), "name", null)
+}
+
+fn test_loc_label_scalar {
+    t := _name_indexed()
+    // Unique scalar match returns the row map (pandas Series analog).
+    row := df.loc_label(t, "Carol", null)
+    test.eq(row.age, 35)
+    test.eq(row.dept, "sales")
+    // Scalar + single column returns the cell value.
+    test.eq(df.loc_label(t, "Carol", "salary"), 85000)
+    // Scalar + column list returns a restricted row map.
+    part := df.loc_label(t, "Carol", ["age", "salary"])
+    test.eq(part.age, 35)
+    test.eq(part.salary, 85000)
+    test.eq(len(keys(part)), 2)
+    // Unknown label: Err naming the label (pandas KeyError).
+    missing := df.loc_label(t, "Zed", null)
+    test.is_false(missing.ok)
+    test.contains(missing.error, "Zed")
+    // Unknown column: Err naming the column.
+    bad_col := df.loc_label(t, "Carol", "nope")
+    test.is_false(bad_col.ok)
+    test.contains(bad_col.error, "nope")
+}
+
+fn test_loc_label_scalar_duplicate_labels {
+    t := df.set_index(df.from_rows([
+        {"k": "a", "v": 1},
+        {"k": "a", "v": 2},
+        {"k": "b", "v": 3},
+    ]), "k", null)
+    // Duplicate labels: scalar selects ALL matching rows as a frame.
+    dup := df.loc_label(t, "a", null)
+    test.eq(df.nrows(dup), 2)
+    test.eq(df.col(dup, "v"), [1, 2])
+    test.eq(df.index(dup), ["a", "a"])
+    uniq := df.loc_label(t, "b", null)
+    test.eq(uniq.v, 3)
+}
+
+fn test_loc_label_list {
+    t := _name_indexed()
+    sel := df.loc_label(t, ["Eve", "Alice"], null)
+    test.eq(df.col(sel, "age"), [32, 30])
+    test.eq(df.index(sel), ["Eve", "Alice"])
+    // Column subset on the way out.
+    cols := df.loc_label(t, ["Bob"], ["age", "salary"])
+    test.eq(df.columns(cols), ["age", "salary"])
+    // A label repeated in the selector repeats the row (pandas behavior).
+    twice := df.loc_label(t, ["Bob", "Bob"], null)
+    test.eq(df.nrows(twice), 2)
+    // Unknown label anywhere in the list: Err naming it.
+    missing := df.loc_label(t, ["Alice", "Zed"], null)
+    test.is_false(missing.ok)
+    test.contains(missing.error, "Zed")
+    // Empty label list: empty selection, not an error.
+    test.eq(df.nrows(df.loc_label(t, [], null)), 0)
+}
+
+fn test_loc_label_boolean_mask {
+    t := _name_indexed()
+    mask := df.loc_label(t, [true, false, true, false, true], null)
+    test.eq(df.index(mask), ["Alice", "Carol", "Eve"])
+    // Wrong-length mask: pandas "Boolean index has wrong length".
+    bad := df.loc_label(t, [true, false, true], null)
+    test.is_false(bad.ok)
+    test.contains(bad.error, "Boolean index has wrong length: 3 instead of 5")
+    // Mixing booleans and labels is an error.
+    mixed := df.loc_label(t, [true, "Alice"], null)
+    test.is_false(mixed.ok)
+    // An all-boolean list is ALWAYS a mask, even on a boolean index
+    // (observed pandas 3.0 behavior).
+    bools := df.set_index(df.from_rows([
+        {"k": true, "v": 1},
+        {"k": false, "v": 2},
+        {"k": true, "v": 3},
+    ]), "k", null)
+    masked := df.loc_label(bools, [true, false, true], null)
+    test.eq(df.col(masked, "v"), [1, 3])
+    wrong_len := df.loc_label(bools, [true], null)
+    test.is_false(wrong_len.ok)
+    // Scalar boolean still selects by label.
+    by_label := df.loc_label(bools, true, null)
+    test.eq(df.col(by_label, "v"), [1, 3])
+}
+
+fn test_loc_label_slice_sorted {
+    t := _name_indexed()
+    // Inclusive of both ends (pandas label slicing).
+    test.eq(df.index(df.loc_label(t, {"from": "Bob", "to": "Dan"}, null)), ["Bob", "Carol", "Dan"])
+    // Open ends.
+    test.eq(df.index(df.loc_label(t, {"to": "Bob"}, null)), ["Alice", "Bob"])
+    test.eq(df.index(df.loc_label(t, {"from": "Dan"}, null)), ["Dan", "Eve"])
+    // Missing bounds on a monotonic index: insertion-point semantics.
+    test.eq(df.index(df.loc_label(t, {"from": "Bobby", "to": "E"}, null)), ["Carol", "Dan"])
+    // Reversed bounds: empty selection, not an error.
+    test.eq(df.nrows(df.loc_label(t, {"from": "Eve", "to": "Bob"}, null)), 0)
+    // A map without from/to is not a valid selector.
+    test.is_false(df.loc_label(t, {"nope": 1}, null).ok)
+}
+
+fn test_loc_label_slice_unsorted_and_duplicates {
+    // Unsorted but unique index: found bounds slice positionally (pandas).
+    t := df.set_index(df.from_rows([
+        {"k": "c", "v": 1},
+        {"k": "a", "v": 2},
+        {"k": "d", "v": 3},
+        {"k": "b", "v": 4},
+    ]), "k", null)
+    test.eq(df.col(df.loc_label(t, {"from": "a", "to": "b"}, null), "v"), [2, 3, 4])
+    // Missing bound on a non-monotonic index: pandas KeyError wording.
+    missing := df.loc_label(t, {"from": "a", "to": "z"}, null)
+    test.is_false(missing.ok)
+    test.contains(missing.error, "non-monotonic")
+    test.contains(missing.error, "\"z\"")
+    // Non-unique left bound: error (pandas); non-unique right bound extends
+    // to the last occurrence.
+    dup_left := df.set_index(df.from_rows([
+        {"k": "a", "v": 1},
+        {"k": "a", "v": 2},
+        {"k": "b", "v": 3},
+    ]), "k", null)
+    left_err := df.loc_label(dup_left, {"from": "a", "to": "b"}, null)
+    test.is_false(left_err.ok)
+    test.contains(left_err.error, "non-unique")
+    dup_right := df.set_index(df.from_rows([
+        {"k": "a", "v": 1},
+        {"k": "b", "v": 2},
+        {"k": "b", "v": 3},
+    ]), "k", null)
+    test.eq(df.col(df.loc_label(dup_right, {"from": "a", "to": "b"}, null), "v"), [1, 2, 3])
+    // Monotonic decreasing index: bounds found positionally.
+    dec := df.set_index(df.from_rows([
+        {"k": "c", "v": 1},
+        {"k": "b", "v": 2},
+        {"k": "a", "v": 3},
+    ]), "k", null)
+    test.eq(df.col(df.loc_label(dec, {"from": "c", "to": "a"}, null), "v"), [1, 2, 3])
+    test.eq(df.nrows(df.loc_label(dec, {"from": "a", "to": "c"}, null)), 0)
+    // Missing bound on decreasing monotonic: insertion semantics.
+    test.eq(df.col(df.loc_label(dec, {"from": "c", "to": "aa"}, null), "v"), [1, 2])
+}
+
+fn test_loc_label_multi_index {
+    multi := df.set_multi_index(_sample_df(), ["dept", "name"], null)
+    // Full key (wrapped in an outer list: a bare list is a label list).
+    full := df.loc_label(multi, [["eng", "Alice"]], null)
+    test.eq(df.nrows(full), 1)
+    test.eq(df.col(full, "age"), [30])
+    // Partial prefix key selects all rows under it.
+    test.eq(df.nrows(df.loc_label(multi, [["sales"]], null)), 2)
+    // Scalar matches the first level.
+    eng := df.loc_label(multi, "eng", null)
+    test.eq(df.nrows(eng), 3)
+    test.eq(df.index(eng)[0], ["eng", "Alice"])
+    // Unknown full key: Err naming it.
+    missing := df.loc_label(multi, [["ops", "Zed"]], null)
+    test.is_false(missing.ok)
+    test.contains(missing.error, "ops")
+    // Slice with partial-key bounds, positional over found bounds.
+    sliced := df.loc_label(multi, {"from": "eng", "to": ["sales", "Carol"]}, null)
+    test.eq(df.nrows(sliced), 3)
+    // Slice on a sorted multi index with a missing bound: insertion.
+    sorted := df.sort_index(multi, null)
+    test.eq(df.nrows(df.loc_label(sorted, {"from": "eng", "to": "sales"}, null)), 5)
+    inserted := df.loc_label(sorted, {"from": "f", "to": "z"}, null)
+    test.eq(df.nrows(inserted), 2)
+    // Missing bound on a non-monotonic multi index: Err.
+    test.is_false(df.loc_label(multi, {"from": "a", "to": "z"}, null).ok)
+}
+
+fn test_loc_label_mixed_type_and_null_labels {
+    t := df.set_index(df.from_rows([
+        {"k": 1, "v": 10},
+        {"k": "a", "v": 20},
+        {"k": 2.5, "v": 30},
+    ]), "k", null)
+    test.eq(df.loc_label(t, "a", "v"), 20)
+    test.eq(df.loc_label(t, 1, "v"), 10)
+    test.eq(df.loc_label(t, 2.5, "v"), 30)
+    // int 1 and float 1.0 are distinct labels.
+    test.is_false(df.loc_label(t, 1.0, null).ok)
+    // Slice across mixed types with found bounds is positional.
+    test.eq(df.col(df.loc_label(t, {"from": 1, "to": "a"}, null), "v"), [10, 20])
+    // null is a selectable label.
+    with_null := df.set_index(df.from_rows([
+        {"k": null, "v": 1},
+        {"k": "a", "v": 2},
+    ]), "k", null)
+    test.eq(df.loc_label(with_null, null, "v"), 1)
+    // A null bound inside a slice still means "open end".
+    test.eq(df.col(df.loc_label(with_null, {"to": "a"}, null), "v"), [1, 2])
+}
+
+fn test_loc_label_no_explicit_index {
+    // Default positional index: labels are the positions.
+    t := _sample_df()
+    test.eq(df.loc_label(t, 2, "name"), "Carol")
+    test.eq(df.col(df.loc_label(t, [0, 2], "name"), "name"), ["Alice", "Carol"])
+    test.is_false(df.loc_label(t, 99, null).ok)
+}
+
+// === Assignment: loc_set / iloc_set ===
+
+fn test_loc_set_scalar_broadcast {
+    t := _name_indexed()
+    out := df.loc_set(t, "Alice", "age", 31)
+    test.eq(df.loc_label(out, "Alice", "age"), 31)
+    test.eq(df.loc_label(out, "Bob", "age"), 25)
+    // Index and columns are preserved.
+    test.eq(df.index(out), df.index(t))
+    test.eq(df.columns(out), df.columns(t))
+    // Frames are immutable: the original is untouched.
+    test.eq(df.loc_label(t, "Alice", "age"), 30)
+    // null col_sel assigns across every column.
+    all := df.loc_set(t, "Alice", null, 0)
+    test.eq(df.loc_label(all, "Alice", "age"), 0)
+    test.eq(df.loc_label(all, "Alice", "dept"), 0)
+    // null value is a valid scalar.
+    nulled := df.loc_set(t, "Alice", "dept", null)
+    test.eq(df.loc_label(nulled, "Alice", "dept"), null)
+}
+
+fn test_loc_set_list_broadcast {
+    t := _name_indexed()
+    // One column + list length == selected rows: per-row values.
+    per_row := df.loc_set(t, ["Alice", "Eve"], "salary", [1, 2])
+    test.eq(df.col(per_row, "salary"), [1, 75000, 85000, 70000, 2])
+    // List length == selected columns: per-column values broadcast to rows
+    // (pandas broadcasts the list to every selected row).
+    per_col := df.loc_set(t, ["Alice", "Eve"], ["age", "salary"], [0, 1])
+    test.eq(df.loc_label(per_col, "Alice", "age"), 0)
+    test.eq(df.loc_label(per_col, "Eve", "salary"), 1)
+    // Single row across several columns.
+    one_row := df.loc_set(t, "Alice", ["age", "salary"], [31, 91000])
+    test.eq(df.loc_label(one_row, "Alice", "salary"), 91000)
+    // Single-element list broadcasts to the whole selection (pandas).
+    single := df.loc_set(t, ["Alice", "Eve"], "salary", [7])
+    test.eq(df.loc_label(single, "Eve", "salary"), 7)
+    // Wrong-length lists: explicit Errs.
+    too_many := df.loc_set(t, ["Alice", "Eve"], "salary", [1, 2, 3])
+    test.is_false(too_many.ok)
+    test.contains(too_many.error, "length 3")
+    one_row_two := df.loc_set(t, "Alice", "age", [1, 2])
+    test.is_false(one_row_two.ok)
+}
+
+fn test_loc_set_duplicate_labels_all_rows {
+    t := df.set_index(df.from_rows([
+        {"k": "a", "v": 1},
+        {"k": "a", "v": 2},
+        {"k": "b", "v": 3},
+    ]), "k", null)
+    // pandas rule: assignment through a duplicate label hits every match.
+    out := df.loc_set(t, "a", "v", 9)
+    test.eq(df.col(out, "v"), [9, 9, 3])
+    listed := df.loc_set(t, ["a"], "v", 0)
+    test.eq(df.col(listed, "v"), [0, 0, 3])
+}
+
+fn test_loc_set_slice_and_mask {
+    t := _name_indexed()
+    sliced := df.loc_set(t, {"from": "Bob", "to": "Dan"}, "salary", 0)
+    test.eq(df.col(sliced, "salary"), [90000, 0, 0, 0, 95000])
+    masked := df.loc_set(t, [true, false, true, false, false], "dept", "x")
+    test.eq(df.col(masked, "dept"), ["x", "eng", "x", "sales", "eng"])
+}
+
+fn test_loc_set_errors_and_empty_selection {
+    t := _name_indexed()
+    // Unknown label: Err naming the label, frame unchanged.
+    missing := df.loc_set(t, "Zed", "age", 1)
+    test.is_false(missing.ok)
+    test.contains(missing.error, "Zed")
+    // Unknown column: Err naming it (pandas would create it; we do not).
+    bad_col := df.loc_set(t, "Alice", "nope", 1)
+    test.is_false(bad_col.ok)
+    test.contains(bad_col.error, "nope")
+    // Empty selection + scalar: no-op (pandas).
+    no_op := df.loc_set(t, [false, false, false, false, false], "age", 0)
+    test.eq(df.col(no_op, "age"), df.col(t, "age"))
+    // Empty selection + ill-fitting list: still an Err (pandas raises).
+    bad := df.loc_set(t, [false, false, false, false, false], "age", [1, 2, 3])
+    test.is_false(bad.ok)
+    // Empty label list + scalar: no-op.
+    test.eq(df.nrows(df.loc_set(t, [], "age", 0)), 5)
+}
+
+fn test_loc_set_multi_index_partial {
+    multi := df.set_multi_index(_sample_df(), ["dept", "name"], null)
+    // Partial key assignment updates every row under the level (pandas).
+    out := df.loc_set(multi, "eng", "salary", 0)
+    test.eq(df.col(out, "salary"), [0, 0, 85000, 70000, 0])
+    test.eq(df.index_nlevels(out), 2)
+    // Full key assignment.
+    one := df.loc_set(multi, [["sales", "Dan"]], "age", 29)
+    test.eq(df.col(one, "age"), [30, 25, 35, 29, 32])
+    // Unknown partial key: Err naming it.
+    test.is_false(df.loc_set(multi, "ops", "salary", 0).ok)
+}
+
+fn test_iloc_set {
+    t := _sample_df()
+    // Scalar row + scalar column.
+    out := df.iloc_set(t, 0, 1, 99)
+    test.eq(df.iloc(out, 0).age, 99)
+    test.eq(df.iloc(out, 1).age, 25)
+    // Negative positions count from the end.
+    neg := df.iloc_set(t, -1, 0, "Zed")
+    test.eq(df.iloc(neg, 4).name, "Zed")
+    // List of rows, one column: per-row list.
+    rows := df.iloc_set(t, [0, -1], 0, ["x", "y"])
+    test.eq(df.col(rows, "name"), ["x", "Bob", "Carol", "Dan", "y"])
+    // List broadcast across two columns to every selected row.
+    cols := df.iloc_set(t, [0, 1], [0, 1], ["a", 0])
+    test.eq(df.iloc(cols, 0).name, "a")
+    test.eq(df.iloc(cols, 1).age, 0)
+    // null selectors mean all rows / all columns.
+    zeroed := df.iloc_set(t, null, null, 0)
+    test.eq(df.iloc(zeroed, 3).salary, 0)
+    all_rows := df.iloc_set(t, null, 1, -1)
+    test.eq(df.col(all_rows, "age"), [-1, -1, -1, -1, -1])
+    // Duplicate positions: last write wins (pandas iloc behavior).
+    dup := df.iloc_set(t, [0, 0], 1, [7, 8])
+    test.eq(df.iloc(dup, 0).age, 8)
+    // Errors: out-of-range positions, non-integer selectors, bad lengths.
+    test.is_false(df.iloc_set(t, 99, 0, 1).ok)
+    test.is_false(df.iloc_set(t, -6, 0, 1).ok)
+    test.is_false(df.iloc_set(t, 0, 99, 1).ok)
+    test.is_false(df.iloc_set(t, "a", 0, 1).ok)
+    test.is_false(df.iloc_set(t, 0, "age", 1).ok)
+    test.is_false(df.iloc_set(t, [0, 1], 0, [1, 2, 3]).ok)
+    // Original frame untouched.
+    test.eq(df.iloc(t, 0).age, 30)
+}
+
+fn test_iloc_set_preserves_index {
+    t := _name_indexed()
+    out := df.iloc_set(t, [0, 2], 0, [0, 0])
+    test.eq(df.index(out), ["Alice", "Bob", "Carol", "Dan", "Eve"])
+    test.eq(df.col(out, "age"), [0, 25, 0, 28, 32])
 }

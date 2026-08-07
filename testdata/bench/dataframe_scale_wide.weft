@@ -1,0 +1,42 @@
+// Wide-frame scale smoke: 100k rows x 12 columns with derivations.
+// Timing belongs to scripts/bench-scale.sh.
+use "../../packages/dataframe/lib.weft" as df
+
+fn _env_int(key, default) {
+    raw := env.get(key, "")
+    if raw == null || raw == "" { return default }
+    n := int.parse(raw).unwrap_or(0)
+    if n <= 0 { return default }
+    n
+}
+
+fn main {
+    let mut n = _env_int("WEFT_DF_WIDE_ROWS", 100000)
+    if n > 1000000 { n = 1000000 }
+    let mut rows = []
+    let mut i = 0
+    while i < n {
+        rows = push(rows, {
+            "id": i,
+            "a": i % 97, "b": i % 89, "c": i % 83, "d": i % 79,
+            "e": i % 73, "f": i % 71, "g": i % 67, "h": i % 61,
+        })
+        i = i + 1
+    }
+    t := df.from_rows(rows)
+    t2 := df.add_column(t, "ab", fn(r) { r["a"] + r["b"] })
+    t3 := df.add_column(t2, "cd", fn(r) { r["c"] + r["d"] })
+    t4 := df.add_column(t3, "total", fn(r) { r["ab"] + r["cd"] + r["e"] + r["f"] + r["g"] + r["h"] })
+    wide := df.add_column(t4, "bucket", fn(r) { r["total"] % 10 })
+    sub := df.select_(wide, ["id", "total", "bucket"])
+    g := df.group_by(sub, "bucket", {
+        "total_sum": {"col": "total", "op": "sum"},
+        "n": {"col": "id", "op": "count"},
+    })
+    say(json.stringify({
+        "fixture": "dataframe_scale_wide",
+        "rows": df.nrows(wide),
+        "cols": len(wide.columns),
+        "groups": df.nrows(g),
+    }))
+}

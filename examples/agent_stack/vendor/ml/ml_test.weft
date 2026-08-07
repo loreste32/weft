@@ -498,7 +498,8 @@ fn test_checkpoint_round_trip_restores_values_and_state {
     path := fs.temp_file("weft-ml-", ".json")?
     ml.save_checkpoint(path, parameters, optimizer, {"epoch": 7, "name": "linear"})?
     checkpoint := ml.load_checkpoint(path)?
-    test.eq(checkpoint.version, 1)
+    test.eq(checkpoint.version, 2)
+    test.eq(checkpoint.epoch, 7)
     test.eq(checkpoint.metadata.epoch, 7)
     ml.load_state_dict(parameters, [warp.array([0.0, 0.0], [2, 1]), warp.array([0.0], [1])])?
     ml.load_state_dict(parameters, checkpoint.parameters)?
@@ -919,4 +920,353 @@ fn test_shuffled_logistic_fit_deterministic {
     test.eq(a.loss, b.loss)
     classes := ml.predict_classes(a, [[-4.0], [4.0]], 0.5)?
     test.eq(classes, [0, 1])
+}
+
+// ── Parameter freezing ──
+
+fn _freeze_test_model {
+    ml.sequential([ml.linear_module(2, 3, 42)?, ml.relu_module()?, ml.linear_module(3, 1, 7)?])?
+}
+
+fn _freeze_test_step(model, params, state) -> Result[any] {
+    x := warp.array([0.5, -1.0, 1.5, 0.25, -0.75, 2.0, 0.1, 0.3], [4, 2])
+    target := ml.constant(warp.array([1.0, 0.0, 2.0, -1.0], [4, 1]))?
+    out := ml.module_forward(model, x)?
+    loss := ml.mse_loss(out, target)?
+    ml.backward(loss, null)?
+    if state == null {
+        ml.sgd_step(params, 0.05, null)?
+    } else {
+        ml.adam_step(params, state, 0.05, null, null, null, null)?
+    }
+    ml.zero_grad_many(params)?
+    Ok(null)
+}
+
+fn test_named_parameters_follow_state_dict_order {
+    named := ml.named_parameters(_freeze_test_model())?
+    let mut names = []
+    for entry in named { names = push(names, entry.name) }
+    test.eq(names, ["0.weight", "0.bias", "2.weight", "2.bias"])
+    // Entries alias the module's parameter list, not copies.
+    params := ml.module_parameters(_freeze_test_model())?
+    test.eq(len(params), 4)
+    linear := ml.linear_module(2, 1, 3)?
+    named_linear := ml.named_parameters(linear)?
+    test.eq(named_linear[0].name, "weight")
+    test.eq(named_linear[1].name, "bias")
+    bad := ml.named_parameters([1, 2])
+    test.eq(bad.ok, false)
+}
+
+fn test_freeze_all_and_unfreeze_restores {
+    model := _freeze_test_model()
+    ml.freeze(model, null)?
+    named := ml.named_parameters(model)?
+    for entry in named { test.eq(entry.parameter.requires_grad, false) }
+    // Frozen parameters accumulate no gradient.
+    params := ml.module_parameters(model)?
+    x := warp.array([1.0, 2.0], [1, 2])
+    loss := ml.sum(ml.module_forward(model, x)?)?
+    ml.backward(loss, null)?
+    for p in params {
+        for g in warp.to_list(ml.grad(p)?) { test.eq(g, 0.0) }
+    }
+    ml.unfreeze(model, null)?
+    for entry in named { test.eq(entry.parameter.requires_grad, true) }
+}
+
+fn test_freeze_by_exact_and_prefix_names {
+    model := _freeze_test_model()
+    ml.freeze(model, "0.weight")?
+    named := ml.named_parameters(model)?
+    test.eq(named[0].parameter.requires_grad, false)
+    test.eq(named[1].parameter.requires_grad, true)
+    test.eq(named[2].parameter.requires_grad, true)
+    ml.freeze(model, ["2.*"])?
+    test.eq(named[2].parameter.requires_grad, false)
+    test.eq(named[3].parameter.requires_grad, false)
+    test.eq(named[1].parameter.requires_grad, true)
+    ml.unfreeze(model, ["0.*"])?
+    test.eq(named[0].parameter.requires_grad, true)
+    test.eq(named[2].parameter.requires_grad, false)
+}
+
+fn test_freeze_unknown_name_errors_and_freezes_nothing {
+    model := _freeze_test_model()
+    r := ml.freeze(model, ["0.weight", "9.weight"])
+    test.eq(r.ok, false)
+    // Atomic: the valid first pattern must not have been applied.
+    named := ml.named_parameters(model)?
+    for entry in named { test.eq(entry.parameter.requires_grad, true) }
+    bad_type := ml.freeze(model, 42)
+    test.eq(bad_type.ok, false)
+    empty := ml.freeze(model, [])
+    test.eq(empty.ok, false)
+}
+
+fn test_frozen_layer_gets_no_sgd_update {
+    model := _freeze_test_model()
+    params := ml.module_parameters(model)?
+    before := ml.state_dict(params)?
+    ml.freeze(model, ["0.*"])?
+    _freeze_test_step(model, params, null)?
+    after := ml.state_dict(params)?
+    // Frozen layer bit-identical...
+    test.eq(warp.to_list(after[0]), warp.to_list(before[0]))
+    test.eq(warp.to_list(after[1]), warp.to_list(before[1]))
+    // ...while the trainable layer moved.
+    test.is_true(warp.to_list(after[2]) != warp.to_list(before[2]))
+    test.is_true(warp.to_list(after[3]) != warp.to_list(before[3]))
+}
+
+fn test_adam_skips_frozen_without_momentum_drift {
+    model := _freeze_test_model()
+    params := ml.module_parameters(model)?
+    state := ml.adam_state(params)?
+    ml.freeze(model, ["2.*"])?
+    before := ml.state_dict(params)?
+    let mut epoch = 0
+    while epoch < 4 {
+        _freeze_test_step(model, params, state)?
+        epoch = epoch + 1
+    }
+    after := ml.state_dict(params)?
+    // Adversarial core: four Adam steps must not move frozen params at all,
+    // and their first/second moments must remain exactly zero (no drift that
+    // would move them the moment they are unfrozen).
+    test.eq(warp.to_list(after[2]), warp.to_list(before[2]))
+    test.eq(warp.to_list(after[3]), warp.to_list(before[3]))
+    test.eq(warp.to_list(state.m[2]), warp.to_list(warp.zeros(warp.shape(state.m[2]))))
+    test.eq(warp.to_list(state.v[2]), warp.to_list(warp.zeros(warp.shape(state.v[2]))))
+    test.eq(state.step, 4)
+    test.is_true(warp.to_list(after[0]) != warp.to_list(before[0]))
+    // Unfreezing re-enables learning for the same parameter objects.
+    ml.unfreeze(model, ["2.*"])?
+    _freeze_test_step(model, params, state)?
+    final := ml.state_dict(params)?
+    test.is_true(warp.to_list(final[2]) != warp.to_list(after[2]))
+}
+
+fn test_frozen_parameter_list_still_validates_constants {
+    // Relaxing optimizer validation for frozen params must not admit constants.
+    c := ml.constant(1.0)?
+    r := ml.sgd_step([c], 0.1, null)
+    test.eq(r.ok, false)
+    mixed := ml.sgd_step([c, ml.variable(1.0)?], 0.1, null)
+    test.eq(mixed.ok, false)
+}
+
+// ── Gradient clipping ──
+
+fn test_clip_grad_norm_hand_computed {
+    a := ml.variable(1.0)?
+    b := ml.variable(1.0)?
+    a.grad = 3.0
+    b.grad = 4.0
+    norm := ml.clip_grad_norm([a, b], 2.5)?
+    test.approx(norm, 5.0, 1e-12)
+    coef := 2.5 / (5.0 + 1e-6)
+    test.approx(ml.grad(a)?, 3.0 * coef, 1e-9)
+    test.approx(ml.grad(b)?, 4.0 * coef, 1e-9)
+}
+
+fn test_clip_grad_norm_below_threshold_is_noop {
+    a := ml.variable(1.0)?
+    b := ml.variable(1.0)?
+    a.grad = 3.0
+    b.grad = 4.0
+    norm := ml.clip_grad_norm([a, b], 10.0)?
+    test.approx(norm, 5.0, 1e-12)
+    test.eq(ml.grad(a)?, 3.0)
+    test.eq(ml.grad(b)?, 4.0)
+}
+
+fn test_clip_grad_norm_zero_grads_no_division_by_zero {
+    a := ml.variable(1.0)?
+    arr := ml.variable(warp.array([1.0, 2.0], [2]))?
+    norm := ml.clip_grad_norm([a, arr], 1.0)?
+    test.eq(norm, 0.0)
+    test.eq(ml.grad(a)?, 0.0)
+    test.eq(warp.to_list(ml.grad(arr)?), [0.0, 0.0])
+}
+
+fn test_clip_grad_norm_tames_exploding_gradient {
+    // Deliberately exploding: loss scaled by 1e12.
+    w := ml.variable(warp.array([1.0, -1.0], [2]))?
+    huge := ml.constant(warp.array([3.0e12, 4.0e12], [2]))?
+    loss := ml.sum(ml.mul(w, huge)?)?
+    ml.backward(loss, null)?
+    norm := ml.clip_grad_norm([w], 5.0)?
+    test.approx(norm, 5.0e12, 1e6)
+    g := warp.to_list(ml.grad(w)?)
+    // Expected direction [3, 4] / 5 scaled to norm 5: [3, 4] exactly
+    // (up to the PyTorch 1e-6 epsilon in the coefficient).
+    test.approx(g[0], 3.0, 1e-5)
+    test.approx(g[1], 4.0, 1e-5)
+    // Array element extraction is an untyped numeric value in Weft; keep
+    // this ratio in floating-point arithmetic explicitly.
+    test.approx((g[1] * 1.0) / g[0], 4.0 / 3.0, 1e-9)
+    clipped_norm := math.sqrt(g[0] * g[0] + g[1] * g[1])
+    test.approx(clipped_norm, 5.0, 1e-5)
+}
+
+fn test_clip_grad_value_clamps_elementwise {
+    arr := ml.variable(warp.array([0.0, 0.0, 0.0], [3]))?
+    arr.grad = warp.array([-10.0, 0.5, 10.0], [3])
+    ml.clip_grad_value([arr], 2.0)?
+    test.eq(warp.to_list(ml.grad(arr)?), [-2.0, 0.5, 2.0])
+    scalar := ml.variable(1.0)?
+    scalar.grad = -7.5
+    ml.clip_grad_value([scalar], 2.0)?
+    test.eq(ml.grad(scalar)?, -2.0)
+}
+
+fn test_clip_skips_frozen_parameters {
+    model := _freeze_test_model()
+    params := ml.module_parameters(model)?
+    ml.freeze(model, ["0.*"])?
+    params[0].grad = warp.full(warp.shape(ml.value(params[0])?), 1.0e10)
+    params[2].grad = warp.full(warp.shape(ml.value(params[2])?), 3.0)
+    // The frozen 1e10 grad must not enter the global norm and must stay as-is.
+    n3 := warp.size(ml.value(params[2])?) + 0.0
+    norm := ml.clip_grad_norm(params, 100.0)?
+    test.approx(norm, math.sqrt(9.0 * n3), 1e-9)
+    test.eq(warp.to_list(ml.grad(params[0])?)[0], 1.0e10)
+    ml.clip_grad_value(params, 1.0)?
+    test.eq(warp.to_list(ml.grad(params[0])?)[0], 1.0e10)
+    test.eq(warp.to_list(ml.grad(params[2])?)[0], 1.0)
+}
+
+fn test_clip_rejects_bad_arguments {
+    a := ml.variable(1.0)?
+    a.grad = 1.0
+    test.eq(ml.clip_grad_norm([a], -1.0).ok, false)
+    test.eq(ml.clip_grad_norm([], 1.0).ok, false)
+    test.eq(ml.clip_grad_norm([a], "big").ok, false)
+    test.eq(ml.clip_grad_value([a], -0.5).ok, false)
+    test.eq(ml.clip_grad_value("nope", 1.0).ok, false)
+    c := ml.constant(1.0)?
+    test.eq(ml.clip_grad_norm([c], 1.0).ok, false)
+}
+
+// ── Checkpoint resume ──
+
+fn test_resume_v1_checkpoint_defaults_epoch_and_optimizer {
+    x := ml.variable(0.0)?
+    path := fs.temp_file("weft-ml-v1-", ".json")?
+    fs.write(path, json.stringify({
+        "format": "weft.ml.checkpoint",
+        "version": 1,
+        "parameters": [1.5],
+        "optimizer": {},
+        "metadata": {"tag": "legacy"},
+    }))?
+    checkpoint := ml.load_checkpoint(path)?
+    test.eq(checkpoint.version, 1)
+    test.eq(checkpoint.epoch, 0)
+    r := ml.resume(path, [x])?
+    test.eq(r.epoch, 0)
+    test.eq(r.optimizer, null)
+    test.eq(r.metadata.tag, "legacy")
+    test.eq(ml.value(x)?, 1.5)
+    fs.remove(path)?
+}
+
+fn test_resume_rejects_mismatched_optimizer_state {
+    x := ml.variable(0.0)?
+    path := fs.temp_file("weft-ml-badopt-", ".json")?
+    fs.write(path, json.stringify({
+        "format": "weft.ml.checkpoint",
+        "version": 2,
+        "parameters": [1.5],
+        "optimizer": {"step": 3, "m": [], "v": []},
+        "epoch": 3,
+        "metadata": {},
+    }))?
+    r := ml.resume(path, [x])
+    test.eq(r.ok, false)
+    fs.remove(path)?
+    bad_epoch := fs.temp_file("weft-ml-badepoch-", ".json")?
+    fs.write(bad_epoch, json.stringify({
+        "format": "weft.ml.checkpoint",
+        "version": 2,
+        "parameters": [1.5],
+        "optimizer": {},
+        "epoch": -2,
+        "metadata": {},
+    }))?
+    test.eq(ml.load_checkpoint(bad_epoch).ok, false)
+    fs.remove(bad_epoch)?
+}
+
+fn _resume_test_model {
+    ml.sequential([ml.linear_module(2, 3, 42)?, ml.tanh_module()?, ml.linear_module(3, 1, 7)?])?
+}
+
+fn _resume_train_epochs(model, params, state, epochs) -> Result[any] {
+    x := warp.array([0.5, -1.0, 1.5, 0.25, -0.75, 2.0, 0.1, 0.3], [4, 2])
+    target := ml.constant(warp.array([1.0, 0.0, 2.0, -1.0], [4, 1]))?
+    let mut epoch = 0
+    while epoch < epochs {
+        out := ml.module_forward(model, x)?
+        loss := ml.mse_loss(out, target)?
+        ml.backward(loss, null)?
+        ml.adam_step(params, state, 0.05, null, null, null, null)?
+        ml.zero_grad_many(params)?
+        epoch = epoch + 1
+    }
+    Ok(null)
+}
+
+fn _assert_same_params(a, b) -> Result[any] {
+    va := ml.state_dict(a)?
+    vb := ml.state_dict(b)?
+    test.eq(len(va), len(vb))
+    let mut i = 0
+    while i < len(va) {
+        test.eq(warp.to_list(va[i]), warp.to_list(vb[i]))
+        i = i + 1
+    }
+    Ok(null)
+}
+
+fn test_resume_training_is_bit_identical_to_uninterrupted {
+    // Reference: 5 seeded Adam epochs in one run.
+    ref_model := _resume_test_model()
+    ref_params := ml.module_parameters(ref_model)?
+    ref_state := ml.adam_state(ref_params)?
+    _resume_train_epochs(ref_model, ref_params, ref_state, 5)?
+
+    // Interrupted: 3 epochs, checkpoint, resume into a fresh model + state
+    // handle, then 2 more epochs.
+    part_model := _resume_test_model()
+    part_params := ml.module_parameters(part_model)?
+    part_state := ml.adam_state(part_params)?
+    _resume_train_epochs(part_model, part_params, part_state, 3)?
+    path := fs.temp_file("weft-ml-resume-", ".json")?
+    ml.save_checkpoint(path, part_params, part_state, {"epoch": 3})?
+
+    resumed_model := _resume_test_model()
+    r := ml.resume(path, resumed_model)?
+    test.eq(r.epoch, 3)
+    test.eq(r.optimizer.step, 3)
+    resumed_params := ml.module_parameters(resumed_model)?
+    _resume_train_epochs(resumed_model, resumed_params, r.optimizer, 2)?
+    _assert_same_params(ref_params, resumed_params)?
+    test.eq(r.optimizer.step, 5)
+
+    // Negative control: resuming weights with FRESH optimizer state must
+    // diverge — proves the bit-identical assertion above really depends on
+    // the restored Adam moments and step counter, not on luck.
+    fresh_model := _resume_test_model()
+    fresh_params := ml.module_parameters(fresh_model)?
+    r2 := ml.resume(path, fresh_model)?
+    fresh_state := ml.adam_state(fresh_params)?
+    _resume_train_epochs(fresh_model, fresh_params, fresh_state, 2)?
+    ref_values := ml.state_dict(ref_params)?
+    fresh_values := ml.state_dict(fresh_params)?
+    test.is_true(warp.to_list(ref_values[0]) != warp.to_list(fresh_values[0]))
+    test.eq(r2.epoch, 3)
+    fs.remove(path)?
 }

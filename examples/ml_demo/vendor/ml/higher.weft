@@ -48,10 +48,17 @@ pub fn second_derivative(scalar_fn, x, eps) -> Result[any] {
 }
 
 /// Nested reverse-mode second derivative: backward(f, create_graph) then backward(∂f/∂x).
+/// Only valid when every op in the graph got a graph VJP; backward records
+/// that on the output node as _graph_complete, and a numeric fallback here
+/// means "unavailable" so the caller drops to finite differences instead of
+/// trusting a truncated (zero) second derivative.
 fn _second_derivative_nested(scalar_fn, x) -> Result[any] {
     loss := _eval_loss(scalar_fn, x)?
     ag.zero_grad(loss)?
     ag.backward(loss, true)?
+    if contains(keys(loss), "_graph_complete") && loss._graph_complete == false {
+        return Err("ml.second_derivative nested path unavailable: graph contains numeric-only VJPs")
+    }
     g := x.grad
     if _is_node(g) {
         // Double backward through the first-gradient graph.

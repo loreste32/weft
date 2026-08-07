@@ -1,0 +1,596 @@
+use math
+use warp
+
+// Forward-mode automatic differentiation with dual numbers.
+//
+// A dual is an ordinary Weft map {"_dual": true, "value", "derivative"} that
+// carries a value and its exact derivative (the tangent) side by side. Each
+// operation applies the chain rule to the tangent, so a single evaluation of
+// f on dual(x, v) yields the Jacobian-vector product J(x) v exactly — no
+// finite-difference error, no tape.
+//
+// Values and tangents may be finite scalars or warp arrays (elementwise
+// tangent of the same shape), which makes jvp work for both scalar and array
+// functions. Cost model: one forward evaluation per input direction, so
+// forward mode is cheap when f has few inputs (jacobian costs n evaluations
+// for n scalar inputs); reverse mode (autograd.weft) stays cheap when f has
+// few outputs. The two modes are cross-checked against each other and against
+// gradcheck in forward_test.weft.
+//
+// Higher order: values/tangents may themselves be duals (nested dual
+// numbers). Every value helper below dispatches through the same public ops,
+// so derivative(fn(y) { derivative(f, y) }, x) computes an exact second
+// derivative without any special casing. Nesting is scalar-first, matching
+// the nested reverse-mode scope.
+
+pub fn dual(value, derivative) -> Result[any] {
+    if !_supported(value) { return Err("ml.dual value must be a finite number, warp array, or dual") }
+    if !_supported(derivative) { return Err("ml.dual derivative must be a finite number, warp array, or dual") }
+    if _is_array(value) {
+        if _number(derivative) {
+            return Ok(_dual(value, warp.full(warp.shape(value), derivative + 0.0)))
+        }
+        if _is_array(derivative) && warp.shape(derivative) == warp.shape(value) {
+            return Ok(_dual(value, derivative))
+        }
+        return Err("ml.dual derivative must be a warp array with the value's shape (or a number to broadcast)")
+    }
+    if _is_array(derivative) { return Err("ml.dual scalar value cannot carry an array derivative") }
+    Ok(_dual(value, derivative))
+}
+
+pub fn is_dual(value) { _is_dual(value) }
+
+pub fn dual_value(node) -> Result[any] {
+    if !_is_dual(node) { return Err("ml.dual_value expects a dual number") }
+    Ok(node.value)
+}
+
+pub fn dual_derivative(node) -> Result[any] {
+    if !_is_dual(node) { return Err("ml.dual_derivative expects a dual number") }
+    Ok(node.derivative)
+}
+
+// Exact Jacobian-vector product: evaluate f on dual(x, v) and return
+// {"value": f(x), "jvp": J(x) v}. x may be a scalar, a list of scalars (f
+// then receives a list of duals), or a warp array; v must mirror x. f must
+// return a dual (or Result of one) built from the forward ops below; a plain
+// number/array return is treated as a constant function with zero jvp.
+pub fn jvp(f, x, v) -> Result[any] {
+    seeded := _seed(x, v)?
+    out := _apply(f, seeded)?
+    if _is_dual(out) { return Ok({"value": out.value, "jvp": out.derivative}) }
+    if _number(out) || _is_array(out) { return Ok({"value": out, "jvp": _zero_like(out)}) }
+    Err("ml.jvp function must return a dual, finite number, or warp array")
+}
+
+// Gradient of a scalar-output f at x (list of n scalars) via n unit-vector
+// JVPs — one full f evaluation per input, so keep n small. Returns the list
+// of partials [df/dx0, ..., df/dx(n-1)].
+pub fn jacobian(f, x) -> Result[any] {
+    if _kind(x) != "list" || len(x) == 0 {
+        return Err("ml.jacobian expects a non-empty list of scalar inputs")
+    }
+    for xi in x {
+        if !_number(xi) { return Err("ml.jacobian expects finite scalar inputs") }
+    }
+    n := len(x)
+    let mut partials = []
+    let mut i = 0
+    while i < n {
+        let mut v = []
+        let mut j = 0
+        while j < n {
+            e := if j == i { 1.0 } else { 0.0 }
+            v = push(v, e)
+            j = j + 1
+        }
+        r := jvp(f, x, v)?
+        if !_number(r.jvp) {
+            return Err("ml.jacobian expects a scalar-output function; one partial per unit direction")
+        }
+        partials = push(partials, r.jvp)
+        i = i + 1
+    }
+    Ok(partials)
+}
+
+// Scalar convenience: exact f'(x). Always seeds a fresh unit tangent, so x
+// may itself be a dual: derivative(fn(y) { derivative(f, y) }, x) evaluates f
+// on a dual whose value is the outer dual, and the nested tangent arithmetic
+// yields the exact second derivative (duals of duals, scalar-first).
+pub fn derivative(f, x) -> Result[any] {
+    if !_number(x) && !_is_dual(x) {
+        return Err("ml.derivative expects a finite scalar or dual input")
+    }
+    input := _dual(x, 1.0)
+    out := _apply(f, input)?
+    if _is_dual(out) {
+        d := out.derivative
+        if !_number(d) && !_is_dual(d) {
+            return Err("ml.derivative expects a scalar-output function")
+        }
+        return Ok(d)
+    }
+    if _number(out) { return Ok(0.0) }
+    Err("ml.derivative expects a scalar-output function built from forward ops")
+}
+
+pub fn add(left, right) -> Result[any] {
+    l := _as_dual(left)
+    r := _as_dual(right)
+    if l == null || r == null { return Err("ml.forward add expects duals, finite numbers, or warp arrays") }
+    v := _vadd(l.value, r.value)
+    if is_err(v) { return v }
+    d := _vadd(l.derivative, r.derivative)
+    if is_err(d) { return d }
+    Ok(_dual(v, d))
+}
+
+pub fn sub(left, right) -> Result[any] {
+    l := _as_dual(left)
+    r := _as_dual(right)
+    if l == null || r == null { return Err("ml.forward sub expects duals, finite numbers, or warp arrays") }
+    v := _vsub(l.value, r.value)
+    if is_err(v) { return v }
+    d := _vsub(l.derivative, r.derivative)
+    if is_err(d) { return d }
+    Ok(_dual(v, d))
+}
+
+pub fn mul(left, right) -> Result[any] {
+    l := _as_dual(left)
+    r := _as_dual(right)
+    if l == null || r == null { return Err("ml.forward mul expects duals, finite numbers, or warp arrays") }
+    v := _vmul(l.value, r.value)
+    if is_err(v) { return v }
+    t1 := _vmul(l.derivative, r.value)
+    if is_err(t1) { return t1 }
+    t2 := _vmul(l.value, r.derivative)
+    if is_err(t2) { return t2 }
+    d := _vadd(t1, t2)
+    if is_err(d) { return d }
+    Ok(_dual(v, d))
+}
+
+pub fn div(left, right) -> Result[any] {
+    l := _as_dual(left)
+    r := _as_dual(right)
+    if l == null || r == null { return Err("ml.forward div expects duals, finite numbers, or warp arrays") }
+    v := _vdiv(l.value, r.value)
+    if is_err(v) { return v }
+    t1 := _vmul(l.derivative, r.value)
+    if is_err(t1) { return t1 }
+    t2 := _vmul(l.value, r.derivative)
+    if is_err(t2) { return t2 }
+    num := _vsub(t1, t2)
+    if is_err(num) { return num }
+    den := _vmul(r.value, r.value)
+    if is_err(den) { return den }
+    d := _vdiv(num, den)
+    if is_err(d) { return d }
+    Ok(_dual(v, d))
+}
+
+pub fn neg(node) -> Result[any] {
+    x := _as_dual(node)
+    if x == null { return Err("ml.forward neg expects a dual, finite number, or warp array") }
+    v := _vneg(x.value)
+    if is_err(v) { return v }
+    d := _vneg(x.derivative)
+    if is_err(d) { return d }
+    Ok(_dual(v, d))
+}
+
+pub fn exp(node) -> Result[any] {
+    x := _as_dual(node)
+    if x == null { return Err("ml.forward exp expects a dual, finite number, or warp array") }
+    v := _vexp(x.value)
+    if is_err(v) { return v }
+    d := _vmul(v, x.derivative)
+    if is_err(d) { return d }
+    Ok(_dual(v, d))
+}
+
+pub fn log(node) -> Result[any] {
+    x := _as_dual(node)
+    if x == null { return Err("ml.forward log expects a dual, finite number, or warp array") }
+    v := _vlog(x.value)
+    if is_err(v) { return v }
+    d := _vdiv(x.derivative, x.value)
+    if is_err(d) { return d }
+    Ok(_dual(v, d))
+}
+
+pub fn sin(node) -> Result[any] {
+    x := _as_dual(node)
+    if x == null { return Err("ml.forward sin expects a dual, finite number, or warp array") }
+    v := _vsin(x.value)
+    if is_err(v) { return v }
+    d := _vmul(_vcos(x.value), x.derivative)
+    if is_err(d) { return d }
+    Ok(_dual(v, d))
+}
+
+pub fn cos(node) -> Result[any] {
+    x := _as_dual(node)
+    if x == null { return Err("ml.forward cos expects a dual, finite number, or warp array") }
+    v := _vcos(x.value)
+    if is_err(v) { return v }
+    neg_sin := _vneg(_vsin(x.value))
+    if is_err(neg_sin) { return neg_sin }
+    d := _vmul(neg_sin, x.derivative)
+    if is_err(d) { return d }
+    Ok(_dual(v, d))
+}
+
+pub fn sqrt(node) -> Result[any] {
+    x := _as_dual(node)
+    if x == null { return Err("ml.forward sqrt expects a dual, finite number, or warp array") }
+    v := _vsqrt(x.value)
+    if is_err(v) { return v }
+    twice := _vmul(2.0, v)
+    if is_err(twice) { return twice }
+    d := _vdiv(x.derivative, twice)
+    if is_err(d) { return d }
+    Ok(_dual(v, d))
+}
+
+pub fn tanh(node) -> Result[any] {
+    x := _as_dual(node)
+    if x == null { return Err("ml.forward tanh expects a dual, finite number, or warp array") }
+    v := _vtanh(x.value)
+    if is_err(v) { return v }
+    sech2 := _vsub(1.0, _vmul(v, v))
+    if is_err(sech2) { return sech2 }
+    d := _vmul(sech2, x.derivative)
+    if is_err(d) { return d }
+    Ok(_dual(v, d))
+}
+
+pub fn sigmoid(node) -> Result[any] {
+    x := _as_dual(node)
+    if x == null { return Err("ml.forward sigmoid expects a dual, finite number, or warp array") }
+    v := _vsigmoid(x.value)
+    if is_err(v) { return v }
+    factor := _vmul(v, _vsub(1.0, v))
+    if is_err(factor) { return factor }
+    d := _vmul(factor, x.derivative)
+    if is_err(d) { return d }
+    Ok(_dual(v, d))
+}
+
+// ReLU uses the x > 0 subgradient mask, treated as constant at the kink
+// (mask at 0 is 0), matching the reverse-mode tape.
+pub fn relu(node) -> Result[any] {
+    x := _as_dual(node)
+    if x == null { return Err("ml.forward relu expects a dual, finite number, or warp array") }
+    v := _vrelu(x.value)
+    if is_err(v) { return v }
+    d := _vmul(_vrelu_mask(x.value), x.derivative)
+    if is_err(d) { return d }
+    Ok(_dual(v, d))
+}
+
+pub fn pow(node, exponent) -> Result[any] {
+    if !_number(exponent) { return Err("ml.forward pow exponent must be numeric") }
+    x := _as_dual(node)
+    if x == null { return Err("ml.forward pow expects a dual, finite number, or warp array") }
+    v := _vpow(x.value, exponent)
+    if is_err(v) { return v }
+    factor := _vmul(exponent, _vpow(x.value, exponent - 1.0))
+    if is_err(factor) { return factor }
+    d := _vmul(factor, x.derivative)
+    if is_err(d) { return d }
+    Ok(_dual(v, d))
+}
+
+// Reduce an array dual to a scalar dual; identity on scalars.
+pub fn sum(node) -> Result[any] {
+    x := _as_dual(node)
+    if x == null { return Err("ml.forward sum expects a dual, finite number, or warp array") }
+    v := _vsum(x.value)
+    if is_err(v) { return v }
+    d := _vsum(x.derivative)
+    if is_err(d) { return d }
+    Ok(_dual(v, d))
+}
+
+pub fn mean(node) -> Result[any] {
+    x := _as_dual(node)
+    if x == null { return Err("ml.forward mean expects a dual, finite number, or warp array") }
+    n := _vnumel(x.value)
+    sv := _vsum(x.value)
+    if is_err(sv) { return sv }
+    v := _vdiv(sv, n)
+    if is_err(v) { return v }
+    sd := _vsum(x.derivative)
+    if is_err(sd) { return sd }
+    d := _vdiv(sd, n)
+    if is_err(d) { return d }
+    Ok(_dual(v, d))
+}
+
+// Two-dimensional dual matmul: d(AB) = dA B + A dB.
+pub fn matmul(left, right) -> Result[any] {
+    l := _as_dual(left)
+    r := _as_dual(right)
+    if l == null || r == null { return Err("ml.forward matmul expects duals or warp arrays") }
+    if !_is_array(l.value) || !_is_array(r.value) {
+        return Err("ml.forward matmul expects warp array values")
+    }
+    if len(warp.shape(l.value)) != 2 || len(warp.shape(r.value)) != 2 {
+        return Err("ml.forward matmul supports two-dimensional arrays")
+    }
+    ld := _array_tangent(l.derivative, warp.shape(l.value))
+    rd := _array_tangent(r.derivative, warp.shape(r.value))
+    v := warp.matmul(l.value, r.value)
+    if is_err(v) { return v }
+    t1 := warp.matmul(ld, r.value)
+    if is_err(t1) { return t1 }
+    t2 := warp.matmul(l.value, rd)
+    if is_err(t2) { return t2 }
+    Ok(_dual(v, warp.add(t1, t2)))
+}
+
+fn _dual(value, derivative) {
+    {"_dual": true, "value": value, "derivative": derivative}
+}
+
+fn _as_dual(value) {
+    if _is_dual(value) { return value }
+    if _number(value) { return _dual(value + 0.0, 0.0) }
+    if _is_array(value) { return _dual(value, warp.zeros(warp.shape(value))) }
+    null
+}
+
+fn _apply(f, input) -> Result[any] {
+    out := f(input)
+    if _kind(out) == "result" {
+        if !out.ok { return out }
+        return Ok(out.value)
+    }
+    Ok(out)
+}
+
+fn _seed(x, v) -> Result[any] {
+    if _kind(x) == "list" {
+        if _kind(v) != "list" || len(v) != len(x) {
+            return Err("ml.jvp direction must mirror the input structure")
+        }
+        let mut out = []
+        let mut i = 0
+        while i < len(x) {
+            s := _seed(x[i], v[i])?
+            out = push(out, s)
+            i = i + 1
+        }
+        return Ok(out)
+    }
+    if _number(x) {
+        if !_number(v) { return Err("ml.jvp direction must be numeric for a scalar input") }
+        return Ok(_dual(x + 0.0, v + 0.0))
+    }
+    if _is_array(x) {
+        shape := warp.shape(x)
+        if _is_array(v) {
+            if warp.shape(v) != shape {
+                return Err("ml.jvp direction shape must match the input shape")
+            }
+            return Ok(_dual(x, v))
+        }
+        if _number(v) { return Ok(_dual(x, warp.full(shape, v + 0.0))) }
+        return Err("ml.jvp direction must be a warp array or number for an array input")
+    }
+    Err("ml.jvp input must be a finite number, list of scalars, or warp array")
+}
+
+fn _array_tangent(d, shape) {
+    if _is_array(d) { return d }
+    warp.full(shape, d)
+}
+
+fn _zero_like(value) {
+    if _is_array(value) { return warp.zeros(warp.shape(value)) }
+    0.0
+}
+
+// Value helpers dispatch on dual-ness first so nested dual numbers (duals of
+// duals) flow through the same public ops; then on warp arrays; then scalars.
+
+fn _vadd(a, b) {
+    if _is_dual(a) || _is_dual(b) {
+        r := add(a, b)
+        if is_err(r) { return r }
+        return r.value
+    }
+    if _is_array(a) || _is_array(b) { return warp.add(a, b) }
+    a + b
+}
+
+fn _vsub(a, b) {
+    if _is_dual(a) || _is_dual(b) {
+        r := sub(a, b)
+        if is_err(r) { return r }
+        return r.value
+    }
+    if _is_array(a) || _is_array(b) { return warp.sub(a, b) }
+    a - b
+}
+
+fn _vmul(a, b) {
+    if _is_dual(a) || _is_dual(b) {
+        r := mul(a, b)
+        if is_err(r) { return r }
+        return r.value
+    }
+    if _is_array(a) || _is_array(b) { return warp.mul(a, b) }
+    a * b
+}
+
+fn _vdiv(a, b) {
+    if _is_dual(a) || _is_dual(b) {
+        r := div(a, b)
+        if is_err(r) { return r }
+        return r.value
+    }
+    if _is_array(a) || _is_array(b) { return warp.div(a, b) }
+    a / b
+}
+
+fn _vneg(a) {
+    if _is_dual(a) {
+        r := neg(a)
+        if is_err(r) { return r }
+        return r.value
+    }
+    if _is_array(a) { return warp.neg(a) }
+    -a
+}
+
+fn _vexp(a) {
+    if _is_dual(a) {
+        r := exp(a)
+        if is_err(r) { return r }
+        return r.value
+    }
+    if _is_array(a) { return warp.exp(a) }
+    math.exp(a)
+}
+
+fn _vlog(a) {
+    if _is_dual(a) {
+        r := log(a)
+        if is_err(r) { return r }
+        return r.value
+    }
+    if _is_array(a) { return warp.log_(a) }
+    math.log(a)
+}
+
+fn _vsin(a) {
+    if _is_dual(a) {
+        r := sin(a)
+        if is_err(r) { return r }
+        return r.value
+    }
+    if _is_array(a) { return warp.sin(a) }
+    math.sin(a)
+}
+
+fn _vcos(a) {
+    if _is_dual(a) {
+        r := cos(a)
+        if is_err(r) { return r }
+        return r.value
+    }
+    if _is_array(a) { return warp.cos(a) }
+    math.cos(a)
+}
+
+fn _vsqrt(a) {
+    if _is_dual(a) {
+        r := sqrt(a)
+        if is_err(r) { return r }
+        return r.value
+    }
+    if _is_array(a) { return warp.sqrt(a) }
+    math.sqrt(a)
+}
+
+fn _vtanh(a) {
+    if _is_dual(a) {
+        r := tanh(a)
+        if is_err(r) { return r }
+        return r.value
+    }
+    if _is_array(a) { return warp.tanh(a) }
+    _scalar_tanh(a)
+}
+
+fn _vsigmoid(a) {
+    if _is_dual(a) {
+        r := sigmoid(a)
+        if is_err(r) { return r }
+        return r.value
+    }
+    if _is_array(a) {
+        // Same branch-discard stabilization as the reverse-mode tape.
+        positive := warp.div(1.0, warp.add(1.0, warp.exp(warp.neg(a))))
+        e := warp.exp(a)
+        return warp.where(warp.greater_equal(a, 0.0), positive, warp.div(e, warp.add(1.0, e)))
+    }
+    if a >= 0 { return 1.0 / (1.0 + math.exp(-a)) }
+    e := math.exp(a)
+    e / (1.0 + e)
+}
+
+fn _vrelu(a) {
+    if _is_dual(a) {
+        r := relu(a)
+        if is_err(r) { return r }
+        return r.value
+    }
+    if _is_array(a) { return warp.mul(a, warp.greater(a, 0.0)) }
+    if a > 0.0 { a } else { 0.0 }
+}
+
+fn _vrelu_mask(a) {
+    if _is_dual(a) { return _vrelu_mask(a.value) }
+    if _is_array(a) { return warp.greater(a, 0.0) }
+    if a > 0.0 { 1.0 } else { 0.0 }
+}
+
+fn _vpow(a, exponent) {
+    if _is_dual(a) {
+        r := pow(a, exponent)
+        if is_err(r) { return r }
+        return r.value
+    }
+    if _is_array(a) { return warp.pow_(a, exponent) }
+    math.pow(a, exponent)
+}
+
+fn _vsum(a) {
+    if _is_dual(a) {
+        r := sum(a)
+        if is_err(r) { return r }
+        return r.value
+    }
+    if _is_array(a) { return warp.sum(a) }
+    a
+}
+
+fn _vnumel(a) {
+    if _is_dual(a) { return _vnumel(a.value) }
+    if _is_array(a) { return warp.size(a) + 0.0 }
+    1.0
+}
+
+fn _scalar_tanh(x) {
+    if x > 20.0 { return 1.0 }
+    if x < -20.0 { return -1.0 }
+    e := math.exp(2.0 * x)
+    return (e - 1.0) / (e + 1.0)
+}
+
+fn _supported(value) { _number(value) || _is_array(value) || _is_dual(value) }
+
+fn _is_dual(value) {
+    if value == null || _kind(value) != "map" { return false }
+    if !contains(keys(value), "_dual") { return false }
+    value._dual == true
+}
+
+fn _is_array(value) {
+    value != null && _kind(value) == "map" && value._warp == true
+}
+
+fn _number(value) {
+    if value == null { return false }
+    k := _kind(value)
+    if k != "int" && k != "float" { return false }
+    value == value && !math.isinf(value)
+}
+
+fn _kind(value) { type_of(value) }

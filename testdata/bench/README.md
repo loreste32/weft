@@ -35,6 +35,13 @@ Multi-fixture scale smoke. Writes `reports/scale-bench.json`.
 | `warp_scale.weft` (elementwise) | 100k sum | `WEFT_WARP_MODE=elementwise`, `WEFT_WARP_ELEMS` | 60000 |
 | `dataframe_scale.weft` | 100k rows | fixed in fixture | 120000 |
 | `dataframe_scale_1m.weft` | **250k** rows (1M optional) | `WEFT_DF_ROWS=1000000` for full million | 300000 |
+| `dataframe_scale_wide.weft` | 100k rows × 13 cols | `WEFT_DF_WIDE_ROWS` | 120000 |
+| `dataframe_scale_join.weft` | 100k × 20k inner join | `WEFT_DF_JOIN_ROWS` | 120000 |
+
+Opt-in heavy tier: `WEFT_SCALE_BIG=1` adds the full 1M-row run (budget
+1200000 ms). **10M rows is aspirational** — DataFrame storage is row-list, so
+memory grows ~linearly (100k×13 ≈ 2.3 GiB peak); a 10M budget only becomes
+meaningful with columnar storage (see `docs/COMPATIBILITY.md`).
 
 ### Budget policy
 

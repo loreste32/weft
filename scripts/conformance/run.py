@@ -15,6 +15,7 @@ import json
 import math
 import random
 import subprocess
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -139,6 +140,52 @@ def warp_strides_expected() -> dict[str, Any]:
     }
 
 
+def warp_index_expected() -> dict[str, Any]:
+    """ellipsis (`...`) and newaxis (`None`) selectors: values, shapes, dtypes,
+    assignment through both, and the IndexError cases (error presence only)."""
+    cube = np.arange(24, dtype=np.int64).reshape(2, 3, 4)
+    matrix = np.arange(6, dtype=np.int64).reshape(2, 3)
+    f32 = np.arange(1, 7, dtype=np.float32).reshape(2, 3)
+    set_ellipsis = matrix.copy()
+    set_ellipsis[..., 0] = 5
+    set_newaxis = matrix.copy()
+    set_newaxis[None, 0] = 7
+    set_fewer = matrix.copy()
+    set_fewer[0] = 9
+    set_cube = cube.copy()
+    set_cube[..., 1] = np.arange(100, 106, dtype=np.int64).reshape(2, 3)
+    return {
+        "ell_trailing_shape": list(cube[..., 0].shape),
+        "ell_trailing": cube[..., 0].reshape(-1).tolist(),
+        "ell_trailing_dtype": str(cube[..., 0].dtype),
+        "ell_zero_shape": list(matrix[1, ...].shape),
+        "ell_zero": matrix[1, ...].reshape(-1).tolist(),
+        "newaxis_wrap_shape": list(matrix[None, ..., None].shape),
+        "newaxis_pair_shape": list(matrix[None, :, None].shape),
+        "newaxis_pair": matrix[None, :, None].reshape(-1).tolist(),
+        "newaxis_scalar_shape": list(matrix[0, None].shape),
+        "newaxis_only_shape": list(matrix[None, None, 0, 0].shape),
+        "adv_newaxis_shape": list(matrix[[0, 1], None, :].shape),
+        "adv_newaxis": matrix[[0, 1], None, :].reshape(-1).tolist(),
+        "adv_separated_shape": list(matrix[[0, 1], None, [0, 1]].shape),
+        "adv_separated": matrix[[0, 1], None, [0, 1]].reshape(-1).tolist(),
+        "slice_ellipsis_shape": list(cube[..., 0:2].shape),
+        "slice_ellipsis": cube[..., 0:2].reshape(-1).tolist(),
+        "typed_dtype": str(f32[..., 1].dtype),
+        "typed": f32[..., 1].reshape(-1).tolist(),
+        "set_ellipsis": set_ellipsis.reshape(-1).tolist(),
+        "set_newaxis": set_newaxis.reshape(-1).tolist(),
+        "set_fewer": set_fewer.reshape(-1).tolist(),
+        "set_cube_shape": list(set_cube.shape),
+        "set_cube_lane": set_cube[..., 1].reshape(-1).tolist(),
+        "err_index_two_ellipsis": _numpy_raises(lambda: cube[..., ...]),
+        "err_index_too_many": _numpy_raises(lambda: matrix[0, 0, 0]),
+        "err_index_too_many_newaxis": _numpy_raises(lambda: matrix[None, 0, 0, 0]),
+        "err_set_two_ellipsis": _numpy_raises(lambda: matrix.__setitem__((..., ..., 0), 1)),
+        "err_set_too_many": _numpy_raises(lambda: matrix.__setitem__((0, 0, 0), 1)),
+    }
+
+
 def dataframe_missing_expected() -> dict[str, Any]:
     frame = pd.DataFrame([{"a": 1}, {"b": 2}])
     return {
@@ -202,13 +249,15 @@ def warp_errors_expected() -> dict[str, Any]:
 _WARP_DTYPES = [
     "bool", "int8", "int16", "int32", "int64",
     "uint8", "uint16", "uint32", "uint64",
-    "float32", "float64",
+    "float16", "float32", "float64",
 ]
 
 
 def warp_dtype_expected() -> dict[str, Any]:
-    """Full 11x11 np.promote_types matrix for the supported dtypes, plus
-    representative range-checked casting cases (error presence as booleans)."""
+    """Full 12x12 np.promote_types matrix for the supported dtypes, plus
+    representative range-checked casting cases (error presence as booleans)
+    and float16 rounding/overflow semantics (values are exact: every binary16
+    value is representable in float64)."""
     bools = np.array([True, False], dtype=bool)
     ints = np.array([1, 2], dtype=np.int64)
     f32 = np.array([1.0, 2.0], dtype=np.float32)
@@ -230,6 +279,22 @@ def warp_dtype_expected() -> dict[str, Any]:
         for a in _WARP_DTYPES
         for b in _WARP_DTYPES
     }
+    f16 = np.array([0.1, 1.5, 65504.0, 2048.0001], dtype=np.float16)
+    f16_sub = np.array(
+        [5.960464477539063e-08, 2.9802322387695312e-08, 8.940696716308594e-08, 1.0e-10],
+        dtype=np.float16,
+    )
+    f16_ties = np.array(
+        [1.00048828125, 1.00146484375, 0.999755859375, 0.9996337890625],
+        dtype=np.float16,
+    )
+    with warnings.catch_warnings():
+        # np.float16 overflow is a RuntimeWarning, not an error; warp matches
+        # by producing ±inf without an Err.
+        warnings.simplefilter("ignore", RuntimeWarning)
+        f16_over = np.array([1e10, -1e10, 65519.0, 65520.0], dtype=np.float16)
+    f16_sum = np.float16(0.1) + np.float16(0.2)
+    f16_roundtrip = f16.astype(np.float64)
     return {
         "bool_plus_int64_dtype": str(bool_int.dtype),
         "bool_plus_int64": bool_int.tolist(),
@@ -255,15 +320,35 @@ def warp_dtype_expected() -> dict[str, Any]:
         "float_to_int8_trunc_dtype": str(np.array([2.7, -2.7]).astype(np.int8).dtype),
         "bool_cast": np.array([0, 2]).astype(bool).tolist(),
         "bool_cast_dtype": str(np.array([0, 2]).astype(bool).dtype),
+        "float16_dtype": str(f16.dtype),
+        "float16_itemsize": f16.dtype.itemsize,
+        "float16_round": f16.astype(np.float64).tolist(),
+        "float16_subnormal": f16_sub.astype(np.float64).tolist(),
+        "float16_ties": f16_ties.astype(np.float64).tolist(),
+        "float16_overflow_pos_inf": bool(np.isinf(f16_over[0]) and f16_over[0] > 0),
+        "float16_overflow_neg_inf": bool(np.isinf(f16_over[1]) and f16_over[1] < 0),
+        "float16_below_max": float(f16_over[2]),
+        "float16_midpoint_inf": bool(np.isinf(f16_over[3])),
+        "float16_sum": [float(f16_sum)],
+        "float16_sum_dtype": str(np.asarray(f16_sum).dtype),
+        "float16_int_scalar_dtype": str((np.array([1], dtype=np.float16) + 1).dtype),
+        "float16_roundtrip": f16_roundtrip.tolist(),
+        "float16_roundtrip_dtype": str(f16_roundtrip.dtype),
     }
 
 
 def warp_reduce_expected() -> dict[str, Any]:
-    """argmin/argmax (flat + axis) and NaN-aware reductions vs NumPy."""
+    """argmin/argmax (flat + axis), NaN-aware reductions, and the
+    initial=/where=/ddof/cumulative-axis reduction options vs NumPy."""
     flat = np.array([3.0, 1.0, 4.0, 1.0, 5.0])
     matrix = np.array([[3.0, 1.0, 2.0], [0.0, 4.0, 1.0]])
     nan_vals = np.array([1.0, np.nan, 3.0, 2.0])
     clean = np.array([2.0, 4.0, 6.0])
+    a = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    mask = np.array([[True, False, True], [False, True, False]])
+    none = np.zeros((2, 3), dtype=bool)
+    sum_axis1_initial = np.sum(a, axis=1, initial=10, keepdims=True)
+    sum_where_flat_keepdims = np.sum(a, where=mask, keepdims=True)
     return {
         "argmin_flat": int(np.argmin(flat)),
         "argmax_flat": int(np.argmax(flat)),
@@ -275,6 +360,133 @@ def warp_reduce_expected() -> dict[str, Any]:
         "nansum": float(np.nansum(nan_vals)),
         "nanmean_clean": float(np.nanmean(clean)),
         "nansum_clean": float(np.nansum(clean)),
+        "sum_initial": float(np.sum(a, initial=100)),
+        "prod_initial": float(np.prod(a, initial=2)),
+        "sum_axis1_initial_keepdims": {
+            "shape": list(sum_axis1_initial.shape),
+            "data": sum_axis1_initial.reshape(-1).tolist(),
+        },
+        "sum_where": float(np.sum(a, where=mask)),
+        "sum_where_axis1": np.sum(a, axis=1, where=mask).tolist(),
+        "min_where_axis1": np.min(a, axis=1, where=mask, initial=10).tolist(),
+        "max_where_axis0": np.max(a, axis=0, where=mask, initial=0).tolist(),
+        # NumPy requires initial= whenever where= is used with min/max.
+        "min_where_no_initial_raises": _numpy_raises(lambda: np.min(a, axis=1, where=mask)),
+        "sum_where_empty": float(np.sum(a, where=none)),
+        "prod_where_empty": float(np.prod(a, where=none)),
+        "sum_where_empty_axis0": np.sum(a, axis=0, where=none).tolist(),
+        "min_where_empty_initial": float(np.min(a, where=none, initial=99)),
+        "min_where_empty_raises": _numpy_raises(lambda: np.min(a, where=none)),
+        "max_where_empty_raises": _numpy_raises(lambda: np.max(a, where=none)),
+        "sum_where_flat_keepdims": {
+            "shape": list(sum_where_flat_keepdims.shape),
+            "data": sum_where_flat_keepdims.reshape(-1).tolist(),
+        },
+        "var_ddof0": float(np.var(clean, ddof=0)),
+        "var_ddof1": float(np.var(clean, ddof=1)),
+        "std_ddof1": float(np.std(clean, ddof=1)),
+        # NumPy warns and divides anyway when ddof >= n: the result is +inf,
+        # or NaN when the deviation sum is zero.
+        "var_ddof3_isinf": bool(np.isinf(np.var(clean, ddof=3))),
+        "var_ddof4_isinf": bool(np.isinf(np.var(clean, ddof=4))),
+        "var_zero_dev_ddof_isnan": bool(np.isnan(np.var(np.array([5.0, 5.0]), ddof=2))),
+        "cumsum_axis0": np.cumsum(a, axis=0).reshape(-1).tolist(),
+        "cumsum_axis1": np.cumsum(a, axis=1).reshape(-1).tolist(),
+        "cumsum_axis_neg": np.cumsum(a, axis=-1).reshape(-1).tolist(),
+        "cumprod_axis1": np.cumprod(a, axis=1).reshape(-1).tolist(),
+        "cumsum_axis_dtype": str(np.cumsum(np.array([[1, 2], [3, 4]]), axis=0).dtype),
+    }
+
+
+def warp_ufunc_expected() -> dict[str, Any]:
+    """hypot/expm1/log1p/floor_divide/remainder/square/reciprocal/deg2rad/
+    rad2deg/copysign/rint vs the NumPy ufuncs. Zero-divisor cases follow
+    NumPy's warn-and-continue semantics (0 for ints, NaN for floats)."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        fd_zero_float = np.floor_divide(np.array([1.0]), np.array([0.0]))
+        rem_zero_float = np.remainder(np.array([1.0]), np.array([0.0]))
+        fd_zero_int = np.floor_divide(np.array([1, 2]), np.array([0, 2]))
+    fd_int = np.floor_divide(np.array([-7, 7, -7, 7]), np.array([2, 2, -2, -2]))
+    sq = np.square(np.array([-3, 2]))
+    ri = np.rint(np.array([0.5, 1.5, 2.5, -0.5, -1.5, -2.5, 2.3, 2.7]))
+    return {
+        "hypot": np.hypot(np.array([3.0, 4.0]), np.array([4.0, 3.0])).tolist(),
+        "hypot_dtype": str(np.hypot(np.array([3.0, 4.0]), np.array([4.0, 3.0])).dtype),
+        "expm1": np.expm1(np.array([1.0e-10, 1.0, -1.0, 0.25, -0.25])).tolist(),
+        "log1p": np.log1p(np.array([1.0e-10, 1.0, -0.5, 0.0])).tolist(),
+        "floor_divide_int": fd_int.tolist(),
+        "floor_divide_int_dtype": str(fd_int.dtype),
+        "floor_divide_float": np.floor_divide(np.array([-7.5, 7.5]), np.array([2.0, -2.0])).tolist(),
+        "floor_divide_zero_int": fd_zero_int.tolist(),
+        "floor_divide_zero_float_isinf": bool(np.isinf(fd_zero_float[0])),
+        "remainder_int": np.remainder(np.array([-7, 7, -7, 7]), np.array([3, 3, -3, -3])).tolist(),
+        "remainder_float": np.remainder(np.array([-7.5, 7.5]), np.array([2.0, -2.0])).tolist(),
+        "remainder_zero_float_isnan": bool(np.isnan(rem_zero_float[0])),
+        "square": sq.tolist(),
+        "square_dtype": str(sq.dtype),
+        "reciprocal": np.reciprocal(np.array([4.0, -0.5])).tolist(),
+        "deg2rad": np.deg2rad(np.array([0.0, 90.0, 180.0])).tolist(),
+        "rad2deg": np.rad2deg(np.array([1.5707963267948966, 3.141592653589793])).tolist(),
+        "copysign": np.copysign(np.array([2.0, -2.0, 2.0]), np.array([-1.0, -1.0, 1.0])).tolist(),
+        "rint": ri.tolist(),
+        "rint_dtype": str(ri.dtype),
+    }
+
+
+def warp_random_expected() -> dict[str, Any]:
+    """Seeded RNG: deterministic properties only. Warp's generator is a
+    combined L'Ecuyer MRG, not NumPy's PCG64, so bit-parity against
+    np.random.default_rng is explicitly NOT checked; the fixture locks its own
+    per-seed draws and checks coverage/distribution invariants as booleans."""
+    return {
+        "draws_replay_equal": True,
+        "draws_seed_diverges": True,
+        "locked_uniform": True,
+        "locked_normal": True,
+        "locked_integers": True,
+        "locked_shuffle": True,
+        "locked_permutation": True,
+        "locked_choice": True,
+        "shuffle_is_permutation": True,
+        "permutation_covers": True,
+        "choice_distinct": True,
+        "integers_in_bounds": True,
+        "uniform_mean_in_bounds": True,
+        "uniform_std_in_bounds": True,
+        "normal_mean_in_bounds": True,
+        "normal_std_in_bounds": True,
+    }
+
+
+def warp_sort_expected() -> dict[str, Any]:
+    """put / sort_axis / argsort_axis / unique options vs NumPy."""
+    base = np.array([1.0, 2.0, 3.0, 4.0])
+
+    def put_case(indices: list[int], values: list[float]) -> list[float]:
+        out = base.copy()
+        np.put(out, indices, values)
+        return out.tolist()
+
+    m = np.array([[3.0, 1.0, 2.0], [0.0, 4.0, 1.0]])
+    uniq_values, uniq_index, uniq_counts = np.unique(
+        np.array([3, 1, 3, 2, 1, 3]), return_index=True, return_counts=True
+    )
+    return {
+        "put_basic": put_case([0, 3], [10.0, 40.0]),
+        "put_duplicate_last_wins": put_case([1, 1], [7.0, 9.0]),
+        "put_cycle": put_case([0, 1, 2, 3], [0.0]),
+        "put_negative": put_case([-1], [99.0]),
+        "put_oob_raises": _numpy_raises(lambda: np.put(base.copy(), [4], [0.0])),
+        "put_preserves_shape": list(np.array([[1, 2], [3, 4]]).shape),
+        "put_source_unchanged": base.tolist(),
+        "sort_axis0": np.sort(m, axis=0).reshape(-1).tolist(),
+        "sort_axis1": np.sort(m, axis=1).reshape(-1).tolist(),
+        "sort_axis_neg": np.sort(m, axis=-2).reshape(-1).tolist(),
+        "argsort_axis0": np.argsort(m, axis=0, kind="stable").reshape(-1).tolist(),
+        "argsort_axis1": np.argsort(m, axis=1, kind="stable").reshape(-1).tolist(),
+        "unique_values": uniq_values.tolist(),
+        "unique_index": uniq_index.tolist(),
+        "unique_counts": uniq_counts.tolist(),
     }
 
 
@@ -289,6 +501,11 @@ def warp_fft_expected() -> dict[str, Any]:
     trap_y = np.array([1.0, 2.0, 3.0])
     # NumPy 2.x renamed trapz -> trapezoid; support both.
     trapz_fn = getattr(np, "trapezoid", None) or getattr(np, "trapz")
+    a7 = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+    r4 = np.fft.rfft(a4)
+    r8 = np.fft.rfft(a8)
+    r7 = np.fft.rfft(a7)
+    odd5 = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
     return {
         "fft4_re": f4.real.tolist(),
         "fft4_im": f4.imag.tolist(),
@@ -300,6 +517,135 @@ def warp_fft_expected() -> dict[str, Any]:
         "diff": np.diff(y).tolist(),
         "gradient": np.gradient(y).tolist(),
         "trapz": float(trapz_fn(trap_y, dx=1.0)),
+        "rfft4_re": r4.real.tolist(),
+        "rfft4_im": r4.imag.tolist(),
+        "rfft8_re": r8.real.tolist(),
+        "rfft8_im": r8.imag.tolist(),
+        "irfft8": np.fft.irfft(r8).tolist(),
+        "rfft7_re": r7.real.tolist(),
+        "rfft7_im": r7.imag.tolist(),
+        "irfft7": np.fft.irfft(r7, 7).tolist(),
+        "rfftfreq8": np.fft.rfftfreq(8, 1.0).tolist(),
+        "rfftfreq7": np.fft.rfftfreq(7, 0.5).tolist(),
+        "fftshift_even": np.fft.fftshift(a4).tolist(),
+        "fftshift_odd": np.fft.fftshift(odd5).tolist(),
+        "ifftshift_even": np.fft.ifftshift(a4).tolist(),
+        "ifftshift_odd": np.fft.ifftshift(odd5).tolist(),
+    }
+
+
+def warp_poly_expected() -> dict[str, Any]:
+    """np.poly* family vs warp's polynomial helpers. Roots are sorted by
+    descending real part (then descending imaginary) on both sides, because
+    NumPy's companion-matrix ordering is unspecified. roots_deg3_unsupported
+    and polyfit_underdetermined_err are warp-only contracts: NumPy computes
+    degree-3 roots via eigenvalues and only warns on underdetermined fits,
+    while warp returns an explicit error (documented deviation)."""
+    x = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+    x1 = np.array([0.0, 1.0, 2.0, 3.0])
+    r2 = _sorted_roots([1.0, -3.0, 2.0])
+    r1 = _sorted_roots([2.0, -6.0])
+    rc = _sorted_roots([1.0, 0.0, 1.0])
+    rt = _sorted_roots([0.0, 1.0, 2.0])
+    return {
+        "fit2": np.polyfit(x, x * x + x + 1.0, 2).tolist(),
+        "fit1": np.polyfit(x1, 2.0 * x1 + 1.0, 1).tolist(),
+        "fit1_noisy": np.polyfit(x, np.array([1.1, 2.9, 5.2, 6.8, 9.1]), 1).tolist(),
+        "val": np.polyval([2.0, -3.0, 1.0], np.array([0.0, 1.0, 2.5])).tolist(),
+        "val_scalar": float(np.polyval([2.0, -3.0, 1.0], 2.5)),
+        "der": np.polyder([2.0, -3.0, 1.0]).tolist(),
+        "der_const": np.polyder([5.0]).tolist(),
+        "integ": np.polyint([2.0, -3.0, 1.0]).tolist(),
+        "roots2_re": r2[0],
+        "roots2_im": r2[1],
+        "roots1_re": r1[0],
+        "roots_complex_re": rc[0],
+        "roots_complex_im": rc[1],
+        "roots_trim_re": rt[0],
+        "roots_const_re": _sorted_roots([5.0])[0],
+        "roots_deg3_unsupported": True,
+        "polyfit_underdetermined_err": True,
+        "polyfit_mismatch_err": _numpy_raises(lambda: np.polyfit(x1, [1.0], 1)),
+    }
+
+
+def _sorted_roots(coeffs: list[float]) -> tuple[list[float], list[float]]:
+    r = np.roots(np.array(coeffs, dtype=float))
+    order = sorted(range(len(r)), key=lambda i: (-r[i].real, -r[i].imag))
+    return [float(r[i].real) for i in order], [float(r[i].imag) for i in order]
+
+
+def warp_search_expected() -> dict[str, Any]:
+    """searchsorted / digitize vs NumPy, with before-first, after-last, and
+    exact bin-edge values. digitize's empty-bins case maps every x to 0 in
+    NumPy; warp mirrors that."""
+    a = np.array([1.0, 2.0, 2.0, 3.0])
+    x = np.array([0.5, 1.0, 2.0, 3.5])
+    return {
+        "ss_left": np.searchsorted(a, np.array([0.5, 2.0, 4.0])).tolist(),
+        "ss_right": np.searchsorted(a, np.array([0.5, 2.0, 4.0]), side="right").tolist(),
+        "ss_scalar_left": int(np.searchsorted(a, 2.0)),
+        "ss_scalar_right": int(np.searchsorted(a, 2.0, side="right")),
+        "ss_before": int(np.searchsorted(a, -1.0)),
+        "ss_after": int(np.searchsorted(a, 99.0, side="right")),
+        "ss_dtype": str(np.searchsorted(a, np.array([0.5])).dtype),
+        "ss_bad_side_err": _numpy_raises(lambda: np.searchsorted(a, 1.0, side="middle")),
+        "dig_inc": np.digitize(x, np.array([1.0, 2.0, 3.0])).tolist(),
+        "dig_inc_right": np.digitize(x, np.array([1.0, 2.0, 3.0]), right=True).tolist(),
+        "dig_dec": np.digitize(x, np.array([3.0, 2.0, 1.0])).tolist(),
+        "dig_dec_right": np.digitize(x, np.array([3.0, 2.0, 1.0]), right=True).tolist(),
+        "dig_scalar": int(np.digitize(2.0, np.array([1.0, 2.0, 3.0]))),
+        "dig_single_bin": np.digitize(np.array([0.5, 1.0, 2.0]), np.array([1.0])).tolist(),
+        "dig_equal_bins": np.digitize(np.array([0.5, 1.0, 1.5]), np.array([1.0, 1.0, 2.0])).tolist(),
+        "dig_empty_bins": np.digitize(np.array([0.5, 2.0]), np.array([])).tolist(),
+        "dig_dtype": str(np.digitize(x, np.array([1.0, 2.0, 3.0])).dtype),
+        "dig_nonmono_err": _numpy_raises(lambda: np.digitize(x, np.array([1.0, 3.0, 2.0]))),
+    }
+
+
+def warp_stats_expected() -> dict[str, Any]:
+    """histogram / bincount / cov / corrcoef / average / quantile vs NumPy."""
+    counts, edges = np.histogram(np.array([0.5, 1.5, 2.5, 3.5, 0.0, 4.0]), bins=4, range=(0.0, 4.0))
+    auto_counts, auto_edges = np.histogram(np.array([0.0, 4.0]), bins=4)
+    exp_counts, exp_edges = np.histogram(np.array([1.0, 2.0, 3.0, 0.5, 3.5]), bins=np.array([1.0, 2.0, 3.0]))
+    empty_counts, empty_edges = np.histogram(np.array([]), bins=4)
+    const_counts, const_edges = np.histogram(np.array([2.0, 2.0]), bins=4)
+    q_src = np.array([3.0, 1.0, 4.0, 2.0])
+    return {
+        "hist_counts": counts.tolist(),
+        "hist_edges": edges.tolist(),
+        "hist_auto_counts": auto_counts.tolist(),
+        "hist_auto_edges": auto_edges.tolist(),
+        "hist_explicit_counts": exp_counts.tolist(),
+        "hist_explicit_edges": exp_edges.tolist(),
+        "hist_counts_dtype": str(counts.dtype),
+        "hist_edges_dtype": str(edges.dtype),
+        "hist_empty_auto_counts": empty_counts.tolist(),
+        "hist_empty_auto_edges": empty_edges.tolist(),
+        "hist_const_counts": const_counts.tolist(),
+        "hist_const_edges": const_edges.tolist(),
+        "hist_bins0_err": _numpy_raises(lambda: np.histogram(np.array([1.0]), bins=0)),
+        "hist_nonmono_err": _numpy_raises(lambda: np.histogram(np.array([1.0]), bins=np.array([3.0, 1.0]))),
+        "bincount": np.bincount(np.array([0, 3, 3, 1])).tolist(),
+        "bincount_empty": np.bincount(np.array([], dtype=np.int64)).tolist(),
+        "bincount_dtype": str(np.bincount(np.array([0, 3, 3, 1])).dtype),
+        "bincount_neg_err": _numpy_raises(lambda: np.bincount(np.array([-1]))),
+        "cov_pair": np.cov(np.array([1.0, 2.0, 4.0]), np.array([2.0, 1.0, 3.0])).reshape(-1).tolist(),
+        "cov_single": float(np.cov(np.array([1.0, 2.0, 4.0]))),
+        "cov_mismatch_err": _numpy_raises(lambda: np.cov(np.array([1.0, 2.0]), np.array([1.0]))),
+        "corr_pair": np.corrcoef(np.array([1.0, 2.0, 4.0]), np.array([2.0, 1.0, 3.0])).reshape(-1).tolist(),
+        "corr_single": float(np.corrcoef(np.array([1.0, 2.0, 3.0]))),
+        "avg": float(np.average(np.array([1.0, 2.0, 3.0]))),
+        "avg_w": float(np.average(np.array([1.0, 2.0, 3.0]), weights=np.array([1.0, 1.0, 2.0]))),
+        "avg_zero_weights_err": _numpy_raises(
+            lambda: np.average(np.array([1.0, 2.0]), weights=np.array([0.0, 0.0]))
+        ),
+        "q": float(np.quantile(q_src, 0.25)),
+        "q0": float(np.quantile(q_src, 0)),
+        "q1": float(np.quantile(q_src, 1)),
+        "q_list": np.quantile(q_src, [0.0, 0.5, 1.0]).tolist(),
+        "q_range_err": _numpy_raises(lambda: np.quantile(np.array([1.0]), 1.5)),
+        "q_empty_err": _numpy_raises(lambda: np.quantile(np.array([]), 0.5)),
     }
 
 
@@ -596,6 +942,15 @@ def dataframe_expected() -> dict[str, Any]:
     pivoted = pivot_source.pivot(index="date", columns="metric", values="value").reset_index()
     pivoted.columns.name = None
     aligned = pd.Series([10, 20], index=["a", "b"]).add(pd.Series([1, 3], index=["b", "c"]))
+    ew_source = pd.Series([1.0, 2.0, np.nan, 4.0, 5.0])
+    ewma_adjust = ew_source.ewm(alpha=0.5).mean()
+    ewma_recursive = ew_source.ewm(alpha=0.5, adjust=False, ignore_na=True).mean()
+    ewm_var = ew_source.ewm(span=3).var()
+    ewm_sum = ew_source.ewm(halflife=1).sum()
+
+    def ewm_list(series: pd.Series) -> list[Any]:
+        return [None if pd.isna(value) else value for value in series.tolist()]
+
     return {
         "columns": ["name", "age", "dept", "salary"],
         "sorted_names": source.sort_values("age", kind="stable")["name"].tolist(),
@@ -608,6 +963,10 @@ def dataframe_expected() -> dict[str, Any]:
         "pivot": records(pivoted),
         "aligned_index": aligned.index.tolist(),
         "aligned_values": [None if pd.isna(value) else value for value in aligned.tolist()],
+        "ewma_adjust": ewm_list(ewma_adjust),
+        "ewma_recursive": ewm_list(ewma_recursive),
+        "ewm_var": ewm_list(ewm_var),
+        "ewm_sum": ewm_list(ewm_sum),
     }
 
 
@@ -624,6 +983,8 @@ def main() -> None:
     assert_equal(actual_warp, warp_expected(), "warp")
     actual_strides = run_weft(weft, "warp_strides_case.weft")
     assert_equal(actual_strides, warp_strides_expected(), "warp_strides")
+    actual_warp_index = run_weft(weft, "warp_index_case.weft")
+    assert_equal(actual_warp_index, warp_index_expected(), "warp_index")
     actual_edges = run_weft(weft, "warp_edges_case.weft")
     assert_equal(actual_edges, warp_edges_expected(), "warp_edges")
     actual_errors = run_weft(weft, "warp_errors_case.weft")
@@ -632,6 +993,18 @@ def main() -> None:
     assert_equal(actual_dtype, warp_dtype_expected(), "warp_dtype")
     actual_reduce = run_weft(weft, "warp_reduce_case.weft")
     assert_equal(actual_reduce, warp_reduce_expected(), "warp_reduce")
+    actual_ufunc = run_weft(weft, "warp_ufunc_case.weft")
+    assert_equal(actual_ufunc, warp_ufunc_expected(), "warp_ufunc")
+    actual_random = run_weft(weft, "warp_random_case.weft")
+    assert_equal(actual_random, warp_random_expected(), "warp_random")
+    actual_sort = run_weft(weft, "warp_sort_case.weft")
+    assert_equal(actual_sort, warp_sort_expected(), "warp_sort")
+    actual_poly = run_weft(weft, "warp_poly_case.weft")
+    assert_equal(actual_poly, warp_poly_expected(), "warp_poly")
+    actual_search = run_weft(weft, "warp_search_case.weft")
+    assert_equal(actual_search, warp_search_expected(), "warp_search")
+    actual_stats = run_weft(weft, "warp_stats_case.weft")
+    assert_equal(actual_stats, warp_stats_expected(), "warp_stats")
     actual_fft = run_weft(weft, "warp_fft_case.weft")
     assert_close(actual_fft, warp_fft_expected(), 1e-6, "warp_fft")
     actual_dataframe = run_weft(weft, "dataframe_case.weft")
@@ -648,7 +1021,7 @@ def main() -> None:
     num_property = property_cases(weft)
     print(
         f"conformance ok: NumPy {np.__version__}, pandas {pd.__version__} "
-        f"(11 fixtures + {num_property} Weft-backed property cases)"
+        f"(18 fixtures + {num_property} Weft-backed property cases)"
     )
 
 

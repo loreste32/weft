@@ -34,11 +34,18 @@ callback. The host validates dtype, rank, shape, byte length, and the 256 MiB
 boundary before constructing a Weft tensor. The initial host contract requires
 C-contiguous output; providers may reject unsupported layouts explicitly.
 
-The reference provider implements float64 `tensor_matmul` and bounded
-same-shape float64 `tensor_add` for rank-1/rank-2 tensors. Vendor providers
-implement binary symbols for float32 `tensor_matmul` and `tensor_add`; each
-provider must publish its supported dtype/layout matrix before being used for
-large training batches.
+The reference provider implements float64 `tensor_matmul`, bounded same-shape
+elementwise `tensor_add` / `tensor_sub` / `tensor_mul` / `tensor_div`
+(float32 and float64), and full-reduction `tensor_sum` (float32 and float64)
+for rank-1/rank-2 tensors. `tensor_sum` returns a rank-0 tensor holding one
+element of the input dtype, matching NumPy `np.sum` full-reduction semantics.
+Vendor providers implement binary symbols for float32 `tensor_matmul` and the
+same-shape elementwise ops; `tensor_sum` is currently reference-only because a
+correct parallel reduction is not part of the vendors' validated pattern set.
+Each provider must publish its supported dtype/layout matrix before being used
+for large training batches. Broadcasting is deliberately not claimed by any
+provider: the ABI transports strides, but every elementwise op rejects
+non-same-shape inputs with an explicit error rather than guessing.
 
 ## ABI v1
 
@@ -83,9 +90,12 @@ provider as `honest`, `unreported`, or `contradictory`.
 
 The checked-in C provider is a portable ABI and numerical reference. It has no
 GPU dependency and implements `health`, `identity`, validated float64 `matmul`
-JSON operations, and binary `tensor_matmul` plus `tensor_add`. `tensor_add` is
-explicitly same-shape and contiguous (rank 1 or 2); unsupported broadcasting
-must return an error. Health and matmul JSON include explicit `device` /
+JSON operations, and binary `tensor_matmul`, same-shape elementwise
+`tensor_add` / `tensor_sub` / `tensor_mul` / `tensor_div`, and
+full-reduction `tensor_sum` (rank-0 output, NumPy `np.sum` semantics). The
+elementwise ops accept contiguous same-shape float32 or float64 tensors of
+rank 1 or 2; they are explicitly same-shape and unsupported broadcasting must
+return an error. Health and matmul JSON include explicit `device` /
 `fallback` fields so hosts never treat silent CPU fallback as device success:
 
 ```sh
@@ -117,6 +127,8 @@ tests the portable provider, loader, manifest contract, and shared tensor
 adapter. Vendor-specific CI must run on CUDA, ROCm, and Apple Silicon runners.
 
 The JSON adapter remains a correctness and ABI reference for diagnostics. The
-reference, CUDA, ROCm/HIP, and MLX providers declare both binary tensor
-operations; vendor hardware jobs must still validate them on real devices
-before large training batches are considered release-ready.
+reference provider declares `tensor_matmul`, the four same-shape elementwise
+ops, and `tensor_sum`; the CUDA, ROCm/HIP, and MLX providers declare
+`tensor_matmul` plus the four elementwise ops (float32). Vendor hardware jobs
+must still validate them on real devices before large training batches are
+considered release-ready.

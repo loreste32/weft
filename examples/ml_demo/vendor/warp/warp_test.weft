@@ -346,6 +346,21 @@ fn test_median {
     test.eq(warp.median(a), 3)
 }
 
+fn test_percentile {
+    // Regression: percentile previously called bare int(...) (not callable in
+    // Weft) and crashed on every invocation.
+    a := warp.array([1, 2, 3, 4], [4])
+    test.approx(warp.percentile(a, 0), 1.0, 1e-9)
+    test.approx(warp.percentile(a, 25), 1.75, 1e-9)
+    test.approx(warp.percentile(a, 50), 2.5, 1e-9)
+    test.approx(warp.percentile(a, 100), 4.0, 1e-9)
+    // integer k path (lo == hi) and out-of-range validation
+    b := warp.array([10, 20, 30], [3])
+    test.approx(warp.percentile(b, 50), 20.0, 1e-9)
+    r := warp.percentile(b, 101)
+    test.is_false(r.ok)
+}
+
 fn test_sum_axis {
     a := warp.array([1, 2, 3, 4, 5, 6], [2, 3])
     // sum axis 0 (down columns): [1+4, 2+5, 3+6] → [5, 7, 9]
@@ -891,6 +906,86 @@ fn test_broadcasted_advanced_indexing {
  test.is_false(ragged.ok)
 }
 
+fn test_ellipsis_and_newaxis_indexing {
+    cube := warp.reshape(warp.arange(0, 24, 1), [2, 3, 4])
+    e := warp.ellipsis()
+    n := warp.newaxis()
+
+    trailing := warp.index(cube, [e, 0])
+    test.eq(warp.shape(trailing), [2, 3])
+    test.eq(warp.to_list(trailing), [0, 4, 8, 12, 16, 20])
+
+    leading := warp.index(cube, [0, e])
+    test.eq(warp.shape(leading), [3, 4])
+
+    middle := warp.index(cube, [1, e, 2])
+    test.eq(warp.shape(middle), [3])
+    test.eq(warp.to_list(middle), [14, 18, 22])
+
+    matrix := warp.reshape(warp.arange(0, 6, 1), [2, 3])
+    zero_axes := warp.index(matrix, [0, e])
+    test.eq(warp.shape(zero_axes), [3])
+    test.eq(warp.to_list(zero_axes), [0, 1, 2])
+
+    both := warp.index(matrix, [n, null, n])
+    test.eq(warp.shape(both), [1, 2, 1, 3])
+    test.eq(warp.to_list(both), [0, 1, 2, 3, 4, 5])
+
+    wrapped := warp.index(matrix, [n, e, n])
+    test.eq(warp.shape(wrapped), [1, 2, 3, 1])
+
+    scalar_newaxis := warp.index(matrix, [0, n])
+    test.eq(warp.shape(scalar_newaxis), [1, 3])
+
+    only_newaxis := warp.index(matrix, [n, n, 0, 0])
+    test.eq(warp.shape(only_newaxis), [1, 1])
+
+    adv := warp.index(matrix, [[0, 1], n, null])
+    test.eq(warp.shape(adv), [2, 1, 3])
+    test.eq(warp.to_list(adv), [0, 1, 2, 3, 4, 5])
+
+    separated := warp.index(matrix, [[0, 1], n, [0, 1]])
+    test.eq(warp.shape(separated), [2, 1])
+    test.eq(warp.to_list(separated), [0, 4])
+
+    sliced := warp.index(cube, [e, warp.slice_selector(0, 2, 1)])
+    test.eq(warp.shape(sliced), [2, 3, 2])
+
+    bad_ellipsis := warp.index(cube, [e, e])
+    test.is_false(bad_ellipsis.ok)
+    too_many := warp.index(matrix, [0, 0, 0])
+    test.is_false(too_many.ok)
+    too_many_newaxis := warp.index(matrix, [n, 0, 0, 0])
+    test.is_false(too_many_newaxis.ok)
+}
+
+fn test_ellipsis_and_newaxis_assignment {
+    e := warp.ellipsis()
+    n := warp.newaxis()
+    matrix := warp.reshape(warp.arange(0, 6, 1), [2, 3])
+
+    through_ellipsis := warp.set(matrix, [e, 0], 5)
+    test.eq(warp.to_list(through_ellipsis), [5, 1, 2, 5, 4, 5])
+    test.eq(warp.to_list(matrix), [0, 1, 2, 3, 4, 5])
+
+    fewer := warp.set(matrix, [0], 9)
+    test.eq(warp.to_list(fewer), [9, 9, 9, 3, 4, 5])
+
+    through_newaxis := warp.set(matrix, [n, 0], 7)
+    test.eq(warp.to_list(through_newaxis), [7, 7, 7, 3, 4, 5])
+
+    cube := warp.reshape(warp.arange(0, 24, 1), [2, 3, 4])
+    values := warp.reshape(warp.arange(100, 106, 1), [2, 3])
+    assigned := warp.set(cube, [e, 1], values)
+    test.eq(warp.shape(assigned), [2, 3, 4])
+    test.eq(warp.to_list(warp.index(assigned, [e, 1])), [100, 101, 102, 103, 104, 105])
+
+    bad_ellipsis := warp.set(matrix, [e, e, 0], 1)
+    test.is_false(bad_ellipsis.ok)
+    too_many := warp.set(matrix, [0, 0, 0], 1)
+    test.is_false(too_many.ok)
+}
+
 fn test_stepped_and_axis_slices {
     a := warp.arange(0, 10, 1)
     test.eq(warp.to_list(warp.slice_step(a, 1, 8, 2)), [1, 3, 5, 7])
@@ -918,6 +1013,52 @@ fn test_native_storage_kind {
     test.eq(warp.storage_kind(f32), "tensor")
     obj := warp.array_typed(["x", "y"], [2], "object")
     test.eq(warp.storage_kind(obj), "list")
+    // float16 has no native ABI code, so it stays on the portable path.
+    f16 := warp.array_typed([1, 2], [2], "float16")
+    test.eq(warp.storage_kind(f16), "list")
+}
+
+fn test_float16 {
+    // Values round to IEEE 754 binary16 (round-to-nearest-even) on cast,
+    // exactly like np.float16.
+    a := warp.array_typed([0.1, 1.5, 65504.0, 2048.0001], [4], "float16")
+    test.eq(warp.dtype(a), "float16")
+    test.eq(warp.itemsize(a), 2)
+    test.eq(a.data, [0.0999755859375, 1.5, 65504.0, 2048.0])
+
+    // Overflow produces ±inf (NumPy RuntimeWarning semantics), not an Err.
+    over := warp.array_typed([1.0e10, -1.0e10, 65519.0, 65520.0], [4], "float16")
+    test.is_true(math.isinf(over.data[0]) && over.data[0] > 0)
+    test.is_true(math.isinf(over.data[1]) && over.data[1] < 0)
+    test.eq(over.data[2], 65504.0)
+    test.is_true(math.isinf(over.data[3]))
+
+    // Subnormals and the flush-to-zero midpoint.
+    sub := warp.array_typed([5.960464477539063e-08, 2.9802322387695312e-08, 8.940696716308594e-08, 1.0e-10], [4], "float16")
+    test.eq(sub.data, [5.960464477539063e-08, 0.0, 1.1920928955078125e-07, 0.0])
+
+    // Exact ties round to even.
+    ties := warp.array_typed([1.00048828125, 1.00146484375, 0.999755859375], [3], "float16")
+    test.eq(ties.data, [1.0, 1.001953125, 1.0])
+
+    // Arithmetic on float16 arrays rounds results back to half precision.
+    summed := warp.add(warp.array_typed([0.1], [1], "float16"), warp.array_typed([0.2], [1], "float16"))
+    test.eq(summed.data, [0.2998046875])
+    test.eq(warp.dtype(summed), "float16")
+
+    // Promotion spot checks (the full matrix is locked by the conformance fixture).
+    i16 := warp.array_typed([1], [1], "int16")
+    u8 := warp.array_typed([1], [1], "uint8")
+    f32 := warp.array_typed([1], [1], "float32")
+    test.eq(warp.dtype(warp.add(a, i16)), "float32")
+    test.eq(warp.dtype(warp.add(a, u8)), "float16")
+    test.eq(warp.dtype(warp.add(a, f32)), "float32")
+    test.eq(warp.dtype(warp.add(a, 1)), "float16")
+
+    // Casting through float16 and back is the identity on half values.
+    rt := warp.astype(warp.astype(a, "float16"), "float64")
+    test.eq(rt.data, a.data)
+    test.eq(warp.dtype(rt), "float64")
 }
 
 fn test_release_native_storage {
@@ -961,6 +1102,32 @@ fn test_native_broadcast_add {
     test.eq(warp.shape(product), [2, 3])
     test.eq(warp.to_list(product), [10, 20, 30, 20, 40, 60])
     test.eq(warp.storage_kind(product), "tensor")
+}
+
+fn test_native_mul_result_division_preserves_negative_values {
+    test.approx(warp.div(-1.0, 9.0), -0.1111111111111111, 1e-12)
+    neg_array := warp.array([-1.0], [1])
+    nine_array := warp.array([9.0], [1])
+    test.eq(warp.dtype(neg_array), "float64")
+    test.eq(warp.dtype(nine_array), "float64")
+    test.eq(warp.storage_kind(neg_array), "tensor")
+    test.eq(warp.storage_kind(nine_array), "tensor")
+    test.eq(warp.to_list(warp.div(neg_array, nine_array)), [-0.1111111111111111])
+    ones := warp.ones([3])
+    values := warp.array([0.5, -1.0, 1.5], [3])
+    test.eq(warp.dtype(values), "float64")
+    product := warp.mul(ones, values)
+    test.eq(warp.storage_kind(product), "tensor")
+    test.eq(product.data, [0.5, -1.0, 1.5])
+    test.eq(warp.to_list(warp.div(product, 1.0)), [0.5, -1.0, 1.5])
+    denominator := warp.mul(warp.array([2.25, 3.0, 4.25], [3]), warp.array([2.25, 3.0, 4.25], [3]))
+    test.eq(denominator.data, [5.0625, 9.0, 18.0625])
+    literal_result := warp.div(warp.array([0.5, -1.0, 1.5], [3]), warp.array([5.0625, 9.0, 18.0625], [3]))
+    test.eq(warp.dtype(literal_result), "float64")
+    test.eq(warp.to_list(literal_result), [0.09876543209876543, -0.1111111111111111, 0.08304498269896193])
+    test.eq(warp.to_list(warp.div(warp.array([0.5, -1.0, 1.5], [3]), denominator)), [0.09876543209876543, -0.1111111111111111, 0.08304498269896193])
+    result := warp.div(product, denominator)
+    test.eq(warp.to_list(result), [0.09876543209876543, -0.1111111111111111, 0.08304498269896193])
 }
 
 fn test_fft_1d_n4 {
@@ -1050,4 +1217,722 @@ fn test_trapz {
     test.approx(warp.trapz(y, null), 4.0, 1e-12)
     test.approx(warp.trapz(y, 0.5), 2.0, 1e-12)
     test.eq(warp.trapz(warp.array([1.0], [1]), null), 0.0)
+}
+
+fn test_default_rng_determinism {
+    g1 := warp.default_rng(42)
+    g2 := warp.default_rng(42)
+    g3 := warp.default_rng(7)
+    r1 := g1.random
+    r2 := g2.random
+    r3 := g3.random
+    a1 := r1([8])
+    // Interleave draws on the other generators; same-seed sequences must
+    // stay identical regardless of what other generators do.
+    junk := r3([4])
+    a2 := r2([8])
+    a3 := r3([8])
+    test.eq(warp.to_list(a1), warp.to_list(a2))
+    test.is_true(warp.to_list(a1) != warp.to_list(a3))
+    // Scalar form draws from the same stream position.
+    g4 := warp.default_rng(42)
+    r4 := g4.random
+    first := r4(null)
+    d1 := warp.to_list(a1)
+    test.eq(first, d1[0])
+}
+
+fn test_default_rng_distributions {
+    g := warp.default_rng(20240817)
+    r := g.random
+    u := r([4000])
+    mu := warp.mean(u)
+    su := warp.std_(u)
+    test.is_true(mu > 0.47 && mu < 0.53)
+    test.is_true(su > 0.27 && su < 0.31)
+    test.is_true(warp.min_(u) >= 0.0 && warp.max_(u) < 1.0)
+    n := g.normal
+    z := n([4000])
+    mz := warp.mean(z)
+    sz := warp.std_(z)
+    test.is_true(mz > -0.1 && mz < 0.1)
+    test.is_true(sz > 0.92 && sz < 1.08)
+    i := g.integers
+    ii := i(5, 15, [4000])
+    test.eq(warp.dtype(ii), "int64")
+    test.is_true(warp.min_(ii) >= 5 && warp.max_(ii) <= 14)
+    mi := warp.mean(ii)
+    test.is_true(mi > 9.3 && mi < 9.7)
+    // Scalar integers draw and the [0, high) shorthand form.
+    one := i(3, 4, null)
+    test.eq(one, 3)
+    short := i(10, null, [100])
+    test.is_true(warp.min_(short) >= 0 && warp.max_(short) <= 9)
+}
+
+fn test_default_rng_permutations {
+    g := warp.default_rng(99)
+    s := g.shuffle
+    shuffled := s([1, 2, 3, 4, 5, 6, 7, 8])
+    sorted_copy := warp.to_list(warp.sort(warp.array(shuffled, [8])))
+    test.eq(sorted_copy, [1, 2, 3, 4, 5, 6, 7, 8])
+    p := g.permutation
+    perm := warp.to_list(p(10))
+    test.eq(warp.to_list(warp.sort(warp.array(perm, [10]))), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    test.eq(warp.dtype(p(3)), "int64")
+    c := g.choice
+    picks := c([10, 20, 30, 40, 50], 3)
+    test.eq(len(picks), 3)
+    // No replacement: picks are pairwise distinct.
+    test.is_true(picks[0] != picks[1] && picks[1] != picks[2] && picks[0] != picks[2])
+    single := c([7, 8, 9], null)
+    test.is_true(single == 7 || single == 8 || single == 9)
+    // Same seed reproduces an identical shuffle.
+    h1 := warp.default_rng(5)
+    h2 := warp.default_rng(5)
+    s1 := h1.shuffle
+    s2 := h2.shuffle
+    test.eq(s1([1, 2, 3, 4, 5]), s2([1, 2, 3, 4, 5]))
+}
+
+fn test_default_rng_errors {
+    test.eq(warp.default_rng("seed").ok, false)
+    g := warp.default_rng(1)
+    c := g.choice
+    test.eq(c([1, 2], 3).ok, false)
+    i := g.integers
+    test.eq(i(5, 5, null).ok, false)
+    r := g.random
+    test.eq(r([-1]).ok, false)
+    p := g.permutation
+    test.eq(p(-2).ok, false)
+}
+
+fn test_reduce_initial_where {
+    a := warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+    test.eq(warp.sum_opts(a, null, null, 100, null), 121.0)
+    test.eq(warp.prod_opts(a, null, null, 2, null), 1440.0)
+    test.eq(warp.min_opts(a, null, null, 0.5, null), 0.5)
+    test.eq(warp.max_opts(a, null, null, null, null), 6.0)
+    test.eq(warp.to_list(warp.sum_opts(a, 1, true, 10, null)), [16.0, 25.0])
+    test.eq(warp.shape(warp.sum_opts(a, 1, true, 10, null)), [2, 1])
+    mask := warp.array_typed([1, 0, 1, 0, 1, 0], [2, 3], "bool")
+    test.eq(warp.sum_opts(a, null, null, null, mask), 9.0)
+    test.eq(warp.to_list(warp.sum_opts(a, 1, null, null, mask)), [4.0, 5.0])
+    // NumPy: min/max with where= require initial= even for non-empty selections.
+    test.eq(warp.min_opts(a, 1, null, null, mask).ok, false)
+    test.eq(warp.to_list(warp.min_opts(a, 1, null, 10, mask)), [1.0, 5.0])
+    // where as a flat list broadcast against the flat data
+    test.eq(warp.sum_opts(a, null, null, null, [true, false, true, false, true, false]), 9.0)
+    // Empty selection: sum/prod use the identity, min/max raise without initial.
+    none := warp.array_typed([0, 0, 0, 0, 0, 0], [2, 3], "bool")
+    test.eq(warp.sum_opts(a, null, null, null, none), 0.0)
+    test.eq(warp.prod_opts(a, null, null, null, none), 1.0)
+    test.eq(warp.sum_opts(a, null, null, 7, none), 7)
+    test.eq(warp.min_opts(a, null, null, null, none).ok, false)
+    test.eq(warp.max_opts(a, null, null, null, none).ok, false)
+    test.eq(warp.min_opts(a, null, null, 99, none), 99)
+    test.eq(warp.to_list(warp.sum_opts(a, 0, null, null, none)), [0.0, 0.0, 0.0])
+    // keepdims with a flat reduction keeps rank with all-ones shape (NumPy).
+    kept := warp.sum_opts(a, null, true, null, null)
+    test.eq(warp.shape(kept), [1, 1])
+    test.eq(warp.to_list(kept), [21.0])
+}
+
+fn test_var_std_ddof {
+    v := warp.array([2.0, 4.0, 6.0], [3])
+    test.eq(warp.var_opts(v, null), warp.var_(v))
+    test.eq(warp.var_opts(v, 0), warp.var_(v))
+    test.approx(warp.var_opts(v, 1), 4.0, 1e-12)
+    test.approx(warp.std_opts(v, 1), 2.0, 1e-12)
+    // NumPy ddof >= n edge: +inf (nonzero deviation sum), NaN when the
+    // deviation sum is zero.
+    test.eq(warp.var_opts(v, 3), math.inf)
+    test.eq(warp.var_opts(v, 4), math.inf)
+    test.eq(warp.std_opts(v, 3), math.inf)
+    const_dev := warp.var_opts(warp.array([5.0, 5.0], [2]), 2)
+    test.is_true(const_dev != const_dev)
+    test.eq(warp.std_opts(warp.array([], [0]), null), null)
+}
+
+fn test_cumsum_cumprod_axis {
+    a := warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+    test.eq(warp.to_list(warp.cumsum_axis(a, 0)), [1.0, 2.0, 3.0, 5.0, 7.0, 9.0])
+    test.eq(warp.to_list(warp.cumsum_axis(a, 1)), [1.0, 3.0, 6.0, 4.0, 9.0, 15.0])
+    test.eq(warp.to_list(warp.cumsum_axis(a, -1)), [1.0, 3.0, 6.0, 4.0, 9.0, 15.0])
+    test.eq(warp.to_list(warp.cumprod_axis(a, 1)), [1.0, 2.0, 6.0, 4.0, 20.0, 120.0])
+    test.eq(warp.shape(warp.cumsum_axis(a, 0)), [2, 3])
+    ints := warp.array([1, 2, 3, 4], [2, 2])
+    test.eq(warp.dtype(warp.cumsum_axis(ints, 0)), "int64")
+    test.eq(warp.to_list(warp.cumsum_axis(ints, 0)), [1, 2, 4, 6])
+    test.eq(warp.cumsum_axis(a, 5).ok, false)
+}
+
+fn test_ufunc_extensions {
+    x := warp.array([3.0, 4.0], [2])
+    y := warp.array([4.0, 3.0], [2])
+    test.eq(warp.to_list(warp.hypot(x, y)), [5.0, 5.0])
+    test.eq(warp.dtype(warp.hypot(warp.array([3], [1]), warp.array([4], [1]))), "float64")
+    test.approx(warp.to_list(warp.expm1(warp.array([1.0e-10], [1])))[0], 1.00000000005e-10, 1e-20)
+    test.approx(warp.to_list(warp.expm1(warp.array([1.0], [1])))[0], 1.718281828459045, 1e-12)
+    test.approx(warp.to_list(warp.log1p(warp.array([1.0e-10], [1])))[0], 9.9999999995e-11, 1e-20)
+    test.approx(warp.to_list(warp.log1p(warp.array([1.0], [1])))[0], 0.6931471805599453, 1e-12)
+    lneg := warp.to_list(warp.log1p(warp.array([-1.0], [1])))[0]
+    test.is_true(lneg == -math.inf)
+    test.eq(warp.to_list(warp.floor_divide(warp.array([-7, 7, -7, 7], [4]), warp.array([2, 2, -2, -2], [4]))), [-4, 3, 3, -4])
+    test.eq(warp.to_list(warp.floor_divide(warp.array([1, 2], [2]), warp.array([0, 2], [2]))), [0, 1])
+    // remainder follows np.mod (sign of divisor), unlike Weft % / warp.mod_.
+    test.eq(warp.to_list(warp.remainder(warp.array([-7, 7, -7, 7], [4]), warp.array([3, 3, -3, -3], [4]))), [2, 1, -1, -2])
+    test.eq(warp.to_list(warp.mod_(warp.array([-7, 7], [2]), warp.array([3, 3], [2]))), [-1, 1])
+    rem_nan := warp.to_list(warp.remainder(warp.array([1.0], [1]), warp.array([0.0], [1])))[0]
+    test.is_true(rem_nan != rem_nan)
+    test.eq(warp.to_list(warp.square(warp.array([-3, 2], [2]))), [9, 4])
+    test.eq(warp.dtype(warp.square(warp.array([3], [1]))), "int64")
+    test.eq(warp.to_list(warp.reciprocal(warp.array([4.0, -0.5], [2]))), [0.25, -2.0])
+    test.eq(warp.to_list(warp.reciprocal(warp.array([0.0], [1])))[0], math.inf)
+    test.approx(warp.to_list(warp.deg2rad(warp.array([180.0], [1])))[0], 3.141592653589793, 1e-12)
+    test.approx(warp.to_list(warp.rad2deg(warp.array([3.141592653589793], [1])))[0], 180.0, 1e-10)
+    test.eq(warp.to_list(warp.copysign(warp.array([2.0, -2.0, 2.0], [3]), warp.array([-1.0, -1.0, 1.0], [3]))), [-2.0, -2.0, 2.0])
+    test.eq(warp.to_list(warp.rint(warp.array([0.5, 1.5, 2.5, -0.5, -1.5, -2.5, 2.3], [7]))), [0.0, 2.0, 2.0, 0.0, -2.0, -2.0, 2.0])
+}
+
+fn test_rfft_irfft {
+    a := warp.array([1.0, 2.0, 3.0, 4.0], [4])
+    r := warp.rfft(a)
+    re := warp.to_list(r.re)
+    im := warp.to_list(r.im)
+    test.eq(len(re), 3)
+    test.approx(re[0], 10.0, 1e-6)
+    test.approx(re[1], -2.0, 1e-6)
+    test.approx(im[1], 2.0, 1e-6)
+    test.approx(re[2], -2.0, 1e-6)
+    // Default output length is the even 2 * (bins - 1).
+    back := warp.irfft(r, null)
+    got := warp.to_list(back)
+    let mut i = 0
+    while i < 4 {
+        test.approx(got[i], i + 1.0, 1e-6)
+        i = i + 1
+    }
+    // Odd n round trip through the naive DFT path.
+    a5 := warp.array([1.0, 2.0, 3.0, 4.0, 5.0], [5])
+    r5 := warp.rfft(a5)
+    back5 := warp.to_list(warp.irfft(r5, 5))
+    i = 0
+    while i < 5 {
+        test.approx(back5[i], i + 1.0, 1e-6)
+        i = i + 1
+    }
+    test.eq(warp.rfft(warp.array([], [0])).ok, false)
+    test.eq(warp.irfft(r, 7).ok, false)
+}
+
+fn test_rfft_freq_and_shift {
+    f := warp.to_list(warp.rfft_freq(8, 1.0))
+    test.eq(len(f), 5)
+    test.approx(f[0], 0.0, 1e-12)
+    test.approx(f[1], 0.125, 1e-12)
+    test.approx(f[4], 0.5, 1e-12)
+    f7 := warp.to_list(warp.rfft_freq(7, 0.5))
+    test.eq(len(f7), 4)
+    test.approx(f7[3], 6.0 / 7.0, 1e-12)
+    test.eq(warp.rfft_freq(0, null).ok, false)
+    odd := warp.array([0.0, 1.0, 2.0, 3.0, 4.0], [5])
+    test.eq(warp.to_list(warp.fftshift(odd)), [3.0, 4.0, 0.0, 1.0, 2.0])
+    test.eq(warp.to_list(warp.ifftshift(odd)), [2.0, 3.0, 4.0, 0.0, 1.0])
+    even := warp.array([0.0, 1.0, 2.0, 3.0], [4])
+    test.eq(warp.to_list(warp.fftshift(even)), [2.0, 3.0, 0.0, 1.0])
+    test.eq(warp.to_list(warp.ifftshift(even)), [2.0, 3.0, 0.0, 1.0])
+    // Inverse relation on odd lengths.
+    test.eq(warp.to_list(warp.fftshift(warp.ifftshift(odd))), [0.0, 1.0, 2.0, 3.0, 4.0])
+    // Shape is preserved for higher-rank arrays (flat shift).
+    m := warp.array([0.0, 1.0, 2.0, 3.0], [2, 2])
+    test.eq(warp.shape(warp.fftshift(m)), [2, 2])
+}
+
+fn test_put {
+    a := warp.array([1, 2, 3, 4], [4])
+    p := warp.put(a, [0, 3], [10, 40])
+    test.eq(warp.to_list(p), [10, 2, 3, 40])
+    // Original is untouched (immutable arrays).
+    test.eq(warp.to_list(a), [1, 2, 3, 4])
+    // Duplicate targets: last write wins.
+    test.eq(warp.to_list(warp.put(a, [1, 1], [7, 9])), [1, 9, 3, 4])
+    // Values cycle when shorter than indices.
+    test.eq(warp.to_list(warp.put(a, [0, 1, 2, 3], [0])), [0, 0, 0, 0])
+    // Negative indices wrap; shape is preserved.
+    m := warp.array([1, 2, 3, 4], [2, 2])
+    p2 := warp.put(m, [-1], [99])
+    test.eq(warp.to_list(p2), [1, 2, 3, 99])
+    test.eq(warp.shape(p2), [2, 2])
+    test.eq(warp.put(a, [4], [0]).ok, false)
+    test.eq(warp.put(a, [-5], [0]).ok, false)
+}
+
+fn test_sort_axis_argsort_axis {
+    m := warp.array([3.0, 1.0, 2.0, 0.0, 4.0, 1.0], [2, 3])
+    test.eq(warp.to_list(warp.sort_axis(m, 0)), [0.0, 1.0, 1.0, 3.0, 4.0, 2.0])
+    test.eq(warp.to_list(warp.sort_axis(m, 1)), [1.0, 2.0, 3.0, 0.0, 1.0, 4.0])
+    test.eq(warp.to_list(warp.sort_axis(m, -1)), [1.0, 2.0, 3.0, 0.0, 1.0, 4.0])
+    test.eq(warp.shape(warp.sort_axis(m, 0)), [2, 3])
+    test.eq(warp.to_list(warp.argsort_axis(m, 1)), [1, 2, 0, 0, 2, 1])
+    test.eq(warp.to_list(warp.argsort_axis(m, 0)), [1, 0, 1, 0, 1, 0])
+    test.eq(warp.dtype(warp.argsort_axis(m, 0)), "int64")
+    // Stable: equal keys keep their original order along the axis.
+    dup := warp.array([2, 1, 2, 1], [2, 2])
+    test.eq(warp.to_list(warp.argsort_axis(dup, 0)), [0, 0, 1, 1])
+    test.eq(warp.sort_axis(m, 3).ok, false)
+    // Flat sort/argsort are unchanged.
+    test.eq(warp.to_list(warp.sort(m)), [0.0, 1.0, 1.0, 2.0, 3.0, 4.0])
+}
+
+fn test_unique_opts {
+    a := warp.array([3, 1, 3, 2, 1, 3], [6])
+    u := warp.unique_opts(a, true, true)
+    test.eq(warp.to_list(u.values), [1, 2, 3])
+    test.eq(warp.to_list(u.index), [1, 3, 0])
+    test.eq(warp.to_list(u.counts), [2, 1, 3])
+    only_values := warp.unique_opts(a, false, false)
+    test.eq(warp.to_list(only_values.values), [1, 2, 3])
+    test.is_true(!contains(keys(only_values), "index"))
+    counts_only := warp.unique_opts(a, false, true)
+    test.is_true(contains(keys(counts_only), "counts"))
+    test.is_true(!contains(keys(counts_only), "index"))
+    empty := warp.unique_opts(warp.array([], [0]), true, true)
+    test.eq(warp.to_list(empty.values), [])
+    test.eq(warp.to_list(empty.index), [])
+    test.eq(warp.to_list(empty.counts), [])
+    // Plain unique keeps returning just the values array.
+    test.eq(warp.to_list(warp.unique(a)), [1, 2, 3])
+}
+
+fn test_polyfit {
+    // Exact quadratic fit: y = x^2 + x + 1.
+    x := warp.array([0.0, 1.0, 2.0, 3.0, 4.0], [5])
+    y := warp.array([1.0, 3.0, 7.0, 13.0, 21.0], [5])
+    c := warp.to_list(warp.polyfit(x, y, 2))
+    test.approx(c[0], 1.0, 1e-10)
+    test.approx(c[1], 1.0, 1e-10)
+    test.approx(c[2], 1.0, 1e-10)
+    // Exact linear fit from plain lists.
+    l := warp.to_list(warp.polyfit([0.0, 1.0, 2.0, 3.0], [1.0, 3.0, 5.0, 7.0], 1))
+    test.approx(l[0], 2.0, 1e-10)
+    test.approx(l[1], 1.0, 1e-10)
+    // Constant fit is the mean.
+    c0 := warp.to_list(warp.polyfit([1.0, 2.0, 3.0], [2.0, 4.0, 6.0], 0))
+    test.approx(c0[0], 4.0, 1e-10)
+    // Adversarial: mismatched lengths, too few points, bad degree.
+    test.eq(warp.polyfit([1.0], [1.0, 2.0], 1).ok, false)
+    test.eq(warp.polyfit([0.0, 1.0], [1.0, 2.0], 2).ok, false)
+    test.eq(warp.polyfit([], [], 1).ok, false)
+    test.eq(warp.polyfit([0.0, 1.0], [1.0, 2.0], -1).ok, false)
+    // Minimum-point fits are allowed (exactly determined).
+    two := warp.to_list(warp.polyfit([0.0, 1.0], [1.0, 3.0], 1))
+    test.approx(two[0], 2.0, 1e-10)
+    test.approx(two[1], 1.0, 1e-10)
+}
+
+fn test_polyval_polyder_polyint {
+    c := [2.0, -3.0, 1.0]
+    test.eq(warp.to_list(warp.polyval(c, [0.0, 1.0, 2.5])), [1.0, 0.0, 6.0])
+    test.eq(warp.polyval(c, 2.5), 6.0)
+    test.eq(warp.polyval(c, 0), 1.0)
+    // Array x keeps its shape.
+    xa := warp.array([0.0, 1.0, 2.0, 3.0], [2, 2])
+    test.eq(warp.shape(warp.polyval(c, xa)), [2, 2])
+    test.eq(warp.to_list(warp.polyval(c, xa)), [1.0, 0.0, 3.0, 10.0])
+    // Empty coefficients evaluate to 0 (NumPy).
+    test.eq(warp.polyval([], 2.0), 0.0)
+    test.eq(warp.polyval(5.0, 1.0).ok, false)
+    // Derivative: d/dx (2x^2 - 3x + 1) = 4x - 3; constant derivative is empty.
+    test.eq(warp.to_list(warp.polyder(c)), [4.0, -3.0])
+    test.eq(warp.to_list(warp.polyder([5.0])), [])
+    test.eq(warp.to_list(warp.polyder([])), [])
+    test.eq(warp.polyder(5.0).ok, false)
+    // Integral: ∫(2x^2 - 3x + 1) = (2/3)x^3 - (3/2)x^2 + x (+ 0).
+    pi := warp.to_list(warp.polyint(c))
+    test.approx(pi[0], 2.0 / 3.0, 1e-12)
+    test.approx(pi[1], -1.5, 1e-12)
+    test.approx(pi[2], 1.0, 1e-12)
+    test.approx(pi[3], 0.0, 1e-12)
+    // Single coefficient: ∫5 = 5x.
+    test.eq(warp.to_list(warp.polyint([5.0])), [5.0, 0.0])
+    // Round trip: polyder(polyint(c)) == c.
+    test.eq(warp.to_list(warp.polyder(warp.polyint(c))), [2.0, -3.0, 1.0])
+}
+
+fn test_roots {
+    // x^2 - 3x + 2 = (x - 1)(x - 2), descending order.
+    r := warp.roots([1.0, -3.0, 2.0])
+    test.eq(warp.to_list(r.re), [2.0, 1.0])
+    test.eq(warp.to_list(r.im), [0.0, 0.0])
+    // Linear: 2x - 6.
+    test.eq(warp.to_list(warp.roots([2.0, -6.0]).re), [3.0])
+    // Complex pair: x^2 + 1.
+    rc := warp.roots([1.0, 0.0, 1.0])
+    test.approx(warp.to_list(rc.im)[0], 1.0, 1e-12)
+    test.approx(warp.to_list(rc.im)[1], -1.0, 1e-12)
+    test.approx(warp.to_list(rc.re)[0], 0.0, 1e-12)
+    // Leading zeros are trimmed; a constant has no roots.
+    test.eq(warp.to_list(warp.roots([0.0, 1.0, 2.0]).re), [-2.0])
+    test.eq(warp.to_list(warp.roots([5.0]).re), [])
+    test.eq(warp.to_list(warp.roots([0.0]).re), [])
+    test.eq(warp.to_list(warp.roots([]).re), [])
+    // Degree > 2 is an explicit unsupported error, not a bad guess.
+    test.eq(warp.roots([1.0, 0.0, -1.0, 0.0]).ok, false)
+    test.eq(warp.roots([1.0, 0.0, 0.0, -1.0, 0.0]).ok, false)
+}
+
+fn test_searchsorted {
+    a := warp.array([1.0, 2.0, 2.0, 3.0], [4])
+    // Scalars: before-first, exact duplicate, after-last.
+    test.eq(warp.searchsorted(a, 0.5, null), 0)
+    test.eq(warp.searchsorted(a, 2.0, null), 1)
+    test.eq(warp.searchsorted(a, 2.0, "right"), 3)
+    test.eq(warp.searchsorted(a, 4.0, null), 4)
+    test.eq(warp.searchsorted(a, 4.0, "right"), 4)
+    // Array input returns int64 indices with the input shape.
+    got := warp.searchsorted(a, warp.array([0.5, 2.0, 4.0], [3]), null)
+    test.eq(warp.to_list(got), [0, 1, 4])
+    test.eq(warp.dtype(got), "int64")
+    test.eq(warp.to_list(warp.searchsorted(a, [0.5, 2.0, 4.0], "right")), [0, 3, 4])
+    // Single element and empty inputs.
+    test.eq(warp.searchsorted([1.0], 1.0, null), 0)
+    test.eq(warp.searchsorted([1.0], 1.0, "right"), 1)
+    test.eq(warp.to_list(warp.searchsorted(a, [], null)), [])
+    // side validation.
+    test.eq(warp.searchsorted(a, 1.0, "middle").ok, false)
+}
+
+fn test_digitize {
+    x := [0.5, 1.0, 2.0, 3.5]
+    test.eq(warp.to_list(warp.digitize(x, [1.0, 2.0, 3.0], null)), [0, 1, 2, 3])
+    test.eq(warp.to_list(warp.digitize(x, [1.0, 2.0, 3.0], true)), [0, 0, 1, 3])
+    // Decreasing bins.
+    test.eq(warp.to_list(warp.digitize(x, [3.0, 2.0, 1.0], null)), [3, 2, 1, 0])
+    test.eq(warp.to_list(warp.digitize(x, [3.0, 2.0, 1.0], true)), [3, 3, 2, 0])
+    // Scalar x, equal-valued bins, single bin.
+    test.eq(warp.digitize(2.0, [1.0, 2.0, 3.0], null), 2)
+    test.eq(warp.digitize(1.0, [1.0, 1.0], null), 2)
+    test.eq(warp.digitize(1.0, [1.0, 1.0], true), 0)
+    test.eq(warp.to_list(warp.digitize([0.5, 1.0, 2.0], [1.0], null)), [0, 1, 1])
+    test.eq(warp.dtype(warp.digitize(x, [1.0, 2.0, 3.0], null)), "int64")
+    // Non-monotonic bins are an explicit error; empty bins map every x to 0.
+    test.eq(warp.digitize(x, [1.0, 3.0, 2.0], null).ok, false)
+    test.eq(warp.to_list(warp.digitize([0.5, 2.0], [], null)), [0, 0])
+    test.eq(warp.to_list(warp.digitize([], [1.0], null)), [])
+}
+
+fn test_histogram {
+    // Counts plus edges; the last bin is closed on the right.
+    h := warp.histogram([0.5, 1.5, 2.5, 3.5, 0.0, 4.0], 4, [0.0, 4.0])
+    test.eq(warp.to_list(h.counts), [2, 1, 1, 2])
+    test.eq(warp.to_list(h.edges), [0.0, 1.0, 2.0, 3.0, 4.0])
+    test.eq(warp.dtype(h.counts), "int64")
+    test.eq(warp.dtype(h.edges), "float64")
+    // Auto range from data min/max.
+    auto := warp.histogram([0.0, 4.0], 4, null)
+    test.eq(warp.to_list(auto.counts), [1, 0, 0, 1])
+    test.eq(warp.to_list(auto.edges), [0.0, 1.0, 2.0, 3.0, 4.0])
+    // Constant data gets NumPy's 0.5 padding; empty data uses (0, 1).
+    test.eq(warp.to_list(warp.histogram([2.0, 2.0], 4, null).counts), [0, 0, 2, 0])
+    test.eq(warp.to_list(warp.histogram([], 4, null).edges), [0.0, 0.25, 0.5, 0.75, 1.0])
+    // Explicit edges, values on edges, values outside the span ignored.
+    he := warp.histogram([1.0, 2.0, 3.0, 0.5, 3.5], [1.0, 2.0, 3.0], null)
+    test.eq(warp.to_list(he.counts), [1, 2])
+    // Empty input with explicit range.
+    test.eq(warp.to_list(warp.histogram([], 4, [0.0, 2.0]).counts), [0, 0, 0, 0])
+    // Errors: non-positive bins, non-monotonic edges, bad range.
+    test.eq(warp.histogram([1.0], 0, null).ok, false)
+    test.eq(warp.histogram([1.0], -2, null).ok, false)
+    test.eq(warp.histogram([1.0], [3.0, 1.0], null).ok, false)
+    test.eq(warp.histogram([1.0], 4, [2.0, 1.0]).ok, false)
+    test.eq(warp.histogram([1.0], [1.0], null).ok, false)
+}
+
+fn test_bincount {
+    test.eq(warp.to_list(warp.bincount([0, 3, 3, 1])), [1, 1, 0, 2])
+    test.eq(warp.dtype(warp.bincount([0, 3, 3, 1])), "int64")
+    test.eq(warp.to_list(warp.bincount([])), [])
+    test.eq(warp.to_list(warp.bincount([0])), [1])
+    test.eq(warp.to_list(warp.bincount(warp.array([2, 2], [2]))), [0, 0, 2])
+    // Negative or non-integer values are explicit errors.
+    test.eq(warp.bincount([-1]).ok, false)
+    test.eq(warp.bincount([1.5]).ok, false)
+}
+
+fn test_cov_corrcoef {
+    // 2x2 matrix forms.
+    cv := warp.to_list(warp.cov([1.0, 2.0, 4.0], [2.0, 1.0, 3.0]))
+    test.approx(cv[0], 2.3333333333333335, 1e-12)
+    test.eq(cv[1], 1.0)
+    test.eq(cv[2], 1.0)
+    test.eq(cv[3], 1.0)
+    test.eq(warp.shape(warp.cov([1.0, 2.0, 4.0], [2.0, 1.0, 3.0])), [2, 2])
+    cc := warp.to_list(warp.corrcoef([1.0, 2.0, 4.0], [2.0, 1.0, 3.0]))
+    test.approx(cc[0], 1.0, 1e-12)
+    test.approx(cc[1], 0.6546536707079772, 1e-12)
+    test.approx(cc[2], 0.6546536707079772, 1e-12)
+    test.approx(cc[3], 1.0, 1e-12)
+    // Single-argument scalar forms.
+    test.approx(warp.cov([1.0, 2.0, 4.0], null), 2.3333333333333335, 1e-12)
+    test.eq(warp.corrcoef([1.0, 2.0, 3.0], null), 1.0)
+    // NumPy warn-and-continue edges: n < 2 gives NaN; constant series give
+    // NaN off their correlation diagonal.
+    cnan := warp.cov([1.0], null)
+    test.is_true(cnan != cnan)
+    cconst := warp.to_list(warp.corrcoef([1.0, 1.0], [1.0, 2.0]))
+    test.is_true(cconst[0] != cconst[0])
+    test.is_true(cconst[1] != cconst[1])
+    test.eq(cconst[3], 1.0)
+    // Mismatched lengths and empty pairs are errors.
+    test.eq(warp.cov([1.0, 2.0], [1.0]).ok, false)
+    test.eq(warp.corrcoef([1.0, 2.0], [1.0]).ok, false)
+}
+
+fn test_average_quantile {
+    test.eq(warp.average([1.0, 2.0, 3.0], null), 2.0)
+    test.eq(warp.average([1.0, 2.0, 3.0], [1.0, 1.0, 2.0]), 2.25)
+    test.eq(warp.average([1.0], null), 1.0)
+    // Empty input, zero-sum weights, and length mismatches are errors.
+    test.eq(warp.average([], null).ok, false)
+    test.eq(warp.average([], []).ok, false)
+    test.eq(warp.average([1.0, 2.0], [0.0, 0.0]).ok, false)
+    test.eq(warp.average([1.0, 2.0], [1.0]).ok, false)
+    // Linear-interpolation quantiles.
+    test.eq(warp.quantile([3.0, 1.0, 4.0, 2.0], 0.25), 1.75)
+    test.eq(warp.quantile([3.0, 1.0, 4.0, 2.0], 0), 1.0)
+    test.eq(warp.quantile([3.0, 1.0, 4.0, 2.0], 1), 4.0)
+    test.eq(warp.to_list(warp.quantile([3.0, 1.0, 4.0, 2.0], [0.0, 0.5, 1.0])), [1.0, 2.5, 4.0])
+    test.eq(warp.quantile([5.0], 0.5), 5.0)
+    // Out-of-range q and empty input are errors.
+    test.eq(warp.quantile([1.0], 1.5).ok, false)
+    test.eq(warp.quantile([1.0], -0.1).ok, false)
+    test.eq(warp.quantile([1.0], [0.5, 2.0]).ok, false)
+    test.eq(warp.quantile([], 0.5).ok, false)
+}
+
+// === Multi-dimensional FFT ===
+
+fn test_fft2_basic {
+    // Hand-computed: rows then columns of [[1,2],[3,4]].
+    // Rows: [3,-1],[7,-1]; columns: [10,-4],[-2,0] → [[10,-2],[-4,0]].
+    f := warp.fft2(warp.array([1.0, 2.0, 3.0, 4.0], [2, 2]))
+    test.eq(warp.shape(f.re), [2, 2])
+    test.eq(warp.to_list(f.re), [10.0, -2.0, -4.0, 0.0])
+    test.eq(warp.to_list(f.im), [0.0, 0.0, 0.0, 0.0])
+    // fft2 matches fftn over the last two axes, and plain fftn for 2-D.
+    m := warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+    f2 := warp.fft2(m)
+    fn_ := warp.fftn(m, null)
+    test.is_true(warp.allclose(f2.re, fn_.re, 1e-12))
+    test.is_true(warp.allclose(f2.im, fn_.im, 1e-12))
+    // ifft2 inverts fft2 through the complex {re, im} input path.
+    back := warp.ifft2(f2)
+    test.is_true(warp.allclose(back.re, m, 1e-9))
+    test.is_true(warp.allclose(back.im, warp.zeros([2, 3]), 1e-9))
+}
+
+fn test_fftn_axes {
+    // Axis-subset transforms agree slice-by-slice with the 1-D engine.
+    m := warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+    by_col := warp.fftn(m, [0])
+    col0 := warp.fft_1d(warp.col(m, 0))
+    test.is_true(warp.allclose(warp.col(by_col.re, 0), col0.re, 1e-12))
+    test.is_true(warp.allclose(warp.col(by_col.im, 0), col0.im, 1e-12))
+    col2 := warp.fft_1d(warp.col(m, 2))
+    test.is_true(warp.allclose(warp.col(by_col.re, 2), col2.re, 1e-12))
+    // Negative axis: last axis == row-wise 1-D FFTs (naive path, n=3).
+    by_row := warp.fftn(m, [-1])
+    row1 := warp.fft_1d(warp.row(m, 1))
+    test.is_true(warp.allclose(warp.row(by_row.re, 1), row1.re, 1e-12))
+    test.is_true(warp.allclose(warp.row(by_row.im, 1), row1.im, 1e-12))
+    // An axis not in the subset is left untransformed: with axes [1], the
+    // first bin of each row is the row sum.
+    test.eq(warp.to_list(warp.col(by_row.re, 0)), [6.0, 15.0])
+    // 1-D fftn equals fft_1d.
+    v := warp.array([1.0, 2.0, 3.0, 4.0], [4])
+    f1 := warp.fftn(v, null)
+    f1d := warp.fft_1d(v)
+    test.is_true(warp.allclose(f1.re, f1d.re, 1e-12))
+    test.is_true(warp.allclose(f1.im, f1d.im, 1e-12))
+}
+
+fn test_fftn_3d_roundtrip {
+    // 3-D input over all axes (mixed radix-2 and naive lengths).
+    let mut d = []
+    let mut i = 0
+    while i < 24 { d = push(d, (i + 1) * 0.5)
+        i = i + 1 }
+    a := warp.array(d, [2, 3, 4])
+    f := warp.fftn(a, null)
+    test.eq(warp.shape(f.re), [2, 3, 4])
+    back := warp.ifftn(f, null)
+    test.is_true(warp.allclose(back.re, a, 1e-9))
+    test.is_true(warp.allclose(back.im, warp.zeros([2, 3, 4]), 1e-9))
+    // Axis subset on 3-D: transforming axis 1 only, then axes [0, 2],
+    // reproduces the full transform (separability).
+    partial := warp.fftn(a, [1])
+    full2 := warp.fftn(partial, [0, 2])
+    test.is_true(warp.allclose(full2.re, f.re, 1e-9))
+    test.is_true(warp.allclose(full2.im, f.im, 1e-9))
+    test.is_true(warp.allclose(warp.ifftn(f, [2]).re, warp.fftn(a, [0, 1]).re, 1e-9))
+}
+
+fn test_fftn_complex_input {
+    // fft(i * x) == i * fft(x): feeding x as the imaginary part must rotate
+    // the output parts {re, im} → {-im, re}.
+    m := warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+    real_out := warp.fftn(m, [1])
+    imag_in := warp.fftn({"re": warp.zeros([2, 3]), "im": m}, [1])
+    rr := warp.to_list(real_out.re)
+    ri := warp.to_list(real_out.im)
+    ir := warp.to_list(imag_in.re)
+    ii := warp.to_list(imag_in.im)
+    let mut k = 0
+    while k < len(rr) {
+        test.approx(ir[k], 0.0 - ri[k], 1e-9)
+        test.approx(ii[k], rr[k], 1e-9)
+        k = k + 1
+    }
+    // Missing "im" part defaults to zeros: same as the real transform.
+    re_only := warp.fftn({"re": m}, null)
+    full := warp.fftn(m, null)
+    test.is_true(warp.allclose(re_only.re, full.re, 1e-12))
+    test.is_true(warp.allclose(re_only.im, full.im, 1e-12))
+}
+
+fn test_fftn_errors {
+    m := warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+    // fft2/ifft2 require at least 2-D input.
+    test.eq(warp.fft2(warp.array([1.0, 2.0], [2])).ok, false)
+    test.eq(warp.ifft2(warp.array([1.0, 2.0], [2])).ok, false)
+    // Repeated, out-of-range, or non-list axes are errors.
+    test.eq(warp.fftn(m, [0, 0]).ok, false)
+    test.eq(warp.fftn(m, [2]).ok, false)
+    test.eq(warp.fftn(m, [-3]).ok, false)
+    test.eq(warp.fftn(m, 0).ok, false)
+    // Complex parts must be equal-shaped arrays.
+    test.eq(warp.fftn({"re": m, "im": warp.array([1.0], [1])}, null).ok, false)
+    test.eq(warp.fftn({"re": [1.0, 2.0]}, null).ok, false)
+    test.eq(warp.fftn(5.0, null).ok, false)
+    // Zero-sized axes transform to empty arrays instead of failing.
+    empty := warp.fft2(warp.array([], [0, 3]))
+    test.eq(warp.shape(empty.re), [0, 3])
+    test.eq(warp.size(empty.re), 0)
+}
+
+// === Linalg edge cases: slogdet / matrix_rank / cond ===
+
+fn test_slogdet {
+    // det [[4,7],[2,6]] = 10 → sign +1, logdet ln 10.
+    sd := warp.slogdet(warp.array([4.0, 7.0, 2.0, 6.0], [2, 2]))?
+    test.eq(sd.sign, 1.0)
+    test.approx(sd.logdet, 2.302585092994046, 1e-9)
+    // det [[1,2],[3,4]] = -2 → sign -1, logdet ln 2.
+    neg := warp.slogdet(warp.array([1.0, 2.0, 3.0, 4.0], [2, 2]))?
+    test.eq(neg.sign, -1.0)
+    test.approx(neg.logdet, 0.6931471805599453, 1e-9)
+    // 1x1, including a zero pivot.
+    one := warp.slogdet(warp.array([-5.0], [1, 1]))?
+    test.eq(one.sign, -1.0)
+    test.approx(one.logdet, math.log(5.0), 1e-12)
+    zero1 := warp.slogdet(warp.array([0.0], [1, 1]))?
+    test.eq(zero1.sign, 0.0)
+    test.eq(zero1.logdet, -math.inf)
+    // 0x0 is the multiplicative identity: sign 1, logdet 0 (NumPy).
+    empty := warp.slogdet(warp.array([], [0, 0]))?
+    test.eq(empty.sign, 1.0)
+    test.eq(empty.logdet, 0.0)
+    // Exactly singular (rank-1): sign 0, logdet -inf.
+    sing := warp.slogdet(warp.array([1.0, 2.0, 1.0, 2.0, 4.0, 2.0, 3.0, 6.0, 3.0], [3, 3]))?
+    test.eq(sing.sign, 0.0)
+    test.eq(sing.logdet, -math.inf)
+    // Consistency with det on a well-conditioned 4x4 (upper triangular,
+    // det = 48): sign * exp(logdet) == det.
+    b := warp.array([2.0, 1.0, 0.0, 0.0, 0.0, 3.0, 1.0, 0.0, 0.0, 0.0, 2.0, 1.0, 0.0, 0.0, 0.0, 4.0], [4, 4])
+    sdb := warp.slogdet(b)?
+    test.eq(sdb.sign, 1.0)
+    test.approx(sdb.sign * math.exp(sdb.logdet), warp.det(b)?, 1e-9)
+    // Non-square and 1-D inputs are errors.
+    test.eq(warp.slogdet(warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])).ok, false)
+    test.eq(warp.slogdet(warp.array([1.0, 2.0], [2])).ok, false)
+}
+
+fn test_matrix_rank {
+    full := warp.array([1.0, 2.0, 3.0, 4.0], [2, 2])
+    test.eq(warp.matrix_rank(full, null)?, 2)
+    // Rank-deficient: rows are multiples → rank 1.
+    test.eq(warp.matrix_rank(warp.array([1.0, 2.0, 2.0, 4.0], [2, 2]), null)?, 1)
+    // Classic rank-2 3x3.
+    test.eq(warp.matrix_rank(warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], [3, 3]), null)?, 2)
+    // Rectangular inputs.
+    test.eq(warp.matrix_rank(warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3]), null)?, 2)
+    test.eq(warp.matrix_rank(warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [3, 2]), null)?, 2)
+    test.eq(warp.matrix_rank(warp.array([1.0, 2.0, 2.0, 4.0, 3.0, 6.0], [3, 2]), null)?, 1)
+    // Zero matrix and 1x1 edges.
+    test.eq(warp.matrix_rank(warp.zeros([3, 3]), null)?, 0)
+    test.eq(warp.matrix_rank(warp.array([0.0], [1, 1]), null)?, 0)
+    test.eq(warp.matrix_rank(warp.array([7.0], [1, 1]), null)?, 1)
+    // Tolerance semantics on diag(1, 1e-10, 1e-20): the default tol
+    // (3 * eps * max|a| ≈ 6.7e-16) drops only the 1e-20 pivot.
+    d := warp.array([1.0, 0.0, 0.0, 0.0, 1e-10, 0.0, 0.0, 0.0, 1e-20], [3, 3])
+    test.eq(warp.matrix_rank(d, null)?, 2)
+    test.eq(warp.matrix_rank(d, 0.0)?, 3)
+    test.eq(warp.matrix_rank(d, 1e-5)?, 1)
+    // Ill-conditioned but full rank: 5x5 Hilbert matrix.
+    let mut hd = []
+    let mut i = 0
+    while i < 5 {
+        let mut j = 0
+        while j < 5 { hd = push(hd, 1.0 / (i + j + 1))
+            j = j + 1 }
+        i = i + 1
+    }
+    test.eq(warp.matrix_rank(warp.array(hd, [5, 5]), null)?, 5)
+    // Errors: 1-D, 0-size dims, negative tol, non-numeric tol.
+    test.eq(warp.matrix_rank(warp.array([1.0, 2.0], [2]), null).ok, false)
+    test.eq(warp.matrix_rank(warp.array([], [0, 0]), null).ok, false)
+    test.eq(warp.matrix_rank(warp.array([], [0, 3]), null).ok, false)
+    test.eq(warp.matrix_rank(full, -1.0).ok, false)
+    test.eq(warp.matrix_rank(full, "x").ok, false)
+}
+
+fn test_cond {
+    // Frobenius condition numbers: identity 3x3 → 3 (||I||_F = sqrt(3)),
+    // diag(1, 2) → sqrt(5) * sqrt(1.25) = 2.5.
+    test.approx(warp.cond(warp.eye(3))?, 3.0, 1e-9)
+    test.approx(warp.cond(warp.array([1.0, 0.0, 0.0, 2.0], [2, 2]))?, 2.5, 1e-9)
+    test.eq(warp.cond(warp.array([5.0], [1, 1]))?, 1.0)
+    // Exactly singular → +inf (documented deviation from np.linalg.cond
+    // p="fro", which raises there).
+    test.eq(warp.cond(warp.array([1.0, 2.0, 2.0, 4.0], [2, 2]))?, math.inf)
+    test.eq(warp.cond(warp.array([1.0, 2.0, 1.0, 2.0, 4.0, 2.0, 3.0, 6.0, 3.0], [3, 3]))?, math.inf)
+    // Errors: non-square, 1-D, and empty (NumPy raises on empty cond).
+    test.eq(warp.cond(warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])).ok, false)
+    test.eq(warp.cond(warp.array([1.0, 2.0], [2])).ok, false)
+    test.eq(warp.cond(warp.array([], [0, 0])).ok, false)
+}
+
+fn test_exactly_singular_linalg {
+    // Rank-1 3x3: det is exactly 0, inv/solve are explicit errors.
+    sing := warp.array([1.0, 2.0, 1.0, 2.0, 4.0, 2.0, 3.0, 6.0, 3.0], [3, 3])
+    test.eq(warp.det(sing)?, 0.0)
+    test.eq(warp.inv(sing).ok, false)
+    test.eq(warp.solve(sing, warp.array([1.0, 2.0, 3.0], [3])).ok, false)
+    // Near-singular still computes (NumPy behavior): Hilbert 4x4 has
+    // det ≈ 1.65e-7 and a finite inverse.
+    let mut hd = []
+    let mut i = 0
+    while i < 4 {
+        let mut j = 0
+        while j < 4 { hd = push(hd, 1.0 / (i + j + 1))
+            j = j + 1 }
+        i = i + 1
+    }
+    h := warp.array(hd, [4, 4])
+    test.approx(warp.det(h)?, 1.6534391534391535e-07, 1e-12)
+    hi := warp.inv(h)?
+    // A * A^-1 ≈ I.
+    test.is_true(warp.allclose(warp.matmul(h, hi), warp.eye(4), 1e-6))
 }

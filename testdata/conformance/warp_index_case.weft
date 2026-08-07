@@ -1,0 +1,62 @@
+use "../../packages/warp/lib.weft" as warp
+use json
+
+// Differential fixture for ellipsis()/newaxis() selectors (NumPy `...` and
+// `None`): shapes, values, and dtypes for basic, advanced, and sliced
+// combinations, plus assignment through ellipsis/newaxis selections and the
+// IndexError cases (two ellipses, too many axis-consuming selectors).
+fn main -> Result {
+    e := warp.ellipsis()
+    n := warp.newaxis()
+    cube := warp.reshape(warp.arange(0, 24, 1), [2, 3, 4])
+    matrix := warp.reshape(warp.arange(0, 6, 1), [2, 3])
+    f32 := warp.array_typed([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3], "float32")
+
+    ell_trailing := warp.index(cube, [e, 0])
+    ell_zero := warp.index(matrix, [1, e])
+    newaxis_wrap := warp.index(matrix, [n, e, n])
+    newaxis_pair := warp.index(matrix, [n, null, n])
+    newaxis_scalar := warp.index(matrix, [0, n])
+    newaxis_only := warp.index(matrix, [n, n, 0, 0])
+    adv_newaxis := warp.index(matrix, [[0, 1], n, null])
+    adv_separated := warp.index(matrix, [[0, 1], n, [0, 1]])
+    slice_ellipsis := warp.index(cube, [e, warp.slice_selector(0, 2, 1)])
+    typed := warp.index(f32, [e, 1])
+
+    set_ellipsis := warp.set(matrix, [e, 0], 5)
+    set_newaxis := warp.set(matrix, [n, 0], 7)
+    set_fewer := warp.set(matrix, [0], 9)
+    set_cube := warp.set(cube, [e, 1], warp.reshape(warp.arange(100, 106, 1), [2, 3]))
+
+    say(json.stringify({
+        "ell_trailing_shape": warp.shape(ell_trailing),
+        "ell_trailing": warp.to_list(ell_trailing),
+        "ell_trailing_dtype": warp.dtype(ell_trailing),
+        "ell_zero_shape": warp.shape(ell_zero),
+        "ell_zero": warp.to_list(ell_zero),
+        "newaxis_wrap_shape": warp.shape(newaxis_wrap),
+        "newaxis_pair_shape": warp.shape(newaxis_pair),
+        "newaxis_pair": warp.to_list(newaxis_pair),
+        "newaxis_scalar_shape": warp.shape(newaxis_scalar),
+        "newaxis_only_shape": warp.shape(newaxis_only),
+        "adv_newaxis_shape": warp.shape(adv_newaxis),
+        "adv_newaxis": warp.to_list(adv_newaxis),
+        "adv_separated_shape": warp.shape(adv_separated),
+        "adv_separated": warp.to_list(adv_separated),
+        "slice_ellipsis_shape": warp.shape(slice_ellipsis),
+        "slice_ellipsis": warp.to_list(slice_ellipsis),
+        "typed_dtype": warp.dtype(typed),
+        "typed": warp.to_list(typed),
+        "set_ellipsis": warp.to_list(set_ellipsis),
+        "set_newaxis": warp.to_list(set_newaxis),
+        "set_fewer": warp.to_list(set_fewer),
+        "set_cube_shape": warp.shape(set_cube),
+        "set_cube_lane": warp.to_list(warp.index(set_cube, [e, 1])),
+        "err_index_two_ellipsis": is_err(warp.index(cube, [e, e])),
+        "err_index_too_many": is_err(warp.index(matrix, [0, 0, 0])),
+        "err_index_too_many_newaxis": is_err(warp.index(matrix, [n, 0, 0, 0])),
+        "err_set_two_ellipsis": is_err(warp.set(matrix, [e, e, 0], 1)),
+        "err_set_too_many": is_err(warp.set(matrix, [0, 0, 0], 1)),
+    }))
+    Ok(null)
+}

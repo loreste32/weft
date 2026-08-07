@@ -1,0 +1,40 @@
+// Join scale smoke: 100k-row fact frame joined against a 20k-row lookup,
+// then grouped. Timing belongs to scripts/bench-scale.sh.
+use "../../packages/dataframe/lib.weft" as df
+
+fn _env_int(key, default) {
+    raw := env.get(key, "")
+    if raw == null || raw == "" { return default }
+    n := int.parse(raw).unwrap_or(0)
+    if n <= 0 { return default }
+    n
+}
+
+fn main {
+    let mut n = _env_int("WEFT_DF_JOIN_ROWS", 100000)
+    if n > 1000000 { n = 1000000 }
+    let mut left = []
+    let mut i = 0
+    while i < n {
+        left = push(left, {"k": i % 20000, "v": i % 1000})
+        i = i + 1
+    }
+    let mut right = []
+    let mut j = 0
+    while j < 20000 {
+        right = push(right, {"k": j, "grp": j % 50})
+        j = j + 1
+    }
+    l := df.from_rows(left)
+    r := df.from_rows(right)
+    joined := df.join(l, r, "k", "inner")
+    g := df.group_by(joined, "grp", {
+        "v_sum": {"col": "v", "op": "sum"},
+        "n": {"col": "v", "op": "count"},
+    })
+    say(json.stringify({
+        "fixture": "dataframe_scale_join",
+        "joined_rows": df.nrows(joined),
+        "groups": df.nrows(g),
+    }))
+}

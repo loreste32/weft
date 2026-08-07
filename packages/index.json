@@ -17,8 +17,8 @@
     {
       "name": "ml",
       "path": "./ml",
-      "version": "0.7.2",
-      "summary": "ML vectors, training on lists or packed Warp arrays, reverse-mode autodiff, higher-order derivatives, modules, optimizers, checkpoints, and device tags"
+      "version": "0.8.0",
+      "summary": "ML vectors, training on lists or packed Warp arrays, reverse- and forward-mode autodiff, higher-order derivatives, modules, losses, schedulers, optimizers, checkpoints with resume, freezing, and device tags"
     },
     {
       "name": "warp",
@@ -29,8 +29,8 @@
     {
       "name": "dataframe",
       "path": "./dataframe",
-      "version": "0.7.1",
-      "summary": "Pandas-inspired DataFrames with aligned Series, indexes, null-aware stats, joins, rolling, CSV/JSON I/O, and Warp interchange"
+      "version": "0.8.0",
+      "summary": "Pandas-inspired DataFrames with aligned Series, indexes, label-based loc selection and loc/iloc assignment, null-aware stats, joins, rolling, CSV/JSON I/O, and Warp interchange"
     },
     {
       "name": "embed",

@@ -65,6 +65,25 @@ pub fn from_columns(col_map) -> Result[any] {
 }
 
 pub fn from_csv(text, sep) -> Result[any] {
+    _from_csv_impl(text, sep, null)
+}
+
+// from_csv_opts(text, sep, opts) — from_csv with explicit type/null policies.
+//   opts.dtypes: map of column name to "int" | "float" | "str" | "bool".
+//     Columns listed are parsed strictly: a value that does not parse as the
+//     declared type is an error naming the row and column. "str" keeps the
+//     raw text (quoted numerals such as "123" stay strings).
+//   opts.null_values: list of extra sentinel strings that map to null
+//     (applied to unquoted cells, before dtype parsing).
+//   opts.keep_default_null_values: when false, the default sentinels
+//     ("", "null", "NULL", "None") no longer map to null — only the custom
+//     null_values do. Default true.
+//   Quoted cells are explicit strings: null sentinels never apply to them.
+pub fn from_csv_opts(text, sep, opts) -> Result[any] {
+    _from_csv_impl(text, sep, opts)
+}
+
+fn _from_csv_impl(text, sep, opts) -> Result[any] {
     delimiter := if sep == null { "," } else { sep }
     if _kind(text) != "str" || _kind(delimiter) != "str" || len(delimiter) != 1 {
         return Err("dataframe.from_csv expects a string and a one-character separator")
@@ -81,6 +100,8 @@ pub fn from_csv(text, sep) -> Result[any] {
         seen_cols[name] = true
         cols = push(cols, name)
     }
+    policy := _csv_policy_check(opts, cols)
+    if _kind(policy) == "result" { return policy }
     let mut rows = []
     let mut i = 1
     while i < len(records) {
@@ -95,7 +116,9 @@ pub fn from_csv(text, sep) -> Result[any] {
         let mut row = {}
         let mut j = 0
         while j < len(cols) {
-            row[cols[j]] = _csv_value(record[j])
+            v := _csv_value_policy(record[j], cols[j], i + 1, opts)
+            if _kind(v) == "result" { return v }
+            row[cols[j]] = v
             j = j + 1
         }
         rows = push(rows, row)
@@ -129,6 +152,13 @@ pub fn from_jsonl(text) -> Result[any] {
 pub fn read_csv(path, sep) -> Result[any] {
     text := fs.read(path)?
     from_csv(text, sep)
+}
+
+// read_csv_opts(path, sep, opts) — read_csv with the same dtype/null policies
+// as from_csv_opts.
+pub fn read_csv_opts(path, sep, opts) -> Result[any] {
+    text := fs.read(path)?
+    from_csv_opts(text, sep, opts)
 }
 
 pub fn read_json(path) -> Result[any] {
@@ -411,7 +441,7 @@ pub fn series_mul(left, right, fill_value) { _series_binary(left, right, fill_va
 pub fn series_div(left, right, fill_value) { _series_binary(left, right, fill_value, fn(a, b) { a / b }) }
 
 pub fn index(t) {
-    if t._index == null { _range(len(t.rows)) } else { t._index }
+    if !(contains(keys(t), "_index") && t._index != null) { _range(len(t.rows)) } else { t._index }
 }
 
 pub fn index_name(t) { if t._index_name == null { null } else { t._index_name } }
@@ -695,6 +725,460 @@ pub fn reset_index(t, name) {
     {"_df": true, "columns": new_columns, "rows": new_rows}
 }
 
+// ──────────────────────────────────────────────
+// Index set operations, index sorting, cross-sections
+// ──────────────────────────────────────────────
+//
+// pandas-matching semantics (pandas 3.0.1), verified against the oracle:
+//   union:        sorted unique values; when either side has duplicates the
+//                 result keeps max(left, right) multiplicity per label. A
+//                 union with an empty side returns the other side AS-IS
+//                 (unsorted, duplicates preserved). Nulls are ordinary
+//                 labels (present if present in an input) and sort last.
+//   intersection: sorted unique labels present in both sides (nulls match
+//                 nulls). Duplicates are always collapsed.
+//   difference:   sorted unique labels of the left side not on the right.
+// Mixed-type labels use pandas' "safe" ordering: numbers/bools first
+// (bools compare as 0/1), then strings, then other values by JSON encoding;
+// null always last. All three accept DataFrames (current index) or plain
+// label lists, and always return a plain list of labels.
+
+pub fn index_union(a, b) {
+    la := _as_label_list(a, "index_union")
+    if _kind(la) == "result" { return la }
+    lb := _as_label_list(b, "index_union")
+    if _kind(lb) == "result" { return lb }
+    // pandas shortcut: empty side returns the other unchanged.
+    if len(la) == 0 { return _copy_rows(lb) }
+    if len(lb) == 0 { return _copy_rows(la) }
+    let mut seen = {}
+    let mut reps = {}
+    let mut order = []
+    let mut count_a = {}
+    let mut count_b = {}
+    for v in la {
+        k := _value_key(v)
+        if seen[k] == null {
+            seen[k] = true
+            reps[k] = v
+            order = push(order, k)
+            count_a[k] = 0
+            count_b[k] = 0
+        }
+        count_a[k] = count_a[k] + 1
+    }
+    for v in lb {
+        k := _value_key(v)
+        if seen[k] == null {
+            seen[k] = true
+            reps[k] = v
+            order = push(order, k)
+            count_a[k] = 0
+            count_b[k] = 0
+        }
+        count_b[k] = count_b[k] + 1
+    }
+    let mut out = []
+    for k in order {
+        n := if count_a[k] > count_b[k] { count_a[k] } else { count_b[k] }
+        let mut i = 0
+        while i < n {
+            out = push(out, reps[k])
+            i = i + 1
+        }
+    }
+    _sort_labels(out)
+}
+
+pub fn index_intersection(a, b) {
+    la := _as_label_list(a, "index_intersection")
+    if _kind(la) == "result" { return la }
+    lb := _as_label_list(b, "index_intersection")
+    if _kind(lb) == "result" { return lb }
+    let mut in_b = {}
+    for v in lb { in_b[_value_key(v)] = true }
+    let mut seen = {}
+    let mut out = []
+    for v in la {
+        k := _value_key(v)
+        if in_b[k] != null && seen[k] == null {
+            seen[k] = true
+            out = push(out, v)
+        }
+    }
+    _sort_labels(out)
+}
+
+pub fn index_difference(a, b) {
+    la := _as_label_list(a, "index_difference")
+    if _kind(la) == "result" { return la }
+    lb := _as_label_list(b, "index_difference")
+    if _kind(lb) == "result" { return lb }
+    let mut in_b = {}
+    for v in lb { in_b[_value_key(v)] = true }
+    let mut seen = {}
+    let mut out = []
+    for v in la {
+        k := _value_key(v)
+        if in_b[k] == null && seen[k] == null {
+            seen[k] = true
+            out = push(out, v)
+        }
+    }
+    _sort_labels(out)
+}
+
+// sort_index(t, desc) — stable sort of rows by index label. desc truthy →
+// descending (every level, for multi-level indexes); null/default →
+// ascending. Null labels sort last in both directions (pandas
+// na_position="last"); use sort_index_opts for na_position="first".
+// Ties (duplicate labels) keep their original row order.
+// A frame without an explicit index sorts by its positional range, which
+// is the identity, so it is returned unchanged.
+pub fn sort_index(t, desc) {
+    _sort_index_impl(t, desc == true, false)
+}
+
+// sort_index_opts(t, opts) — sort_index with options.
+//   opts.ascending:   bool, default true.
+//   opts.na_position: "last" (default) | "first".
+pub fn sort_index_opts(t, opts) {
+    let mut desc = false
+    let mut na_position = "last"
+    if opts != null {
+        if _kind(opts) != "map" { return Err("dataframe.sort_index: opts must be a map") }
+        if opts["ascending"] != null {
+            if _kind(opts["ascending"]) != "bool" {
+                return Err("dataframe.sort_index: ascending must be boolean")
+            }
+            desc = !opts["ascending"]
+        }
+        if opts["na_position"] != null { na_position = opts["na_position"] }
+    }
+    if na_position != "first" && na_position != "last" {
+        return Err("dataframe.sort_index: na_position must be \"first\" or \"last\"")
+    }
+    _sort_index_impl(t, desc, na_position == "first")
+}
+
+fn _sort_index_impl(t, desc, na_first) {
+    if !(contains(keys(t), "_index") && t._index != null) { return t }
+    idx := index(t)
+    nlevels := index_nlevels(t)
+    let mut pairs = []
+    let mut i = 0
+    while i < len(t.rows) {
+        pairs = push(pairs, {"label": idx[i], "row": t.rows[i]})
+        i = i + 1
+    }
+    sorted := _label_sort_pairs(pairs, desc, na_first, nlevels)
+    let mut new_rows = []
+    let mut new_index = []
+    for p in sorted {
+        new_rows = push(new_rows, p.row)
+        new_index = push(new_index, p.label)
+    }
+    _frame_with_index(t.columns, new_rows, new_index, t)
+}
+
+// is_monotonic(t, desc) — whether the current index is monotonically
+// increasing (desc truthy → decreasing), non-strict like pandas (duplicate
+// labels are monotonic). Any null label (or null level component) makes
+// the index non-monotonic, matching pandas. Empty indexes are monotonic.
+pub fn is_monotonic(t, desc) {
+    idx := index(t)
+    nlevels := index_nlevels(t)
+    for label in idx {
+        if _label_has_null(label, nlevels) { return false }
+    }
+    let mut i = 1
+    while i < len(idx) {
+        if _label_cmp_dir_n(idx[i - 1], idx[i], desc == true, false, nlevels) > 0 { return false }
+        i = i + 1
+    }
+    true
+}
+
+// xs(t, key, level) — cross-section: select rows where one index level
+// equals key and the other levels are free. key may be a scalar (with
+// level naming the level, default 0) or a map {level: key} matching
+// several levels at once (map keys are level names or numeric strings;
+// level must be null in that form). Matching pandas xs:
+//   - the selected levels are DROPPED from the result index by default
+//     (use xs_opts with drop_level=false to keep them);
+//   - selecting every level leaves a default positional index;
+//   - a key absent from its level is an Err (pandas raises KeyError).
+pub fn xs(t, key, level) {
+    _xs_impl(t, key, level, true)
+}
+
+// xs_opts(t, key, opts) — xs with options.
+//   opts.level:      int or str level for a scalar key (default 0).
+//   opts.drop_level: bool, default true (pandas xs default).
+pub fn xs_opts(t, key, opts) {
+    let mut level = null
+    let mut drop_level = true
+    if opts != null {
+        if _kind(opts) != "map" { return Err("dataframe.xs: opts must be a map") }
+        level = opts["level"]
+        if opts["drop_level"] != null {
+            if _kind(opts["drop_level"]) != "bool" {
+                return Err("dataframe.xs: drop_level must be boolean")
+            }
+            drop_level = opts["drop_level"]
+        }
+    }
+    _xs_impl(t, key, level, drop_level)
+}
+
+fn _xs_impl(t, key, level, drop_level) {
+    nlevels := index_nlevels(t)
+    idx := index(t)
+    let mut sel_levels = []
+    let mut sel_keys = []
+    if _kind(key) == "map" {
+        if level != null {
+            return Err("dataframe.xs: level must be null when key is a map")
+        }
+        if len(keys(key)) == 0 { return Err("dataframe.xs: key map cannot be empty") }
+        for name in keys(key) {
+            lv := _xs_resolve_level(t, name)
+            if _kind(lv) == "result" { return lv }
+            sel_levels = push(sel_levels, lv)
+            sel_keys = push(sel_keys, key[name])
+        }
+    } else {
+        lv := _xs_resolve_level(t, if level == null { 0 } else { level })
+        if _kind(lv) == "result" { return lv }
+        sel_levels = [lv]
+        sel_keys = [key]
+    }
+    let mut sel_rows = []
+    let mut sel_index = []
+    let mut i = 0
+    while i < len(t.rows) {
+        label := idx[i]
+        if nlevels > 1 && (_kind(label) != "list" || len(label) != nlevels) {
+            return Err("dataframe.xs: malformed multi-index label")
+        }
+        let mut matched = true
+        let mut s = 0
+        while s < len(sel_levels) {
+            lv_val := if nlevels > 1 { label[sel_levels[s]] } else { label }
+            if _value_key(lv_val) != _value_key(sel_keys[s]) {
+                matched = false
+                break
+            }
+            s = s + 1
+        }
+        if matched {
+            sel_rows = push(sel_rows, t.rows[i])
+            sel_index = push(sel_index, label)
+        }
+        i = i + 1
+    }
+    if len(sel_rows) == 0 {
+        return Err("dataframe.xs: key not found in index level")
+    }
+    if !drop_level {
+        return _frame_with_index(t.columns, sel_rows, sel_index, t)
+    }
+    let mut remaining = []
+    let mut li = 0
+    while li < nlevels {
+        if !contains(sel_levels, li) { remaining = push(remaining, li) }
+        li = li + 1
+    }
+    if len(remaining) == 0 {
+        // Every level selected → default positional index.
+        return {"_df": true, "columns": t.columns, "rows": sel_rows}
+    }
+    if len(remaining) == 1 {
+        r := remaining[0]
+        name := if nlevels > 1 { t._index_levels[r] } else { t._index_name }
+        let mut new_index = []
+        for label in sel_index {
+            new_index = push(new_index, if nlevels > 1 { label[r] } else { label })
+        }
+        result := {"_df": true, "columns": t.columns, "rows": sel_rows, "_index": new_index}
+        if name != null { result["_index_name"] = name }
+        return result
+    }
+    let mut new_levels = []
+    for r in remaining { new_levels = push(new_levels, t._index_levels[r]) }
+    let mut new_index = []
+    for label in sel_index {
+        let mut nl = []
+        for r in remaining { nl = push(nl, label[r]) }
+        new_index = push(new_index, nl)
+    }
+    {"_df": true, "columns": t.columns, "rows": sel_rows, "_index": new_index, "_index_levels": new_levels}
+}
+
+// Resolve an xs level: int position (incl. negative), level name, or a
+// numeric string (map keys are always strings). Works for single-level
+// frames too, unlike _resolve_level.
+fn _xs_resolve_level(t, level) {
+    nlevels := index_nlevels(t)
+    if _kind(level) == "int" {
+        let mut li = level
+        if li < 0 { li = nlevels + li }
+        if li < 0 || li >= nlevels { return Err("dataframe.xs: level index out of range") }
+        return li
+    }
+    if _kind(level) == "str" {
+        if nlevels > 1 {
+            let mut i = 0
+            while i < nlevels {
+                if t._index_levels[i] == level { return i }
+                i = i + 1
+            }
+        } else if index_name(t) == level {
+            return 0
+        }
+        let mut i = 0
+        while i < nlevels {
+            if ("" + i) == level { return i }
+            i = i + 1
+        }
+        return Err("dataframe.xs: unknown index level " + level)
+    }
+    Err("dataframe.xs: level must be int or str")
+}
+
+// Labels from a DataFrame's current index or a plain list.
+fn _as_label_list(v, fname) {
+    if _kind(v) == "map" && v["_df"] == true {
+        if contains(keys(v), "_index") && v._index != null { return v._index }
+        return _range(len(v.rows))
+    }
+    if _kind(v) == "list" { return v }
+    Err("dataframe." + fname + " expects a DataFrame or a list of labels")
+}
+
+// Type rank for pandas' "safe" ordering of mixed-type labels:
+// numbers/bools first, strings next, everything else last. Null is handled
+// separately by _label_cmp_dir (na_position), never ranked here.
+fn _label_rank(v) {
+    k := _kind(v)
+    if k == "int" || k == "float" || k == "bool" { return 0 }
+    if k == "str" { return 1 }
+    2
+}
+
+fn _label_num(v) {
+    if _kind(v) == "bool" { return if v { 1 } else { 0 } }
+    v
+}
+
+// Compare two non-null labels: numbers/bools numerically (bools as 0/1),
+// strings lexicographically, other values by JSON encoding. Type groups
+// order by _label_rank. Returns <0, 0, or >0.
+fn _label_cmp_values(a, b) {
+    ra := _label_rank(a)
+    rb := _label_rank(b)
+    if ra != rb { return ra - rb }
+    if ra == 0 {
+        na := _label_num(a)
+        nb := _label_num(b)
+        if na < nb { return -1 }
+        if na > nb { return 1 }
+        return 0
+    }
+    if ra == 2 {
+        ka := json.stringify(a)
+        kb := json.stringify(b)
+        if ka < kb { return -1 }
+        if ka > kb { return 1 }
+        return 0
+    }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    0
+}
+
+// Full label compare with null placement (na_first) and direction (desc).
+// Null placement is independent of direction, like pandas na_position.
+fn _label_cmp_dir(a, b, desc, na_first) {
+    if a == null {
+        if b == null { return 0 }
+        return if na_first { -1 } else { 1 }
+    }
+    if b == null { return if na_first { 1 } else { -1 } }
+    c := _label_cmp_values(a, b)
+    if desc { -c } else { c }
+}
+
+// Level-by-level compare for multi-level labels; scalars compare directly.
+fn _label_cmp_dir_n(a, b, desc, na_first, nlevels) {
+    if nlevels <= 1 || _kind(a) != "list" || _kind(b) != "list" {
+        return _label_cmp_dir(a, b, desc, na_first)
+    }
+    n := if len(a) < len(b) { len(a) } else { len(b) }
+    let mut i = 0
+    while i < n {
+        c := _label_cmp_dir(a[i], b[i], desc, na_first)
+        if c != 0 { return c }
+        i = i + 1
+    }
+    0
+}
+
+fn _label_has_null(label, nlevels) {
+    if label == null { return true }
+    if nlevels > 1 && _kind(label) == "list" {
+        for v in label { if v == null { return true } }
+    }
+    false
+}
+
+// Stable ascending merge sort of label lists (nulls last).
+fn _sort_labels(values) {
+    if len(values) <= 1 { return _copy_rows(values) }
+    mid := len(values) / 2
+    left := _sort_labels(_value_range(values, 0, mid))
+    right := _sort_labels(_value_range(values, mid, len(values)))
+    let mut result = []
+    let mut li = 0
+    let mut ri = 0
+    while li < len(left) && ri < len(right) {
+        if _label_cmp_dir(left[li], right[ri], false, false) > 0 {
+            result = push(result, right[ri])
+            ri = ri + 1
+        } else {
+            result = push(result, left[li])
+            li = li + 1
+        }
+    }
+    while li < len(left) { result = push(result, left[li]) li = li + 1 }
+    while ri < len(right) { result = push(result, right[ri]) ri = ri + 1 }
+    result
+}
+
+// Stable merge sort of {"label", "row"} pairs by label. Ties keep the
+// original row order (pandas sort_index stability).
+fn _label_sort_pairs(pairs, desc, na_first, nlevels) {
+    if len(pairs) <= 1 { return _copy_rows(pairs) }
+    mid := len(pairs) / 2
+    left := _label_sort_pairs(_value_range(pairs, 0, mid), desc, na_first, nlevels)
+    right := _label_sort_pairs(_value_range(pairs, mid, len(pairs)), desc, na_first, nlevels)
+    let mut result = []
+    let mut li = 0
+    let mut ri = 0
+    while li < len(left) && ri < len(right) {
+        if _label_cmp_dir_n(left[li].label, right[ri].label, desc, na_first, nlevels) > 0 {
+            result = push(result, right[ri])
+            ri = ri + 1
+        } else {
+            result = push(result, left[li])
+            li = li + 1
+        }
+    }
+    while li < len(left) { result = push(result, left[li]) li = li + 1 }
+    while ri < len(right) { result = push(result, right[ri]) ri = ri + 1 }
+    result
+}
+
 pub fn head(t, n) {
     let mut cnt = if n == null { 5 } else { n }
     if _kind(cnt) != "int" || cnt < 0 { return Err("dataframe.head requires a non-negative integer row count") }
@@ -745,7 +1229,8 @@ pub fn iloc(t, idx) {
 }
 
 pub fn loc(t, start, stop) {
-    // Row range by position
+    // Row range by position. Kept for backwards compatibility; label-based
+    // selection (pandas .loc semantics) lives in loc_label below.
     if _kind(start) != "int" || start < 0 || start > len(t.rows) { return Err("dataframe.loc start must be a valid row position") }
     let mut rows = []
     let mut i = start
@@ -756,6 +1241,358 @@ pub fn loc(t, start, stop) {
         i = i + 1
     }
     _with_columns(t, rows)
+}
+
+// ──────────────────────────────────────────────
+// Label-based selection & assignment (pandas .loc semantics)
+// ──────────────────────────────────────────────
+//
+// Row selectors shared by loc_label/loc_set:
+//   - scalar label: exact match; on a multi-level index a scalar matches the
+//     first level and a list acts as a partial (prefix) key, selecting all
+//     matching rows (pandas partial-key rule). Duplicate labels match all
+//     their rows. An absent label is an Err naming the label (KeyError).
+//   - list of labels: each label matched as above, in selector order.
+//   - list of booleans: a positional mask; its length must equal the row
+//     count, otherwise an Err in pandas' words ("Boolean index has wrong
+//     length: X instead of Y"). An all-boolean list is ALWAYS a mask, even
+//     when the index itself holds booleans (observed pandas 3.0 behavior).
+//   - map {"from": a, "to": b}: label slice, inclusive of both ends like
+//     pandas. null from/to are open ends. Found bounds resolve to positions
+//     (first occurrence for from, last for to), so slices work on unsorted
+//     indexes when both labels exist; a non-unique "from" is an Err (pandas
+//     "Cannot get left slice bound for non-unique label"). A missing bound
+//     uses insertion-point semantics on a monotonic index and is an Err on
+//     a non-monotonic one (pandas KeyError wording).
+
+// Positions whose index label matches the selector label (full key, partial
+// prefix list, or scalar first-level for multi-level; exact for single).
+fn _loc_match_positions(idx, n, label, nlevels) {
+    let mut positions = []
+    let mut i = 0
+    while i < n {
+        if _index_label_matches(idx[i], label, nlevels) { positions = push(positions, i) }
+        i = i + 1
+    }
+    positions
+}
+
+// Compare a slice bound (scalar or prefix list) against an index label,
+// level by level for multi-level indexes.
+fn _loc_bound_cmp(label, bound, nlevels) {
+    if nlevels <= 1 || _kind(label) != "list" { return _label_cmp_values(label, bound) }
+    bv := if _kind(bound) == "list" { bound } else { [bound] }
+    let mut i = 0
+    while i < len(bv) && i < len(label) {
+        c := _label_cmp_values(label[i], bv[i])
+        if c != 0 { return c }
+        i = i + 1
+    }
+    0
+}
+
+// Resolve one slice bound to a row position: {"pos": p} or an Err.
+fn _loc_slice_bound(t, idx, bound, is_left, fname) {
+    n := len(idx)
+    nlevels := index_nlevels(t)
+    if bound == null {
+        return {"pos": if is_left { 0 } else { n - 1 }}
+    }
+    m := _loc_match_positions(idx, n, bound, nlevels)
+    if len(m) > 0 {
+        // pandas raises for a non-unique left bound on a single-level index;
+        // on a multi-level index partial keys normally match several rows,
+        // so the left bound is the first match, the right bound the last.
+        if is_left && len(m) > 1 && nlevels <= 1 {
+            return Err(fname + ": Cannot get left slice bound for non-unique label: " + json.stringify(bound))
+        }
+        return {"pos": if is_left { m[0] } else { m[len(m) - 1] }}
+    }
+    // Missing label: insertion point on a monotonic index, error otherwise.
+    let mut desc = false
+    if is_monotonic(t, false) { desc = false }
+    else if is_monotonic(t, true) { desc = true }
+    else {
+        side := if is_left { "left" } else { "right" }
+        return Err(fname + ": Cannot get " + side + " slice bound for non-monotonic index with a missing label " + json.stringify(bound) + ". Either sort the index or specify an existing label.")
+    }
+    let mut pos = if is_left { n } else { -1 }
+    let mut i = 0
+    while i < n {
+        c := _loc_bound_cmp(idx[i], bound, nlevels)
+        if !desc {
+            if is_left {
+                if c > 0 { pos = i break }
+            } else {
+                if c < 0 { pos = i }
+            }
+        } else {
+            if is_left {
+                if c < 0 { pos = i break }
+            } else {
+                if c > 0 { pos = i }
+            }
+        }
+        i = i + 1
+    }
+    {"pos": pos}
+}
+
+fn _loc_slice_positions(t, from, to, fname) {
+    idx := index(t)
+    start := _loc_slice_bound(t, idx, from, true, fname)
+    if _kind(start) == "result" { return start }
+    stop := _loc_slice_bound(t, idx, to, false, fname)
+    if _kind(stop) == "result" { return stop }
+    let mut positions = []
+    if start.pos <= stop.pos {
+        let mut i = start.pos
+        while i <= stop.pos { positions = push(positions, i) i = i + 1 }
+    }
+    positions
+}
+
+// Resolve a row selector to {"positions", "scalar"} or an Err.
+fn _loc_resolve_rows(t, row_sel, fname) {
+    n := len(t.rows)
+    idx := index(t)
+    nlevels := index_nlevels(t)
+    if _kind(row_sel) == "map" {
+        if row_sel["from"] == null && row_sel["to"] == null {
+            return Err(fname + ": a map row selector is a label slice and needs \"from\" and/or \"to\"")
+        }
+        positions := _loc_slice_positions(t, row_sel["from"], row_sel["to"], fname)
+        if _kind(positions) == "result" { return positions }
+        return {"positions": positions, "scalar": false}
+    }
+    if _kind(row_sel) == "list" {
+        if len(row_sel) == 0 { return {"positions": [], "scalar": false} }
+        let mut all_bool = true
+        for e in row_sel { if _kind(e) != "bool" { all_bool = false } }
+        if all_bool {
+            if len(row_sel) != n {
+                return Err(fname + ": Boolean index has wrong length: " + len(row_sel) + " instead of " + n)
+            }
+            let mut positions = []
+            let mut i = 0
+            while i < n { if row_sel[i] { positions = push(positions, i) } i = i + 1 }
+            return {"positions": positions, "scalar": false}
+        }
+        let mut positions = []
+        for label in row_sel {
+            if _kind(label) == "bool" {
+                return Err(fname + ": row selector list cannot mix booleans and labels")
+            }
+            m := _loc_match_positions(idx, n, label, nlevels)
+            if len(m) == 0 {
+                return Err(fname + ": label not in index: " + json.stringify(label))
+            }
+            for p in m { positions = push(positions, p) }
+        }
+        return {"positions": positions, "scalar": false}
+    }
+    m := _loc_match_positions(idx, n, row_sel, nlevels)
+    if len(m) == 0 {
+        return Err(fname + ": label not in index: " + json.stringify(row_sel))
+    }
+    {"positions": m, "scalar": true}
+}
+
+// Resolve a column selector to {"cols", "single"} or an Err.
+// null means all columns; a string must name an existing column.
+fn _loc_resolve_cols(t, col_sel, fname) {
+    if col_sel == null {
+        let mut cols = []
+        for c in t.columns { cols = push(cols, c) }
+        return {"cols": cols, "single": false}
+    }
+    if _kind(col_sel) == "str" {
+        if !contains(t.columns, col_sel) { return Err(fname + ": unknown column: " + col_sel) }
+        return {"cols": [col_sel], "single": true}
+    }
+    if _kind(col_sel) == "list" {
+        for c in col_sel {
+            if _kind(c) != "str" || !contains(t.columns, c) {
+                return Err(fname + ": unknown column: " + json.stringify(c))
+            }
+        }
+        return {"cols": col_sel, "single": false}
+    }
+    Err(fname + ": column selector must be a column name, a list of names, or null")
+}
+
+// Build a frame from selected row positions, carrying index labels by
+// position (safe with duplicate rows, unlike value-based index lookup).
+fn _loc_frame(t, cols, positions) {
+    let mut rows = []
+    for p in positions { rows = push(rows, t.rows[p]) }
+    if contains(keys(t), "_index") && t._index != null {
+        idx := index(t)
+        let mut labels = []
+        for p in positions { labels = push(labels, idx[p]) }
+        return _frame_with_index(cols, rows, labels, t)
+    }
+    {"_df": true, "columns": cols, "rows": rows}
+}
+
+// loc_label(t, row_sel, col_sel) — pandas-style label selection.
+//   row_sel: scalar label, list of labels, boolean mask, or
+//     {"from": a, "to": b} label slice (inclusive both ends). See the
+//     section comment above for the exact rules.
+//   col_sel: null (all columns), a column name, or a list of names.
+// Return shape mirrors pandas: a scalar selector matching exactly one row
+// returns that row as a map (the cell value when col_sel is a single name,
+// a column-restricted map when col_sel is a list); a scalar matching
+// several duplicate rows — and every non-scalar selector — returns a frame.
+pub fn loc_label(t, row_sel, col_sel) {
+    rr := _loc_resolve_rows(t, row_sel, "dataframe.loc_label")
+    if _kind(rr) == "result" { return rr }
+    cr := _loc_resolve_cols(t, col_sel, "dataframe.loc_label")
+    if _kind(cr) == "result" { return cr }
+    if rr.scalar && len(rr.positions) == 1 {
+        row := t.rows[rr.positions[0]]
+        if col_sel == null { return row }
+        if cr.single { return row[cr.cols[0]] }
+        let mut out = {}
+        for c in cr.cols { out[c] = row[c] }
+        return out
+    }
+    _loc_frame(t, cr.cols, rr.positions)
+}
+
+// Shared assignment core: set cells at positions x cols to value and return
+// a new frame (frames are immutable). value may be:
+//   - a scalar: broadcast to every selected cell;
+//   - a list: per-row values when one column is selected and the length
+//     equals the number of selected rows; per-column values broadcast to
+//     every selected row when the length equals the number of selected
+//     columns; a single-element list broadcasts everywhere (all observed
+//     pandas 3.0 behaviors). Anything else is an explicit Err.
+// An empty selection is a no-op for scalars; a list that fits none of the
+// rules above is an Err even then (observed pandas behavior).
+// Duplicate positions are assigned in order, so the last write wins.
+fn _assign_cells(t, positions, cols, value, fname) {
+    nR := len(positions)
+    nC := len(cols)
+    let mut row_values = []
+    if _kind(value) == "list" {
+        L := len(value)
+        if nC == 1 && L == nR {
+            for v in value { row_values = push(row_values, [v]) }
+        } else if L == nC {
+            let mut i = 0
+            while i < nR { row_values = push(row_values, value) i = i + 1 }
+        } else if L == 1 {
+            let mut i = 0
+            while i < nR { row_values = push(row_values, [value[0]]) i = i + 1 }
+        } else {
+            return Err(fname + ": cannot broadcast a list of length " + L + " into a selection of " + nR + " row(s) x " + nC + " column(s)")
+        }
+    } else {
+        let mut i = 0
+        while i < nR {
+            let mut rv = []
+            let mut j = 0
+            while j < nC { rv = push(rv, value) j = j + 1 }
+            row_values = push(row_values, rv)
+            i = i + 1
+        }
+    }
+    // Value row per absolute position; duplicate positions: last wins.
+    let mut val_at = []
+    let mut i = 0
+    while i < len(t.rows) { val_at = push(val_at, null) i = i + 1 }
+    let mut k = 0
+    while k < nR { val_at[positions[k]] = row_values[k] k = k + 1 }
+    let mut new_rows = []
+    i = 0
+    while i < len(t.rows) {
+        if val_at[i] == null {
+            new_rows = push(new_rows, t.rows[i])
+        } else {
+            let mut nr = {}
+            for c in t.columns { nr[c] = t.rows[i][c] }
+            let mut j = 0
+            while j < nC { nr[cols[j]] = val_at[i][j] j = j + 1 }
+            new_rows = push(new_rows, nr)
+        }
+        i = i + 1
+    }
+    _with_same_index(t, t.columns, new_rows)
+}
+
+// loc_set(t, row_sel, col_sel, value) — pandas-style label assignment.
+// Row/column selectors follow loc_label rules; col_sel of null means all
+// columns. Every row matching the selector is updated (pandas duplicate-
+// label assignment rule). Unknown labels/columns are Errs naming them.
+// Unlike pandas, unknown columns are NOT created — an Err names the column.
+pub fn loc_set(t, row_sel, col_sel, value) {
+    rr := _loc_resolve_rows(t, row_sel, "dataframe.loc_set")
+    if _kind(rr) == "result" { return rr }
+    cr := _loc_resolve_cols(t, col_sel, "dataframe.loc_set")
+    if _kind(cr) == "result" { return cr }
+    _assign_cells(t, rr.positions, cr.cols, value, "dataframe.loc_set")
+}
+
+// iloc_set(t, row_sel, col_sel, value) — positional assignment.
+// row_sel: integer, list of integers (negative counts from the end), or
+// null for all rows. col_sel: integer column position, list of positions,
+// or null for all columns. value broadcasting follows _assign_cells rules.
+pub fn iloc_set(t, row_sel, col_sel, value) {
+    fname := "dataframe.iloc_set"
+    n := len(t.rows)
+    let mut positions = []
+    if row_sel == null {
+        let mut i = 0
+        while i < n { positions = push(positions, i) i = i + 1 }
+    } else if _kind(row_sel) == "int" {
+        p := _iloc_row_position(row_sel, n, fname)
+        if _kind(p) == "result" { return p }
+        positions = [p]
+    } else if _kind(row_sel) == "list" {
+        for raw in row_sel {
+            if _kind(raw) != "int" { return Err(fname + ": row positions must be integers") }
+            p := _iloc_row_position(raw, n, fname)
+            if _kind(p) == "result" { return p }
+            positions = push(positions, p)
+        }
+    } else {
+        return Err(fname + ": row selector must be an integer, a list of integers, or null")
+    }
+    ncols_n := len(t.columns)
+    let mut cols = []
+    if col_sel == null {
+        for c in t.columns { cols = push(cols, c) }
+    } else if _kind(col_sel) == "int" {
+        c := _iloc_col_name(t, col_sel, fname)
+        if _kind(c) == "result" { return c }
+        cols = [c]
+    } else if _kind(col_sel) == "list" {
+        for raw in col_sel {
+            if _kind(raw) != "int" { return Err(fname + ": column positions must be integers") }
+            c := _iloc_col_name(t, raw, fname)
+            if _kind(c) == "result" { return c }
+            cols = push(cols, c)
+        }
+    } else {
+        return Err(fname + ": column selector must be an integer, a list of integers, or null")
+    }
+    _assign_cells(t, positions, cols, value, fname)
+}
+
+fn _iloc_row_position(pos, n, fname) {
+    let mut p = pos
+    if p < 0 { p = p + n }
+    if p < 0 || p >= n { return Err(fname + ": row position " + pos + " out of range for " + n + " row(s)") }
+    p
+}
+
+fn _iloc_col_name(t, pos, fname) {
+    n := len(t.columns)
+    let mut p = pos
+    if p < 0 { p = p + n }
+    if p < 0 || p >= n { return Err(fname + ": column position " + pos + " out of range for " + n + " column(s)") }
+    t.columns[p]
 }
 
 pub fn select_(t, cols) {
@@ -1777,6 +2614,242 @@ pub fn expanding(t, column, op) {
     {"_df": true, "columns": t.columns, "rows": new_rows}
 }
 
+// ewm_mean / ewm_sum / ewm_var / ewm_std(t, column, opts) — pandas-style
+// exponentially-weighted window statistics. The column is replaced in place
+// (same convention as rolling/expanding). opts:
+//   alpha | span | halflife: exactly one required; pandas conversions
+//     alpha = 2/(span+1), alpha = 1 - exp(-ln2/halflife), 0 < alpha <= 1
+//   adjust:    true (default) — weights normalized by their sum;
+//              false — recursive y_t = (1-alpha)*y_{t-1} + alpha*x_t
+//   ignore_na: false (default) — null positions keep decaying the weight
+//   bias:      false (default, ewm_var/ewm_std only) — unbiased estimator;
+//              a single observation gives null (NaN) rather than 0
+// Nulls before the first observation stay null; later nulls hold the previous
+// value (pandas 3.0 behavior). All recursions replicate pandas 3.0
+// (_libs/window/aggregations.ewm / ewmcov) step for step, including the
+// com == 1 (alpha == 0.5) irregular-interval branch for adjust=false means.
+// ewm_sum mirrors pandas in existing only for adjust=true (the un-normalized
+// recursion) — adjust=false is an Err, like pandas' NotImplementedError.
+pub fn ewm_mean(t, column, opts) {
+    fname := "dataframe.ewm_mean"
+    o := _ewm_resolve(opts, fname)
+    if _kind(o) == "result" { return o }
+    vals := _ewm_column(t, column, fname)
+    if _kind(vals) == "result" { return vals }
+    _ewm_replace(t, column, _ewm_run(vals, o.com, o.adjust, o.ignore_na, true))
+}
+
+pub fn ewm_sum(t, column, opts) {
+    fname := "dataframe.ewm_sum"
+    o := _ewm_resolve(opts, fname)
+    if _kind(o) == "result" { return o }
+    if !o.adjust { return Err(fname + ": sum is not implemented with adjust=False") }
+    vals := _ewm_column(t, column, fname)
+    if _kind(vals) == "result" { return vals }
+    _ewm_replace(t, column, _ewm_run(vals, o.com, o.adjust, o.ignore_na, false))
+}
+
+pub fn ewm_var(t, column, opts) {
+    fname := "dataframe.ewm_var"
+    o := _ewm_resolve(opts, fname)
+    if _kind(o) == "result" { return o }
+    vals := _ewm_column(t, column, fname)
+    if _kind(vals) == "result" { return vals }
+    _ewm_replace(t, column, _ewm_var_run(vals, o.com, o.adjust, o.ignore_na, o.bias))
+}
+
+pub fn ewm_std(t, column, opts) {
+    fname := "dataframe.ewm_std"
+    o := _ewm_resolve(opts, fname)
+    if _kind(o) == "result" { return o }
+    vals := _ewm_column(t, column, fname)
+    if _kind(vals) == "result" { return vals }
+    vars := _ewm_var_run(vals, o.com, o.adjust, o.ignore_na, o.bias)
+    let mut out = []
+    for v in vars { out = push(out, if v == null { null } else { math.sqrt(v) }) }
+    _ewm_replace(t, column, out)
+}
+
+// Validate ewm opts → {"com", "adjust", "ignore_na", "bias"} or an Err.
+// com (center of mass) is computed with pandas' exact conversions; the
+// kernels derive alpha = 1/(1+com) from it, matching the Cython round-trip
+// bit-for-bit.
+fn _ewm_resolve(opts, fname) {
+    if opts == null || _kind(opts) != "map" {
+        return Err(fname + ": opts must be a map with one of alpha, span, halflife")
+    }
+    let mut provided = []
+    for k in ["alpha", "span", "halflife"] {
+        if opts[k] != null { provided = push(provided, k) }
+    }
+    if len(provided) == 0 { return Err(fname + ": must pass one of alpha, span, or halflife") }
+    if len(provided) > 1 { return Err(fname + ": alpha, span, and halflife are mutually exclusive") }
+    key := provided[0]
+    v := opts[key]
+    if _kind(v) != "int" && _kind(v) != "float" { return Err(fname + ": " + key + " must be numeric") }
+    let mut com = 0.0
+    if key == "alpha" {
+        a := v + 0.0
+        if !(a > 0.0) || a > 1.0 { return Err(fname + ": alpha must satisfy: 0 < alpha <= 1") }
+        com = (1.0 - a) / a
+    } else if key == "span" {
+        span := v + 0.0
+        if span < 1.0 { return Err(fname + ": span must satisfy: span >= 1") }
+        com = (span - 1.0) / 2.0
+    } else {
+        halflife := v + 0.0
+        if !(halflife > 0.0) { return Err(fname + ": halflife must satisfy: halflife > 0") }
+        decay := 1.0 - math.exp(math.log(0.5) / halflife)
+        com = 1.0 / decay - 1.0
+    }
+    let mut adjust = true
+    let mut ignore_na = false
+    let mut bias = false
+    if opts["adjust"] != null { adjust = opts["adjust"] }
+    if opts["ignore_na"] != null { ignore_na = opts["ignore_na"] }
+    if opts["bias"] != null { bias = opts["bias"] }
+    {"com": com, "adjust": adjust, "ignore_na": ignore_na, "bias": bias}
+}
+
+// Extract a column as a float-or-null list; Err on unknown/non-numeric data.
+fn _ewm_column(t, column, fname) {
+    if !contains(t.columns, column) { return Err(fname + ": unknown column " + column) }
+    let mut vals = []
+    for r in t.rows {
+        v := r[column]
+        if v == null {
+            vals = push(vals, null)
+        } else if _kind(v) == "int" || _kind(v) == "float" {
+            vals = push(vals, v + 0.0)
+        } else {
+            return Err(fname + ": column " + column + " must be numeric")
+        }
+    }
+    vals
+}
+
+fn _ewm_replace(t, column, out) {
+    let mut new_rows = []
+    let mut i = 0
+    while i < len(t.rows) {
+        let mut nr = {}
+        for c in t.columns { nr[c] = t.rows[i][c] }
+        nr[column] = out[i]
+        new_rows = push(new_rows, nr)
+        i = i + 1
+    }
+    {"_df": true, "columns": t.columns, "rows": new_rows}
+}
+
+// pandas 3.0 ewm recursion (normalize=true → mean, false → sum).
+fn _ewm_run(vals, com, adjust, ignore_na, normalize) {
+    let mut out = []
+    if len(vals) == 0 { return out }
+    alpha := 1.0 / (1.0 + com)
+    old_wt_factor := 1.0 - alpha
+    let mut new_wt = if adjust { 1.0 } else { alpha }
+    let mut weighted = vals[0]
+    let mut nobs = if vals[0] == null { 0 } else { 1 }
+    let mut old_wt = 1.0
+    out = push(out, if nobs >= 1 { weighted } else { null })
+    let mut i = 1
+    while i < len(vals) {
+        cur := vals[i]
+        is_obs := cur != null
+        if is_obs { nobs = nobs + 1 }
+        if weighted != null {
+            if is_obs || !ignore_na {
+                if normalize {
+                    old_wt = old_wt * old_wt_factor
+                } else {
+                    weighted = old_wt_factor * weighted
+                }
+                if is_obs {
+                    if normalize {
+                        // avoid numerical drift on constant series
+                        if weighted != cur {
+                            if !adjust && com == 1.0 { new_wt = 1.0 - old_wt }
+                            weighted = (old_wt * weighted + new_wt * cur) / (old_wt + new_wt)
+                        }
+                        if adjust { old_wt = old_wt + new_wt } else { old_wt = 1.0 }
+                    } else {
+                        weighted = weighted + cur
+                    }
+                }
+            }
+        } else if is_obs {
+            weighted = cur
+        }
+        out = push(out, if nobs >= 1 { weighted } else { null })
+        i = i + 1
+    }
+    out
+}
+
+// pandas 3.0 ewmcov recursion with input_y == input_x (variance).
+fn _ewm_var_run(vals, com, adjust, ignore_na, bias) {
+    let mut out = []
+    if len(vals) == 0 { return out }
+    alpha := 1.0 / (1.0 + com)
+    old_wt_factor := 1.0 - alpha
+    new_wt := if adjust { 1.0 } else { alpha }
+    let mut mean_x = vals[0]
+    let mut nobs = if vals[0] == null { 0 } else { 1 }
+    let mut cov = 0.0
+    let mut sum_wt = 1.0
+    let mut sum_wt2 = 1.0
+    let mut old_wt = 1.0
+    out = push(out, if nobs >= 1 { if bias { 0.0 } else { null } } else { null })
+    let mut i = 1
+    while i < len(vals) {
+        cur := vals[i]
+        is_obs := cur != null
+        if is_obs { nobs = nobs + 1 }
+        if mean_x != null {
+            if is_obs || !ignore_na {
+                sum_wt = sum_wt * old_wt_factor
+                sum_wt2 = sum_wt2 * old_wt_factor * old_wt_factor
+                old_wt = old_wt * old_wt_factor
+                if is_obs {
+                    old_mean := mean_x
+                    // avoid numerical errors on constant series
+                    if mean_x != cur {
+                        mean_x = (old_wt * old_mean + new_wt * cur) / (old_wt + new_wt)
+                    }
+                    cov = (old_wt * (cov + (old_mean - mean_x) * (old_mean - mean_x)) + new_wt * (cur - mean_x) * (cur - mean_x)) / (old_wt + new_wt)
+                    sum_wt = sum_wt + new_wt
+                    sum_wt2 = sum_wt2 + new_wt * new_wt
+                    old_wt = old_wt + new_wt
+                    if !adjust {
+                        sum_wt = sum_wt / old_wt
+                        sum_wt2 = sum_wt2 / (old_wt * old_wt)
+                        old_wt = 1.0
+                    }
+                }
+            }
+        } else if is_obs {
+            mean_x = cur
+        }
+        if nobs >= 1 {
+            if bias {
+                out = push(out, cov)
+            } else {
+                numerator := sum_wt * sum_wt
+                denominator := numerator - sum_wt2
+                if denominator > 0 {
+                    out = push(out, (numerator / denominator) * cov)
+                } else {
+                    out = push(out, null)
+                }
+            }
+        } else {
+            out = push(out, null)
+        }
+        i = i + 1
+    }
+    out
+}
+
 // rank(t, column) — add "<column>_rank" with 1-based average ranks
 // (ascending, nulls keep a null rank). Use rank_opts for other methods.
 pub fn rank(t, column) {
@@ -1995,6 +3068,69 @@ pub fn write_jsonl(t, path) -> Result[any] {
     Ok(path)
 }
 
+// ──────────────────────────────────────────────
+// SQL bridge (via the stdlib db package; SQLite supported)
+// ──────────────────────────────────────────────
+//
+// Type mapping (SQLite):
+//   read_sql: INTEGER -> int, REAL -> float, TEXT -> str, NULL -> null,
+//             BLOB -> str (raw bytes as string). The db stdlib also
+//             auto-parses TEXT that looks like a JSON object/array into
+//             maps/lists — a round trip does not preserve such strings.
+//   to_sql:   int -> INTEGER, float -> REAL, str -> TEXT, bool -> BOOLEAN
+//             (SQLite stores booleans as 1/0; they read back as int),
+//             null -> NULL. Columns mixing unrelated types are rejected.
+
+// read_sql(source, query) — run a SELECT and return the result as a
+// DataFrame. source is a db connection handle (db.open(...) value) or a
+// conninfo string such as "sqlite:data.db". A conninfo string is opened
+// with max_open=1 (so ":memory:" works) and closed before returning.
+// Column order follows the query's SELECT list. An empty result set
+// yields an empty DataFrame with no columns (rows carry the schema).
+pub fn read_sql(source, query) -> Result[any] {
+    if _kind(query) != "str" || query == "" {
+        return Err("dataframe.read_sql expects a non-empty SQL query string")
+    }
+    a := _sql_acquire(source)
+    if _kind(a) == "result" { return a }
+    conn := a.conn
+    r := conn.query(query)
+    if a.owned { conn.close() }
+    if !r.ok { return Err("dataframe.read_sql: " + r.error) }
+    Ok(from_rows(r.value))
+}
+
+// to_sql(t, source, table, opts) — write a DataFrame to a SQL table.
+//   source: db connection handle or conninfo string (see read_sql).
+//   table:  table name; it is always double-quoted as a SQL identifier
+//           (embedded quotes are doubled), never interpolated raw.
+//   opts.if_exists: "fail" (default) | "replace" | "append".
+// The write runs in a single transaction; any failure rolls back.
+// Returns Ok({"table": table, "rows_written": n}).
+pub fn to_sql(t, source, table, opts) -> Result[any] {
+    if _kind(t) != "map" || t["_df"] != true {
+        return Err("dataframe.to_sql expects a DataFrame")
+    }
+    if _kind(table) != "str" || table == "" {
+        return Err("dataframe.to_sql: table must be a non-empty string")
+    }
+    let mut if_exists = "fail"
+    if opts != null {
+        if _kind(opts) != "map" { return Err("dataframe.to_sql: opts must be a map") }
+        if opts["if_exists"] != null { if_exists = opts["if_exists"] }
+    }
+    if !contains(["fail", "replace", "append"], if_exists) {
+        return Err("dataframe.to_sql: if_exists must be \"fail\", \"replace\", or \"append\"")
+    }
+    a := _sql_acquire(source)
+    if _kind(a) == "result" { return a }
+    conn := a.conn
+    r := _to_sql_write(t, conn, table, if_exists)
+    if a.owned { conn.close() }
+    r
+}
+
+
 pub fn print_(t, n) {
     let mut cnt = if n == null { len(t.rows) } else { n }
     if cnt > len(t.rows) { cnt = len(t.rows) }
@@ -2045,7 +3181,7 @@ fn _agg(op, vals) {
         if op == "sum" { return 0 }
         return null
     }
-    if (op == "sum" || op == "mean" || op == "std") && !_all_numeric(clean) {
+    if (op == "sum" || op == "mean" || op == "std" || op == "var") && !_all_numeric(clean) {
         return null
     }
     match op {
@@ -2058,6 +3194,14 @@ fn _agg(op, vals) {
         "max" { reduce(clean, clean[0], fn(a, x) { if x > a { x } else { a } }) }
         "first" { clean[0] }
         "last" { clean[len(clean) - 1] }
+        "var" {
+            n := len(clean)
+            if n < 2 { return null }
+            m := reduce(clean, 0.0, fn(a, x) { a + x }) / n
+            let mut s = 0.0
+            for x in clean { s = s + (x - m) * (x - m) }
+            s / (n - 1)
+        }
         "std" {
             n := len(clean)
             if n < 2 { return null }
@@ -2362,7 +3506,7 @@ fn _all_numeric(vals) {
 }
 
 fn _valid_agg(op) {
-    contains(["sum", "mean", "count", "min", "max", "first", "last", "std"], op)
+    contains(["sum", "mean", "count", "min", "max", "first", "last", "std", "var"], op)
 }
 
 fn _numeric_pairs(t, col_a, col_b) {
@@ -2645,6 +3789,228 @@ fn _csv_records(text, delimiter) -> Result[any] {
 
 fn _csv_value(cell) {
     if cell.quoted { cell.text } else { _parse_value(str.trim(cell.text)) }
+}
+
+// ── CSV dtype/null policy helpers (from_csv_opts / read_csv_opts) ──
+
+// Validates opts against the parsed header. Returns null when valid.
+fn _csv_policy_check(opts, cols) {
+    if opts == null { return null }
+    if _kind(opts) != "map" { return Err("dataframe.from_csv: opts must be a map") }
+    dt := opts["dtypes"]
+    if dt != null {
+        if _kind(dt) != "map" { return Err("dataframe.from_csv: opts.dtypes must be a map of column to type") }
+        for name in keys(dt) {
+            if !contains(cols, name) {
+                return Err("dataframe.from_csv: opts.dtypes refers to unknown column '" + name + "'")
+            }
+            if !contains(["int", "float", "str", "bool"], dt[name]) {
+                return Err("dataframe.from_csv: opts.dtypes['" + name + "'] must be int, float, str, or bool")
+            }
+        }
+    }
+    nv := opts["null_values"]
+    if nv != null {
+        if _kind(nv) != "list" { return Err("dataframe.from_csv: opts.null_values must be a list of strings") }
+        for s in nv {
+            if _kind(s) != "str" { return Err("dataframe.from_csv: opts.null_values must be a list of strings") }
+        }
+    }
+    kd := opts["keep_default_null_values"]
+    if kd != null && _kind(kd) != "bool" {
+        return Err("dataframe.from_csv: opts.keep_default_null_values must be a bool")
+    }
+    null
+}
+
+fn _csv_keep_default_nulls(opts) {
+    opts["keep_default_null_values"] != false
+}
+
+fn _csv_is_null_sentinel(text, opts) {
+    nv := opts["null_values"]
+    if nv != null && contains(nv, text) { return true }
+    if _csv_keep_default_nulls(opts) {
+        return text == "" || text == "null" || text == "NULL" || text == "None"
+    }
+    false
+}
+
+// Per-cell value with policy. Returns the value, or Err on a strict dtype
+// violation. With opts == null this is exactly the legacy _csv_value path.
+fn _csv_value_policy(cell, col, rownum, opts) {
+    if opts == null {
+        if cell.quoted { return cell.text }
+        return _parse_value(str.trim(cell.text))
+    }
+    text := if cell.quoted { cell.text } else { str.trim(cell.text) }
+    // Quoted cells are explicit strings: null sentinels never apply.
+    if !cell.quoted && _csv_is_null_sentinel(text, opts) { return null }
+    let mut dtype = null
+    dt := opts["dtypes"]
+    if dt != null { dtype = dt[col] }
+    if dtype != null { return _parse_typed(text, dtype, col, rownum) }
+    if cell.quoted { return text }
+    if _csv_keep_default_nulls(opts) { return _parse_value(text) }
+    _parse_value_no_null(text)
+}
+
+// _parse_value without the default null sentinels (for
+// keep_default_null_values=false): booleans and numbers still infer.
+fn _parse_value_no_null(s) {
+    if s == "true" || s == "TRUE" { return true }
+    if s == "false" || s == "FALSE" { return false }
+    if len(s) == 0 { return s }
+    first := str.slice(s, 0, 1)
+    let mut might_be_num = false
+    if first >= "0" && first <= "9" { might_be_num = true }
+    if first == "-" && len(s) > 1 {
+        second := str.slice(s, 1, 2)
+        if second >= "0" && second <= "9" { might_be_num = true }
+    }
+    if !might_be_num { return s }
+    r := json.parse(s)
+    if r.ok { r.value } else { s }
+}
+
+// Strictly parse text as dtype ("int" | "float" | "str" | "bool").
+fn _parse_typed(text, dtype, col, rownum) {
+    where := "dataframe.from_csv row " + rownum + " column '" + col + "': "
+    if dtype == "str" { return text }
+    if dtype == "bool" {
+        if text == "true" || text == "TRUE" { return true }
+        if text == "false" || text == "FALSE" { return false }
+        return Err(where + "cannot parse '" + text + "' as bool")
+    }
+    r := json.parse(text)
+    if !r.ok { return Err(where + "cannot parse '" + text + "' as " + dtype) }
+    v := r.value
+    k := _kind(v)
+    if dtype == "int" {
+        if k == "int" { return v }
+        return Err(where + "cannot parse '" + text + "' as int")
+    }
+    if dtype == "float" {
+        if k == "float" { return v }
+        if k == "int" { return v * 1.0 }
+        return Err(where + "cannot parse '" + text + "' as float")
+    }
+    Err("dataframe.from_csv: unknown dtype '" + dtype + "'")
+}
+
+// ── SQL bridge helpers ──
+
+// _sql_acquire(source) -> {"conn": ..., "owned": bool} or Err.
+// A conninfo string is opened with max_open=1 so that SQLite ":memory:"
+// databases stay on a single connection (each new pooled connection would
+// otherwise see a fresh empty database).
+fn _sql_acquire(source) {
+    if _kind(source) == "str" {
+        r := db.open(source, {"max_open": 1})
+        if !r.ok { return Err("dataframe: cannot connect: " + r.error) }
+        return {"conn": r.value, "owned": true}
+    }
+    if _kind(source) != "map" || source["query"] == null {
+        return Err("dataframe: expected a db connection handle or conninfo string")
+    }
+    {"conn": source, "owned": false}
+}
+
+// Quote a SQL identifier: standard double quotes, embedded quotes doubled.
+fn _sql_ident(name) {
+    "\"" + str.replace(name, "\"", "\"\"") + "\""
+}
+
+fn _sql_table_exists(conn, name) {
+    r := conn.query_one("SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])
+    if !r.ok { return Err("dataframe.to_sql: cannot inspect schema: " + r.error) }
+    r.value != null
+}
+
+// Map one column's values to a SQLite column type; mixed unrelated types
+// and non-scalar values are explicit errors.
+fn _sql_column_type(t, c) {
+    let mut found = "null"
+    for row in t.rows {
+        v := row[c]
+        if v == null { continue }
+        k := _kind(v)
+        if k != "int" && k != "float" && k != "str" && k != "bool" {
+            return Err("dataframe.to_sql: column '" + c + "' has unsupported type '" + k + "' (only int, float, str, bool, null)")
+        }
+        if found == "null" { found = k }
+        else if found != k {
+            if (found == "int" && k == "float") || (found == "float" && k == "int") {
+                found = "float"
+            } else {
+                return Err("dataframe.to_sql: column '" + c + "' has mixed types ('" + found + "' and '" + k + "')")
+            }
+        }
+    }
+    if found == "int" { return "INTEGER" }
+    if found == "float" { return "REAL" }
+    if found == "bool" { return "BOOLEAN" }
+    "TEXT"
+}
+
+fn _to_sql_write(t, conn, table, if_exists) -> Result[any] {
+    qname := _sql_ident(table)
+    let mut col_types = {}
+    for c in t.columns {
+        ct := _sql_column_type(t, c)
+        if _kind(ct) == "result" { return ct }
+        col_types[c] = ct
+    }
+    exists := _sql_table_exists(conn, table)
+    if _kind(exists) == "result" { return exists }
+    if if_exists == "fail" && exists {
+        return Err("dataframe.to_sql: table '" + table + "' already exists (if_exists=fail)")
+    }
+    if if_exists == "append" && !exists {
+        return Err("dataframe.to_sql: table '" + table + "' does not exist (if_exists=append)")
+    }
+    b := conn.begin()
+    if !b.ok { return Err("dataframe.to_sql: cannot begin transaction: " + b.error) }
+    tx := b.value
+    if if_exists == "replace" && exists {
+        d := tx.exec("DROP TABLE " + qname)
+        if !d.ok {
+            tx.rollback()
+            return Err("dataframe.to_sql: " + d.error)
+        }
+    }
+    if if_exists != "append" {
+        let mut defs = []
+        for c in t.columns {
+            defs = push(defs, _sql_ident(c) + " " + col_types[c])
+        }
+        cr := tx.exec("CREATE TABLE " + qname + " (" + str.join(defs, ", ") + ")")
+        if !cr.ok {
+            tx.rollback()
+            return Err("dataframe.to_sql: " + cr.error)
+        }
+    }
+    if len(t.rows) > 0 {
+        let mut col_idents = []
+        let mut marks = []
+        for c in t.columns {
+            col_idents = push(col_idents, _sql_ident(c))
+            marks = push(marks, "?")
+        }
+        insert_sql := "INSERT INTO " + qname + " (" + str.join(col_idents, ", ") + ") VALUES (" + str.join(marks, ", ") + ")"
+        for row in t.rows {
+            let mut params = []
+            for c in t.columns { params = push(params, row[c]) }
+            ir := tx.exec(insert_sql, params)
+            if !ir.ok {
+                tx.rollback()
+                return Err("dataframe.to_sql: insert failed: " + ir.error)
+            }
+        }
+    }
+    cm := tx.commit()
+    if !cm.ok { return Err("dataframe.to_sql: commit failed: " + cm.error) }
+    Ok({"table": table, "rows_written": len(t.rows)})
 }
 
 fn _csv_encode(v, delimiter) {

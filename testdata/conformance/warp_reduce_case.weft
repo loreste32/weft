@@ -6,6 +6,12 @@ fn main -> Result {
     matrix := warp.array([3.0, 1.0, 2.0, 0.0, 4.0, 1.0], [2, 3])
     nan_vals := warp.array([1.0, math.nan, 3.0, 2.0], [4])
     clean := warp.array([2.0, 4.0, 6.0], [3])
+    // initial= / where= / ddof / cumulative axis options
+    a := warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+    mask := warp.array_typed([1, 0, 1, 0, 1, 0], [2, 3], "bool")
+    none := warp.array_typed([0, 0, 0, 0, 0, 0], [2, 3], "bool")
+    sum_axis1_initial := warp.sum_opts(a, 1, true, 10, null)
+    min_where_empty := warp.min_opts(a, null, null, null, none)
     say(json.stringify({
         "argmin_flat": warp.argmin(flat, null),
         "argmax_flat": warp.argmax(flat, null),
@@ -17,5 +23,31 @@ fn main -> Result {
         "nansum": warp.nansum(nan_vals),
         "nanmean_clean": warp.nanmean(clean),
         "nansum_clean": warp.nansum(clean),
+        "sum_initial": warp.sum_opts(a, null, null, 100, null),
+        "prod_initial": warp.prod_opts(a, null, null, 2, null),
+        "sum_axis1_initial_keepdims": {"shape": warp.shape(sum_axis1_initial), "data": warp.to_list(sum_axis1_initial)},
+        "sum_where": warp.sum_opts(a, null, null, null, mask),
+        "sum_where_axis1": warp.to_list(warp.sum_opts(a, 1, null, null, mask)),
+        "min_where_axis1": warp.to_list(warp.min_opts(a, 1, null, 10, mask)),
+        "max_where_axis0": warp.to_list(warp.max_opts(a, 0, null, 0, mask)),
+        "min_where_no_initial_raises": !warp.min_opts(a, 1, null, null, mask).ok,
+        "sum_where_empty": warp.sum_opts(a, null, null, null, none),
+        "prod_where_empty": warp.prod_opts(a, null, null, null, none),
+        "sum_where_empty_axis0": warp.to_list(warp.sum_opts(a, 0, null, null, none)),
+        "min_where_empty_initial": warp.min_opts(a, null, null, 99, none),
+        "min_where_empty_raises": !min_where_empty.ok,
+        "max_where_empty_raises": !warp.max_opts(a, null, null, null, none).ok,
+        "sum_where_flat_keepdims": {"shape": warp.shape(warp.sum_opts(a, null, true, null, mask)), "data": warp.to_list(warp.sum_opts(a, null, true, null, mask))},
+        "var_ddof0": warp.var_opts(clean, 0),
+        "var_ddof1": warp.var_opts(clean, 1),
+        "std_ddof1": warp.std_opts(clean, 1),
+        "var_ddof3_isinf": warp.var_opts(clean, 3) == math.inf,
+        "var_ddof4_isinf": warp.var_opts(clean, 4) == math.inf,
+        "var_zero_dev_ddof_isnan": warp.var_opts(warp.array([5.0, 5.0], [2]), 2) != warp.var_opts(warp.array([5.0, 5.0], [2]), 2),
+        "cumsum_axis0": warp.to_list(warp.cumsum_axis(a, 0)),
+        "cumsum_axis1": warp.to_list(warp.cumsum_axis(a, 1)),
+        "cumsum_axis_neg": warp.to_list(warp.cumsum_axis(a, -1)),
+        "cumprod_axis1": warp.to_list(warp.cumprod_axis(a, 1)),
+        "cumsum_axis_dtype": warp.dtype(warp.cumsum_axis(warp.array([1, 2, 3, 4], [2, 2]), 0)),
     }))
 }

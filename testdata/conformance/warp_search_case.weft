@@ -1,0 +1,29 @@
+use "../../packages/warp/lib.weft" as warp
+use json
+
+// searchsorted / digitize vs NumPy, including before-first, after-last, and
+// exact bin-edge values.
+fn main -> Result {
+    a := warp.array([1.0, 2.0, 2.0, 3.0], [4])
+    x := [0.5, 1.0, 2.0, 3.5]
+    say(json.stringify({
+        "ss_left": warp.to_list(warp.searchsorted(a, [0.5, 2.0, 4.0], null)),
+        "ss_right": warp.to_list(warp.searchsorted(a, [0.5, 2.0, 4.0], "right")),
+        "ss_scalar_left": warp.searchsorted(a, 2.0, null),
+        "ss_scalar_right": warp.searchsorted(a, 2.0, "right"),
+        "ss_before": warp.searchsorted(a, -1.0, null),
+        "ss_after": warp.searchsorted(a, 99.0, "right"),
+        "ss_dtype": warp.dtype(warp.searchsorted(a, [0.5], null)),
+        "ss_bad_side_err": !warp.searchsorted(a, 1.0, "middle").ok,
+        "dig_inc": warp.to_list(warp.digitize(x, [1.0, 2.0, 3.0], null)),
+        "dig_inc_right": warp.to_list(warp.digitize(x, [1.0, 2.0, 3.0], true)),
+        "dig_dec": warp.to_list(warp.digitize(x, [3.0, 2.0, 1.0], null)),
+        "dig_dec_right": warp.to_list(warp.digitize(x, [3.0, 2.0, 1.0], true)),
+        "dig_scalar": warp.digitize(2.0, [1.0, 2.0, 3.0], null),
+        "dig_single_bin": warp.to_list(warp.digitize([0.5, 1.0, 2.0], [1.0], null)),
+        "dig_equal_bins": warp.to_list(warp.digitize([0.5, 1.0, 1.5], [1.0, 1.0, 2.0], null)),
+        "dig_empty_bins": warp.to_list(warp.digitize([0.5, 2.0], [], null)),
+        "dig_dtype": warp.dtype(warp.digitize(x, [1.0, 2.0, 3.0], null)),
+        "dig_nonmono_err": !warp.digitize(x, [1.0, 3.0, 2.0], null).ok,
+    }))
+}

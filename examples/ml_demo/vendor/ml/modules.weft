@@ -1,6 +1,7 @@
 use json
 use fs
 use math
+use str
 use warp
 use "./autograd.weft" as ag
 
@@ -107,15 +108,10 @@ pub fn softmax_module(axis) -> Result[any] {
 pub fn module_forward(module, input) -> Result[any] {
     if module == null || _kind(module) != "map" { return Err("ml.module_forward expects a module") }
     if module.kind == "linear" {
-        // sequential may pass an autograd node; unwrap to array when needed.
-        arr := if _is_array(input) {
-            input
-        } else if _kind(input) == "map" && contains(keys(input), "value") {
-            ag.value(input)?
-        } else {
-            input
-        }
-        return linear_forward(module, arr)
+        // sequential passes the previous module's autograd node through so
+        // gradients keep flowing into earlier layers; raw arrays are wrapped
+        // as constants inside linear_forward.
+        return linear_forward(module, input)
     }
     if module.kind == "relu" {
         node := if _kind(input) == "map" && contains(keys(input), "grad") {
@@ -160,12 +156,102 @@ pub fn module_parameters(module) -> Result[any] {
     Ok(module.parameters)
 }
 
+// named_parameters(module) returns [{"name", "parameter"}] entries following
+// the state_dict order: a linear module exposes "weight" and "bias"; a
+// sequential prefixes each child with its index ("0.weight", "2.bias", ...).
+// Activations contribute no entries. These names are what freeze/unfreeze
+// match against.
+pub fn named_parameters(module) -> Result[any] {
+    if _is_linear(module) {
+        return Ok([
+            {"name": "weight", "parameter": module.weight},
+            {"name": "bias", "parameter": module.bias},
+        ])
+    }
+    if module != null && _kind(module) == "map" && _is_activation(module) {
+        return Ok([])
+    }
+    if module != null && _kind(module) == "map" && module.kind == "sequential" && _kind(module.modules) == "list" {
+        let mut result = []
+        let mut i = 0
+        while i < len(module.modules) {
+            child := module.modules[i]
+            if _is_linear(child) {
+                result = push(result, {"name": "" + i + ".weight", "parameter": child.weight})
+                result = push(result, {"name": "" + i + ".bias", "parameter": child.bias})
+            }
+            i = i + 1
+        }
+        return Ok(result)
+    }
+    Err("ml.named_parameters expects a supported module")
+}
+
+// freeze(module, names) marks matching parameters as not requiring gradients:
+// backward accumulates nothing into them and every optimizer step skips them
+// (values and Adam moments stay bit-identical). names is null (all
+// parameters), a single name, or a list of names; a trailing "*" makes a name
+// a prefix pattern (e.g. "0.*" freezes the first sequential child). Unknown
+// names are an error and freeze nothing. unfreeze reverses it.
+pub fn freeze(module, names) -> Result[any] {
+    _set_frozen(module, names, true)
+}
+
+pub fn unfreeze(module, names) -> Result[any] {
+    _set_frozen(module, names, false)
+}
+
+fn _set_frozen(module, names, frozen) -> Result[any] {
+    named := named_parameters(module)?
+    if names == null {
+        for entry in named { _apply_frozen(entry.parameter, frozen) }
+        return Ok(null)
+    }
+    let mut patterns = names
+    if _kind(names) == "str" { patterns = [names] }
+    if _kind(patterns) != "list" || len(patterns) == 0 {
+        return Err("ml.freeze names must be a string, a non-empty list of strings, or null")
+    }
+    // Validate every pattern first so a typo freezes nothing at all.
+    for pattern in patterns {
+        if _kind(pattern) != "str" { return Err("ml.freeze names must be strings") }
+        let mut matched = false
+        for entry in named {
+            if _name_matches(entry.name, pattern) { matched = true }
+        }
+        if !matched { return Err("ml.freeze found no parameter matching '" + pattern + "'") }
+    }
+    for entry in named {
+        for pattern in patterns {
+            if _name_matches(entry.name, pattern) { _apply_frozen(entry.parameter, frozen) }
+        }
+    }
+    Ok(null)
+}
+
+fn _name_matches(name, pattern) {
+    if name == pattern { return true }
+    if str.ends_with(pattern, "*") {
+        return str.starts_with(name, str.slice(pattern, 0, len(pattern) - 1))
+    }
+    false
+}
+
+fn _apply_frozen(parameter, frozen) {
+    parameter.requires_grad = !frozen
+    parameter._frozen = frozen
+}
+
 pub fn linear_forward(module, input) -> Result[any] {
     if !_is_linear(module) { return Err("ml.linear_forward expects a linear module") }
-    if !_is_array(input) || len(warp.shape(input)) != 2 || warp.shape(input)[1] != module.in_features {
+    // Input may be a raw warp array (wrapped as a constant) or the autograd
+    // node produced by an upstream module (kept, so the chain stays
+    // differentiable end to end).
+    input_value := if _is_node(input) { input.value } else { input }
+    if !_is_array(input_value) || len(warp.shape(input_value)) != 2 || warp.shape(input_value)[1] != module.in_features {
         return Err("ml.linear_forward input shape does not match in_features")
     }
-    input_node := ag.constant(input)?
+    input_node := if _is_node(input) { input } else { ag.constant(input)? }
     product := ag.matmul(input_node, module.weight)?
     // Bias [out_features] broadcasts onto [batch, out_features] via warp.add.
     ag.add(product, module.bias)
@@ -196,14 +282,28 @@ pub fn load_state_dict(parameters, values) -> Result[any] {
     Ok(null)
 }
 
+// Checkpoints are versioned JSON documents. Version 2 adds a top-level
+// numeric "epoch" (taken from metadata.epoch when saving, else 0) so a
+// resume flow can continue the training loop at the right step; the stored
+// optimizer map (e.g. adam_state) round-trips bit-identically, so resuming
+// with it reproduces uninterrupted training exactly. Version 1 files still
+// load; their epoch defaults to 0.
 pub fn save_checkpoint(path, parameters, optimizer_state, metadata) -> Result[any] {
     if path == null || path == "" { return Err("ml.save_checkpoint expects a path") }
     values := state_dict(parameters)?
+    let mut epoch = 0
+    if metadata != null && _kind(metadata) == "map" && contains(keys(metadata), "epoch") {
+        candidate := metadata.epoch
+        if candidate != null && (_kind(candidate) == "int" || _kind(candidate) == "float") && candidate >= 0 {
+            epoch = candidate
+        }
+    }
     payload := {
         "format": "weft.ml.checkpoint",
-        "version": 1,
+        "version": 2,
         "parameters": values,
         "optimizer": if optimizer_state == null { {} } else { optimizer_state },
+        "epoch": epoch,
         "metadata": if metadata == null { {} } else { metadata },
     }
     fs.write(path, json.stringify(payload))?
@@ -214,13 +314,59 @@ pub fn load_checkpoint(path) -> Result[any] {
     if path == null || path == "" { return Err("ml.load_checkpoint expects a path") }
     raw := fs.read(path)?
     payload := json.parse(raw)?
-    if _kind(payload) != "map" || payload.format != "weft.ml.checkpoint" || payload.version != 1 {
+    if _kind(payload) != "map" || payload.format != "weft.ml.checkpoint" ||
+        (payload.version != 1 && payload.version != 2) {
         return Err("ml.load_checkpoint has an unsupported format or version")
     }
     if _kind(payload.parameters) != "list" || payload.optimizer == null || payload.metadata == null {
         return Err("ml.load_checkpoint is missing required fields")
     }
+    // Version 1 has no epoch field; normalize so callers always see one.
+    if !contains(keys(payload), "epoch") || payload.epoch == null {
+        payload.epoch = 0
+    }
+    epoch := payload.epoch
+    if (_kind(epoch) != "int" && _kind(epoch) != "float") || epoch < 0 {
+        return Err("ml.load_checkpoint has an invalid epoch field")
+    }
     Ok(payload)
+}
+
+// resume(path, target) restores a training run from a checkpoint: it loads
+// the stored weights into target (a module or a plain parameter list) and
+// returns {"epoch", "optimizer", "metadata", "parameters"}. optimizer is the
+// stored optimizer state, ready to pass back to adam_step so resumed training
+// is bit-identical to uninterrupted training; it is null when the checkpoint
+// carries no optimizer state (graceful default: create fresh state). A
+// checkpoint whose optimizer state does not match the parameters is an error.
+pub fn resume(path, target) -> Result[any] {
+    checkpoint := load_checkpoint(path)?
+    let mut parameters = target
+    if _kind(target) != "list" {
+        parameters = module_parameters(target)?
+    }
+    load_state_dict(parameters, checkpoint.parameters)?
+    let mut optimizer = checkpoint.optimizer
+    if _kind(optimizer) != "map" || len(keys(optimizer)) == 0 {
+        optimizer = null
+    } else if !_optimizer_state_shape(optimizer, len(parameters)) {
+        return Err("ml.resume checkpoint optimizer state does not match the parameters")
+    }
+    Ok({
+        "epoch": checkpoint.epoch,
+        "optimizer": optimizer,
+        "metadata": checkpoint.metadata,
+        "parameters": parameters,
+    })
+}
+
+fn _optimizer_state_shape(state, count) {
+    k := keys(state)
+    if !contains(k, "step") || !contains(k, "m") || !contains(k, "v") { return false }
+    if _kind(state.step) != "int" && _kind(state.step) != "float" { return false }
+    if state.step < 0 { return false }
+    if _kind(state.m) != "list" || _kind(state.v) != "list" { return false }
+    len(state.m) == count && len(state.v) == count
 }
 
 fn _is_linear(module) {
@@ -243,7 +389,11 @@ fn _parameter_list(parameters) {
 }
 
 fn _is_array(value) {
-    value != null && _kind(value) == "map" && value._warp == true
+    value != null && _kind(value) == "map" && contains(keys(value), "_warp") && value._warp == true
+}
+
+fn _is_node(value) {
+    value != null && _kind(value) == "map" && contains(keys(value), "_autograd") && value._autograd == true
 }
 
 fn _kind(value) { type_of(value) }

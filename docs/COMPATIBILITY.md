@@ -49,9 +49,13 @@ claiming support for a new operation, dtype, edge case, or performance tier.
 - typed, strided storage with views, offsets, C/F order, and buffer export;
 - complete dtype promotion/casting and scalar behavior;
 - basic, advanced, boolean, and broadcasted indexing;
-- reduction options (`axis`, `keepdims`, `where`, `initial`, `out`, `ddof`);
-- ufunc-like dispatch, FFT/random/masked/sparse modules, and complete linear
-  algebra coverage;
+- reduction option `out=` (axis, keepdims, where, initial, and ddof are
+  implemented);
+- ufunc-like dispatch machinery and masked/sparse array modules (the ufunc
+  coverage itself — including hypot, expm1, log1p, floor_divide, remainder,
+  square, reciprocal, deg2rad/rad2deg, copysign, rint — and a seeded
+  `default_rng` random module now exist), and complete linear algebra
+  coverage;
 - binary tensor transport for native providers instead of JSON for large data.
 
 ### `dataframe`
@@ -60,7 +64,11 @@ claiming support for a new operation, dtype, edge case, or performance tier.
   extension dtypes;
 - label-aware Series arithmetic, reindexing, `.loc`/`.iloc`/scalar access,
   duplicate indexes, and MultiIndex;
-- complete groupby/aggregation/transform/window/join/reshape semantics;
+- complete groupby/aggregation/transform/window/join/reshape semantics
+  (rolling/expanding share the `sum/mean/count/min/max/first/last/std/var`
+  op set, and `ewm_mean`/`ewm_sum`/`ewm_var`/`ewm_std` replicate the pandas
+  3.0 ewm recursions with `alpha`/`span`/`halflife`, `adjust`, `ignore_na`,
+  and `bias`; resample and time-based windows remain open);
 - Arrow/Parquet/SQL-class I/O and memory-efficient 100k+ row execution.
 
 The current DataFrame slice preserves explicit indexes through filtering,
@@ -116,6 +124,44 @@ coverage in the same change.
   relies on `v = a[::2]; v[:] = 0` mutating `a` behaves differently.
 - **Masked arrays and sparse formats are unsupported** (no `numpy.ma`, no
   sparse matrices).
+- **Seeded RNG algorithm differs from NumPy.** `warp.default_rng(seed)` uses a
+  combined L'Ecuyer (1988) multiple-recursive generator, not NumPy's PCG64, so
+  streams are **not** bit-compatible with `np.random.default_rng(seed)` for
+  the same seed. What is guaranteed: the same seed reproduces the identical
+  sequence across runs and processes, generators are independent of each other
+  and of the global `random` stdlib state, and uniform/normal/integer draws
+  meet distribution smoke bounds (locked by `warp_random_case.weft`, which
+  checks deterministic properties only — never cross-implementation values).
+- **Weft `%` (and `warp.mod_`) is truncated remainder**, carrying the sign of
+  the dividend like Go/C (`-7 % 3 == -1`), while `np.mod`/`np.remainder`
+  follows floored division and carries the sign of the divisor. Use
+  `warp.remainder` for NumPy semantics (`remainder(-7, 3) == 2`); `mod_` is
+  kept as-is for backwards compatibility. `%` also only accepts ints, while
+  `remainder` works on floats.
+- **`warp.reciprocal` always returns a float** (`1 / x`), unlike NumPy's
+  integer reciprocal which truncates (`np.reciprocal(2) == 0`). `x == 0`
+  yields `+inf`.
+- **`warp.copysign` treats zero as positive** on the sign argument: Weft
+  floats cannot reliably distinguish `-0.0` from `0.0` (division by zero
+  raises), so `copysign(x, 0.0)` matches the `+0.0` NumPy case only.
+- **`warp.put` returns a new array** rather than mutating in place (warp
+  arrays are immutable); indexing, value-cycling, and last-write-wins
+  semantics otherwise match `np.put` on the flattened C-order data.
+- **`warp.polyfit` solves the normal equations** (LU), not NumPy's centered
+  SVD least squares, so badly conditioned high-degree fits lose accuracy
+  relative to `np.polyfit`. Underdetermined fits (fewer points than
+  `deg + 1`) and singular systems are explicit errors, where NumPy only
+  issues a `RankWarning` and continues.
+- **`warp.roots` is analytic for degree ≤ 2 only**; higher degrees return an
+  explicit unsupported error rather than an iterative companion-matrix solve.
+  Degree-2 results can differ from NumPy's eigenvalue-based roots in the last
+  ulps (e.g. repeated roots), so the conformance fixture uses well-separated
+  roots.
+- **`warp.searchsorted` assumes sorted input without validating it**, exactly
+  like `np.searchsorted`; results on out-of-order data are unspecified on
+  both sides.
+- **`warp.bincount` rejects non-integer values** with an error; NumPy
+  currently casts them with a deprecation warning.
 - **`loc`-style label indexing, ellipsis (`...`) and `newaxis` selector tokens
   are not implemented**; missing trailing selectors mean "all".
 - Error fixtures in the conformance corpus assert error *presence*; NumPy
@@ -130,18 +176,33 @@ coverage in the same change.
   interchange is impossible in this layout, so the tested interchange path
   always copies and rejects null/non-numeric values.
 - **Duplicate labels:** reindexing with duplicate labels keeps first-match
-  fill where pandas raises; duplicate-label selection returns the first match.
-- **`loc` is positional slicing**, not pandas label semantics; no boolean-mask
-  `loc`, no combined row+col selection, no `loc`/`iloc` assignment with
-  broadcasting.
+  fill where pandas raises; `loc_labels`/`reindex` lookup keeps first-match
+  where pandas returns all matches. Label selection (`loc_label`) and
+  assignment (`loc_set`) do follow pandas: scalar selection returns every
+  matching row, and assignment updates every matching row.
+- **`loc(t, start, stop)` remains positional half-open slicing** (kept for
+  backwards compatibility). Label-based pandas `.loc` semantics live in
+  `loc_label(t, row_sel, col_sel?)`: scalar/list/boolean-mask row selectors
+  and inclusive `{"from", "to"}` label slices (insertion points on monotonic
+  indexes, `Err` on non-monotonic missing bounds and non-unique single-level
+  left bounds — pandas wording), plus column selection. Assignment with
+  pandas-observed broadcasting is `loc_set`/`iloc_set` (scalar broadcast,
+  per-row/per-column lists, single-element-list broadcast; other lengths are
+  explicit `Err`s). Deviations: unknown columns are rejected instead of
+  created, and a bare list row selector on a multi-level index is a label
+  list (wrap a full key: `[["a", 1]]`).
 - **No Parquet/Arrow I/O and no SQL bridge**; CSV/JSON/JSONL only, with
   type-inferring parse (no explicit dtype/null policy arguments yet).
 
 ### `ml` vs PyTorch / scikit-learn
 
-- **No forward-mode autodiff**; reverse-mode only, and nested `create_graph`
-  is scalar — array-level higher-order gradients are numeric (finite
-  difference).
+- **Forward-mode autodiff is dual-number based** (`jvp` / `jacobian` /
+  `derivative` over scalars and warp arrays): exact JVPs at one function
+  evaluation per input direction, so it suits few-input functions; reverse
+  mode remains the cheap path for few-output losses. There is no JIT-fused
+  vmap/jvp composition. Nested `create_graph` reverse mode is scalar —
+  array-level higher-order gradients are numeric (finite difference), and
+  nested duals cover the scalar second-derivative case.
 - **No gradient checkpointing, anomaly detection, or sparse/autodiff-aware
   device placement.** Device tags remain advisory without a plugin; bound
   providers currently dispatch only tensor matmul, and every provider report

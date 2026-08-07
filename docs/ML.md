@@ -36,7 +36,13 @@ binary cross-entropy. Options are bounded, input matrices are validated, and
 the test suite trains a model over 100,000 rows. This is a deterministic
 classical CPU implementation. `ml` also exposes a tested reverse-mode tape
 for scalars and `warp` arrays, including elementwise broadcasting, reductions,
-and two-dimensional matrix multiplication. `sgd_step` and stateful `adam_step`
+and two-dimensional matrix multiplication, plus a forward-mode dual-number
+layer (`dual`, `jvp`, `jacobian`, `derivative`, `fwd_*` ops) that computes
+exact Jacobian-vector products at one function evaluation per input direction
+— cheap for few-input functions, where reverse mode is cheap for few-output
+losses. The two modes are cross-checked against each other and against
+finite-difference `gradcheck` in the test suite.
+`sgd_step` and stateful `adam_step`
 provide validated optimizer updates for scalar and Warp-array parameters.
 `linear_module` and `linear_forward` provide a tested trainable two-dimensional
 module. `state_dict`, `save_checkpoint`, and `load_checkpoint` persist values,
@@ -92,7 +98,9 @@ fn main -> Result {
 
 Weft can replace Python for the supported classical training, tabular, array,
 and provider-dispatch workflows. It is not yet a drop-in replacement for all
-NumPy/pandas APIs, dtype systems, sparse arrays, FFTs, module/scheduler APIs,
-higher-order autodiff, or Python ecosystem libraries. Each native provider must be benchmarked and numerically
+NumPy/pandas APIs, dtype systems, sparse arrays, FFTs, the full breadth of
+deep-learning module/scheduler APIs (ml covers linear/activation modules and
+step/exponential/cosine LR schedules), array-level higher-order autodiff, or
+Python ecosystem libraries. Each native provider must be benchmarked and numerically
 validated independently; an ABI load success is not evidence that a GPU
 operation is correct.

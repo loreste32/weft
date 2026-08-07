@@ -201,6 +201,13 @@ func (p *nativeSharedLibrary) runTensor(operation string, inputs []*tensor.Tenso
 	if len(inputs) == 0 || len(inputs) > MaxTensorInputs {
 		return nil, fmt.Errorf("native tensor input count must be between 1 and %d", MaxTensorInputs)
 	}
+	// The ABI dtype codes are frozen at 1-11; dtypes without a code (such as
+	// float16) must never reach the native provider.
+	for i, input := range inputs {
+		if dtypeCode(input.DType()) == 0 {
+			return nil, fmt.Errorf("native tensor input %d has dtype %q with no ABI code", i, input.DType())
+		}
+	}
 	cop := C.CString(operation)
 	defer C.free(unsafe.Pointer(cop))
 	inputMemory := C.calloc(C.size_t(len(inputs)), C.size_t(C.sizeof_weft_accel_tensor_input))

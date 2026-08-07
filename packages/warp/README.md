@@ -36,23 +36,53 @@ backend.
 
 - Creation: `array`, `array_typed`, `astype`, `dtype`, typed constructors,
   `from_list`, `zeros`, `ones`, `full`, `arange`,
-  `linspace`, `eye`, `diag`, `rand`, `randn`, `randint`.
+  `linspace`, `eye`, `diag`, `rand`, `randn`, `randint`, plus `default_rng(seed)`
+  for independent deterministic generators (uniform/normal/integer draws,
+  `shuffle`, `permutation`, `choice`; per-seed reproducible, not NumPy
+  bit-compatible).
 - Shape/indexing: `shape`, `size`, `ndim`, `reshape` (including one `-1`),
   `flatten`, `ravel`, `squeeze`, `expand_dims`, `transpose`, `T`, `get`,
   `set`, `row`, `col`, `slice`.
 - Element-wise math: arithmetic, comparisons, `where`, trigonometric,
-  exponential, logarithmic, rounding, clipping, and sign operations.
+  exponential, logarithmic, rounding, clipping, and sign operations, plus
+  `hypot`, `expm1`, `log1p`, `floor_divide`, `remainder` (NumPy floored-mod
+  semantics, unlike Weft `%`/`mod_`), `square`, `reciprocal`,
+  `deg2rad`/`rad2deg`, `copysign`, and ties-to-even `rint`.
 - Statistics: reductions, cumulative operations, percentiles, arbitrary-rank
   axis reductions, logical/finite predicates, `allclose`, and `nan_to_num`.
+  Reduction options: `sum_opts`/`prod_opts`/`min_opts`/`max_opts` accept
+  `axis`, `keepdims`, `initial`, and `where`; `var_opts`/`std_opts` accept
+  `ddof`; `cumsum_axis`/`cumprod_axis` accumulate along one axis.
+  `histogram(a, bins, range)` (NumPy half-open bins with a closed last bin),
+  `bincount`, `cov`/`corrcoef` (ddof=1), weighted `average`, and
+  linear-interpolation `quantile` cover the NumPy statistics core.
+- Polynomials (highest-degree-first coefficients): `polyfit` (least squares
+  via the normal equations and the LU solver; underdetermined or singular fits
+  are an explicit error rather than NumPy's RankWarning), `polyval`,
+  `polyder`, `polyint`, and `roots` for degree ≤ 2 with an explicit error for
+  higher degrees.
+- Searching/binning: `searchsorted(a, v, side)` (the input is assumed sorted,
+  as in NumPy — out-of-order data is not validated) and `digitize(x, bins,
+  right)` with monotonicity validation.
 - Linear algebra: 1D/2D `dot` and `matmul`, norms, `outer`, `cross`, `trace`,
-  `det`, `inv`, and `solve`.
+  `det`, `inv`, `solve`, plus `slogdet` (sign/log-magnitude determinant,
+  {0, -inf} for exactly singular matrices), `matrix_rank` (row-echelon pivot
+  count with an optional tolerance — not NumPy's SVD-based default), and
+  `cond` (Frobenius condition number, equal to `np.linalg.cond(a, "fro")`,
+  not the 2-norm default; +inf when singular).
+- Signal: 1D `fft_1d`/`ifft_1d` and `fft_freq`, plus the real-input suite
+  `rfft`/`irfft`/`rfft_freq` and `fftshift`/`ifftshift`. Multi-dimensional
+  transforms `fft2`/`ifft2` (last two axes) and `fftn`/`ifftn` (all axes or an
+  explicit axis list) compose the 1-D engine per slice; complex input is a
+  `{"re": array, "im": array}` map.
 - Native tensors: `accelerator_run_tensor` accepts bounded typed flat tensor
   descriptors and dispatches through the binary provider ABI. Use `release(a)`
   when a long-running program no longer needs a packed array's host handle.
 - Manipulation: `concat`, axis-aware `concatenate`, `stack`, equal-section
-  `split`, `take`, validated `vstack`/`hstack`, `tile`, `repeat`,
-  `repeat_axis`, `flip`, `flip_axis`, stable O(n log n) `sort`/`argsort`,
-  `unique`, and masking.
+  `split`, `take`, `put` (returns a new array), validated `vstack`/`hstack`,
+  `tile`, `repeat`, `repeat_axis`, `flip`, `flip_axis`, stable O(n log n)
+  `sort`/`argsort` with axis-aware `sort_axis`/`argsort_axis`, `unique`, and
+  `unique_opts` with `return_index`/`return_counts`, and masking.
 
 Arrays are immutable values: `set` and every arithmetic operation return new
 arrays. Shape mismatches, ragged nested lists, invalid indices, and invalid

@@ -16,6 +16,7 @@ use "./device.weft" as dev
 use "./modules.weft" as mods
 use "./losses.weft" as losses
 use "./schedulers.weft" as sched
+use "./forward.weft" as fw
 
 
 pub fn cosine(a, b) { vec.cosine(a, b) }
@@ -134,3 +135,33 @@ pub fn state_dict(parameters) -> Result[any] { mods.state_dict(parameters) }
 pub fn load_state_dict(parameters, values) -> Result[any] { mods.load_state_dict(parameters, values) }
 pub fn save_checkpoint(path, parameters, optimizer_state, metadata) -> Result[any] { mods.save_checkpoint(path, parameters, optimizer_state, metadata) }
 pub fn load_checkpoint(path) -> Result[any] { mods.load_checkpoint(path) }
+pub fn resume(path, target) -> Result[any] { mods.resume(path, target) }
+pub fn named_parameters(module) -> Result[any] { mods.named_parameters(module) }
+pub fn freeze(module, names) -> Result[any] { mods.freeze(module, names) }
+pub fn unfreeze(module, names) -> Result[any] { mods.unfreeze(module, names) }
+pub fn clip_grad_norm(parameters, max_norm) -> Result[any] { ag.clip_grad_norm(parameters, max_norm) }
+pub fn clip_grad_value(parameters, max_abs) -> Result[any] { ag.clip_grad_value(parameters, max_abs) }
+pub fn dual(value, derivative) -> Result[any] { fw.dual(value, derivative) }
+pub fn is_dual(value) { fw.is_dual(value) }
+pub fn dual_value(node) -> Result[any] { fw.dual_value(node) }
+pub fn dual_derivative(node) -> Result[any] { fw.dual_derivative(node) }
+pub fn jvp(f, x, v) -> Result[any] { fw.jvp(f, x, v) }
+pub fn jacobian(f, x) -> Result[any] { fw.jacobian(f, x) }
+pub fn derivative(f, x) -> Result[any] { fw.derivative(f, x) }
+pub fn fwd_add(left, right) -> Result[any] { fw.add(left, right) }
+pub fn fwd_sub(left, right) -> Result[any] { fw.sub(left, right) }
+pub fn fwd_mul(left, right) -> Result[any] { fw.mul(left, right) }
+pub fn fwd_div(left, right) -> Result[any] { fw.div(left, right) }
+pub fn fwd_neg(node) -> Result[any] { fw.neg(node) }
+pub fn fwd_exp(node) -> Result[any] { fw.exp(node) }
+pub fn fwd_log(node) -> Result[any] { fw.log(node) }
+pub fn fwd_sin(node) -> Result[any] { fw.sin(node) }
+pub fn fwd_cos(node) -> Result[any] { fw.cos(node) }
+pub fn fwd_sqrt(node) -> Result[any] { fw.sqrt(node) }
+pub fn fwd_tanh(node) -> Result[any] { fw.tanh(node) }
+pub fn fwd_sigmoid(node) -> Result[any] { fw.sigmoid(node) }
+pub fn fwd_relu(node) -> Result[any] { fw.relu(node) }
+pub fn fwd_pow(node, exponent) -> Result[any] { fw.pow(node, exponent) }
+pub fn fwd_sum(node) -> Result[any] { fw.sum(node) }
+pub fn fwd_mean(node) -> Result[any] { fw.mean(node) }
+pub fn fwd_matmul(left, right) -> Result[any] { fw.matmul(left, right) }

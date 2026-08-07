@@ -1,0 +1,43 @@
+use "../../packages/warp/lib.weft" as warp
+use json
+
+// histogram / bincount / cov / corrcoef / average / quantile vs NumPy.
+fn main -> Result {
+    h := warp.histogram([0.5, 1.5, 2.5, 3.5, 0.0, 4.0], 4, [0.0, 4.0])
+    auto := warp.histogram([0.0, 4.0], 4, null)
+    explicit := warp.histogram([1.0, 2.0, 3.0, 0.5, 3.5], [1.0, 2.0, 3.0], null)
+    say(json.stringify({
+        "hist_counts": warp.to_list(h.counts),
+        "hist_edges": warp.to_list(h.edges),
+        "hist_auto_counts": warp.to_list(auto.counts),
+        "hist_auto_edges": warp.to_list(auto.edges),
+        "hist_explicit_counts": warp.to_list(explicit.counts),
+        "hist_explicit_edges": warp.to_list(explicit.edges),
+        "hist_counts_dtype": warp.dtype(h.counts),
+        "hist_edges_dtype": warp.dtype(h.edges),
+        "hist_empty_auto_counts": warp.to_list(warp.histogram([], 4, null).counts),
+        "hist_empty_auto_edges": warp.to_list(warp.histogram([], 4, null).edges),
+        "hist_const_counts": warp.to_list(warp.histogram([2.0, 2.0], 4, null).counts),
+        "hist_const_edges": warp.to_list(warp.histogram([2.0, 2.0], 4, null).edges),
+        "hist_bins0_err": !warp.histogram([1.0], 0, null).ok,
+        "hist_nonmono_err": !warp.histogram([1.0], [3.0, 1.0], null).ok,
+        "bincount": warp.to_list(warp.bincount([0, 3, 3, 1])),
+        "bincount_empty": warp.to_list(warp.bincount([])),
+        "bincount_dtype": warp.dtype(warp.bincount([0, 3, 3, 1])),
+        "bincount_neg_err": !warp.bincount([-1]).ok,
+        "cov_pair": warp.to_list(warp.cov([1.0, 2.0, 4.0], [2.0, 1.0, 3.0])),
+        "cov_single": warp.cov([1.0, 2.0, 4.0], null),
+        "cov_mismatch_err": !warp.cov([1.0, 2.0], [1.0]).ok,
+        "corr_pair": warp.to_list(warp.corrcoef([1.0, 2.0, 4.0], [2.0, 1.0, 3.0])),
+        "corr_single": warp.corrcoef([1.0, 2.0, 3.0], null),
+        "avg": warp.average([1.0, 2.0, 3.0], null),
+        "avg_w": warp.average([1.0, 2.0, 3.0], [1.0, 1.0, 2.0]),
+        "avg_zero_weights_err": !warp.average([1.0, 2.0], [0.0, 0.0]).ok,
+        "q": warp.quantile([3.0, 1.0, 4.0, 2.0], 0.25),
+        "q0": warp.quantile([3.0, 1.0, 4.0, 2.0], 0),
+        "q1": warp.quantile([3.0, 1.0, 4.0, 2.0], 1),
+        "q_list": warp.to_list(warp.quantile([3.0, 1.0, 4.0, 2.0], [0.0, 0.5, 1.0])),
+        "q_range_err": !warp.quantile([1.0], 1.5).ok,
+        "q_empty_err": !warp.quantile([], 0.5).ok,
+    }))
+}

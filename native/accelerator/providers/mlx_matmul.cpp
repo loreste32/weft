@@ -31,9 +31,10 @@ extern "C" char* weft_accel_exec_info(void) {
 }
 
 extern "C" const char* weft_accel_manifest(void) {
-  return "{\"name\":\"weft-mlx\",\"version\":\"1.0.0\","
+  return "{\"name\":\"weft-mlx\",\"version\":\"1.1.0\","
          "\"abi\":1,\"vendors\":[\"mlx\"],"
-         "\"operations\":[\"health\",\"matmul\",\"tensor_matmul\",\"tensor_add\"],"
+         "\"operations\":[\"health\",\"matmul\",\"tensor_matmul\",\"tensor_add\","
+         "\"tensor_sub\",\"tensor_mul\",\"tensor_div\"],"
          "\"metadata\":{\"runtime\":\"mlx-c\",\"dtype\":\"float32\",\"tensor_abi\":\"1\"}}";
 }
 
@@ -147,15 +148,92 @@ static bool tensor_add_shape(const weft_accel_tensor_input& left,
   return true;
 }
 
+// Bounded same-shape float32 elementwise driver for tensor_sub, tensor_mul,
+// and tensor_div. This is the tensor_add flow with mlx_subtract /
+// mlx_multiply / mlx_divide (same mlx-c signature as mlx_add) in place of
+// mlx_add; tensor_add keeps its own path above so the hardware-tested code
+// is unchanged. op selects subtract (0), multiply (1), or divide (2).
+static int mlx_elementwise_op(mlx_array* res, mlx_array a, mlx_array b, mlx_stream stream, int op) {
+  if (op == 0) return mlx_subtract(res, a, b, stream);
+  if (op == 1) return mlx_multiply(res, a, b, stream);
+  return mlx_divide(res, a, b, stream);
+}
+
+static int mlx_run_tensor_elementwise(const char* name, int op,
+                                      const weft_accel_tensor_input* inputs,
+                                      weft_accel_tensor_output* output) {
+  size_t count = 0;
+  if (inputs[0].dtype != WEFT_TENSOR_FLOAT32 || inputs[1].dtype != WEFT_TENSOR_FLOAT32 ||
+      !tensor_add_shape(inputs[0], inputs[1], &count)) {
+    last_error = std::string("MLX ") + name +
+                 " requires contiguous same-shape float32 tensors of rank 1 or 2";
+    return 1;
+  }
+  int shape[2] = {1, 1};
+  for (uint32_t axis = 0; axis < inputs[0].rank; ++axis) {
+    shape[axis] = static_cast<int>(inputs[0].shape[axis]);
+  }
+  mlx_array a_array = mlx_array_new_data(inputs[0].data, shape, inputs[0].rank, MLX_FLOAT32);
+  mlx_array b_array = mlx_array_new_data(inputs[1].data, shape, inputs[1].rank, MLX_FLOAT32);
+  mlx_stream stream = mlx_default_gpu_stream_new();
+  mlx_array result = mlx_array_new();
+  int status = 0;
+  if (a_array.ctx == nullptr || b_array.ctx == nullptr || stream.ctx == nullptr || result.ctx == nullptr) {
+    last_error = std::string("MLX ") + name + " array or GPU stream allocation failed";
+    status = 1;
+  } else if (mlx_elementwise_op(&result, a_array, b_array, stream, op) != 0 ||
+             mlx_array_eval(result) != 0 || mlx_synchronize(stream) != 0) {
+    last_error = std::string("MLX ") + name + " evaluation failed";
+    status = 1;
+  }
+  const float* data = status == 0 ? mlx_array_data_float32(result) : nullptr;
+  if (status == 0 && data == nullptr) {
+    last_error = std::string("MLX ") + name + " returned no float32 data";
+    status = 1;
+  }
+  output->dtype = WEFT_TENSOR_FLOAT32;
+  output->rank = inputs[0].rank;
+  output->shape = static_cast<int64_t*>(std::calloc(output->rank, sizeof(int64_t)));
+  output->strides = static_cast<int64_t*>(std::calloc(output->rank, sizeof(int64_t)));
+  output->data = std::malloc(count * sizeof(float));
+  output->bytes = count * sizeof(float);
+  if (status == 0 && (output->shape == nullptr || output->strides == nullptr || output->data == nullptr)) {
+    last_error = std::string("MLX ") + name + " output allocation failed";
+    status = 1;
+  }
+  if (status == 0) {
+    std::memcpy(output->shape, inputs[0].shape, output->rank * sizeof(int64_t));
+    std::memcpy(output->strides, inputs[0].strides, output->rank * sizeof(int64_t));
+    std::memcpy(output->data, data, output->bytes);
+  }
+  mlx_array_free(result);
+  mlx_array_free(a_array);
+  mlx_array_free(b_array);
+  mlx_stream_free(stream);
+  if (status != 0) {
+    weft_accel_free_tensor(output);
+    return 1;
+  }
+  record_exec_info(false);
+  return 0;
+}
+
 extern "C" int weft_accel_run_tensor(const char* operation,
                                        const weft_accel_tensor_input* inputs,
                                        size_t input_count,
                                        weft_accel_tensor_output* output) {
   if (operation == nullptr || inputs == nullptr || output == nullptr || input_count != 2) {
-    last_error = "tensor_matmul requires two inputs and an output";
+    last_error = "tensor operation requires two inputs and an output";
     return 1;
   }
   std::memset(output, 0, sizeof(*output));
+  if (std::strcmp(operation, "tensor_sub") == 0 || std::strcmp(operation, "tensor_mul") == 0 ||
+      std::strcmp(operation, "tensor_div") == 0) {
+    int op = 0;
+    if (std::strcmp(operation, "tensor_mul") == 0) op = 1;
+    if (std::strcmp(operation, "tensor_div") == 0) op = 2;
+    return mlx_run_tensor_elementwise(operation, op, inputs, output);
+  }
   if (std::strcmp(operation, "tensor_add") == 0) {
     size_t count = 0;
     if (inputs[0].dtype != WEFT_TENSOR_FLOAT32 || inputs[1].dtype != WEFT_TENSOR_FLOAT32 ||

@@ -221,6 +221,186 @@ pub fn randint(low, high, shape) {
 }
 
 // ──────────────────────────────────────────────
+// Seeded random generators
+// ──────────────────────────────────────────────
+//
+// default_rng(seed) returns an independent deterministic generator modeled on
+// np.random.default_rng. The bit stream is NOT NumPy's PCG64 — warp uses a
+// combined L'Ecuyer (1988) multiple-recursive generator — so values differ
+// from NumPy for the same seed and bit-parity is not a goal. Guarantees:
+// same seed → identical sequence across runs and processes; generators are
+// independent of each other and of the global `random` stdlib state.
+// See docs/COMPATIBILITY.md for the explicit deviation note.
+
+const _warp_rng_states = {}
+const _warp_rng_counter = {"next": 0}
+
+// One uniform float in (0, 1) from the combined generator; advances state.
+fn _rng_uniform(id) {
+    state := _warp_rng_states[id]
+    s1 := (40014 * state.s1) % 2147483563
+    s2 := (40692 * state.s2) % 2147483399
+    state.s1 = s1
+    state.s2 = s2
+    let mut z = s1 - s2
+    if z < 1 { z = z + 2147483562 }
+    z / 2147483563.0
+}
+
+// One uniform integer in [0, span) without modulo bias (span < 2^31).
+fn _rng_below(id, span) {
+    math.floor(_rng_uniform(id) * (span + 0.0))
+}
+
+fn _rng_seed_state(seed) {
+    // Scramble the user seed with a Park–Miller warmup so nearby seeds land
+    // on decorrelated streams. All products stay below 2^53, so the runtime's
+    // float64 round-trip for integer arithmetic is exact here.
+    let mut h = ((seed % 2147483646) + 2147483646) % 2147483646 + 1
+    h = (h * 48271) % 2147483647
+    h = (h * 48271) % 2147483647
+    s1 := (h % 2147483562) + 1
+    h = (h * 48271) % 2147483647
+    s2 := (h % 2147483398) + 1
+    {"s1": s1, "s2": s2}
+}
+
+fn _rng_fill_uniform(id, shape) {
+    n := _prod(shape)
+    let mut d = []
+    let mut i = 0
+    while i < n { d = push(d, _rng_uniform(id))
+        i = i + 1 }
+    array(d, shape)
+}
+
+fn _rng_fill_normal(id, shape) {
+    n := _prod(shape)
+    let mut d = []
+    let mut i = 0
+    while i < n {
+        u1 := _rng_uniform(id)
+        u2 := _rng_uniform(id)
+        d = push(d, math.sqrt(-2.0 * math.log(u1)) * math.cos(2.0 * 3.141592653589793 * u2))
+        i = i + 1
+    }
+    array(d, shape)
+}
+
+// default_rng(seed) → generator map with methods:
+//   random(shape)              uniform floats in [0, 1); shape null → scalar
+//   normal(shape)              standard normals (Box–Muller); shape null → scalar
+//   integers(low, high, shape) ints in [low, high); high null → [0, low);
+//                              shape null → scalar
+//   shuffle(list)              new shuffled list (Fisher–Yates)
+//   permutation(n)             warp int64 array with a permutation of 0..n-1
+//   choice(list, n)            n distinct elements without replacement;
+//                              n null → a single element
+pub fn default_rng(seed) {
+    let mut actual = seed
+    if actual == null || _wkind(actual) == "unit" {
+        // Unseeded generators draw one entropy hit from the global stdlib RNG.
+        actual = random.int(0, 2147483646)
+    }
+    if _wkind(actual) != "int" { return Err("warp.default_rng expects an integer seed or null") }
+    id := _warp_rng_counter.next
+    _warp_rng_counter.next = id + 1
+    _warp_rng_states[id] = _rng_seed_state(actual)
+    // Closures in imported modules cannot reference sibling module functions
+    // directly, so bind the helpers as locals for the methods to capture.
+    rng_uniform := _rng_uniform
+    rng_below := _rng_below
+    fill_uniform := _rng_fill_uniform
+    fill_normal := _rng_fill_normal
+    valid_shape := _valid_shape
+    wkind := _wkind
+    prod := _prod
+    copy_list := _copy
+    list_range := _list_range
+    make_array := array
+    {
+        "random": fn(shape) {
+            if shape == null || wkind(shape) == "unit" { return rng_uniform(id) }
+            if !valid_shape(shape) { return Err("warp.rng.random expects non-negative integer dimensions or null") }
+            fill_uniform(id, shape)
+        },
+        "normal": fn(shape) {
+            if shape == null || wkind(shape) == "unit" { return fill_normal(id, [1]).data[0] }
+            if !valid_shape(shape) { return Err("warp.rng.normal expects non-negative integer dimensions or null") }
+            fill_normal(id, shape)
+        },
+        "integers": fn(low, high, shape) {
+            let mut lo = low
+            let mut hi = high
+            if hi == null || wkind(hi) == "unit" { hi = lo
+                lo = 0 }
+            if wkind(lo) != "int" || wkind(hi) != "int" || hi <= lo {
+                return Err("warp.rng.integers requires integer bounds with high greater than low")
+            }
+            span := hi - lo
+            if shape == null || wkind(shape) == "unit" { return lo + rng_below(id, span) }
+            if !valid_shape(shape) { return Err("warp.rng.integers expects non-negative integer dimensions or null") }
+            n := prod(shape)
+            let mut d = []
+            let mut i = 0
+            while i < n { d = push(d, lo + rng_below(id, span))
+                i = i + 1 }
+            make_array(d, shape)
+        },
+        "shuffle": fn(items) {
+            if wkind(items) != "list" { return Err("warp.rng.shuffle expects a list") }
+            let mut out = copy_list(items)
+            let mut i = len(out) - 1
+            while i >= 1 {
+                j := rng_below(id, i + 1)
+                tmp := out[i]
+                out[i] = out[j]
+                out[j] = tmp
+                i = i - 1
+            }
+            out
+        },
+        "permutation": fn(n) {
+            if wkind(n) != "int" || n < 0 { return Err("warp.rng.permutation expects a non-negative integer") }
+            let mut items = []
+            let mut i = 0
+            while i < n { items = push(items, i)
+                i = i + 1 }
+            i = len(items) - 1
+            while i >= 1 {
+                j := rng_below(id, i + 1)
+                tmp := items[i]
+                items[i] = items[j]
+                items[j] = tmp
+                i = i - 1
+            }
+            make_array(items, [n])
+        },
+        "choice": fn(items, n) {
+            if wkind(items) != "list" { return Err("warp.rng.choice expects a list") }
+            if n == null || wkind(n) == "unit" {
+                if len(items) == 0 { return Err("warp.rng.choice cannot draw from an empty list") }
+                return items[rng_below(id, len(items))]
+            }
+            if wkind(n) != "int" || n < 0 || n > len(items) {
+                return Err("warp.rng.choice without replacement requires 0 <= n <= len(list)")
+            }
+            // Partial Fisher–Yates: first n positions of a shuffled copy.
+            let mut out = copy_list(items)
+            let mut k = 0
+            while k < n {
+                j := k + rng_below(id, len(out) - k)
+                tmp := out[k]
+                out[k] = out[j]
+                out[j] = tmp
+                k = k + 1
+            }
+            list_range(out, 0, n)
+        },
+    }
+}
+
+// ──────────────────────────────────────────────
 // Shape / indexing
 // ──────────────────────────────────────────────
 
@@ -468,22 +648,27 @@ pub fn transpose_view(a, axes) {
 
 // NumPy-style indexing selectors. Selectors may be integers (including
 // negative indices), rectangular integer index arrays, boolean masks,
-// slice selectors, or null to select a complete axis. Missing trailing
+// slice selectors, ellipsis() (expands to whole axes), newaxis() (inserts a
+// length-1 dimension), or null to select a complete axis. Missing trailing
 // selectors are treated as null; advanced index arrays broadcast together.
 pub fn index(a, selectors) {
     if !_is_arr(a) || _wkind(selectors) != "list" { return Err("warp.index expects an array and selector list") }
-    if len(selectors) > len(a.shape) { return Err("warp.index has too many selectors") }
+    expanded := _expand_selectors(selectors, len(a.shape), "warp.index")
+    if _wkind(expanded) == "str" { return Err(expanded) }
+    prepared := _prepare_newaxis(a, expanded)
+    source := prepared.array
+    sels := prepared.selectors
     let mut specs = []
     let mut axis = 0
-    while axis < len(a.shape) {
-        selector := if axis < len(selectors) { selectors[axis] } else { null }
-        spec := _index_spec(selector, a.shape[axis])
+    while axis < len(source.shape) {
+        selector := if axis < len(sels) { sels[axis] } else { null }
+        spec := _index_spec(selector, source.shape[axis])
         if spec == null { return Err("warp.index selector is invalid or out of range") }
         specs = push(specs, spec)
         axis = axis + 1
     }
     for spec in specs {
-        if spec.kind == "advanced" { return _index_advanced(a, specs) }
+        if spec.kind == "advanced" { return _index_advanced(source, specs) }
     }
     let mut out_shape = []
     let mut all_scalar = true
@@ -494,9 +679,9 @@ pub fn index(a, selectors) {
         else { out_shape = push(out_shape, len(spec.positions)) }
     }
     let mut values = []
-    values = _collect_index_values(a, specs, 0, [], values)
+    values = _collect_index_values(source, specs, 0, [], values)
     if all_scalar { return values[0] }
-    _array_with_dtype(values, out_shape, dtype(a))
+    _array_with_dtype(values, out_shape, dtype(source))
 }
 
 pub fn get(a, indices) {
@@ -507,11 +692,21 @@ pub fn get(a, indices) {
 
 pub fn set(a, indices, value) {
     if !_is_arr(a) || _wkind(indices) != "list" { return Err("warp.set expects an array and selector list") }
-    if len(indices) != len(a.shape) { return Err("warp.set requires one selector per dimension") }
+    // NumPy allows fewer selectors than axes (missing trailing axes are
+    // fully selected), ellipsis, and newaxis tokens in assignment targets.
+    expanded := _expand_selectors(indices, len(a.shape), "warp.set")
+    if _wkind(expanded) == "str" { return Err(expanded) }
+    prepared := _prepare_newaxis(a, expanded)
+    // Targets are computed in the prepared (newaxis-expanded) index space.
+    // Inserted axes have length 1, so a flat C-order position in that space
+    // addresses the same element of the original storage.
+    target_shape := prepared.array.shape
+    sels := prepared.selectors
     let mut specs = []
     let mut axis = 0
-    while axis < len(a.shape) {
-        spec := _index_spec(indices[axis], a.shape[axis])
+    while axis < len(target_shape) {
+        selector := if axis < len(sels) { sels[axis] } else { null }
+        spec := _index_spec(selector, target_shape[axis])
         if spec == null { return Err("warp.set selector is invalid or out of range") }
         specs = push(specs, spec)
         axis = axis + 1
@@ -526,7 +721,7 @@ pub fn set(a, indices, value) {
     while flat < len(target.indices) {
         output_index := _unravel(flat, target.shape)
         replacement := if _is_arr(value) { _broadcast_value(value, output_index, target.shape) } else { value }
-        d[_flat_index(target.indices[flat], a.shape)] = replacement
+        d[_flat_index(target.indices[flat], target_shape)] = replacement
         flat = flat + 1
     }
     _array_with_dtype(d, a.shape, dtype(a))
@@ -589,6 +784,16 @@ pub fn slice_axis(a, start, stop, step, axis) {
 pub fn slice_selector(start, stop, step) {
     {"_slice": true, "start": start, "stop": stop, "step": if step == null { 1 } else { step }}
 }
+
+// ellipsis() expands to the number of full axes needed for the remaining
+// selectors to consume the array's rank, matching NumPy's `...`. At most one
+// ellipsis is allowed per selector list; it may expand to zero axes.
+pub fn ellipsis() { {"_ellipsis": true} }
+
+// newaxis() inserts a length-1 dimension at its position, matching NumPy's
+// `None` / `np.newaxis`. It consumes no axis, may appear any number of times,
+// and composes with integer, slice, advanced, and ellipsis selectors.
+pub fn newaxis() { {"_newaxis": true} }
 
 // ──────────────────────────────────────────────
 // Element-wise arithmetic
@@ -653,6 +858,115 @@ pub fn tanh(a) { _unaryop_with_dtype(a, fn(x) {
     e := math.exp(2.0 * x)
     return (e - 1.0) / (e + 1.0)
 }, "float64") }
+
+pub fn hypot(x, y) { _binop_with_dtype(x, y, fn(a, b) { math.hypot(a, b) }, _float_pair_dtype(x, y)) }
+
+// expm1(x) = exp(x) - 1, evaluated with a Taylor series near zero where the
+// direct form loses precision (NumPy ufunc parity).
+pub fn expm1(a) { _unaryop_with_dtype(a, _expm1_scalar, _float_result_dtype(a)) }
+
+fn _expm1_scalar(x) {
+    if x != x { return math.nan }
+    if x > -0.25 && x < 0.25 {
+        // Horner form of sum x^k/k!, k = 1..12; abs error < 1e-15 on |x| < 1/4.
+        return x * (1.0 + x * (0.5 + x * (1.0/6.0 + x * (1.0/24.0 + x * (1.0/120.0 + x * (1.0/720.0 + x * (1.0/5040.0 + x * (1.0/40320.0 + x * (1.0/362880.0 + x * (1.0/3628800.0 + x * (1.0/39916800.0 + x / 479001600.0)))))))))))
+    }
+    math.exp(x) - 1.0
+}
+
+// log1p(x) = log(1 + x), accurate for small x via the Cephes ratio trick.
+pub fn log1p(a) { _unaryop_with_dtype(a, _log1p_scalar, _float_result_dtype(a)) }
+
+fn _log1p_scalar(x) {
+    if x != x { return math.nan }
+    u := 1.0 + x
+    if u == 1.0 { return x }
+    if u < 0.0 { return math.nan }
+    if u == 0.0 { return -math.inf }
+    x * math.log(u) / (u - 1.0)
+}
+
+// floor_divide matches np.floor_divide: floor(a / b). A zero divisor follows
+// NumPy's warn-and-continue behavior: for float results ±inf (sign of the
+// dividend, NaN for 0/0), for integer results 0. (Weft `/` itself raises on
+// division by zero, so it is avoided here.)
+pub fn floor_divide(a, b) {
+    result_dtype := _promote_dtype(a, b)
+    _binop_with_dtype(a, b, fn(x, y) { _floor_div_scalar(x, y, result_dtype) }, result_dtype)
+}
+
+fn _floor_div_scalar(x, y, result_dtype) {
+    if y == 0 {
+        if result_dtype == "float32" || result_dtype == "float64" {
+            if x > 0 { return math.inf }
+            if x < 0 { return -math.inf }
+            return math.nan
+        }
+        return 0
+    }
+    math.floor((x + 0.0) / (y + 0.0)) + 0.0
+}
+
+// remainder matches np.remainder / np.mod: the result carries the sign of the
+// divisor (floored division), unlike Weft's `%` operator (and warp.mod_),
+// which truncates toward zero and carries the sign of the dividend.
+// Zero divisor: NaN for float results, 0 for integer results (NumPy warning
+// semantics).
+pub fn remainder(a, b) {
+    result_dtype := _promote_dtype(a, b)
+    _binop_with_dtype(a, b, fn(x, y) { _remainder_scalar(x, y, result_dtype) }, result_dtype)
+}
+
+fn _remainder_scalar(x, y, result_dtype) {
+    if y == 0 {
+        if result_dtype == "float32" || result_dtype == "float64" { return math.nan }
+        return 0
+    }
+    xf := x + 0.0
+    yf := y + 0.0
+    let mut r = xf - math.floor(xf / yf) * yf
+    // Rounding can land one step off the divisor's sign interval; nudge back.
+    if r != 0.0 && ((r < 0.0) != (yf < 0.0)) { r = r + yf }
+    r
+}
+
+pub fn square(a) { _unaryop(a, fn(x) { x * x }) }
+
+// reciprocal returns 1 / x as a float. Unlike NumPy's integer reciprocal
+// (truncating integer division), warp always computes the true reciprocal;
+// x == 0 yields +inf (NumPy float behavior; Weft `/` would raise).
+pub fn reciprocal(a) {
+    _unaryop_with_dtype(a, fn(x) { if x == 0 { math.inf } else { 1.0 / (x + 0.0) } }, _float_result_dtype(a))
+}
+
+pub fn deg2rad(a) { _unaryop_with_dtype(a, fn(x) { x * (3.141592653589793 / 180.0) }, _float_result_dtype(a)) }
+
+pub fn rad2deg(a) { _unaryop_with_dtype(a, fn(x) { x * (180.0 / 3.141592653589793) }, _float_result_dtype(a)) }
+
+// copysign(x, y): magnitude of x with the sign of y. Zero y counts as
+// positive (Weft cannot distinguish -0.0 from 0.0).
+pub fn copysign(x, y) {
+    _binop_with_dtype(x, y, fn(a, b) { if b < 0 { -math.abs(a) } else { math.abs(a) } }, _float_pair_dtype(x, y))
+}
+
+// rint rounds to the nearest integer with ties to even (NumPy/IEEE banker's
+// rounding), returned as a float — unlike math.round, which rounds half away
+// from zero.
+pub fn rint(a) { _unaryop_with_dtype(a, _rint_scalar, _float_result_dtype(a)) }
+
+fn _rint_scalar(x) {
+    if x != x { return math.nan }
+    if x == math.inf || x == -math.inf { return x }
+    f := math.floor(x)
+    diff := x - f
+    if diff < 0.5 { return f + 0.0 }
+    if diff > 0.5 { return f + 1.0 }
+    if f % 2 == 0 { f + 0.0 } else { f + 1.0 }
+}
+
+fn _float_pair_dtype(a, b) {
+    if _promote_dtype(a, b) == "float32" { "float32" } else { "float64" }
+}
 
 // ──────────────────────────────────────────────
 // Comparisons (element-wise, return boolean arrays)
@@ -728,6 +1042,30 @@ pub fn var_(a) {
 
 pub fn std_(a) {
     value := var_(a)
+    if value == null { return null }
+    math.sqrt(value)
+}
+
+// var_opts / std_opts add NumPy's ddof (delta degrees of freedom): the
+// divisor is n - ddof instead of n. NumPy's warn-and-continue edge cases are
+// mirrored: divisor <= 0 yields +inf, or NaN when the deviation sum is 0.
+pub fn var_opts(a, ddof) {
+    data := _data(a)
+    if len(data) == 0 { return null }
+    d := if ddof == null || _wkind(ddof) == "unit" { 0 } else { ddof }
+    denom := len(data) - d
+    m := mean(a)
+    let mut s = 0.0
+    for x in data { s = s + (x - m) * (x - m) }
+    if denom <= 0 {
+        if s == 0.0 { return math.nan }
+        return math.inf
+    }
+    s / denom
+}
+
+pub fn std_opts(a, ddof) {
+    value := var_opts(a, ddof)
     if value == null { return null }
     math.sqrt(value)
 }
@@ -821,6 +1159,41 @@ pub fn cumprod(a) {
     _array_with_dtype(d, a.shape, if _is_arr(a) { dtype(a) } else { null })
 }
 
+// cumsum_axis / cumprod_axis accumulate along one axis (NumPy axis= form);
+// the result keeps the input shape and dtype. Negative axes are accepted.
+pub fn cumsum_axis(a, axis) { _cum_axis(a, axis, false) }
+
+pub fn cumprod_axis(a, axis) { _cum_axis(a, axis, true) }
+
+fn _cum_axis(a, axis, is_prod) {
+    if !_is_arr(a) { return Err("warp.cumsum_axis/cumprod_axis expects an array") }
+    normalized := _normalize_axis(axis, len(a.shape), false)
+    if normalized == null { return Err("warp.cumsum_axis/cumprod_axis axis is out of range") }
+    data := _data(a)
+    let mut d = []
+    let mut i = 0
+    while i < len(data) { d = push(d, 0)
+        i = i + 1 }
+    n := a.shape[normalized]
+    outer_shape := _remove_axis(a.shape, normalized)
+    outer_size := _prod(outer_shape)
+    let mut flat = 0
+    while flat < outer_size {
+        outer_index := _unravel(flat, outer_shape)
+        let mut acc = if is_prod { 1 } else { 0 }
+        let mut k = 0
+        while k < n {
+            source_index := _insert_axis_index(outer_index, normalized, k)
+            x := _logical_value_at(a, source_index)
+            acc = if is_prod { acc * x } else { acc + x }
+            d[_flat_index(source_index, a.shape)] = acc
+            k = k + 1
+        }
+        flat = flat + 1
+    }
+    _array_with_dtype(d, a.shape, dtype(a))
+}
+
 pub fn median(a) {
     if len(_data(a)) == 0 { return null }
     sorted := sort(a)
@@ -839,8 +1212,219 @@ pub fn percentile(a, p) {
     k := (p / 100.0) * (n - 1)
     lo := math.floor(k)
     hi := math.ceil(k)
-    if lo == hi { data[int(lo)] }
-    else { data[int(lo)] * (hi - k) + data[int(hi)] * (k - lo) }
+    if lo == hi { data[lo] }
+    else { data[lo] * (hi - k) + data[hi] * (k - lo) }
+}
+
+// ──────────────────────────────────────────────
+// Statistics
+// ──────────────────────────────────────────────
+
+// np.histogram: bin counts plus edges. `bins` is either a positive integer
+// (equal-width bins over `range`, or over the data min/max when range is
+// null — with NumPy's 0.5 padding when min == max and (0, 1) for empty data)
+// or an explicit non-decreasing edge list. Every bin is half-open
+// [edges[i], edges[i+1]) except the last, which also includes its right edge;
+// values outside the edge span are ignored, and NaN is never counted.
+pub fn histogram(a, bins, range) {
+    data := _data(a)
+    if _wkind(data) != "list" { return Err("warp.histogram expects an array or flat list") }
+    let mut edges = []
+    if _wkind(bins) == "int" {
+        if bins <= 0 { return Err("warp.histogram bins must be a positive integer") }
+        let mut lo = 0.0
+        let mut hi = 1.0
+        if range != null {
+            if _wkind(range) != "list" || len(range) != 2 { return Err("warp.histogram range must be a [min, max] pair") }
+            lo = range[0] + 0.0
+            hi = range[1] + 0.0
+            if !(hi > lo) { return Err("warp.histogram range max must be greater than min") }
+        } else if len(data) > 0 {
+            lo = min_(data) + 0.0
+            hi = max_(data) + 0.0
+            if lo == hi { lo = lo - 0.5
+                hi = hi + 0.5 }
+        }
+        edges = _data(linspace(lo, hi, bins + 1))
+    } else {
+        raw := _data(bins)
+        if _wkind(raw) != "list" || len(raw) < 2 { return Err("warp.histogram explicit bins need at least two edges") }
+        if !_non_decreasing(raw) { return Err("warp.histogram bins must increase monotonically") }
+        for e in raw { edges = push(edges, e + 0.0) }
+    }
+    nbins := len(edges) - 1
+    let mut counts = []
+    let mut i = 0
+    while i < nbins { counts = push(counts, 0)
+        i = i + 1 }
+    last_edge := edges[len(edges) - 1]
+    for x in data {
+        if x >= edges[0] && x <= last_edge {
+            if x == last_edge {
+                counts[nbins - 1] = counts[nbins - 1] + 1
+            } else {
+                b := _histogram_bin(edges, x)
+                counts[b] = counts[b] + 1
+            }
+        }
+    }
+    {"counts": _array_with_dtype(counts, [nbins], "int64"),
+     "edges": _array_with_dtype(edges, [len(edges)], "float64")}
+}
+
+// First bin index i with x < edges[i+1]; the caller guarantees
+// edges[0] <= x < edges[last].
+fn _histogram_bin(edges, x) {
+    let mut lo = 0
+    let mut hi = len(edges) - 2
+    while lo < hi {
+        mid := (lo + hi) / 2
+        if x < edges[mid + 1] { hi = mid } else { lo = mid + 1 }
+    }
+    lo
+}
+
+// np.bincount: occurrence counts of non-negative integers, with output length
+// max(x) + 1 (empty for empty input). Negative or non-integer values are an
+// explicit Err (NumPy raises ValueError/TypeError).
+pub fn bincount(x) {
+    data := _data(x)
+    if _wkind(data) != "list" { return Err("warp.bincount expects an array or flat list") }
+    let mut max_value = -1
+    for v in data {
+        if _wkind(v) != "int" || v < 0 { return Err("warp.bincount expects non-negative integers") }
+        if v > max_value { max_value = v }
+    }
+    if max_value < 0 { return _array_with_dtype([], [0], "int64") }
+    let mut counts = []
+    let mut i = 0
+    while i <= max_value { counts = push(counts, 0)
+        i = i + 1 }
+    for v in data { counts[v] = counts[v] + 1 }
+    _array_with_dtype(counts, [max_value + 1], "int64")
+}
+
+// Sample covariance of two equal-length flat lists with ddof=1. NumPy's
+// warn-and-continue edge for fewer than two points yields NaN.
+fn _cov_pair(u, v) {
+    n := len(u)
+    if n < 2 { return math.nan }
+    let mut mu = 0.0
+    let mut mv = 0.0
+    let mut i = 0
+    while i < n { mu = mu + u[i]
+        mv = mv + v[i]
+        i = i + 1 }
+    mu = mu / n
+    mv = mv / n
+    let mut s = 0.0
+    i = 0
+    while i < n { s = s + (u[i] - mu) * (v[i] - mv)
+        i = i + 1 }
+    s / (n - 1)
+}
+
+// np.cov(x, y): sample covariance with ddof=1. With y null, the scalar
+// variance of x; otherwise the 2x2 covariance matrix. NaN when n < 2.
+pub fn cov(x, y) {
+    xd := _data(x)
+    if _wkind(xd) != "list" { return Err("warp.cov expects arrays or flat lists") }
+    if y == null { return _cov_pair(xd, xd) }
+    yd := _data(y)
+    if _wkind(yd) != "list" { return Err("warp.cov expects arrays or flat lists") }
+    if len(xd) != len(yd) { return Err("warp.cov expects x and y to have the same length") }
+    array([_cov_pair(xd, xd), _cov_pair(xd, yd), _cov_pair(xd, yd), _cov_pair(yd, yd)], [2, 2])
+}
+
+// np.corrcoef(x, y): Pearson correlation. With y null, the scalar 1.0 (NaN for
+// n < 2 or a constant series); otherwise the 2x2 correlation matrix, clipped
+// to [-1, 1] like NumPy. Constant series yield NaN off their diagonal.
+pub fn corrcoef(x, y) {
+    xd := _data(x)
+    if _wkind(xd) != "list" { return Err("warp.corrcoef expects arrays or flat lists") }
+    if y == null {
+        cxx := _cov_pair(xd, xd)
+        return _corr_term(cxx, cxx, cxx)
+    }
+    yd := _data(y)
+    if _wkind(yd) != "list" { return Err("warp.corrcoef expects arrays or flat lists") }
+    if len(xd) != len(yd) { return Err("warp.corrcoef expects x and y to have the same length") }
+    cxx := _cov_pair(xd, xd)
+    cxy := _cov_pair(xd, yd)
+    cyy := _cov_pair(yd, yd)
+    array([
+        _corr_term(cxx, cxx, cxx), _corr_term(cxy, cxx, cyy),
+        _corr_term(cxy, cxx, cyy), _corr_term(cyy, cyy, cyy),
+    ], [2, 2])
+}
+
+// num / sqrt(a * b) with NumPy's NaN-on-degenerate semantics; Weft raises on
+// runtime division by zero, so the guard must come first.
+fn _corr_term(num, a, b) {
+    denom_sq := a * b
+    if !(denom_sq > 0.0) { return math.nan }
+    _clip_corr(num / math.sqrt(denom_sq))
+}
+
+fn _clip_corr(r) {
+    if r != r { return math.nan }
+    math.clamp(r, -1.0, 1.0)
+}
+
+// np.average: weighted mean. weights null gives the plain mean. An empty input
+// or weights summing to zero is an Err (NumPy raises ZeroDivisionError), as is
+// a weights/data length mismatch (NumPy raises TypeError).
+pub fn average(a, weights) {
+    data := _data(a)
+    if _wkind(data) != "list" { return Err("warp.average expects an array or flat list") }
+    if len(data) == 0 { return Err("warp.average weights sum to zero for empty input") }
+    if weights == null {
+        let mut s = 0.0
+        for x in data { s = s + x }
+        return s / len(data)
+    }
+    wd := _data(weights)
+    if _wkind(wd) != "list" { return Err("warp.average expects weights as an array or flat list") }
+    if len(wd) != len(data) { return Err("warp.average expects weights to match the data length") }
+    let mut ws = 0.0
+    for w in wd { ws = ws + w }
+    if ws == 0 { return Err("warp.average weights sum to zero") }
+    let mut s = 0.0
+    let mut i = 0
+    while i < len(data) { s = s + data[i] * wd[i]
+        i = i + 1 }
+    s / ws
+}
+
+// np.quantile with the default linear interpolation method: position
+// q * (n - 1) over the sorted data. q may be a scalar in [0, 1] (→ scalar) or
+// a list/array (→ float64 array). Empty input or q outside [0, 1] is an Err.
+pub fn quantile(a, q) {
+    data := _data(a)
+    if _wkind(data) != "list" { return Err("warp.quantile expects an array or flat list") }
+    if len(data) == 0 { return Err("warp.quantile expects a non-empty input") }
+    sorted_data := _merge_sort_values(data)
+    qk := _wkind(q)
+    if qk == "int" || qk == "float" { return _quantile_point(sorted_data, q) }
+    qd := _data(q)
+    if _wkind(qd) != "list" { return Err("warp.quantile expects q to be a scalar or array") }
+    let mut d = []
+    for value in qd {
+        p := _quantile_point(sorted_data, value)
+        if _wkind(p) == "result" { return p }
+        d = push(d, p)
+    }
+    array(d, [len(d)])
+}
+
+fn _quantile_point(sorted_data, q) {
+    if q < 0 || q > 1 { return Err("warp.quantile requires q between 0 and 1") }
+    n := len(sorted_data)
+    k := q * (n - 1)
+    lo := math.floor(k)
+    hi := math.ceil(k)
+    if lo == hi { sorted_data[lo] + 0.0 }
+    else { sorted_data[lo] * (hi - k) + sorted_data[hi] * (k - lo) }
 }
 
 // Axis-based reductions. Negative axes are accepted and reductions work for
@@ -886,6 +1470,133 @@ pub fn min_axis_opts(a, axis, keepdims) {
 
 pub fn max_axis_opts(a, axis, keepdims) {
     _reduce_axis_nd_opts(a, axis, fn(acc, x) { if x > acc { x } else { acc } }, -1e308, keepdims)
+}
+
+// Reductions with NumPy's initial= / where= options. `axis` may be null for a
+// flat reduction; `initial` seeds the accumulator; `where_mask` (array or flat
+// list, broadcast to the input shape) excludes elements where falsey.
+// NumPy semantics: sum/prod fall back to their identity (0/1) on an empty
+// selection unless initial is given; min/max have no identity, so they raise
+// whenever where= is given without initial= (or on an empty selection
+// without initial=) — warp mirrors both with an Err.
+pub fn sum_opts(a, axis, keepdims, initial, where_mask) {
+    _reduce_full(a, axis, keepdims, initial, where_mask, fn(acc, x) { acc + x }, 0, false, "sum")
+}
+
+pub fn prod_opts(a, axis, keepdims, initial, where_mask) {
+    _reduce_full(a, axis, keepdims, initial, where_mask, fn(acc, x) { acc * x }, 1, false, "prod")
+}
+
+pub fn min_opts(a, axis, keepdims, initial, where_mask) {
+    _reduce_full(a, axis, keepdims, initial, where_mask, fn(acc, x) { if x < acc { x } else { acc } }, null, true, "min")
+}
+
+pub fn max_opts(a, axis, keepdims, initial, where_mask) {
+    _reduce_full(a, axis, keepdims, initial, where_mask, fn(acc, x) { if x > acc { x } else { acc } }, null, true, "max")
+}
+
+fn _reduce_full(a, axis, keepdims, initial, where_mask, op, identity, needs_identity, name) {
+    if !_is_arr(a) { return Err("warp." + name + "_opts expects an array") }
+    mask := _where_mask_data(where_mask, a)
+    if _wkind(mask) == "result" { return mask }
+    keep := keepdims == true
+    seed := if initial == null || _wkind(initial) == "unit" { null } else { initial }
+    // NumPy requires initial= whenever where= is combined with an
+    // identity-less reduction (min/max), even if the selection is non-empty.
+    if needs_identity && mask != null && seed == null {
+        return Err("warp." + name + "_opts requires initial when a where mask is given")
+    }
+    axis_arg := if axis == null || _wkind(axis) == "unit" { null } else { axis }
+    result_dtype := if dtype(a) == "bool" { "int64" } else { dtype(a) }
+    if axis_arg == null {
+        result := _reduce_flat_masked(a, mask, op, identity, needs_identity, seed, name)
+        if _wkind(result) == "result" { return result }
+        if keep {
+            let mut ones = []
+            let mut i = 0
+            while i < len(a.shape) { ones = push(ones, 1)
+                i = i + 1 }
+            return _array_with_dtype([result], ones, result_dtype)
+        }
+        return result
+    }
+    normalized := _normalize_axis(axis_arg, len(a.shape), false)
+    if normalized == null { return Err("warp." + name + "_opts axis is out of range") }
+    if a.shape[normalized] == 0 { return Err("warp." + name + "_opts cannot reduce an empty axis") }
+    out_shape := _remove_axis(a.shape, normalized)
+    output_size := _prod(out_shape)
+    let mut d = []
+    let mut flat = 0
+    while flat < output_size {
+        outer_index := _unravel(flat, out_shape)
+        let mut acc = seed
+        let mut seen = seed != null
+        let mut k = 0
+        while k < a.shape[normalized] {
+            source_index := _insert_axis_index(outer_index, normalized, k)
+            if mask == null || mask[_flat_index(source_index, a.shape)] {
+                x := _logical_value_at(a, source_index)
+                if acc == null { acc = x }
+                else { acc = op(acc, x) }
+                seen = true
+            }
+            k = k + 1
+        }
+        if !seen {
+            if needs_identity { return Err("warp." + name + "_opts has no identity for an empty selection") }
+            acc = identity
+        }
+        d = push(d, acc)
+        flat = flat + 1
+    }
+    if keep {
+        kept_shape := _copy(a.shape)
+        kept_shape[normalized] = 1
+        _array_with_dtype(d, kept_shape, result_dtype)
+    } else if len(out_shape) == 0 { d[0] } else { _array_with_dtype(d, out_shape, result_dtype) }
+}
+
+fn _reduce_flat_masked(a, mask, op, identity, needs_identity, seed, name) {
+    data := _data(a)
+    let mut acc = seed
+    let mut seen = seed != null
+    let mut i = 0
+    while i < len(data) {
+        if mask == null || mask[i] {
+            if acc == null { acc = data[i] }
+            else { acc = op(acc, data[i]) }
+            seen = true
+        }
+        i = i + 1
+    }
+    if !seen {
+        if needs_identity { return Err("warp." + name + "_opts has no identity for an empty selection") }
+        acc = identity
+    }
+    acc
+}
+
+// Broadcast a where= mask to the target shape and return it as a flat list of
+// truthy values, or null when no mask was given.
+fn _where_mask_data(where_mask, a) {
+    if where_mask == null || _wkind(where_mask) == "unit" { return null }
+    if _is_arr(where_mask) {
+        shape := _broadcast_shape(where_mask.shape, a.shape)
+        if shape == null || shape != a.shape { return Err("warp where mask could not be broadcast to the input shape") }
+        let mut mask = []
+        n := _prod(a.shape)
+        let mut i = 0
+        while i < n {
+            mask = push(mask, _broadcast_value(where_mask, _unravel(i, a.shape), a.shape))
+            i = i + 1
+        }
+        return mask
+    }
+    if _wkind(where_mask) == "list" {
+        if len(where_mask) != size(a) { return Err("warp where mask length does not match the input size") }
+        return where_mask
+    }
+    Err("warp where mask expects an array or flat list")
 }
 
 // ──────────────────────────────────────────────
@@ -1010,7 +1721,18 @@ pub fn trace(a) {
 
 // ponytail: LU decomposition is O(n^3) pure Weft — fine for n<=50, use mlinfer for larger
 fn _lu(a) -> Result[any] {
-    // LU decomposition with partial pivoting: PA = LU
+    raw := _lu_raw(a)
+    ensure(!raw.singular, "singular matrix")?
+    Ok(raw)
+}
+
+// LU decomposition with partial pivoting: PA = LU. Singularity is detected as
+// an exactly zero pivot column (after partial pivoting such a column means a
+// zero row of U, hence det == 0); the result carries a "singular" flag instead
+// of failing so det can report 0 and slogdet can report {0, -inf} for exactly
+// singular matrices the way NumPy does. Near-singular matrices (tiny but
+// nonzero pivots) factor normally, matching NumPy's LAPACK behavior.
+fn _lu_raw(a) {
     n := a.shape[0]
     // copy matrix data into mutable flat array
     let mut m = []
@@ -1036,7 +1758,7 @@ fn _lu(a) -> Result[any] {
             }
             r = r + 1
         }
-        ensure(max_val > 1e-12, "singular matrix")?
+        if max_val == 0.0 { return {"m": m, "perm": perm, "n": n, "sign": sign, "singular": true} }
         // swap rows
         if max_row != col {
             let mut c = 0
@@ -1065,7 +1787,7 @@ fn _lu(a) -> Result[any] {
         }
         col = col + 1
     }
-    Ok({"m": m, "perm": perm, "n": n, "sign": sign})
+    {"m": m, "perm": perm, "n": n, "sign": sign, "singular": false}
 }
 
 fn _lu_solve(lu, b_data) {
@@ -1112,8 +1834,10 @@ pub fn det(a) -> Result[any] {
     d := _data(a)
     if n == 1 { return Ok(d[0]) }
     if n == 2 { return Ok(d[0] * d[3] - d[1] * d[2]) }
-    // General case via LU
-    lu := _lu(a)?
+    // General case via LU. Exactly singular matrices have determinant 0
+    // (NumPy behavior) rather than raising.
+    lu := _lu_raw(a)
+    if lu.singular { return Ok(0.0) }
     let mut det_val = lu.sign + 0.0
     let mut i = 0
     while i < n {
@@ -1202,6 +1926,123 @@ pub fn solve(a, b) -> Result[any] {
     Ok(array(result, [n, m]))
 }
 
+// np.linalg.slogdet: {"sign": ±1.0, "logdet": log|det A|} for square A, from
+// the LU factorization (sign of the pivot product times the swap parity, sum
+// of log|pivots|). An exactly singular matrix yields {"sign": 0.0,
+// "logdet": -inf} and a 0x0 matrix yields {"sign": 1.0, "logdet": 0.0},
+// matching NumPy.
+pub fn slogdet(a) -> Result[any] {
+    ensure(len(a.shape) == 2 && a.shape[0] == a.shape[1], "slogdet: matrix must be square 2D")?
+    n := a.shape[0]
+    if n == 0 { return Ok({"sign": 1.0, "logdet": 0.0}) }
+    d := _data(a)
+    if n == 1 {
+        v := d[0] + 0.0
+        if v == 0.0 { return Ok({"sign": 0.0, "logdet": -math.inf}) }
+        return Ok({"sign": if v > 0.0 { 1.0 } else { -1.0 }, "logdet": math.log(math.abs(v))})
+    }
+    lu := _lu_raw(a)
+    if lu.singular { return Ok({"sign": 0.0, "logdet": -math.inf}) }
+    let mut sign = lu.sign + 0.0
+    let mut logdet = 0.0
+    let mut i = 0
+    while i < n {
+        p := lu.m[i * n + i]
+        if p < 0.0 { sign = sign * -1.0 }
+        logdet = logdet + math.log(math.abs(p))
+        i = i + 1
+    }
+    Ok({"sign": sign, "logdet": logdet})
+}
+
+// Matrix rank via row echelon with partial pivoting: the number of pivot
+// magnitudes strictly greater than `tol`. Documented deviation from
+// np.linalg.matrix_rank, which is SVD-based: pivot magnitudes are not singular
+// values, so borderline cases can differ. The default tolerance mirrors
+// NumPy's scale, tol = max|a_ij| * max(m, n) * eps(float64), with max|a_ij|
+// standing in for the largest singular value; pass an explicit tol to control
+// the cutoff directly. Only 2-D inputs are supported (NumPy also accepts 1-D
+// and stacks over leading axes; warp does not), and a zero-size dimension is
+// an Err, matching NumPy's zero-size reduction error.
+pub fn matrix_rank(a, tol) -> Result[any] {
+    ensure(a != null && _is_arr(a) && len(a.shape) == 2, "matrix_rank: expects a 2D array")?
+    rows := a.shape[0]
+    cols := a.shape[1]
+    ensure(rows > 0 && cols > 0, "matrix_rank: zero-size array has no rank reduction")?
+    let mut threshold = 0.0
+    if tol == null || _wkind(tol) == "unit" {
+        let mut max_abs = 0.0
+        for x in _data(a) {
+            if math.abs(x) > max_abs { max_abs = math.abs(x) }
+        }
+        bigger := if rows > cols { rows } else { cols }
+        threshold = max_abs * bigger * 2.220446049250313e-16
+    } else {
+        ensure(_wkind(tol) == "int" || _wkind(tol) == "float", "matrix_rank: tol must be numeric")?
+        ensure(tol >= 0, "matrix_rank: tol must be non-negative")?
+        threshold = tol + 0.0
+    }
+    let mut m = []
+    for x in _data(a) { m = push(m, x + 0.0) }
+    let mut rank = 0
+    let mut row = 0
+    let mut col = 0
+    while col < cols && row < rows {
+        let mut max_val = -1.0
+        let mut max_row = row
+        let mut r = row
+        while r < rows {
+            v := math.abs(m[r * cols + col])
+            if v > max_val {
+                max_val = v
+                max_row = r
+            }
+            r = r + 1
+        }
+        if max_val > threshold {
+            if max_row != row {
+                let mut c = col
+                while c < cols {
+                    tmp := m[row * cols + c]
+                    m[row * cols + c] = m[max_row * cols + c]
+                    m[max_row * cols + c] = tmp
+                    c = c + 1
+                }
+            }
+            r = row + 1
+            while r < rows {
+                factor := m[r * cols + col] / m[row * cols + col]
+                m[r * cols + col] = 0.0
+                let mut c = col + 1
+                while c < cols {
+                    m[r * cols + c] = m[r * cols + c] - factor * m[row * cols + c]
+                    c = c + 1
+                }
+                r = r + 1
+            }
+            rank = rank + 1
+            row = row + 1
+        }
+        col = col + 1
+    }
+    Ok(rank)
+}
+
+// Condition number, Frobenius variant: ||A||_F * ||A^-1||_F, which equals
+// np.linalg.cond(a, "fro"). Documented deviation: this is NOT NumPy's default
+// 2-norm condition number (warp has no SVD), and only square inputs are
+// supported. An exactly singular matrix yields +inf — NumPy's cond with
+// p="fro" raises there, but its 2-norm default returns inf, which warp
+// mirrors. A 0x0 matrix is an Err, as in NumPy ("cond is not defined on
+// empty arrays").
+pub fn cond(a) -> Result[any] {
+    ensure(len(a.shape) == 2 && a.shape[0] == a.shape[1], "cond: matrix must be square 2D")?
+    ensure(a.shape[0] > 0, "cond: cond is not defined on empty arrays")?
+    ai := inv(a)
+    if !ai.ok { return Ok(math.inf) }
+    Ok(norm(a) * norm(ai.value))
+}
+
 pub fn outer(a, b) {
     ad := _data(a)
     bd := _data(b)
@@ -1221,6 +2062,157 @@ pub fn cross(a, b) {
         ad[2]*bd[0] - ad[0]*bd[2],
         ad[0]*bd[1] - ad[1]*bd[0],
     ], [3])
+}
+
+// ──────────────────────────────────────────────
+// Polynomial helpers
+// ──────────────────────────────────────────────
+// Coefficients are highest-degree first, matching the np.poly* family.
+// polyfit solves the least-squares normal equations with the LU solver, so
+// well-conditioned low-degree fits agree with NumPy's SVD-based lstsq; badly
+// conditioned high-degree fits are out of scope. Unlike NumPy (which warns
+// and continues), an underdetermined fit (fewer points than deg + 1) or a
+// singular normal matrix is an explicit Err.
+
+pub fn polyfit(x, y, deg) {
+    xd := _data(x)
+    yd := _data(y)
+    if _wkind(xd) != "list" || _wkind(yd) != "list" { return Err("warp.polyfit expects 1-D x and y data") }
+    if _wkind(deg) != "int" || deg < 0 { return Err("warp.polyfit expects a non-negative integer degree") }
+    if len(xd) != len(yd) { return Err("warp.polyfit expects x and y to have the same length") }
+    n := len(xd)
+    if n < deg + 1 { return Err("warp.polyfit needs at least deg + 1 points") }
+    order := deg + 1
+    // Normal equations, highest degree first:
+    //   M[i][k] = sum_j x_j^(2*deg - i - k),  r[i] = sum_j y_j * x_j^(deg - i)
+    let mut m = []
+    let mut r = []
+    let mut i = 0
+    while i < order {
+        let mut k = 0
+        while k < order {
+            let mut s = 0.0
+            let mut j = 0
+            while j < n {
+                s = s + _ipow(xd[j] + 0.0, 2 * deg - i - k)
+                j = j + 1
+            }
+            m = push(m, s)
+            k = k + 1
+        }
+        let mut rs = 0.0
+        let mut j = 0
+        while j < n {
+            rs = rs + (yd[j] + 0.0) * _ipow(xd[j] + 0.0, deg - i)
+            j = j + 1
+        }
+        r = push(r, rs)
+        i = i + 1
+    }
+    result := solve(array(m, [order, order]), array(r, [order]))
+    if _wkind(result) == "result" {
+        if !result.ok { return Err("warp.polyfit normal equations are singular") }
+        return result.value
+    }
+    result
+}
+
+fn _ipow(base, p) {
+    let mut acc = 1.0
+    let mut i = 0
+    while i < p { acc = acc * base
+        i = i + 1 }
+    acc
+}
+
+// np.polyval: Horner evaluation. x may be a scalar (→ scalar float) or an
+// array/list (→ float64 array of the same shape). Empty coefficients give 0.
+pub fn polyval(coeffs, x) {
+    cs := _data(coeffs)
+    if _wkind(cs) != "list" { return Err("warp.polyval expects a 1-D coefficient array or list") }
+    xk := _wkind(x)
+    if xk == "int" || xk == "float" {
+        let mut acc = 0.0
+        for c in cs { acc = acc * x + c }
+        return acc
+    }
+    xd := _data(x)
+    if _wkind(xd) != "list" { return Err("warp.polyval expects x to be a scalar or array") }
+    let mut d = []
+    for v in xd {
+        let mut acc = 0.0
+        for c in cs { acc = acc * v + c }
+        d = push(d, acc)
+    }
+    _array_with_dtype(d, if _is_arr(x) { x.shape } else { [len(d)] }, "float64")
+}
+
+// np.polyder: derivative coefficients. A constant (or empty) polynomial has an
+// empty derivative, matching NumPy 2.x.
+pub fn polyder(coeffs) {
+    cs := _data(coeffs)
+    if _wkind(cs) != "list" { return Err("warp.polyder expects a 1-D coefficient array or list") }
+    n := len(cs)
+    if n <= 1 { return array([], [0]) }
+    let mut d = []
+    let mut i = 0
+    while i < n - 1 {
+        d = push(d, cs[i] * (n - 1 - i) + 0.0)
+        i = i + 1
+    }
+    array(d, [n - 1])
+}
+
+// np.polyint: antiderivative coefficients with integration constant 0
+// (highest-degree first, trailing zero constant term).
+pub fn polyint(coeffs) {
+    cs := _data(coeffs)
+    if _wkind(cs) != "list" { return Err("warp.polyint expects a 1-D coefficient array or list") }
+    n := len(cs)
+    let mut d = []
+    let mut i = 0
+    while i < n {
+        d = push(d, cs[i] / (n - i + 0.0))
+        i = i + 1
+    }
+    d = push(d, 0.0)
+    array(d, [n + 1])
+}
+
+// Polynomial roots via closed forms for degree <= 2 (leading zero coefficients
+// are trimmed, as in np.roots). Returns {"re": array, "im": array} sorted by
+// descending real part. A constant polynomial has no roots (empty arrays).
+// Degree > 2 is an explicit Err: there is no iterative eigensolver here, and a
+// bad one is worse than none.
+pub fn roots(coeffs) {
+    cs := _data(coeffs)
+    if _wkind(cs) != "list" { return Err("warp.roots expects a 1-D coefficient array or list") }
+    let mut start = 0
+    while start < len(cs) && cs[start] == 0 { start = start + 1 }
+    let mut c = []
+    let mut i = start
+    while i < len(cs) { c = push(c, cs[i])
+        i = i + 1 }
+    deg := len(c) - 1
+    if deg <= 0 { return {"re": array([], [0]), "im": array([], [0])} }
+    if deg > 2 { return Err("warp.roots supports degree <= 2 only") }
+    if deg == 1 {
+        return {"re": array([-c[1] / (c[0] + 0.0)], [1]), "im": array([0.0], [1])}
+    }
+    a := c[0] + 0.0
+    b := c[1] + 0.0
+    cc := c[2] + 0.0
+    disc := b * b - 4.0 * a * cc
+    if disc >= 0.0 {
+        s := math.sqrt(disc)
+        r1 := (-b + s) / (2.0 * a)
+        r2 := (-b - s) / (2.0 * a)
+        if r1 >= r2 { return {"re": array([r1, r2], [2]), "im": array([0.0, 0.0], [2])} }
+        return {"re": array([r2, r1], [2]), "im": array([0.0, 0.0], [2])}
+    }
+    re := -b / (2.0 * a)
+    im := math.sqrt(-disc) / math.abs(2.0 * a)
+    {"re": array([re, re], [2]), "im": array([im, -im], [2])}
 }
 
 // ──────────────────────────────────────────────
@@ -1295,6 +2287,242 @@ pub fn fft_freq(n, d) {
         j = j + 1
     }
     array(d_out, [n])
+}
+
+// Real-input 1D DFT (np.fft.rfft): returns the first n//2 + 1 complex bins as
+// {"re": array, "im": array}. Input must be a real warp array or flat list.
+pub fn rfft(a) {
+    if !_is_arr(a) && _wkind(a) != "list" {
+        return Err("warp.rfft expects a real array or list")
+    }
+    data := if _is_arr(a) { _data(a) } else { a }
+    n := len(data)
+    if n == 0 { return Err("warp.rfft expects a non-empty input") }
+    full := fft_1d(data)
+    bins := n / 2 + 1
+    {
+        "re": array(_list_range(_data(full.re), 0, bins), [bins]),
+        "im": array(_list_range(_data(full.im), 0, bins), [bins]),
+    }
+}
+
+// Inverse real DFT (np.fft.irfft). `parts` is {"re", "im"} (arrays or lists)
+// holding the n//2 + 1 non-negative frequency bins; `n` is the output length
+// (default 2 * (bins - 1), the even-length convention NumPy uses). Returns a
+// real warp array of length n.
+pub fn irfft(parts, n_arg) {
+    if parts == null || _wkind(parts) != "map" || !contains(keys(parts), "re") {
+        return Err("warp.irfft expects a {re, im} map")
+    }
+    rd := if _is_arr(parts.re) { _data(parts.re) } else if _wkind(parts.re) == "list" { parts.re } else {
+        return Err("warp.irfft re must be an array or list")
+    }
+    id := if contains(keys(parts), "im") && parts.im != null {
+        if _is_arr(parts.im) { _data(parts.im) } else if _wkind(parts.im) == "list" { parts.im } else {
+            return Err("warp.irfft im must be an array or list")
+        }
+    } else {
+        let mut zeros = []
+        let mut i = 0
+        while i < len(rd) { zeros = push(zeros, 0.0)
+            i = i + 1 }
+        zeros
+    }
+    if len(rd) != len(id) { return Err("warp.irfft re/im length mismatch") }
+    m := len(rd)
+    if m == 0 { return Err("warp.irfft expects a non-empty spectrum") }
+    n := if n_arg == null || _wkind(n_arg) == "unit" { 2 * (m - 1) } else { n_arg }
+    if _wkind(n) != "int" || n < 1 { return Err("warp.irfft requires a positive integer output length") }
+    if m != n / 2 + 1 { return Err("warp.irfft input length must be n//2 + 1") }
+    // Rebuild the full length-n spectrum by conjugate symmetry, then invert.
+    let mut full_re = _copy(rd)
+    let mut full_im = _copy(id)
+    let mut k = m
+    while k < n {
+        full_re = push(full_re, rd[n - k])
+        full_im = push(full_im, 0.0 - id[n - k])
+        k = k + 1
+    }
+    out := if _is_power_of_two(n) {
+        _fft_radix2(full_re, full_im, true)
+    } else {
+        _fft_naive(full_re, full_im, true)
+    }
+    array(out.re, [n])
+}
+
+// Real-DFT frequency bins (np.fft.rfftfreq): k / (n * d) for k = 0..n//2.
+pub fn rfft_freq(n, d) {
+    if _wkind(n) != "int" || n < 1 { return Err("warp.rfft_freq requires a positive integer n") }
+    spacing := if d == null { 1.0 } else { d + 0.0 }
+    if spacing == 0.0 { return Err("warp.rfft_freq sample spacing d cannot be zero") }
+    bins := n / 2 + 1
+    val := 1.0 / (n * spacing)
+    let mut d_out = []
+    let mut i = 0
+    while i < bins {
+        d_out = push(d_out, i * val)
+        i = i + 1
+    }
+    array(d_out, [bins])
+}
+
+// fftshift / ifftshift (np.fft) reorder the flat element sequence, swapping
+// the half-ranges; the shape is preserved. For even lengths both are the same
+// swap; for odd lengths they are exact inverses.
+pub fn fftshift(a) { _fft_shift(a, true) }
+
+pub fn ifftshift(a) { _fft_shift(a, false) }
+
+fn _fft_shift(a, forward) {
+    if !_is_arr(a) && _wkind(a) != "list" {
+        return Err("warp.fftshift/ifftshift expects an array or list")
+    }
+    data := if _is_arr(a) { _data(a) } else { a }
+    n := len(data)
+    if n == 0 {
+        if _is_arr(a) { return _array_like([], a.shape, a) }
+        return array([], [0])
+    }
+    start := if forward { (n + 1) / 2 } else { n / 2 }
+    let mut d = []
+    let mut i = 0
+    while i < n {
+        d = push(d, data[(i + start) % n])
+        i = i + 1
+    }
+    if _is_arr(a) { return _array_like(d, a.shape, a) }
+    array(d, [n])
+}
+
+// ── Multi-dimensional FFT ──
+// fft2/ifft2 transform the last two axes (np.fft.fft2/ifft2 defaults); fftn/
+// ifftn transform every axis, or exactly the listed `axes` (negative indices
+// wrap; repeated, non-integer, or out-of-range axes are an Err, matching
+// NumPy's exceptions). The input is a real warp array or a complex
+// {"re": array, "im": array} map of equal-shaped arrays; the result is
+// {"re", "im"} arrays of the same shape. Each axis is transformed by the 1-D
+// engine per slice (radix-2 Cooley–Tukey for power-of-2 lengths, naive DFT
+// otherwise); the inverse applies its 1/n scale per axis, giving the NumPy
+// 1/prod(n_axes) scaling overall.
+
+pub fn fft2(a) {
+    parts := _fftn_parts(a, "fft2")
+    if is_err(parts) { return parts }
+    if len(parts.shape) < 2 { return Err("warp.fft2 expects at least 2-D input") }
+    _fftn_core(parts.re, parts.im, parts.shape, [len(parts.shape) - 2, len(parts.shape) - 1], false)
+}
+
+pub fn ifft2(a) {
+    parts := _fftn_parts(a, "ifft2")
+    if is_err(parts) { return parts }
+    if len(parts.shape) < 2 { return Err("warp.ifft2 expects at least 2-D input") }
+    _fftn_core(parts.re, parts.im, parts.shape, [len(parts.shape) - 2, len(parts.shape) - 1], true)
+}
+
+pub fn fftn(a, axes) {
+    parts := _fftn_parts(a, "fftn")
+    if is_err(parts) { return parts }
+    axis_list := _fftn_axes(axes, len(parts.shape), "fftn")
+    if is_err(axis_list) { return axis_list }
+    _fftn_core(parts.re, parts.im, parts.shape, axis_list, false)
+}
+
+pub fn ifftn(a, axes) {
+    parts := _fftn_parts(a, "ifftn")
+    if is_err(parts) { return parts }
+    axis_list := _fftn_axes(axes, len(parts.shape), "ifftn")
+    if is_err(axis_list) { return axis_list }
+    _fftn_core(parts.re, parts.im, parts.shape, axis_list, true)
+}
+
+// Normalize N-D real or complex input into flat C-order re/im float lists plus
+// the shape. The lists are copies: the axis transforms mutate them in place,
+// and _data may hand back an array's shared backing list.
+fn _fftn_parts(a, name) {
+    if a != null && _wkind(a) == "map" && !contains(keys(a), "_warp") && contains(keys(a), "re") {
+        if !_is_arr(a.re) { return Err("warp." + name + " complex re must be an array") }
+        shape := a.re.shape
+        let mut im = []
+        if contains(keys(a), "im") && a.im != null {
+            if !_is_arr(a.im) { return Err("warp." + name + " complex im must be an array") }
+            if a.im.shape != shape { return Err("warp." + name + " re/im shape mismatch") }
+            im = _copy(_data(a.im))
+        } else {
+            let mut i = 0
+            while i < size(a.re) { im = push(im, 0.0)
+                i = i + 1 }
+        }
+        return {"re": _copy(_data(a.re)), "im": im, "shape": shape}
+    }
+    if !_is_arr(a) { return Err("warp." + name + " expects an array or {re, im} map of arrays") }
+    let mut im = []
+    let mut i = 0
+    while i < size(a) { im = push(im, 0.0)
+        i = i + 1 }
+    {"re": _copy(_data(a)), "im": im, "shape": a.shape}
+}
+
+// axes null → every axis in order; otherwise a list of distinct valid axes.
+fn _fftn_axes(axes, rank, name) {
+    if axes == null || _wkind(axes) == "unit" {
+        let mut all = []
+        let mut i = 0
+        while i < rank { all = push(all, i)
+            i = i + 1 }
+        return all
+    }
+    if _wkind(axes) != "list" { return Err("warp." + name + " axes must be a list or null") }
+    let mut normalized = []
+    for axis in axes {
+        ax := _normalize_axis(axis, rank, false)
+        if ax == null { return Err("warp." + name + " axis is out of range") }
+        if contains(normalized, ax) { return Err("warp." + name + " axes must not repeat") }
+        normalized = push(normalized, ax)
+    }
+    normalized
+}
+
+fn _fftn_core(re, im, shape, axes, inverse) {
+    for axis in axes {
+        _fft_axis_slices(re, im, shape, axis, inverse)
+    }
+    {"re": array(re, shape), "im": array(im, shape)}
+}
+
+// Transform every 1-D slice along `axis` in place (re/im are flat C-order).
+fn _fft_axis_slices(re, im, shape, axis, inverse) {
+    n := shape[axis]
+    if n == 0 { return null }
+    outer_shape := _remove_axis(shape, axis)
+    outer_size := _prod(outer_shape)
+    let mut flat = 0
+    while flat < outer_size {
+        outer_index := _unravel(flat, outer_shape)
+        let mut sre = []
+        let mut sim = []
+        let mut k = 0
+        while k < n {
+            f := _flat_index(_insert_axis_index(outer_index, axis, k), shape)
+            sre = push(sre, re[f])
+            sim = push(sim, im[f])
+            k = k + 1
+        }
+        out := if _is_power_of_two(n) {
+            _fft_radix2(sre, sim, inverse)
+        } else {
+            _fft_naive(sre, sim, inverse)
+        }
+        k = 0
+        while k < n {
+            f := _flat_index(_insert_axis_index(outer_index, axis, k), shape)
+            re[f] = out.re[k]
+            im[f] = out.im[k]
+            k = k + 1
+        }
+        flat = flat + 1
+    }
+    null
 }
 
 // 1D discrete difference of order n (default 1), like np.diff.
@@ -1630,6 +2858,27 @@ pub fn take(a, indices, axis) {
     array(d, out_shape)
 }
 
+// put replaces elements at flat (C-order) indices, matching np.put: negative
+// indices wrap, values cycle when shorter than indices, duplicate targets are
+// written in order so the last write wins, and an out-of-range index is an
+// error. Warp arrays are immutable, so put returns a new array with the same
+// shape instead of mutating in place.
+pub fn put(a, indices, values) {
+    if !_is_arr(a) || _wkind(indices) != "list" { return Err("warp.put expects an array and index list") }
+    vals := if _is_arr(values) { _data(values) } else if _wkind(values) == "list" { values } else { [values] }
+    if len(vals) == 0 && len(indices) > 0 { return Err("warp.put requires at least one value") }
+    n := size(a)
+    let mut d = _data(a)
+    let mut i = 0
+    while i < len(indices) {
+        idx := _normalize_index(indices[i], n)
+        if idx == null { return Err("warp.put index is out of range") }
+        d[idx] = vals[i % len(vals)]
+        i = i + 1
+    }
+    _array_with_dtype(d, a.shape, dtype(a))
+}
+
 pub fn vstack(arrays) {
     if len(arrays) == 0 { return Err("warp.vstack requires at least one array") }
     let mut all_data = []
@@ -1796,6 +3045,175 @@ pub fn unique(a) {
         i = i + 1
     }
     array(d, [len(d)])
+}
+
+// unique_opts adds NumPy's return_index / return_counts. The result is a map
+// with "values" always present, plus "index" (flat index of each value's first
+// occurrence) and "counts" when the matching flag is true.
+pub fn unique_opts(a, return_index, return_counts) {
+    data := _data(a)
+    want_index := return_index == true
+    want_counts := return_counts == true
+    if len(data) == 0 {
+        result := {"values": array([], [0])}
+        if want_index { result["index"] = array([], [0]) }
+        if want_counts { result["counts"] = array([], [0]) }
+        return result
+    }
+    let mut order = []
+    let mut i = 0
+    while i < len(data) { order = push(order, i)
+        i = i + 1 }
+    sorted_order := _merge_sort_indices(order, data)
+    let mut values = [data[sorted_order[0]]]
+    let mut first_index = [sorted_order[0]]
+    let mut counts = [1]
+    i = 1
+    while i < len(data) {
+        v := data[sorted_order[i]]
+        if v == values[len(values) - 1] {
+            counts[len(counts) - 1] = counts[len(counts) - 1] + 1
+        } else {
+            values = push(values, v)
+            first_index = push(first_index, sorted_order[i])
+            counts = push(counts, 1)
+        }
+        i = i + 1
+    }
+    result := {"values": array(values, [len(values)])}
+    if want_index { result["index"] = array(first_index, [len(first_index)]) }
+    if want_counts { result["counts"] = array(counts, [len(counts)]) }
+    result
+}
+
+// sort_axis / argsort_axis sort each 1-D slice along `axis` with a stable
+// merge sort (NumPy kind="stable"), preserving the input shape. argsort_axis
+// yields int64 indices into the sorted axis. Negative axes are accepted.
+pub fn sort_axis(a, axis) { _sort_along_axis(a, axis, false) }
+
+pub fn argsort_axis(a, axis) { _sort_along_axis(a, axis, true) }
+
+fn _sort_along_axis(a, axis, is_argsort) {
+    if !_is_arr(a) { return Err("warp.sort_axis/argsort_axis expects an array") }
+    normalized := _normalize_axis(axis, len(a.shape), false)
+    if normalized == null { return Err("warp.sort_axis/argsort_axis axis is out of range") }
+    n := a.shape[normalized]
+    let mut d = _data(a)
+    outer_shape := _remove_axis(a.shape, normalized)
+    outer_size := _prod(outer_shape)
+    let mut flat = 0
+    while flat < outer_size {
+        outer_index := _unravel(flat, outer_shape)
+        let mut slice_values = []
+        let mut k = 0
+        while k < n {
+            slice_values = push(slice_values, _logical_value_at(a, _insert_axis_index(outer_index, normalized, k)))
+            k = k + 1
+        }
+        if is_argsort {
+            let mut idx = []
+            k = 0
+            while k < n { idx = push(idx, k)
+                k = k + 1 }
+            sorted_idx := _merge_sort_indices(idx, slice_values)
+            k = 0
+            while k < n {
+                d[_flat_index(_insert_axis_index(outer_index, normalized, k), a.shape)] = sorted_idx[k]
+                k = k + 1
+            }
+        } else {
+            sorted_values := _merge_sort_values(slice_values)
+            k = 0
+            while k < n {
+                d[_flat_index(_insert_axis_index(outer_index, normalized, k), a.shape)] = sorted_values[k]
+                k = k + 1
+            }
+        }
+        flat = flat + 1
+    }
+    _array_with_dtype(d, a.shape, if is_argsort { "int64" } else { dtype(a) })
+}
+
+// ──────────────────────────────────────────────
+// Searching / binning
+// ──────────────────────────────────────────────
+
+// np.searchsorted over a 1-D array sorted ascending, with side "left" (first
+// index with a[i] >= v) or "right" (first with a[i] > v); null side is
+// "left". v may be a scalar (→ int index) or an array/list (→ int64 array of
+// the same shape). Like NumPy, the input is assumed sorted: out-of-order data
+// is not validated and produces unspecified results.
+pub fn searchsorted(a, v, side) {
+    data := _data(a)
+    if _wkind(data) != "list" { return Err("warp.searchsorted expects a 1-D array or list") }
+    s := if side == null { "left" } else { side }
+    if s != "left" && s != "right" { return Err("warp.searchsorted side must be \"left\" or \"right\"") }
+    vk := _wkind(v)
+    if vk == "int" || vk == "float" { return _searchsorted_one(data, v, s) }
+    vd := _data(v)
+    if _wkind(vd) != "list" { return Err("warp.searchsorted expects v to be a scalar or array") }
+    let mut d = []
+    for value in vd { d = push(d, _searchsorted_one(data, value, s)) }
+    _array_with_dtype(d, if _is_arr(v) { v.shape } else { [len(d)] }, "int64")
+}
+
+fn _searchsorted_one(data, v, side) {
+    let mut lo = 0
+    let mut hi = len(data)
+    while lo < hi {
+        mid := (lo + hi) / 2
+        if data[mid] < v || (side == "right" && data[mid] == v) { lo = mid + 1 } else { hi = mid }
+    }
+    lo
+}
+
+// np.digitize: bin indices for x against monotonic `bins`. With right false
+// (default) bins[i-1] <= x < bins[i]; with right true bins[i-1] < x <= bins[i].
+// Equal-valued edges are allowed; empty bins map every x to 0 (NumPy); bins
+// that are neither non-decreasing nor non-increasing are an Err (NumPy raises
+// ValueError). x may be a scalar (→ int) or an array/list (→ int64 array of
+// the same shape).
+pub fn digitize(x, bins, right) {
+    bd := _data(bins)
+    if _wkind(bd) != "list" { return Err("warp.digitize expects a 1-D bins array or list") }
+    let mut increasing = true
+    if !_non_decreasing(bd) {
+        if _non_increasing(bd) { increasing = false }
+        else { return Err("warp.digitize expects monotonic bins") }
+    }
+    // NumPy maps digitize onto searchsorted with the opposite side, reversing
+    // and mirroring the index for decreasing bins.
+    side := if right == true { "left" } else { "right" }
+    xk := _wkind(x)
+    if xk == "int" || xk == "float" { return _digitize_one(bd, x, side, increasing) }
+    xd := _data(x)
+    if _wkind(xd) != "list" { return Err("warp.digitize expects x to be a scalar or array") }
+    let mut d = []
+    for v in xd { d = push(d, _digitize_one(bd, v, side, increasing)) }
+    _array_with_dtype(d, if _is_arr(x) { x.shape } else { [len(d)] }, "int64")
+}
+
+fn _digitize_one(bd, v, side, increasing) {
+    if increasing { return _searchsorted_one(bd, v, side) }
+    len(bd) - _searchsorted_one(_reverse_values(bd), v, side)
+}
+
+fn _non_decreasing(data) {
+    let mut i = 1
+    while i < len(data) {
+        if data[i] < data[i - 1] { return false }
+        i = i + 1
+    }
+    true
+}
+
+fn _non_increasing(data) {
+    let mut i = 1
+    while i < len(data) {
+        if data[i] > data[i - 1] { return false }
+        i = i + 1
+    }
+    true
 }
 
 // ──────────────────────────────────────────────
@@ -2034,6 +3452,9 @@ fn _make_array(data, shape, dtype_name) {
 }
 
 fn _tensor_packable(dtype_name) {
+    // float16 is deliberately excluded: the native tensor ABI dtype codes are
+    // frozen at 1-11, so float16 arrays stay on the portable list path and
+    // never reach run_tensor.
     dtype_name == "bool" || dtype_name == "int8" || dtype_name == "int16" || dtype_name == "int32" || dtype_name == "int64" || dtype_name == "uint8" || dtype_name == "uint16" || dtype_name == "uint32" || dtype_name == "uint64" || dtype_name == "float32" || dtype_name == "float64"
 }
 
@@ -2043,12 +3464,12 @@ fn _has_tid(a) {
 
 fn _data(a) {
     if !_is_arr(a) { return a }
-    if a.data != null { return _flat_values(a) }
     if _has_tid(a) {
         values := tensor.to_list(a._tid)?
         a.data = values
         return values
     }
+    if a.data != null { return _flat_values(a) }
     _flat_values(a)
 }
 
@@ -2065,7 +3486,7 @@ pub fn itemsize(a) {
 fn _itemsize(dtype_name) {
     if dtype_name == "bool" { 1 }
     else if dtype_name == "int8" || dtype_name == "uint8" { 1 }
-    else if dtype_name == "int16" || dtype_name == "uint16" { 2 }
+    else if dtype_name == "int16" || dtype_name == "uint16" || dtype_name == "float16" { 2 }
     else if dtype_name == "int32" || dtype_name == "uint32" || dtype_name == "float32" { 4 }
     else if dtype_name == "int64" || dtype_name == "uint64" || dtype_name == "float64" { 8 }
     else { 8 }
@@ -2183,6 +3604,74 @@ fn _slice_bounds(length, start, stop, step) {
         count := if first <= last { 0 } else { 1 + (first - 1 - last) / (-actual_step) }
         {"start": first, "stop": last, "step": actual_step, "count": count}
     }
+}
+
+fn _is_ellipsis_selector(selector) {
+    _wkind(selector) == "map" && contains(keys(selector), "_ellipsis") && selector._ellipsis == true
+}
+
+fn _is_newaxis_selector(selector) {
+    _wkind(selector) == "map" && contains(keys(selector), "_newaxis") && selector._newaxis == true
+}
+
+// Expand an ellipsis selector into the full-axis selections it stands in
+// for. Returns the expanded selector list, or an error string when the
+// selectors cannot index an array of the given rank (the NumPy IndexError
+// cases: more than one ellipsis, or more axis-consuming selectors than
+// axes — newaxis consumes none).
+fn _expand_selectors(selectors, rank, context) {
+    let mut ellipses = 0
+    let mut consumed = 0
+    for selector in selectors {
+        if _is_ellipsis_selector(selector) { ellipses = ellipses + 1 }
+        else if !_is_newaxis_selector(selector) { consumed = consumed + 1 }
+    }
+    if ellipses > 1 { return context + " allows at most one ellipsis selector" }
+    if consumed > rank { return context + " has too many selectors" }
+    if ellipses == 0 { return selectors }
+    fill := rank - consumed
+    let mut expanded = []
+    for selector in selectors {
+        if _is_ellipsis_selector(selector) {
+            let mut i = 0
+            while i < fill {
+                expanded = push(expanded, null)
+                i = i + 1
+            }
+        } else {
+            expanded = push(expanded, selector)
+        }
+    }
+    expanded
+}
+
+// Realize newaxis selectors as size-1 dimensions: the array is reshaped to
+// insert each new axis and the selector at that position becomes a full-axis
+// selection. The result is {"array": reshaped, "selectors": aligned}. Size-1
+// axes never change the C-order element sequence, so flat positions computed
+// against the expanded shape address the original storage unchanged.
+fn _prepare_newaxis(a, selectors) {
+    let mut source = a
+    let mut final = []
+    let mut axis = 0
+    for selector in selectors {
+        if _is_newaxis_selector(selector) {
+            let mut new_shape = []
+            let mut i = 0
+            while i < len(source.shape) {
+                if i == axis { new_shape = push(new_shape, 1) }
+                new_shape = push(new_shape, source.shape[i])
+                i = i + 1
+            }
+            if axis == len(source.shape) { new_shape = push(new_shape, 1) }
+            source = reshape(source, new_shape)
+            final = push(final, null)
+        } else {
+            final = push(final, selector)
+        }
+        axis = axis + 1
+    }
+    {"array": source, "selectors": final}
 }
 
 fn _index_spec(selector, size) {
@@ -2540,7 +4029,50 @@ fn _mean_result(result, source, count) {
 fn _scalar_dtype(value) { _infer_dtype([value]) }
 
 fn _float_result_dtype(value) {
-    if _is_arr(value) && dtype(value) == "float32" { "float32" } else { "float64" }
+    if _is_arr(value) && (dtype(value) == "float32" || dtype(value) == "float16") { dtype(value) } else { "float64" }
+}
+
+// _round_float16 rounds a finite float64 to the nearest IEEE 754 binary16
+// value (ties to even), matching np.float16(x): magnitudes at or above the
+// 65520 midpoint overflow to ±inf, subnormal halves use the 2^-24 quantum,
+// and anything below 2^-25 flushes to zero. NaN and ±inf pass through.
+fn _round_float16(x) {
+    if x != x || math.isinf(x) { return x }
+    neg := x < 0
+    ax := if neg { -x } else { x }
+    if ax == 0.0 { return x }
+    let mut result = 0.0
+    if ax >= 65520.0 {
+        result = math.inf
+    } else if ax >= 0.00006103515625 {
+        // Normal half range [2^-14, 2^16): find e = floor(log2(ax)) exactly
+        // by scaling with powers of two, then round to 10 mantissa bits.
+        let mut p = 1.0
+        if ax >= 1.0 {
+            while p * 2.0 <= ax { p = p * 2.0 }
+        } else {
+            while p > ax { p = p / 2.0 }
+        }
+        step := p / 1024.0
+        result = _round_half_even(ax / step) * step
+        if result >= 65536.0 { result = math.inf }
+    } else {
+        // Subnormal half quantum 2^-24.
+        step := 0.000000059604644775390625
+        result = _round_half_even(ax / step) * step
+    }
+    if neg { -result } else { result }
+}
+
+// _round_half_even rounds a non-negative value to the nearest integer,
+// breaking exact ties toward the even neighbor. The quotient inputs here are
+// exact (power-of-two scaling), so the tie test is exact.
+fn _round_half_even(v) {
+    f := math.floor(v)
+    diff := v - f
+    if diff > 0.5 { return f + 1.0 }
+    if diff < 0.5 { return f }
+    if f / 2.0 == math.floor(f / 2.0) { f } else { f + 1.0 }
 }
 
 fn _promote_dtype(left, right) {
@@ -2551,6 +4083,10 @@ fn _promote_dtype(left, right) {
     // Scalar operands keep weak scalar semantics (float64/int64/bool).
     if l == "float64" || r == "float64" { return "float64" }
     if l == "float32" || r == "float32" { return "float32" }
+    // A float16 array combined with an integer or boolean scalar keeps
+    // float16, matching NumPy 2.x weak scalar promotion. A float64 scalar
+    // still promotes to float64 (same deviation as float32 above).
+    if l == "float16" || r == "float16" { return "float16" }
     // uint64 cannot be represented exactly by a signed runtime integer when
     // combined with a signed integer, so promote that pair to float64.
     if (l == "uint64" && _signed_integer_dtype(r)) ||
@@ -2565,16 +4101,24 @@ fn _promote_dtype(left, right) {
 // _promote_dtype_pair mirrors np.promote_types (NumPy 2.x) for two array
 // dtypes over the supported set. Keep in sync with promoteDType in
 // internal/tensor/ops.go; the conformance dtype fixture locks the full
-// 11x11 matrix against the NumPy oracle.
+// 12x12 matrix against the NumPy oracle.
 fn _promote_dtype_pair(l, r) {
     if l == r { return l }
-    // float64 dominates everything; float32 survives only against bool and
-    // integers of 16 bits or fewer.
+    // float64 dominates everything; float32 survives only against bool,
+    // float16, and integers of 16 bits or fewer.
     if l == "float64" || r == "float64" { return "float64" }
     if l == "float32" || r == "float32" {
         other := if l == "float32" { r } else { l }
         if other == "int32" || other == "int64" || other == "uint32" || other == "uint64" { return "float64" }
         return "float32"
+    }
+    // float16 survives only against bool and 8-bit integers; 16-bit integers
+    // promote to float32 and wider integers to float64.
+    if l == "float16" || r == "float16" {
+        other := if l == "float16" { r } else { l }
+        if other == "int16" || other == "uint16" { return "float32" }
+        if other == "int32" || other == "int64" || other == "uint32" || other == "uint64" { return "float64" }
+        return "float16"
     }
     // bool mixed with a non-float dtype adopts the other operand's dtype.
     if l == "bool" { return r }
@@ -2621,13 +4165,14 @@ fn _dtype_rank(dtype_name) {
     else if dtype_name == "int32" { 7 }
     else if dtype_name == "uint64" { 8 }
     else if dtype_name == "int64" { 9 }
-    else if dtype_name == "float32" { 10 }
-    else if dtype_name == "float64" { 11 }
+    else if dtype_name == "float16" { 10 }
+    else if dtype_name == "float32" { 11 }
+    else if dtype_name == "float64" { 12 }
     else { 0 }
 }
 
 fn _valid_dtype(dtype_name) {
-    dtype_name == "bool" || dtype_name == "int8" || dtype_name == "int16" || dtype_name == "int32" || dtype_name == "int64" || dtype_name == "uint8" || dtype_name == "uint16" || dtype_name == "uint32" || dtype_name == "uint64" || dtype_name == "float32" || dtype_name == "float64" || dtype_name == "object"
+    dtype_name == "bool" || dtype_name == "int8" || dtype_name == "int16" || dtype_name == "int32" || dtype_name == "int64" || dtype_name == "uint8" || dtype_name == "uint16" || dtype_name == "uint32" || dtype_name == "uint64" || dtype_name == "float16" || dtype_name == "float32" || dtype_name == "float64" || dtype_name == "object"
 }
 
 fn _infer_dtype(data) {
@@ -2657,12 +4202,17 @@ fn _cast_value(value, dtype_name) {
     // Coerce bool to 0/1 before numeric casts (Weft forbids bool+int arithmetic).
     num := if kind == "bool" { if value { 1 } else { 0 } } else { value }
     if kind == "float" && (value != value || math.isinf(value)) {
-        if dtype_name != "float32" && dtype_name != "float64" {
+        if dtype_name != "float16" && dtype_name != "float32" && dtype_name != "float64" {
             return Err("warp integer dtype conversion requires a finite value")
         }
     }
     if dtype_name == "bool" {
         if kind == "bool" { value } else { num != 0 }
+    } else if dtype_name == "float16" {
+        // NumPy float16 cast semantics: round-to-nearest-even to binary16;
+        // overflow yields ±inf (NumPy emits a RuntimeWarning, not an error)
+        // and tiny magnitudes flush through subnormals to zero.
+        _round_float16(num + 0.0)
     } else if dtype_name == "float32" || dtype_name == "float64" {
         num + 0.0
     } else {
@@ -2701,6 +4251,9 @@ fn _cast_value(value, dtype_name) {
 // Coerce bool operands to 0/1 for arithmetic result dtypes so promotion works.
 fn _op_input(value, result_dtype) {
     if result_dtype == "bool" || result_dtype == "object" { return value }
+    if result_dtype == "float16" || result_dtype == "float32" || result_dtype == "float64" {
+        return value + 0.0
+    }
     kind := _wkind(value)
     if kind == "bool" { if value { 1 } else { 0 } } else { value }
 }
@@ -2965,6 +4518,10 @@ fn _broadcast_value(a, output_index, output_shape) {
         stride := _prod(_tail(a.shape, i + 1))
         flat_index = flat_index + coord * stride
         i = i + 1
+    }
+    if _has_tid(a) {
+        data := _data(a)
+        return data[flat_index]
     }
     _logical_value_at(a, _unravel(flat_index, a.shape))
 }

@@ -203,25 +203,37 @@ hardware is environment-dependent).
   explicit errors. Remaining: route additional forward/backward ML operations,
   implement real device-memory ownership, and validate CUDA/ROCm/MLX providers
   on their native hardware.
-- Keep all native and browser limits explicit: request/response byte limits,
-  timeout and cancellation behavior, filesystem quotas, unsupported packages,
-  and resource-lifecycle guarantees.
-- Finish ESL confidence work with a real Weft client/dispatcher harness for
-  authentication, event-before-reply ordering, coalesced and fragmented
-  frames, command concurrency, timeout cleanup, and connection closure. Add
-  live FreeSWITCH, Asterisk ARI, and SIPp scenarios for release validation.
-- Keep vendor copies, package manifests, examples, generated capability data,
-  and documentation synchronized; stale copies must fail CI.
+- ~~Keep all native and browser limits explicit~~ **Done:** request and
+  response bodies are capped at 32 MiB on host and browser (over-limit
+  requests rejected pre-send; over-limit responses are explicit errors, never
+  truncated); browser additionally refuses unbounded no-stream responses and
+  never trusts `Content-Length`. Adversarial coverage: boundary-exact tests on
+  the host; deceptive/malformed Content-Length, gzip expansion, redirects,
+  repeated timeouts with abort-cleanup, and virtual-fs quota lifecycle in real
+  Chromium/Firefox (`wasm/playwright_adversarial_test.js`).
+- ~~Finish ESL confidence work~~ **Done (mock harness):** black-box process
+  tests cover authentication, event-before-reply ordering, coalesced and
+  byte-fragmented TCP frames, 10-way command concurrency, a 260-command flood
+  enforcing the 256-request cap, timeout cleanup, and client- and
+  server-initiated close; ARI has a mock REST+WebSocket suite (which exposed
+  and fixed a never-compiled ARI client). Live FreeSWITCH, Asterisk ARI, and
+  SIPp scenarios remain environment-gated for release validation.
+- ~~Keep vendor copies, package manifests, examples, generated capability
+  data, and documentation synchronized~~ **Done:** `check-vendor-sync.sh`,
+  `check-catalog-sync.sh`, and `capability-matrix.py --check` all gate CI;
+  stale committed capability reports fail the build.
 
 ### N1 — NumPy-compatible CPU semantics
 
-- Maintain a generated NumPy/pandas/Weft capability matrix with pinned oracle
-  versions and expected value, error, NaN, null, and warning behavior.
-- Complete fixed-width dtype metadata and range-checked casting/promotion,
-  then add packed/native storage where promised. Cover signed and unsigned
-  integers, reduced-precision floats, booleans, object values, and explicitly
-  document unsupported complex, datetime, timedelta, structured, and byte
-  order semantics until implemented.
+- ~~Maintain a generated NumPy/pandas/Weft capability matrix~~ **Done:**
+  `scripts/capability-matrix.py` (pinned oracles numpy 2.4.3 / pandas 3.0.1 /
+  scikit-learn 1.9.0); `--check` fails CI on stale committed reports.
+- **Partially done:** dtype promotion now matches NumPy 2.4.3
+  `promote_types` for all 121 supported pairs (exhaustive differential
+  fixture + Go matrix test); casts are range-checked (float→int overflow is
+  an explicit `Err`). Open: float16 packed storage; object dtype packed
+  storage. Complex, datetime, timedelta, structured, and byte-order semantics
+  are documented as unsupported in `docs/COMPATIBILITY.md`.
 - Complete shape and memory semantics: zero-sized dimensions, broadcasting,
   strides, offsets, contiguous and non-contiguous views, memory order,
   read-only/copy behavior, ownership, aliasing, serialization, and exact
@@ -229,13 +241,30 @@ hardware is environment-dependent).
 - Complete indexing and assignment: ellipsis, new axes, mixed basic and
   advanced selectors, broadcasted integer and boolean indexing, `take`,
   `put`, views versus copies, duplicate targets, and exact failure behavior.
+  **Progress:** `put` (flat C-order, negative wrap, cycling values,
+  last-wins duplicates, out-of-range `Err`) alongside the existing `take`,
+  broadcasted integer/boolean advanced indexing, and immutable
+  copy-on-write semantics. Open: ellipsis/newaxis selector tokens.
 - Expand the numerical surface: ufunc families, reductions and accumulators,
   random generators with deterministic seeds, FFT, polynomial helpers,
   statistics, sorting/searching, masked arrays, sparse formats, and linear
-  algebra edge cases.
+  algebra edge cases. **Progress:** seeded `default_rng`
+  (random/normal/integers/shuffle/permutation/choice — per-seed
+  deterministic, not PCG64 bit-parity, documented); `initial`/`where`/
+  `ddof`/axis-accumulator reduction options; `hypot`/`expm1`/`log1p`/
+  `floor_divide`/`remainder`/`square`/`reciprocal`/`deg2rad`/`rad2deg`/
+  `copysign`/`rint`; `rfft`/`irfft`/`rfft_freq`/`fftshift`/`ifftshift`;
+  `sort_axis`/`argsort_axis`/`unique_opts`. Open: polynomial helpers,
+  histogram/corrcoef statistics, searchsorted/partition, multi-dim FFT,
+  eig/SVD/QR, masked arrays and sparse formats (documented unsupported).
 - Add property, fuzz, and differential tests for every declared API, including
   dtype results, exceptions, empty inputs, non-contiguous inputs, and numerical
-  tolerances against pinned NumPy.
+  tolerances against pinned NumPy. **Progress:** the conformance property
+  harness now actually executes Weft (25 seeded cases: broadcasting, axis
+  reductions on transposed views, matmul, reshape, comparisons at 1e-10);
+  differential fixtures cover dtypes, errors, edges, strides, reductions, FFT,
+  and sklearn linear/logistic fits. Open: fuzz-style randomized shape coverage
+  beyond the seeded set.
 
 ### N2 — pandas-compatible tabular semantics and scale
 
@@ -244,9 +273,24 @@ hardware is environment-dependent).
   values, ordering, and missing-value rules.
 - Cover `loc`/`iloc`, assignment and broadcasting, groupby/agg/transform,
   joins/merges, pivot/reshape, rolling/expanding/resampling, ranking, window
-  statistics, sorting, and stable error behavior.
+  statistics, sorting, and stable error behavior. **Progress:** multi-column
+  `group_by` with per-column agg lists, `pivot_table` with aggfuncs and
+  `fill_value`, `rank_opts` (average/min/max/dense/first + na_option + pct),
+  multi-key `merge` with `suffixes`; ~~label-based `loc` and loc/iloc
+  assignment~~ **Done:** `loc_label` (scalar/list/boolean-mask/inclusive
+  label-slice selectors, pandas error wording) and `loc_set`/`iloc_set`
+  with pandas-observed broadcasting; positional `loc` kept for compat.
+  **Done:** ewm window statistics — `ewm_mean`/`ewm_sum`/`ewm_var`/`ewm_std`
+  with alpha/span/halflife, `adjust`, `ignore_na`, and `bias` matched to the
+  pandas 3.0 recursions step-for-step (incl. the com==1 adjust=false branch
+  and sum's adjust=true-only rule); `var` added to the rolling/expanding op
+  set. Open: resample.
 - Add production I/O coverage for CSV, JSON/JSONL, Parquet/Arrow-compatible
   interchange, SQL, and chunked streaming with explicit type and null policies.
+  **Progress:** `read_sql`/`to_sql` via the `db` stdlib (sqlite, transactional,
+  identifier-quoted); `from_csv_opts`/`read_csv_opts` with strict per-column
+  dtypes and null sentinels. Open: Parquet/Arrow (documented unsupported),
+  chunked streaming.
 - Provide a tested DataFrame-column ↔ Warp-array interchange path, including
   zero-copy cases and cases that must copy due to layout, dtype, or ownership.
 - Establish performance and memory budgets for 100k, 1M, and 10M-row workloads,
@@ -260,11 +304,24 @@ hardware is environment-dependent).
 - Finish reverse- and forward-mode autodiff, higher-order derivatives,
   gradient checking, broadcasting, views/aliases, checkpointing, numerical
   stability diagnostics, and deterministic seed behavior.
+  **Progress:** forward-mode autodiff landed as dual numbers (`dual`, `jvp`,
+  `jacobian`, `derivative`, `fwd_*` ops) over scalars and warp arrays, with
+  exact JVPs three-way checked against reverse mode and `gradcheck`, and
+  nested duals for scalar second derivatives. Open: views/aliases, numerical
+  stability diagnostics, array-level higher-order gradients.
 - Complete the training surface: modules/layers, activations, losses,
   optimizers, schedulers, batching/data loaders, metrics, serialization,
   checkpoint resume, parameter freezing, and clear device placement.
+  **Progress:** differentiable `mse_loss`/`binary_cross_entropy`/
+  `cross_entropy`/`huber_loss`, `sigmoid`/`tanh`/`gelu`/`softmax` ops +
+  modules, `step_lr`/`exponential_lr`/`cosine_lr`, seeded shuffled `batches`
+  with `shuffle`/`seed` on the trainers — all gradchecked. Open: parameter
+  freezing helper, checkpoint-resume flow, gradient clipping.
 - Add classical ML algorithms and preprocessing with scikit-learn differential
   coverage, including sparse and categorical inputs where supported.
+  **Progress:** sklearn 1.9.0 differential fixture (linear/logistic fits,
+  standardize) in the pinned conformance harness. Open: k-means/KNN/trees;
+  sparse/categorical inputs (documented unsupported).
 - Validate end-to-end training and inference on CPU with a 100k+ row
   DataFrame-to-model pipeline; retain an explicit, tested CPU fallback when a
   native backend is unavailable.
@@ -296,41 +353,59 @@ hardware is environment-dependent).
 
 ### N5 — WASM and real-browser coverage
 
-- Enforce request-body limits for `post`, `put`, `patch`, and generic fetch
-  paths before allocation where possible.
-- For non-streaming responses, reject body-bearing responses when there is no
-  trustworthy bounded stream; do not treat a server-supplied `Content-Length`
-  as a strict memory guarantee because it may be deceptive or compressed.
-- Test malformed and deceptive `Content-Length`, compressed expansion,
-  streaming responses, redirects, aborts, timeouts, cancellation cleanup, and
-  repeated timed-out executions.
-- Add Playwright CI on both Chromium and Firefox against local HTTP endpoints.
-  Tests must exercise real browser GET/POST behavior, streaming, request and
-  response limits, redirects, malformed lengths, abort/timeout behavior,
-  language execution, virtual filesystem cleanup, and repeated executions.
-- Keep parser-only and local mock-server tests in ordinary CI; put compatible
-  concurrent socket tests in a separate job rather than skipping the telecom
-  test package entirely.
-- Keep a short PR fuzz smoke test and add a scheduled Linux job with meaningful
-  fuzz duration, corpus retention, race checks, and failure artifacts.
+- ~~Enforce request-body limits~~ **Done** (32 MiB, pre-send, all methods;
+  adversarially tested — the server sees zero bytes for over-limit posts).
+- ~~For non-streaming responses, reject body-bearing responses when there is
+  no trustworthy bounded stream~~ **Done** (stream-enforced decoded-byte
+  limit; `Content-Length` never trusted as a memory guarantee).
+- ~~Test malformed and deceptive `Content-Length`, compressed expansion,
+  streaming, redirects, aborts, timeouts, cancellation cleanup, repeated
+  timed-out executions~~ **Done** (`wasm/playwright_adversarial_test.js`,
+  real local endpoints incl. raw sockets; per-browser divergence recorded).
+- ~~Add Playwright CI on both Chromium and Firefox~~ **Done** (existing
+  suite + adversarial suite + DataFrame/Warp execution suite run on both
+  browsers in the `browser-wasm` job).
+- ~~Keep parser-only and local mock-server tests in ordinary CI; concurrent
+  socket tests in a separate job~~ **Done** (`telecom-parser` vs
+  `telecom-dispatcher` jobs).
+- ~~Keep a short PR fuzz smoke test and add a scheduled Linux job with
+  meaningful fuzz duration~~ **Done** (`fuzz-smoke` per PR in `ci.sh`;
+  weekly `fuzz-deep` job, 5m per target across lex/parse/compile/vm).
 
 ### N6 — CI, reproducibility, and release gates
 
 - Run unit, parser, differential, property, browser, WASM, and resource
   lifecycle tests on every change. A capability-gated hardware test may report
-  “unavailable,” but must never hide a failed test as a skip.
+  “unavailable,” but must never hide a failed test as a skip. **Done:** the
+  `ci`/`conformance`/`reliability`/`wasm`/`browser-wasm`/`telecom-*` jobs run
+  per change; `WEFT_LIVE_REQUIRED=1` makes broker-absent a failure in the
+  live-services job; hardware-provider load failures are `t.Fatal` when the
+  plugin env is set.
 - Add reproducible self-hosted or hosted jobs for CUDA, ROCm, and MLX, plus
   real FreeSWITCH, Asterisk ARI, and SIPp integration environments.
+  **Partial:** `native-accelerators.yml` runs provider conformance on labeled
+  self-hosted runners (compile + conformance + reporting gate). Live
+  FreeSWITCH/ARI/SIPp environments remain open (environment-gated).
 - Freeze and verify offline dependency installation, exact Git/toolkit pins,
   generated lock/manifests, SBOMs, signed artifacts, checksums, and rebuild
-  reproducibility. Release notes must include the actual completed CI run.
+  reproducibility. **Progress:** `reproducible-build-check.sh` (offline
+  `GOPROXY=off` build after `go mod download` + `go mod verify`,
+  byte-identical across checkout paths with `-trimpath -buildvcs=false`),
+  `sbom.sh` published as `SBOM.json` in releases, SHA256SUMS retained,
+  keyless cosign signing of all release blobs on tags (GitHub OIDC,
+  `sigstore/cosign-installer`, bundles published alongside), and release
+  notes link the actual build run plus the CI run for the tagged commit.
 - Publish benchmark results for 100k+ DataFrame processing, model training,
   transfers, and accelerator operations with versions, hardware, tolerances,
-  and peak memory recorded.
+  and peak memory recorded. **Partial:** `benchmarks` job publishes Go + glue
+  benches; `bench-scale.sh` covers 100k–250k (1M optional). Open: 10M-row
+  budgets, accelerator bench numbers from hardware runners.
 - The final replacement gate requires zero unexplained differential failures,
   documented deviations for every unsupported API, green scale and cleanup
   benchmarks, and successful declared workflows on CPU plus every claimed
-  accelerator.
+  accelerator. **Status:** deviations published in `docs/COMPATIBILITY.md`;
+  differential suite green; accelerator claims limited to CPU until hardware
+  runners publish numbers.
 
 ### Previous checklist (historical, superseded)
 
@@ -375,6 +450,7 @@ higher-order autodiff, and zero unexplained differential failures.
 ### N3 — ML and autodiff completeness
 
 - Finish reverse- and forward-mode autodiff, higher-order derivatives, gradient checking, broadcasting, view/alias behavior, checkpointing, and numerical stability diagnostics.
+  **Progress:** forward mode (dual-number JVP/`jacobian`/`derivative`) implemented and cross-validated against the reverse-mode tape and `gradcheck`; scalar nested reverse mode (`create_graph`) and finite-diff HVP exist. Open: view/alias semantics, stability diagnostics.
 - Implement the training surface needed for practical replacement: modules/layers, losses, optimizers and schedulers, batching, metrics, serialization, checkpoint resume, and deterministic seeds.
 - Add classical ML algorithms and preprocessing with scikit-learn differential coverage, including sparse and categorical inputs where supported.
 - Validate end-to-end model training on CPU and each native backend, including a 100k+ row dataframe-to-model pipeline and explicit CPU fallback behavior.

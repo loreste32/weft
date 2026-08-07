@@ -6,10 +6,12 @@ not link CUDA, ROCm, or MLX, and a provider must only advertise hardware and
 operations it actually supports.
 
 All three providers implement the same bounded JSON `matmul` operation and
-binary `tensor_matmul` plus `tensor_add` operations. The binary operations are
-the required paths for large batches; JSON remains a diagnostic/reference path.
-`tensor_add` accepts contiguous, same-shape float32 tensors of rank 1 or 2 and
-does not claim NumPy-style broadcasting:
+binary `tensor_matmul` plus the same-shape elementwise operations
+`tensor_add`, `tensor_sub`, `tensor_mul`, and `tensor_div`. The binary
+operations are the required paths for large batches; JSON remains a
+diagnostic/reference path. The elementwise ops accept contiguous, same-shape
+float32 tensors of rank 1 or 2 and do not claim NumPy-style broadcasting —
+non-same-shape inputs are rejected with an explicit error:
 
 ```json
 {
@@ -17,6 +19,25 @@ does not claim NumPy-style broadcasting:
   "b": [5, 6, 7, 8], "b_shape": [2, 2]
 }
 ```
+
+## Operation coverage
+
+| Operation | CPU reference (`../example.c`) | CUDA | ROCm/HIP | MLX |
+|-----------|-------------------------------|------|----------|-----|
+| `health`, `matmul` (JSON) | yes (float64) | yes (float32) | yes (float32) | yes (float32) |
+| `tensor_matmul` | yes (float64) | yes (float32) | yes (float32) | yes (float32) |
+| `tensor_add` / `tensor_sub` / `tensor_mul` / `tensor_div` | yes (float32 + float64) | yes (float32) | yes (float32) | yes (float32) |
+| `tensor_sum` (full reduction → rank-0) | yes (float32 + float64) | no | no | no |
+| broadcasting elementwise | no (explicit rejection) | no (explicit rejection) | no (explicit rejection) | no (explicit rejection) |
+
+`tensor_sum` stays out of the vendor manifests on purpose: a correct parallel
+reduction (CUDA/HIP) and the `mlx_sum` axis contract (MLX) are not
+pattern-matched to the hardware-validated code, and providers must not
+declare ops they cannot implement correctly — the conformance gate
+(`TestExternalProviderTensorCoverage`) fails any declared op that errors.
+Only the CPU reference row is exercised in ordinary CI; the vendor rows are
+compile-unverified on hosts without the SDKs and must be re-validated on
+their hardware runners.
 
 `matmul` returns `{"data":[19,22,43,50],"shape":[2,2]}` plus mandatory
 execution reporting fields: `"device"` (e.g. `"cuda:0"`, `"rocm:0"`,
@@ -91,6 +112,8 @@ vendor-hardware jobs must compile and run each provider on its own runner.
 ## Hardware CI
 
 Hardware conformance covers health, 2×2 JSON matmul, binary tensor_matmul,
-and binary tensor_add. A successful compile alone is not provider validation.
+and every tensor op the provider declares (`TestExternalProviderTensorCoverage`
+probes each manifest entry and fails declared-but-broken ops). A successful
+compile alone is not provider validation.
 
 `.github/workflows/native-accelerators.yml` is a scheduled/manual conformance workflow. It is separate from pull-request CI because it requires self-hosted runners labeled `cuda`, `rocm`, and `mlx`. The CUDA runner needs `nvcc` and a working NVIDIA device; the ROCm runner needs `hipcc` and a working AMD device; the MLX runner needs Apple Silicon plus an `mlx-c` installation and repository variable `MLX_C_PREFIX`. Each job compiles the checked-in provider, loads it through Weft's `dlopen` ABI, and runs health plus 2×2 matmul checks. A green compile alone is not sufficient provider validation.

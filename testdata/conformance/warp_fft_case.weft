@@ -12,6 +12,19 @@ fn main -> Result {
     diffs := warp.diff(warp.array([1.0, 2.0, 4.0, 7.0, 11.0], [5]), null)
     grads := warp.gradient(warp.array([1.0, 2.0, 4.0, 7.0, 11.0], [5]))
     area := warp.trapz(warp.array([1.0, 2.0, 3.0], [3]), 1.0)
+    // Real-input FFT suite (np.fft.rfft / irfft / rfftfreq / shifts).
+    r4 := warp.rfft(a4)
+    r8 := warp.rfft(a8)
+    ir8 := warp.irfft(r8, null)
+    a7 := warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0], [7])
+    r7 := warp.rfft(a7)
+    ir7 := warp.irfft(r7, 7)
+    rfreq8 := warp.rfft_freq(8, 1.0)
+    rfreq7 := warp.rfft_freq(7, 0.5)
+    shift_even := warp.fftshift(a4)
+    shift_odd := warp.fftshift(warp.array([0.0, 1.0, 2.0, 3.0, 4.0], [5]))
+    ishift_even := warp.ifftshift(a4)
+    ishift_odd := warp.ifftshift(warp.array([0.0, 1.0, 2.0, 3.0, 4.0], [5]))
     say(json.stringify({
         "fft4_re": warp.to_list(f4.re),
         "fft4_im": warp.to_list(f4.im),
@@ -23,5 +36,19 @@ fn main -> Result {
         "diff": warp.to_list(diffs),
         "gradient": warp.to_list(grads),
         "trapz": area,
+        "rfft4_re": warp.to_list(r4.re),
+        "rfft4_im": warp.to_list(r4.im),
+        "rfft8_re": warp.to_list(r8.re),
+        "rfft8_im": warp.to_list(r8.im),
+        "irfft8": warp.to_list(ir8),
+        "rfft7_re": warp.to_list(r7.re),
+        "rfft7_im": warp.to_list(r7.im),
+        "irfft7": warp.to_list(ir7),
+        "rfftfreq8": warp.to_list(rfreq8),
+        "rfftfreq7": warp.to_list(rfreq7),
+        "fftshift_even": warp.to_list(shift_even),
+        "fftshift_odd": warp.to_list(shift_odd),
+        "ifftshift_even": warp.to_list(ishift_even),
+        "ifftshift_odd": warp.to_list(ishift_odd),
     }))
 }

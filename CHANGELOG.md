@@ -2,6 +2,20 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
+## [Unreleased]
+
+### Added
+- **Forward-mode autodiff** — `packages/ml/forward.weft`: dual numbers over scalars and warp arrays (`dual`, `jvp`, `jacobian`, `derivative`; elementwise + reductions + 2-D matmul; nested duals give exact higher-order derivatives). Three-way cross-validation: forward JVP ≡ reverse-mode tape ≡ finite-difference gradcheck on a scalar battery and an MLP (≤1e-8). 19 tests (118 total).
+- **Label-based `loc` + assignment** — `loc_label` (scalar/list/boolean-mask/inclusive label slices, MultiIndex partial keys, pandas 3.0.1-observed edge rules), `loc_set`/`iloc_set` with scalar/list broadcasting (pandas-compatible error wording; duplicate-label assignment updates all matches). Also fixed `warp.percentile` (crashed on every call via a bare `int(...)`). 17 adversarial tests (179 total).
+- **Warp NumPy surface, final N1 batch** — seeded `default_rng(seed)` generator (`random`/`normal`/`integers`/`shuffle`/`permutation`/`choice`; L'Ecuyer MRG, per-seed determinism, documented non-PCG64 deviation); reduction options (`sum_opts`/`prod_opts`/`min_opts`/`max_opts` with `initial`/`where`, `var_opts`/`std_opts` with `ddof`, `cumsum_axis`/`cumprod_axis`) matching pinned NumPy edge rules; ufuncs `hypot`/`expm1`/`log1p`/`floor_divide`/`remainder` (floored np.mod semantics)/`square`/`reciprocal`/`deg2rad`/`rad2deg`/`copysign`/`rint`; FFT real suite (`rfft`/`irfft`/`rfft_freq`/`fftshift`/`ifftshift`); `put` (flat, last-wins duplicates); `sort_axis`/`argsort_axis`/`unique_opts`. Differentially locked (17 fixtures incl. 3 new, +25 property cases; 125 warp tests).
+- **Browser DataFrame/Warp execution suite** — `wasm/playwright_dataframe_test.js` runs real warp + dataframe programs (groupby, joins, matmul, reductions, 10k-row scale smoke) in Chromium and Firefox; CI's `browser-wasm` job runs it unchanged.
+- **ML training surface** — differentiable `mse_loss`/`binary_cross_entropy`/`cross_entropy`/`huber_loss` (log-sum-exp stabilized, finite at 0/1 and ±1000 logits), `sigmoid`/`tanh`/`gelu`/`softmax` tape ops + module wrappers, `step_lr`/`exponential_lr`/`cosine_lr` schedulers, and seeded shuffled `batches` + `shuffle`/`seed` opts on `linear_fit`/`logistic_fit` (same-seed bit-identical; defaults unchanged). All gradchecked (82 package tests).
+- **DataFrame SQL bridge + CSV policies** — `read_sql`/`to_sql` via the `db` stdlib (sqlite; transactions, `if_exists` fail/replace/append, bound parameters, SQL-standard identifier quoting — adversarial `"; DROP TABLE` names round-trip safely), and `from_csv_opts`/`read_csv_opts` with strict per-column `dtypes` (row+column named errors) and `null_values` sentinels. Legacy CSV behavior byte-identical.
+- **ML freeze/clip/resume** — `named_parameters`, `freeze`/`unfreeze` (exact + prefix patterns, atomic validation; SGD/Adam skip frozen params with zero momentum drift), `clip_grad_norm` (exact PyTorch formula) / `clip_grad_value`, and checkpoint format v2 with `resume(path, ...)` restoring weights + optimizer state + epoch — seeded save/resume training is bit-identical to uninterrupted training. Fixed `linear_forward` wrapping every input in a constant (gradients never flowed past the first layer of a sequential).
+- **DataFrame index semantics** — `index_union`/`index_intersection`/`index_difference` (pandas 3.0.1-observed ordering, multiplicity, and null rules), stable `sort_index`/`sort_index_opts` (multi-level, na_position), `is_monotonic`, and partial-key `xs`/`xs_opts` cross-sections with drop_level control. 21 adversarial tests (162 total).
+- **Accelerator provider op coverage** — CPU reference provider v1.2.0: `tensor_sub`/`tensor_mul`/`tensor_div` (float32+float64) and rank-0 `tensor_sum`, with per-op conformance gating (a manifest declaring an op that fails = conformance failure; declared-but-missing = test failure). Broadcasting deliberately rejected with explicit errors rather than implemented unverifiably. Vendor (CUDA/ROCm/MLX) providers gained the elementwise ops pattern-matched — compile-verified only on the hardware runners.
+- **Signed release artifacts** — release workflow signs every blob (tarballs, zip, VSIX, SHA256SUMS, SBOM.json) with keyless cosign via GitHub OIDC; bundles publish alongside. Scale benches gained wide-frame (100k×13) and join (100k×20k) fixtures plus an opt-in `WEFT_SCALE_BIG=1` 1M-row tier.
+
 ## [0.5.3] — 2026-08-04
 
 ### Fixed
@@ -36,6 +50,7 @@ All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](ht
 - **cron package documentation** — channel control protocol and deep-copy capture limits.
 
 ### Fixed
+- **`warp.percentile` crashed on every call** — it invoked bare `int(...)`, which is not callable in Weft; removed (floor/ceil already return ints), with a regression test including the exact-integer and out-of-range paths.
 - **Float→int cast silent saturation** — `warp._cast_value` range-checked after `floor`/`ceil` had already saturated to int64 extremes, so `1e30` → int64 silently became a clamped value; now returns `Err` pre-truncation, matching NumPy 2.4.3 `OverflowError`.
 - **`ml.device()` silently broken** — `type_of` returns `"str"` but device.weft checked `"string"`, so `ml.device("cpu")` always errored and `?` silently aborted the non-Result test fns (masked by the test-runner hole, now closed); also fixed missing-map-key hard errors in probe helpers and a double-wrapped `Ok(Ok(...))` return.
 - **`accelerator.load` manifest unusable from Weft** — `goToValue` stringified the manifest struct; now a real map.

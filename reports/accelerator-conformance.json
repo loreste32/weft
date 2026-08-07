@@ -1,7 +1,7 @@
 {
   "format": "weft.accelerator.conformance",
   "version": 1,
-  "generated_at": "2026-08-04T15:25:29Z",
+  "generated_at": "2026-08-07T19:10:37Z",
   "host": {
     "os": "Darwin",
     "arch": "arm64",
@@ -33,7 +33,19 @@
       "json_ops": "passed",
       "tensor_ops": "passed",
       "tensor_add_ops": "passed",
-      "reporting_ops": "passed"
+      "reporting_ops": "passed",
+      "coverage_ops": "passed"
+    },
+    "coverage": {
+      "test": "passed",
+      "ops_passed": [
+        "tensor_add",
+        "tensor_div",
+        "tensor_matmul",
+        "tensor_mul",
+        "tensor_sub",
+        "tensor_sum"
+      ]
     }
   },
   "vendors": {

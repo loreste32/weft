@@ -49,6 +49,18 @@ __global__ void weft_add_kernel(const float* a, const float* b, float* out,
   if (index < count) out[index] = a[index] + b[index];
 }
 
+// Bounded same-shape elementwise ops beyond add. op selects subtract (0),
+// multiply (1), or divide (2); the host-side wrapper below mirrors the
+// tensor_add shape checks, launch bounds, copies, and reporting exactly.
+__global__ void weft_elementwise_kernel(const float* a, const float* b, float* out,
+                                        size_t count, int op) {
+  size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index >= count) return;
+  if (op == 0) out[index] = a[index] - b[index];
+  else if (op == 1) out[index] = a[index] * b[index];
+  else out[index] = a[index] / b[index];
+}
+
 static bool hip_ok(hipError_t status, const char* operation) {
   if (status == hipSuccess) return true;
   last_error = std::string(operation) + ": " + hipGetErrorString(status);
@@ -56,9 +68,10 @@ static bool hip_ok(hipError_t status, const char* operation) {
 }
 
 extern "C" const char* weft_accel_manifest(void) {
-  return "{\"name\":\"weft-rocm\",\"version\":\"1.0.0\","
+  return "{\"name\":\"weft-rocm\",\"version\":\"1.1.0\","
          "\"abi\":1,\"vendors\":[\"rocm\",\"hip\"],"
-         "\"operations\":[\"health\",\"matmul\",\"tensor_matmul\",\"tensor_add\"],"
+         "\"operations\":[\"health\",\"matmul\",\"tensor_matmul\",\"tensor_add\","
+         "\"tensor_sub\",\"tensor_mul\",\"tensor_div\"],"
          "\"metadata\":{\"runtime\":\"hip\",\"dtype\":\"float32\",\"tensor_abi\":\"1\"}}";
 }
 
@@ -148,15 +161,84 @@ static bool tensor_add_shape(const weft_accel_tensor_input& left,
   return true;
 }
 
+// Bounded same-shape float32 elementwise driver for tensor_sub, tensor_mul,
+// and tensor_div. This is the tensor_add flow with the op-tagged
+// weft_elementwise_kernel in place of weft_add_kernel; tensor_add keeps its
+// own path above so the hardware-tested code is unchanged.
+static int rocm_run_tensor_elementwise(const char* name, int op,
+                                       const weft_accel_tensor_input* inputs,
+                                       weft_accel_tensor_output* output) {
+  size_t count = 0;
+  if (inputs[0].dtype != WEFT_TENSOR_FLOAT32 || inputs[1].dtype != WEFT_TENSOR_FLOAT32 ||
+      !tensor_add_shape(inputs[0], inputs[1], &count)) {
+    last_error = std::string("ROCm ") + name +
+                 " requires contiguous same-shape float32 tensors of rank 1 or 2";
+    return 1;
+  }
+  size_t output_bytes = count * sizeof(float);
+  float *device_a = nullptr, *device_b = nullptr, *device_out = nullptr;
+  bool ok = hip_ok(hipMalloc(&device_a, output_bytes), "hipMalloc(elementwise a)") &&
+            hip_ok(hipMalloc(&device_b, output_bytes), "hipMalloc(elementwise b)") &&
+            hip_ok(hipMalloc(&device_out, output_bytes), "hipMalloc(elementwise out)");
+  if (ok) ok = hip_ok(hipMemcpy(device_a, inputs[0].data, output_bytes, hipMemcpyHostToDevice), "hipMemcpy(elementwise a)") &&
+              hip_ok(hipMemcpy(device_b, inputs[1].data, output_bytes, hipMemcpyHostToDevice), "hipMemcpy(elementwise b)");
+  if (ok) {
+    constexpr size_t block_size = 256;
+    size_t blocks = (count + block_size - 1) / block_size;
+    if (blocks > 2147483647u) {
+      last_error = std::string("ROCm ") + name + " is too large for the provider launch bounds";
+      ok = false;
+    } else {
+      hipLaunchKernelGGL(weft_elementwise_kernel, dim3(static_cast<unsigned int>(blocks)),
+                         dim3(static_cast<unsigned int>(block_size)), 0, 0,
+                         device_a, device_b, device_out, count, op);
+      ok = hip_ok(hipGetLastError(), "elementwise kernel launch") &&
+           hip_ok(hipDeviceSynchronize(), "elementwise synchronize");
+    }
+  }
+  output->dtype = WEFT_TENSOR_FLOAT32;
+  output->rank = inputs[0].rank;
+  output->shape = static_cast<int64_t*>(std::calloc(output->rank, sizeof(int64_t)));
+  output->strides = static_cast<int64_t*>(std::calloc(output->rank, sizeof(int64_t)));
+  output->data = std::malloc(output_bytes);
+  output->bytes = output_bytes;
+  if (ok && (output->shape == nullptr || output->strides == nullptr || output->data == nullptr)) {
+    last_error = std::string("ROCm ") + name + " output allocation failed";
+    ok = false;
+  }
+  if (ok) {
+    std::memcpy(output->shape, inputs[0].shape, output->rank * sizeof(int64_t));
+    std::memcpy(output->strides, inputs[0].strides, output->rank * sizeof(int64_t));
+    ok = hip_ok(hipMemcpy(output->data, device_out, output_bytes, hipMemcpyDeviceToHost),
+                "hipMemcpy(elementwise result)");
+  }
+  hipFree(device_a);
+  hipFree(device_b);
+  hipFree(device_out);
+  if (!ok) {
+    weft_accel_free_tensor(output);
+    return 1;
+  }
+  record_exec_info(false);
+  return 0;
+}
+
 extern "C" int weft_accel_run_tensor(const char* operation,
                                        const weft_accel_tensor_input* inputs,
                                        size_t input_count,
                                        weft_accel_tensor_output* output) {
   if (operation == nullptr || inputs == nullptr || output == nullptr || input_count != 2) {
-    last_error = "tensor_matmul requires two inputs and an output";
+    last_error = "tensor operation requires two inputs and an output";
     return 1;
   }
   std::memset(output, 0, sizeof(*output));
+  if (std::strcmp(operation, "tensor_sub") == 0 || std::strcmp(operation, "tensor_mul") == 0 ||
+      std::strcmp(operation, "tensor_div") == 0) {
+    int op = 0;
+    if (std::strcmp(operation, "tensor_mul") == 0) op = 1;
+    if (std::strcmp(operation, "tensor_div") == 0) op = 2;
+    return rocm_run_tensor_elementwise(operation, op, inputs, output);
+  }
   if (std::strcmp(operation, "tensor_add") == 0) {
     size_t count = 0;
     if (inputs[0].dtype != WEFT_TENSOR_FLOAT32 || inputs[1].dtype != WEFT_TENSOR_FLOAT32 ||
