@@ -2,7 +2,7 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
-## [Unreleased]
+## [0.6.0] — 2026-08-07
 
 ### Added
 - **Forward-mode autodiff** — `packages/ml/forward.weft`: dual numbers over scalars and warp arrays (`dual`, `jvp`, `jacobian`, `derivative`; elementwise + reductions + 2-D matmul; nested duals give exact higher-order derivatives). Three-way cross-validation: forward JVP ≡ reverse-mode tape ≡ finite-difference gradcheck on a scalar battery and an MLP (≤1e-8). 19 tests (118 total).

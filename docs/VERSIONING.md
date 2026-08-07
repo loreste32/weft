@@ -4,14 +4,14 @@
 
 | | |
 |--|--|
-| Toolchain | **`0.5.3`** (`pkg/weft.Version` / `weft version`) |
-| VS Code extension | **`0.5.3`** (`editors/vscode/package.json`) |
+| Toolchain | **`0.6.0`** (`pkg/weft.Version` / `weft version`) |
+| VS Code extension | **`0.6.0`** (`editors/vscode/package.json`) |
 | Branch | `main` |
 
 0.3.x is **complete** (through the 0.3.30–0.3.35 era of patches). 0.4.x is the current development line: type annotations, DAP, Wasm playground, registry trust, reliability work.
 
 ```text
-0.3.x (complete) → 0.4.0 → 0.5.3 → …
+0.3.x (complete) → 0.4.0 → 0.6.0 → …
 ```
 
 ## Where the number lives
