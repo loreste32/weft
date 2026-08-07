@@ -4251,11 +4251,17 @@ fn _cast_value(value, dtype_name) {
 // Coerce bool operands to 0/1 for arithmetic result dtypes so promotion works.
 fn _op_input(value, result_dtype) {
     if result_dtype == "bool" || result_dtype == "object" { return value }
+    kind := _wkind(value)
+    if kind == "bool" {
+        if result_dtype == "float16" || result_dtype == "float32" || result_dtype == "float64" {
+            return if value { 1.0 } else { 0.0 }
+        }
+        return if value { 1 } else { 0 }
+    }
     if result_dtype == "float16" || result_dtype == "float32" || result_dtype == "float64" {
         return value + 0.0
     }
-    kind := _wkind(value)
-    if kind == "bool" { if value { 1 } else { 0 } } else { value }
+    value
 }
 
 fn _validate_2d(a) -> Result[any] {
