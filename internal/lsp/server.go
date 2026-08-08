@@ -937,6 +937,10 @@ func readMessage(r *bufio.Reader) ([]byte, error) {
 	if contentLen <= 0 {
 		return nil, fmt.Errorf("missing content-length")
 	}
+	const maxLSP = 10 << 20 // 10 MiB
+	if contentLen > maxLSP {
+		return nil, fmt.Errorf("content-length %d exceeds %d limit", contentLen, maxLSP)
+	}
 	buf := make([]byte, contentLen)
 	_, err := io.ReadFull(r, buf)
 	return buf, err

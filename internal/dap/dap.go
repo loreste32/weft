@@ -604,6 +604,10 @@ func readMessage(r *bufio.Reader) ([]byte, error) {
 	if contentLen <= 0 {
 		return nil, fmt.Errorf("missing Content-Length")
 	}
+	const maxDAP = 10 << 20 // 10 MiB
+	if contentLen > maxDAP {
+		return nil, fmt.Errorf("Content-Length %d exceeds %d limit", contentLen, maxDAP)
+	}
 	body := make([]byte, contentLen)
 	if _, err := io.ReadFull(r, body); err != nil {
 		return nil, err

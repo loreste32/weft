@@ -25,7 +25,7 @@ We will acknowledge receipt and work on a fix or coordinated disclosure.
 - Network helpers aim to avoid obvious SSRF mistakes but are not a hardened multi-tenant sandbox.
 - LLM/tool agents can execute whatever your scripts allow — do not point them at secrets without review.
 
-## Threat model (0.3.x)
+## Threat model
 
 Weft is a **host-power** scripting runtime (like a local shell + HTTP toolkit), not a multi-tenant sandbox.
 
