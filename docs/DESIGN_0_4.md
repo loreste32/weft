@@ -1,4 +1,4 @@
-# Weft 0.4.x Design — Type System, Wasm, DAP
+# Weft 0.4.x–0.6.x Design — Type System, Wasm, DAP
 
 Design decisions and implementation plans for the three deep language features.
 

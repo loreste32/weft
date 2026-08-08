@@ -5,6 +5,8 @@ cd "$(dirname "$0")/.."
 
 packages=(warp ml)
 examples=(examples/agent_stack examples/ml_demo)
+# packages/ml also vendors warp as a nested dependency
+nested_vendors=("warp:packages/ml")
 failures=0
 
 for pkg in "${packages[@]}"; do
@@ -41,6 +43,34 @@ for pkg in "${packages[@]}"; do
       fi
     done < <(find "$canonical" -type d -name vendor -prune -o -type f \( -name '*.weft' -o -name 'README.md' \) -print0)
   done
+done
+
+# Check nested vendor copies (e.g. packages/ml/vendor/warp)
+for entry in "${nested_vendors[@]}"; do
+  pkg="${entry%%:*}"
+  parent="${entry##*:}"
+  canonical="packages/${pkg}"
+  vendor="${parent}/vendor/${pkg}"
+  if [[ ! -d "$vendor" ]]; then
+    continue
+  fi
+  while IFS= read -r -d '' file; do
+    rel="${file#${canonical}/}"
+    case "$rel" in
+      weft.json) continue ;;
+    esac
+    other="${vendor}/${rel}"
+    if [[ ! -f "$other" ]]; then
+      echo "vendor missing ${other} (from ${file})" >&2
+      failures=$((failures + 1))
+      continue
+    fi
+    if ! diff -u "$file" "$other" >/tmp/weft-vendor-diff.out 2>&1; then
+      echo "vendor drift: ${file} != ${other}" >&2
+      head -n 40 /tmp/weft-vendor-diff.out >&2 || true
+      failures=$((failures + 1))
+    fi
+  done < <(find "$canonical" -type d -name vendor -prune -o -type f \( -name '*.weft' -o -name 'README.md' \) -print0)
 done
 
 if [[ "$failures" -ne 0 ]]; then

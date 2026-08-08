@@ -1,4 +1,4 @@
-# Stability & positioning (0.4.x)
+# Stability & positioning (0.6.x)
 
 Weft is a **host-powered scripting runtime** for:
 
@@ -42,7 +42,7 @@ Trust model: Weft runs with the privileges of the process. Capability profiles a
 
 Session REPL (`weft` / `weft repl`): top-level `fn`/`type`/`const`/`enum` bind without `main`. Multi-line continues for open braces and trailing operators; `:history [filter]`, `!N` re-run, `:cancel` aborts. History: `~/.weft/history`. Line editing still external (`rlwrap`).
 
-## Error-message quality (0.4.x)
+## Error-message quality (0.6.x)
 
 Prefer actionable diagnostics over generic token names:
 
@@ -56,7 +56,7 @@ Prefer actionable diagnostics over generic token names:
 
 ## Compatibility
 
-- **0.4.x** may still break APIs; pin toolchain and package versions.
+- **0.6.x** may still break APIs; pin toolchain and package versions.
 - Signatures prove *which key* signed a package, not *who* that key belongs to — use `weft registry trust` / `WEFT_REQUIRE_TRUST=1`.
 - No LTS promise yet.
 

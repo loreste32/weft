@@ -31,3 +31,6 @@ for example in examples/agent_stack examples/ml_demo; do
     sync_one "$pkg" "$example"
   done
 done
+
+# packages/ml vendors warp as a nested dependency
+sync_one "warp" "packages/ml"

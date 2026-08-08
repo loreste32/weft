@@ -1,5 +1,31 @@
 # Accelerator hardware reporting
 
+## Maturity status: experimental
+
+GPU acceleration in Weft is **experimental**. As of 0.6.0:
+
+- **CPU reference provider**: built and conformance-tested in CI on every commit.
+- **CUDA / ROCm / MLX providers**: compile-verified only. No production hardware
+  validation has been performed. No real GPU test results exist yet.
+- **Hardware tested**: none. No CUDA, ROCm, or MLX hardware has been used to
+  validate the vendor providers end-to-end.
+- **Supported operations**: matmul (float32 rank-2), elementwise add/sub/mul/div
+  (float32 same-shape rank 1–2). No broadcasting, no axis reductions, no
+  convolutions, no RNG, no linalg beyond matmul.
+- **Numerical tolerances**: CPU reference uses exact comparison for float64 and
+  1e-6 relative tolerance for float32. No GPU-specific tolerance data exists.
+- **Memory-transfer benchmarks**: none published.
+- **Multi-stream / concurrency**: not supported. Single-stream, synchronous
+  execution only.
+- **Failure behavior**: a provider that fails to load, build, or run is reported
+  as `failed` or `unavailable`. Silent fallback is rejected.
+
+Do not rely on GPU acceleration for production workloads until hardware-validated
+results are published in `reports/accelerator-report.json` with real driver
+versions, throughput numbers, and fallback frequency data.
+
+---
+
 How Weft records native accelerator capability, fallback behavior, and
 per-release hardware results.
 

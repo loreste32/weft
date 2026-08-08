@@ -1,6 +1,6 @@
 # Weft language reference
 
-End-to-end description of the language as of **0.4.x** (`weft version`). For paste-ready recipes see [COOKBOOK.md](COOKBOOK.md). For a one-page cheatsheet see [SYNTAX.md](SYNTAX.md). Positioning and maturity: [STABILITY.md](STABILITY.md).
+End-to-end description of the language as of **0.6.x** (`weft version`). For paste-ready recipes see [COOKBOOK.md](COOKBOOK.md). For a one-page cheatsheet see [SYNTAX.md](SYNTAX.md). Positioning and maturity: [STABILITY.md](STABILITY.md).
 
 ---
 

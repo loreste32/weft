@@ -19,7 +19,7 @@ import (
 )
 
 // Version of the Weft toolchain.
-// Release line: 0.4.x (docs/VERSIONING.md). 0.3.x is complete.
+// Release line: 0.6.x (docs/VERSIONING.md). 0.3.x–0.5.x are complete.
 const Version = "0.6.0"
 
 // Options configure a Weft context.

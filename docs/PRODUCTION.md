@@ -126,4 +126,4 @@ Streaming: `llm.stream` reads SSE incrementally; `web.sse` can flush chunks to c
 
 ## Version and direction
 
-0.4.10 on the 0.4.x line ([VERSIONING.md](VERSIONING.md)). For “what works today” vs “what we’re aiming at,” see [ROADMAP.md](ROADMAP.md).
+0.6.0 on the 0.6.x line ([VERSIONING.md](VERSIONING.md)). For “what works today” vs “what we’re aiming at,” see [ROADMAP.md](ROADMAP.md).

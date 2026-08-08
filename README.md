@@ -61,7 +61,7 @@ Weft now includes a practical, tested alternative to Python for supported numeri
 - [`warp`](packages/warp/): validated NumPy-style arrays with broadcasting, reductions, linear algebra, FFTs, dtype handling, and explicit CPU/native-provider dispatch.
 - [`dataframe`](packages/dataframe/): pandas-inspired tabular operations with null-aware statistics, joins, rolling/expanding windows, CSV/JSON/JSONL, and a SQL bridge.
 - [`ml`](packages/ml/): classical linear/logistic training, minibatches, optimizers, forward- and reverse-mode autodiff, Jacobian-vector products, and selected higher-order derivatives.
-- [`accelerator`](native/accelerator/): a capability-gated plugin ABI for CUDA, ROCm/HIP, and Apple MLX providers.
+- [`accelerator`](native/accelerator/): an **experimental** capability-gated plugin ABI for CUDA, ROCm/HIP, and Apple MLX providers (CPU reference tested; GPU providers compile-verified only, no hardware validation yet).
 
 The provider ABI is deliberately explicit: a plugin must report whether an operation ran on the requested device or fell back. Weft does not claim complete NumPy, pandas, or deep-learning ecosystem compatibility, and vendor GPU claims require hardware-specific builds and conformance runs. See [`docs/ML.md`](docs/ML.md), [`docs/DATAFRAME.md`](docs/DATAFRAME.md), [`docs/ACCELERATORS.md`](docs/ACCELERATORS.md), and [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) for the supported surface and current boundaries.
 

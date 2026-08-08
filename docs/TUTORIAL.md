@@ -20,7 +20,7 @@ weft doctor
 weft version
 ```
 
-You should see something like `weft 0.4.x`. The install script puts `weft` in `/usr/local/bin`. From-source builds go to the current directory; `make install` installs to `~/.local/bin/weft`.
+You should see something like `weft 0.6.x`. The install script puts `weft` in `/usr/local/bin`. From-source builds go to the current directory; `make install` installs to `~/.local/bin/weft`.
 
 Docs map: [README.md](README.md) · Language: [LANGUAGE.md](LANGUAGE.md) · Recipes: [COOKBOOK.md](COOKBOOK.md)
 

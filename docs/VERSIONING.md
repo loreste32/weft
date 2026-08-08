@@ -1,6 +1,6 @@
 # Versioning
 
-## Current line: **0.4.x**
+## Current line: **0.6.x**
 
 | | |
 |--|--|
@@ -8,7 +8,7 @@
 | VS Code extension | **`0.6.0`** (`editors/vscode/package.json`) |
 | Branch | `main` |
 
-0.3.x is **complete** (through the 0.3.30–0.3.35 era of patches). 0.4.x is the current development line: type annotations, DAP, Wasm playground, registry trust, reliability work.
+0.3.x–0.5.x are **complete**. 0.6.x is the current development line: forward autodiff, loc/iloc assignment, warp NumPy surface, ML training, SQL bridge, signed releases.
 
 ```text
 0.3.x (complete) → 0.4.0 → 0.6.0 → …
@@ -26,7 +26,7 @@
 
 Bump them together when you cut a release.
 
-## What a 0.4.x patch is for
+## What a 0.6.x patch is for
 
 Bugfixes, reliability (fuzz/validate/race), stdlib/tooling, docs, gold corpus, small language ergonomics.
 
