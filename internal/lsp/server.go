@@ -14,6 +14,8 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/loreste/weft/internal/jsonrpc"
+
 	"github.com/loreste/weft/internal/ast"
 	"github.com/loreste/weft/internal/diag"
 	"github.com/loreste/weft/internal/format"
@@ -916,51 +918,12 @@ func rawOrNull(id json.RawMessage) any {
 	return v
 }
 
-const maxHeaders = 64
+// readMessage and writeMessage delegate to the shared jsonrpc framing
+// package, which enforces bounded header lines, header count, total
+// header bytes, duplicate Content-Length rejection, and body size limits.
 
-func readMessage(r *bufio.Reader) ([]byte, error) {
-	contentLen := 0
-	headerCount := 0
-	for {
-		line, err := r.ReadString('\n')
-		if err != nil {
-			return nil, err
-		}
-		line = strings.TrimSpace(line)
-		if line == "" {
-			break
-		}
-		headerCount++
-		if headerCount > maxHeaders {
-			return nil, fmt.Errorf("too many headers (%d)", headerCount)
-		}
-		if strings.HasPrefix(strings.ToLower(line), "content-length:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &contentLen)
-			}
-		}
-	}
-	if contentLen <= 0 {
-		return nil, fmt.Errorf("missing content-length")
-	}
-	const maxLSP = 10 << 20 // 10 MiB
-	if contentLen > maxLSP {
-		return nil, fmt.Errorf("content-length %d exceeds %d limit", contentLen, maxLSP)
-	}
-	buf := make([]byte, contentLen)
-	_, err := io.ReadFull(r, buf)
-	return buf, err
-}
-
-func writeMessage(w io.Writer, v any) error {
-	body, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(w, "Content-Length: %d\r\n\r\n%s", len(body), body)
-	return err
-}
+func readMessage(r *bufio.Reader) ([]byte, error) { return jsonrpc.ReadMessage(r) }
+func writeMessage(w io.Writer, v any) error       { return jsonrpc.WriteMessage(w, v) }
 
 func uriToPath(uri string) string {
 	uri = strings.TrimPrefix(uri, "file://")

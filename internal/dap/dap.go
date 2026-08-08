@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 
 	"github.com/loreste/weft/internal/compile"
+	"github.com/loreste/weft/internal/jsonrpc"
 	"github.com/loreste/weft/internal/parse"
 	"github.com/loreste/weft/internal/runtime"
 	"github.com/loreste/weft/internal/stdlib"
@@ -578,55 +579,9 @@ func jsonSeq(id json.RawMessage) int {
 	return 0
 }
 
-const maxHeaders = 64
+// readMessage and writeMessage delegate to the shared jsonrpc framing
+// package, which enforces bounded header lines, header count, total
+// header bytes, duplicate Content-Length rejection, and body size limits.
 
-func readMessage(r *bufio.Reader) ([]byte, error) {
-	var contentLen int
-	headerCount := 0
-	for {
-		line, err := r.ReadString('\n')
-		if err != nil {
-			return nil, err
-		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			break
-		}
-		headerCount++
-		if headerCount > maxHeaders {
-			return nil, fmt.Errorf("too many headers (%d)", headerCount)
-		}
-		if strings.HasPrefix(strings.ToLower(line), "content-length:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) != 2 {
-				return nil, fmt.Errorf("bad Content-Length: %q", line)
-			}
-			n, err := strconv.Atoi(strings.TrimSpace(parts[1]))
-			if err != nil {
-				return nil, fmt.Errorf("bad Content-Length: %q", line)
-			}
-			contentLen = n
-		}
-	}
-	if contentLen <= 0 {
-		return nil, fmt.Errorf("missing Content-Length")
-	}
-	const maxDAP = 10 << 20 // 10 MiB
-	if contentLen > maxDAP {
-		return nil, fmt.Errorf("Content-Length %d exceeds %d limit", contentLen, maxDAP)
-	}
-	body := make([]byte, contentLen)
-	if _, err := io.ReadFull(r, body); err != nil {
-		return nil, err
-	}
-	return body, nil
-}
-
-func writeMessage(w io.Writer, v any) error {
-	body, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(w, "Content-Length: %d\r\n\r\n%s", len(body), body)
-	return err
-}
+func readMessage(r *bufio.Reader) ([]byte, error) { return jsonrpc.ReadMessage(r) }
+func writeMessage(w io.Writer, v any) error       { return jsonrpc.WriteMessage(w, v) }

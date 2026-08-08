@@ -82,6 +82,7 @@ Apps that `use` modules needing models or disk must declare grants on the **modu
 - Signing: key name validation (rejects `/`, `\`, `..`, leading `-`/`.`)
 - VM: 10,000-frame call depth cap (stack overflow → error, not crash)
 - DB: JSON/JSONB columns auto-parsed safely via `encoding/json` (no eval)
+- DAP/LSP framing (`internal/jsonrpc`): 8 KiB max header line, 32 KiB total header bytes, 64-header cap, 10 MiB body limit, duplicate Content-Length rejected, strict `strconv.Atoi` parsing (no partial matches like `123junk`)
 
 ### Native accelerator plugins
 
