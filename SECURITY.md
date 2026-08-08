@@ -4,7 +4,7 @@ How trust boundaries sit next to language, stdlib, and modules: **[docs/ECOSYSTE
 
 ## Supported versions
 
-Weft is pre-1.0 (0.3.x). Fixes land on the current published line; there is no long-term support branch yet.
+Weft is pre-1.0 (0.6.x). Fixes land on the current published line; there is no long-term support branch yet.
 
 ## Reporting a vulnerability
 

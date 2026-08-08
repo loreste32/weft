@@ -109,7 +109,7 @@ All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](ht
 - **Router tests**: dispatch middleware ordering and short-circuit, HEAD/OPTIONS/405/Allow, group+wildcard with URL decoding
 - **Warp tests**: det/inv validation for non-square, solve matrix RHS row-major, inv roundtrip 3x3
 - **CI**: dedicated telecom-parser and telecom-dispatcher jobs
-- 1406 Go tests total
+- 1500 Go tests total
 
 ## [0.4.8] — 2026-08-01
 

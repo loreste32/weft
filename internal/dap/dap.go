@@ -578,8 +578,11 @@ func jsonSeq(id json.RawMessage) int {
 	return 0
 }
 
+const maxHeaders = 64
+
 func readMessage(r *bufio.Reader) ([]byte, error) {
 	var contentLen int
+	headerCount := 0
 	for {
 		line, err := r.ReadString('\n')
 		if err != nil {
@@ -588,6 +591,10 @@ func readMessage(r *bufio.Reader) ([]byte, error) {
 		line = strings.TrimRight(line, "\r\n")
 		if line == "" {
 			break
+		}
+		headerCount++
+		if headerCount > maxHeaders {
+			return nil, fmt.Errorf("too many headers (%d)", headerCount)
 		}
 		if strings.HasPrefix(strings.ToLower(line), "content-length:") {
 			parts := strings.SplitN(line, ":", 2)

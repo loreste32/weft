@@ -210,7 +210,7 @@ jobs:
       - name: Release smoke
         run: bash scripts/release-smoke.sh
 
-  # Roadmap 0.4.x gap: macOS/Windows were cross-compiled but never executed.
+  # Cross-platform: run core suites on macOS and Windows (not just cross-compile).
   # This job RUNS the core suite on both.
   cross-platform:
     name: cross-platform (${{ matrix.os }})
@@ -247,7 +247,7 @@ jobs:
         env:
           EXT: ${{ runner.os == 'Windows' && '.exe' || '' }}
 
-  # Roadmap 0.4.x gap: Dockerfile was never built or smoke-tested in CI.
+  # Docker: build and smoke-test the Dockerfile in CI.
   docker:
     name: docker-image
     runs-on: ubuntu-latest

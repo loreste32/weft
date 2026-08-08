@@ -916,8 +916,11 @@ func rawOrNull(id json.RawMessage) any {
 	return v
 }
 
+const maxHeaders = 64
+
 func readMessage(r *bufio.Reader) ([]byte, error) {
 	contentLen := 0
+	headerCount := 0
 	for {
 		line, err := r.ReadString('\n')
 		if err != nil {
@@ -926,6 +929,10 @@ func readMessage(r *bufio.Reader) ([]byte, error) {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			break
+		}
+		headerCount++
+		if headerCount > maxHeaders {
+			return nil, fmt.Errorf("too many headers (%d)", headerCount)
 		}
 		if strings.HasPrefix(strings.ToLower(line), "content-length:") {
 			parts := strings.SplitN(line, ":", 2)

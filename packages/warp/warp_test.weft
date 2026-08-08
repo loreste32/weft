@@ -1992,8 +1992,10 @@ fn test_scalar_bool_with_float_array {
     // scalar true + float array
     r := warp.add(warp.array_typed([1], [1], "bool"), f)
     test.eq(warp.dtype(r), "float32")
+    test.eq(warp.to_list(r), [2.5, 3.5, 4.5])
     // scalar false * float array
     r2 := warp.mul(warp.array_typed([0], [1], "bool"), f)
+    test.eq(warp.dtype(r2), "float32")
     test.eq(warp.to_list(r2), [0.0, 0.0, 0.0])
 }
 
