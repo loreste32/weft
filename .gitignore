@@ -69,3 +69,5 @@ ci_mod/
 # optional root app manifest from local experiments
 /weft.json
 .tokensave/
+libweft_accel_mlx.dylib
+libweft_accel_cuda.so
