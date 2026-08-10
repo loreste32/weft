@@ -1,28 +1,51 @@
 # Accelerator hardware reporting
 
-## Maturity status: experimental
+## Maturity status: experimental (CUDA validated)
 
-GPU acceleration in Weft is **experimental**. As of 0.6.0:
+GPU acceleration in Weft is **experimental**. As of 0.6.1:
 
 - **CPU reference provider**: built and conformance-tested in CI on every commit.
-- **CUDA / ROCm / MLX providers**: compile-verified only. No production hardware
-  validation has been performed. No real GPU test results exist yet.
-- **Hardware tested**: none. No CUDA, ROCm, or MLX hardware has been used to
-  validate the vendor providers end-to-end.
-- **Supported operations**: matmul (float32 rank-2), elementwise add/sub/mul/div
-  (float32 same-shape rank 1–2). No broadcasting, no axis reductions, no
-  convolutions, no RNG, no linalg beyond matmul.
-- **Numerical tolerances**: CPU reference uses exact comparison for float64 and
-  1e-6 relative tolerance for float32. No GPU-specific tolerance data exists.
-- **Memory-transfer benchmarks**: none published.
-- **Multi-stream / concurrency**: not supported. Single-stream, synchronous
-  execution only.
-- **Failure behavior**: a provider that fails to load, build, or run is reported
-  as `failed` or `unavailable`. Silent fallback is rejected.
+- **CUDA provider**: validated on real hardware (see below). All 6 tensor ops pass conformance.
+- **ROCm / MLX providers**: compile-verified only. No hardware validation yet.
 
-Do not rely on GPU acceleration for production workloads until hardware-validated
-results are published in `reports/accelerator-report.json` with real driver
-versions, throughput numbers, and fallback frequency data.
+### CUDA hardware validation (0.6.1)
+
+| Field | Value |
+|-------|-------|
+| GPU | NVIDIA A2 (Ampere, compute capability 8.6) |
+| VRAM | 15,356 MiB |
+| Driver | 590.48.01 |
+| CUDA toolkit | 12.0 (nvcc r12.0/compiler.32267302_0) |
+| Host CPU | Intel Xeon Gold 6138 @ 2.00 GHz (80 threads) |
+| OS | Ubuntu 24.04.3 LTS, kernel 6.8.0-90 |
+
+**Operations tested and passed**:
+
+| Operation | Status | DType | Tolerance |
+|-----------|--------|-------|-----------|
+| `tensor_matmul` | PASS | float32 | 1e-4 |
+| `tensor_add` | PASS | float32 | exact |
+| `tensor_sub` | PASS | float32 | exact |
+| `tensor_mul` | PASS | float32 | exact |
+| `tensor_div` | PASS | float32 | exact |
+| `tensor_sum` | PASS | float32 | 1e-4 |
+
+**Benchmarks** (2×2 matmul, full-reduction sum — small inputs, measures ABI overhead not throughput):
+
+| Operation | ns/op | B/op | allocs/op |
+|-----------|------:|-----:|----------:|
+| `tensor_matmul` | 1,906,369 | 18,326 | 46 |
+| `tensor_sum` | 1,513,349 | 18,155 | 39 |
+
+**Execution reporting**: all ops report `device: "cuda:0"`, `fallback: false`, classification `honest`.
+
+**Fallback frequency**: 0% — no device-claimed op fell back to CPU.
+
+**Multi-stream / concurrency**: not supported. Single-stream, synchronous execution only.
+
+**Failure behavior**: a provider that fails to load, build, or run is reported as `failed` or `unavailable`. Silent fallback is rejected.
+
+**Not yet validated**: ROCm (requires AMD GPU), MLX (requires Apple Silicon with mlx-c). Broadcasting, axis reductions, convolutions, RNG, and linalg beyond matmul are not declared by any provider.
 
 ---
 
