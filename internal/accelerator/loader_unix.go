@@ -294,17 +294,19 @@ func (p *nativeSharedLibrary) runTensor(operation string, inputs []*tensor.Tenso
 		C.weft_accel_free_tensor(p.handle, output)
 		return nil, err
 	}
-	shapeArray := (*[32]C.int64_t)(unsafe.Pointer(output.shape))[:output.rank:output.rank]
-	strideArray := (*[32]C.int64_t)(unsafe.Pointer(output.strides))[:output.rank:output.rank]
 	shape := make([]int, output.rank)
 	wantStrides := make([]int64, output.rank)
-	for i := range shape {
-		if shapeArray[i] < 0 || shapeArray[i] > C.int64_t(int64(^uint(0)>>1)) {
-			C.weft_accel_free_tensor(p.handle, output)
-			return nil, fmt.Errorf("native tensor provider returned an invalid shape")
+	if output.rank > 0 {
+		shapeArray := (*[32]C.int64_t)(unsafe.Pointer(output.shape))[:output.rank:output.rank]
+		strideArray := (*[32]C.int64_t)(unsafe.Pointer(output.strides))[:output.rank:output.rank]
+		for i := range shape {
+			if shapeArray[i] < 0 || shapeArray[i] > C.int64_t(int64(^uint(0)>>1)) {
+				C.weft_accel_free_tensor(p.handle, output)
+				return nil, fmt.Errorf("native tensor provider returned an invalid shape")
+			}
+			shape[i] = int(shapeArray[i])
+			wantStrides[i] = int64(strideArray[i])
 		}
-		shape[i] = int(shapeArray[i])
-		wantStrides[i] = int64(strideArray[i])
 	}
 	resultBytes := C.GoBytes(output.data, C.int(output.bytes))
 	C.weft_accel_free_tensor(p.handle, output)

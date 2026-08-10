@@ -21,20 +21,17 @@ func TestExternalProviderTensor(t *testing.T) {
 	if !supportsOperation(plugin.Manifest().Operations, "tensor_matmul") {
 		t.Fatalf("provider %q does not declare tensor_matmul: %+v", plugin.Manifest().Name, plugin.Manifest())
 	}
-	left, err := tensor.FromFloat64([]int{2, 2}, []float64{1, 2, 3, 4})
-	if err != nil {
-		t.Fatal(err)
+	// Use the provider's manifest dtype (float32 for CUDA/ROCm, float64 for CPU).
+	dtype := tensor.Float32
+	if plugin.Manifest().Metadata["dtype"] == "float64" {
+		dtype = tensor.Float64
 	}
-	right, err := tensor.FromFloat64([]int{2, 2}, []float64{5, 6, 7, 8})
-	if err != nil {
-		t.Fatal(err)
-	}
+	left := makeProbeTensor(t, dtype, []int{2, 2}, []float64{1, 2, 3, 4})
+	right := makeProbeTensor(t, dtype, []int{2, 2}, []float64{5, 6, 7, 8})
 	result, info, err := plugin.RunTensor("tensor_matmul", left, right)
 	if err != nil {
 		t.Fatal("external tensor matmul: ", err)
 	}
-	// Execution reporting is mandatory for conformance: a provider that omits
-	// weft_accel_exec_info, or reports a contradiction, fails here.
 	if !info.Reported {
 		t.Fatalf("REPORTING_UNREPORTED: provider %q omits tensor exec info", plugin.Manifest().Name)
 	}
