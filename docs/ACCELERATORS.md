@@ -121,7 +121,7 @@ Current coverage:
 |-----------|---------------|-----------------------------|
 | `tensor_matmul` | float64 rank-2 | float32 rank-2 |
 | `tensor_add` / `tensor_sub` / `tensor_mul` / `tensor_div` | float32 + float64, same-shape, rank 1–2 | float32, same-shape, rank 1–2 |
-| `tensor_sum` (full reduction → rank-0, NumPy `np.sum` semantics) | float32 + float64, rank 1–2 | not declared |
+| `tensor_sum` (full reduction → rank-0, NumPy `np.sum` semantics) | float32 + float64, rank 1–2 | CUDA/ROCm float32, rank 1–2; MLX not declared |
 
 Deliberate non-claims (providers reject these with explicit errors rather
 than silent approximations):
@@ -134,9 +134,11 @@ than silent approximations):
   `keepdims` parameter exists in the ABI.
 - **Convolutions, RNG, and linalg beyond `matmul`** (solve, svd, eig, …) are
   not transported by any declared operation.
-- **`tensor_sum` on vendors** stays out of the CUDA/ROCm/MLX manifests until
-  a parallel reduction is validated on real hardware; the vendor provider
-  diffs are compile-unverified on hosts without their SDKs.
+- **Vendor `tensor_sum` is correctness-only for now.** CUDA and ROCm declare
+  a deterministic single-device-thread reduction; a parallel reduction and
+  benchmark are still required before making performance claims. MLX remains
+  undeclared until its `mlx-c` reduction API is compile-verified. Vendor
+  provider diffs are compile-unverified on hosts without their SDKs.
 
 ## Env trust model (summary)
 
@@ -214,7 +216,8 @@ results when available.
 
 The current vendor provider contract includes JSON matmul plus bounded,
 same-shape contiguous binary `tensor_matmul` and elementwise `tensor_add` /
-`tensor_sub` / `tensor_mul` / `tensor_div` for float32 rank-1/rank-2 tensors.
+`tensor_sub` / `tensor_mul` / `tensor_div` for float32 rank-1/rank-2 tensors,
+plus a CUDA/ROCm float32 full reduction.
 The CPU reference additionally covers those elementwise ops in float64 and
 full-reduction `tensor_sum` (rank-0 output). Broadcasting, axis reductions,
 conv, RNG, and linalg beyond matmul remain separate coverage claims — see
@@ -227,6 +230,13 @@ conv, RNG, and linalg beyond matmul remain separate coverage claims — see
   matmul (JSON + binary tensor where claimed) must pass with
   `fallback_occurred=false` for device-claimed ops.
 - A green **compile alone** is not sufficient provider validation.
+
+The scheduled/manual `.github/workflows/native-accelerators.yml` jobs now also
+run `BenchmarkExternalProvider*` for binary matmul and any declared
+`tensor_sum`, using the provider's manifest dtype, and upload raw benchmark
+output as a per-vendor Actions artifact. These artifacts are evidence, not a
+performance claim by themselves: a release must record runner, toolkit,
+driver, device, dtype, tolerance, and peak-memory context alongside them.
 
 ## Release gate checklist
 

@@ -254,9 +254,15 @@ hardware is environment-dependent).
   `ddof`/axis-accumulator reduction options; `hypot`/`expm1`/`log1p`/
   `floor_divide`/`remainder`/`square`/`reciprocal`/`deg2rad`/`rad2deg`/
   `copysign`/`rint`; `rfft`/`irfft`/`rfft_freq`/`fftshift`/`ifftshift`;
-  `sort_axis`/`argsort_axis`/`unique_opts`. Open: polynomial helpers,
-  histogram/corrcoef statistics, searchsorted/partition, multi-dim FFT,
-  eig/SVD/QR, masked arrays and sparse formats (documented unsupported).
+  `sort_axis`/`argsort_axis`/`unique_opts`, histogram/bincount/cov/corrcoef,
+  searchsorted/digitize, partition/argpartition, and polynomial fit/eval/
+  derivative/integral helpers. Degree-limited `roots` and multi-dimensional
+  FFTs are available, as are bounded thin real `qr`, symmetric real `eigh`
+  (sizes 1–32), and bounded real thin `svd` for rectangular matrices up to
+  32×32 with deterministic rank-deficient completion. Open: higher-degree
+  polynomial roots, nonsymmetric eig, complex SVD,
+  masked arrays, and sparse formats (documented
+  unsupported).
 - Add property, fuzz, and differential tests for every declared API, including
   dtype results, exceptions, empty inputs, non-contiguous inputs, and numerical
   tolerances against pinned NumPy. **Progress:** the conformance property
@@ -284,7 +290,9 @@ hardware is environment-dependent).
   with alpha/span/halflife, `adjust`, `ignore_na`, and `bias` matched to the
   pandas 3.0 recursions step-for-step (incl. the com==1 adjust=false branch
   and sum's adjust=true-only rule); `var` added to the rolling/expanding op
-  set. Open: resample.
+  set. **Done for the current numeric profile:** `align` and fixed-width
+  numeric-second `resample`; datetime/timezone-aware calendar resampling remains
+  open.
 - Add production I/O coverage for CSV, JSON/JSONL, Parquet/Arrow-compatible
   interchange, SQL, and chunked streaming with explicit type and null policies.
   **Progress:** `read_sql`/`to_sql` via the `db` stdlib (sqlite, transactional,
@@ -308,7 +316,9 @@ hardware is environment-dependent).
   `jacobian`, `derivative`, `fwd_*` ops) over scalars and warp arrays, with
   exact JVPs three-way checked against reverse mode and `gradcheck`, and
   nested duals for scalar second derivatives. Open: views/aliases, numerical
-  stability diagnostics, array-level higher-order gradients.
+  stability diagnostics, and exact array-level higher-order reverse mode.
+  **Progress:** numerical array Hessians are available through basis HVPs;
+  exact array-level nested reverse mode remains open.
 - Complete the training surface: modules/layers, activations, losses,
   optimizers, schedulers, batching/data loaders, metrics, serialization,
   checkpoint resume, parameter freezing, and clear device placement.
@@ -320,7 +330,9 @@ hardware is environment-dependent).
 - Add classical ML algorithms and preprocessing with scikit-learn differential
   coverage, including sparse and categorical inputs where supported.
   **Progress:** sklearn 1.9.0 differential fixture (linear/logistic fits,
-  standardize) in the pinned conformance harness. Open: k-means/KNN/trees;
+  standardize) in the pinned conformance harness. Deterministic dense numeric
+  `kmeans`, `knn_predict`/`knn`, and a bounded numeric decision-tree classifier
+  are also available. Open: regression trees,
   sparse/categorical inputs (documented unsupported).
 - Validate end-to-end training and inference on CPU with a 100k+ row
   DataFrame-to-model pipeline; retain an explicit, tested CPU fallback when a
@@ -461,7 +473,10 @@ higher-order autodiff, and zero unexplained differential failures.
 - Implement and test a real CUDA provider using the CUDA Runtime API plus the required kernel/library primitives; compile and run it against pinned toolkit versions on NVIDIA hardware.
 - Implement and test a real ROCm/HIP provider with the corresponding memory, stream, kernel, and math-library paths on AMD hardware.
 - Implement and test a native Apple MLX provider with explicit macOS/device capability reporting and no silent claim of support when MLX is unavailable.
-- Current native providers cover bounded same-shape contiguous `tensor_add` and `tensor_matmul` (rank-1/rank-2 float tensors); broadcasting, reductions, and the remaining operation families still require provider-level coverage.
+- Current native providers cover bounded same-shape contiguous `tensor_add`,
+  `tensor_matmul`, and CUDA/ROCm float32 `tensor_sum` (rank-1/rank-2 tensors);
+  broadcasting, axis-aware reductions, and the remaining operation families
+  still require provider-level coverage.
 - Define operation coverage and fallback rules for every provider: elementwise/broadcast operations, reductions, matmul, convolutions, transfers, random, linalg, dataframe kernels, and synchronization.
 - Add allocator, stream-ordering, device-loss, dtype/stride, multi-device, concurrent-request, and leak tests. A provider is not release-ready if it only loads or returns a CPU result.
 

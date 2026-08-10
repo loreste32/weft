@@ -156,6 +156,36 @@ fn test_series_alignment_and_reindex {
     test.eq(df.series_values(reordered), [20, -1, 10])
 }
 
+fn test_dataframe_align {
+    left := df.set_index(df.from_rows([{"id": "a", "v": 1}, {"id": "b", "v": 2}]), "id", null)
+    right := df.set_index(df.from_rows([{"id": "b", "w": 3}, {"id": "c", "w": 4}]), "id", null)
+    outer := df.align(left, right, null, 0)
+    test.is_true(outer.ok)
+    test.eq(df.index(outer.value.left), ["a", "b", "c"])
+    test.eq(df.col(outer.value.left, "v"), [1, 2, 0])
+    test.eq(df.col(outer.value.right, "w"), [0, 3, 4])
+    inner := df.align(left, right, "inner", null)
+    test.eq(df.index(inner.value.left), ["b"])
+    test.eq(df.align(left, right, "bad", null).ok, false)
+}
+
+fn test_dataframe_resample_numeric_seconds {
+    t := df.from_rows([
+        {"ts": 0, "value": 1},
+        {"ts": 5, "value": 2},
+        {"ts": 12, "value": 3},
+    ])
+    result := df.resample(t, "ts", "10s", {"value": "sum"}, null)?
+    test.eq(df.columns(result), ["ts", "value_sum"])
+    test.eq(df.col(result, "ts"), [0.0, 10.0])
+    test.eq(df.col(result, "value_sum"), [3, 3])
+    test.eq(df.resample(t, "ts", "10q", {"value": "sum"}, null).ok, false)
+    empty := df.from_columns({"ts": [], "value": []})?
+    empty_result := df.resample(empty, "ts", "10s", {"value": "sum"}, null)?
+    test.eq(df.columns(empty_result), ["ts", "value_sum"])
+    test.eq(len(empty_result.rows), 0)
+}
+
 fn test_set_and_reset_index {
     t := _sample_df()
     invalid_drop := df.set_index(t, "name", 1)

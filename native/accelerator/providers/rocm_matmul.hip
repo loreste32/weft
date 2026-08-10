@@ -49,6 +49,17 @@ __global__ void weft_add_kernel(const float* a, const float* b, float* out,
   if (index < count) out[index] = a[index] + b[index];
 }
 
+// Deterministic device reduction. This deliberately starts with one device
+// thread; the ABI and conformance behavior stay stable when a parallel
+// reduction kernel replaces it for large tensors.
+__global__ void weft_sum_kernel(const float* input, float* output, size_t count) {
+  if (blockIdx.x == 0 && threadIdx.x == 0) {
+    float total = 0.0f;
+    for (size_t index = 0; index < count; ++index) total += input[index];
+    output[0] = total;
+  }
+}
+
 // Bounded same-shape elementwise ops beyond add. op selects subtract (0),
 // multiply (1), or divide (2); the host-side wrapper below mirrors the
 // tensor_add shape checks, launch bounds, copies, and reporting exactly.
@@ -71,7 +82,7 @@ extern "C" const char* weft_accel_manifest(void) {
   return "{\"name\":\"weft-rocm\",\"version\":\"1.1.0\","
          "\"abi\":1,\"vendors\":[\"rocm\",\"hip\"],"
          "\"operations\":[\"health\",\"matmul\",\"tensor_matmul\",\"tensor_add\","
-         "\"tensor_sub\",\"tensor_mul\",\"tensor_div\"],"
+         "\"tensor_sub\",\"tensor_mul\",\"tensor_div\",\"tensor_sum\"],"
          "\"metadata\":{\"runtime\":\"hip\",\"dtype\":\"float32\",\"tensor_abi\":\"1\"}}";
 }
 
@@ -161,6 +172,69 @@ static bool tensor_add_shape(const weft_accel_tensor_input& left,
   return true;
 }
 
+static bool tensor_sum_shape(const weft_accel_tensor_input& input, size_t* count) {
+  if (input.dtype != WEFT_TENSOR_FLOAT32 || input.rank == 0 || input.rank > 2 ||
+      input.shape == nullptr || input.strides == nullptr || !tensor_c_contiguous(input) ||
+      input.data == nullptr) {
+    return false;
+  }
+  size_t elements = 1;
+  for (uint32_t axis = 0; axis < input.rank; ++axis) {
+    if (input.shape[axis] < 0) return false;
+    size_t dimension = static_cast<size_t>(input.shape[axis]);
+    if (dimension != 0 && elements > SIZE_MAX / dimension) return false;
+    elements *= dimension;
+  }
+  if (elements == 0 || elements > SIZE_MAX / sizeof(float) ||
+      input.bytes != elements * sizeof(float)) return false;
+  *count = elements;
+  return true;
+}
+
+static int rocm_run_tensor_sum(const weft_accel_tensor_input& input,
+                               weft_accel_tensor_output* output) {
+  size_t count = 0;
+  if (!tensor_sum_shape(input, &count)) {
+    last_error = "ROCm tensor_sum requires a non-empty contiguous float32 tensor of rank 1 or 2";
+    return 1;
+  }
+  float *device_input = nullptr, *device_output = nullptr;
+  bool ok = hip_ok(hipMalloc(&device_input, count * sizeof(float)), "hipMalloc(sum input)") &&
+            hip_ok(hipMalloc(&device_output, sizeof(float)), "hipMalloc(sum output)");
+  if (ok) {
+    ok = hip_ok(hipMemcpy(device_input, input.data, count * sizeof(float), hipMemcpyHostToDevice),
+                "hipMemcpy(sum input)");
+  }
+  if (ok) {
+    hipLaunchKernelGGL(weft_sum_kernel, dim3(1), dim3(1), 0, 0,
+                       device_input, device_output, count);
+    ok = hip_ok(hipGetLastError(), "sum kernel launch") &&
+         hip_ok(hipDeviceSynchronize(), "sum synchronize");
+  }
+  output->dtype = WEFT_TENSOR_FLOAT32;
+  output->rank = 0;
+  output->shape = nullptr;
+  output->strides = nullptr;
+  output->data = std::malloc(sizeof(float));
+  output->bytes = sizeof(float);
+  if (ok && output->data == nullptr) {
+    last_error = "ROCm tensor_sum output allocation failed";
+    ok = false;
+  }
+  if (ok) {
+    ok = hip_ok(hipMemcpy(output->data, device_output, sizeof(float), hipMemcpyDeviceToHost),
+                "hipMemcpy(sum result)");
+  }
+  hipFree(device_input);
+  hipFree(device_output);
+  if (!ok) {
+    weft_accel_free_tensor(output);
+    return 1;
+  }
+  record_exec_info(false);
+  return 0;
+}
+
 // Bounded same-shape float32 elementwise driver for tensor_sub, tensor_mul,
 // and tensor_div. This is the tensor_add flow with the op-tagged
 // weft_elementwise_kernel in place of weft_add_kernel; tensor_add keeps its
@@ -227,11 +301,18 @@ extern "C" int weft_accel_run_tensor(const char* operation,
                                        const weft_accel_tensor_input* inputs,
                                        size_t input_count,
                                        weft_accel_tensor_output* output) {
-  if (operation == nullptr || inputs == nullptr || output == nullptr || input_count != 2) {
-    last_error = "tensor operation requires two inputs and an output";
+  if (operation == nullptr || inputs == nullptr || output == nullptr ||
+      ((std::strcmp(operation, "tensor_sum") == 0 && input_count != 1) ||
+       (std::strcmp(operation, "tensor_sum") != 0 && input_count != 2))) {
+    last_error = std::strcmp(operation == nullptr ? "" : operation, "tensor_sum") == 0
+                     ? "tensor_sum requires one input and an output"
+                     : "tensor operation requires two inputs and an output";
     return 1;
   }
   std::memset(output, 0, sizeof(*output));
+  if (std::strcmp(operation, "tensor_sum") == 0) {
+    return rocm_run_tensor_sum(inputs[0], output);
+  }
   if (std::strcmp(operation, "tensor_sub") == 0 || std::strcmp(operation, "tensor_mul") == 0 ||
       std::strcmp(operation, "tensor_div") == 0) {
     int op = 0;

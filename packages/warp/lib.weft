@@ -1603,6 +1603,433 @@ fn _where_mask_data(where_mask, a) {
 // Linear algebra
 // ──────────────────────────────────────────────
 
+// Thin real QR factorization for full-column-rank matrices. Returns Q (m x n)
+// and R (n x n) for m >= n. Complex, rank-deficient, and wide matrices are
+// rejected explicitly rather than returning misleading factors.
+pub fn qr(a) -> Result[any] {
+    if !_is_arr(a) || len(a.shape) != 2 {
+        return Err("warp.qr expects a 2-D array")
+    }
+    m := a.shape[0]
+    n := a.shape[1]
+    if m < n || m == 0 || n == 0 { return Err("warp.qr expects a non-empty tall or square matrix") }
+    data := _data(a)
+    if len(data) != m * n { return Err("warp.qr data/shape mismatch") }
+    let mut q = []
+    let mut r = []
+    let mut i = 0
+    while i < m * n {
+        q = push(q, 0.0)
+        i = i + 1
+    }
+    i = 0
+    while i < n * n {
+        r = push(r, 0.0)
+        i = i + 1
+    }
+    let mut column = 0
+    while column < n {
+        let mut vector = []
+        i = 0
+        while i < m {
+            vector = push(vector, data[i * n + column] + 0.0)
+            i = i + 1
+        }
+        let mut previous = 0
+        while previous < column {
+            let mut projection = 0.0
+            i = 0
+            while i < m {
+                projection = projection + q[i * n + previous] * data[i * n + column]
+                i = i + 1
+            }
+            r[previous * n + column] = projection
+            i = 0
+            while i < m {
+                vector[i] = vector[i] - projection * q[i * n + previous]
+                i = i + 1
+            }
+            previous = previous + 1
+        }
+        let mut norm_squared = 0.0
+        for value in vector { norm_squared = norm_squared + value * value }
+        norm := math.sqrt(norm_squared)
+        if norm <= 1e-12 { return Err("warp.qr matrix is rank deficient") }
+        r[column * n + column] = norm
+        i = 0
+        while i < m {
+            q[i * n + column] = vector[i] / norm
+            i = i + 1
+        }
+        column = column + 1
+    }
+    Ok({"q": array(q, [m, n]), "r": array(r, [n, n])})
+}
+
+// Symmetric real eigen-decomposition using bounded Jacobi rotations. Values
+// are ascending and vectors are returned as columns. General matrices,
+// complex arrays, and dimensions above 32 are rejected explicitly.
+pub fn eigh(a) -> Result[any] {
+    if !_is_arr(a) || len(a.shape) != 2 || a.shape[0] != a.shape[1] {
+        return Err("warp.eigh expects a square real array")
+    }
+    n := a.shape[0]
+    if n == 0 || n > 32 { return Err("warp.eigh supports square sizes from 1 through 32") }
+    data := _data(a)
+    if len(data) != n * n { return Err("warp.eigh data/shape mismatch") }
+    let mut matrix = []
+    for value in data { matrix = push(matrix, value + 0.0) }
+    let mut row = 0
+    while row < n {
+        let mut column = row + 1
+        while column < n {
+            if math.abs(matrix[row * n + column] - matrix[column * n + row]) > 1e-12 {
+                return Err("warp.eigh expects a symmetric matrix")
+            }
+            column = column + 1
+        }
+        row = row + 1
+    }
+    let mut vectors = []
+    row = 0
+    while row < n * n {
+        vectors = push(vectors, if row / n == row % n { 1.0 } else { 0.0 })
+        row = row + 1
+    }
+    let mut converged = false
+    let max_iterations := 100 * n * n
+    let mut iteration = 0
+    while iteration < max_iterations {
+        let mut p = 0
+        let mut q = if n > 1 { 1 } else { 0 }
+        let mut largest = 0.0
+        row = 0
+        while row < n {
+            let mut column = row + 1
+            while column < n {
+                magnitude := math.abs(matrix[row * n + column])
+                if magnitude > largest {
+                    largest = magnitude
+                    p = row
+                    q = column
+                }
+                column = column + 1
+            }
+            row = row + 1
+        }
+        if largest <= 1e-12 {
+            converged = true
+            break
+        }
+        app := matrix[p * n + p]
+        aqq := matrix[q * n + q]
+        apq := matrix[p * n + q]
+        theta := 0.5 * math.atan2(2.0 * apq, aqq - app)
+        c := math.cos(theta)
+        s := math.sin(theta)
+        row = 0
+        while row < n {
+            if row != p && row != q {
+                akp := matrix[row * n + p]
+                akq := matrix[row * n + q]
+                matrix[row * n + p] = c * akp - s * akq
+                matrix[p * n + row] = matrix[row * n + p]
+                matrix[row * n + q] = s * akp + c * akq
+                matrix[q * n + row] = matrix[row * n + q]
+            }
+            row = row + 1
+        }
+        matrix[p * n + p] = c * c * app - 2.0 * s * c * apq + s * s * aqq
+        matrix[q * n + q] = s * s * app + 2.0 * s * c * apq + c * c * aqq
+        matrix[p * n + q] = 0.0
+        matrix[q * n + p] = 0.0
+        row = 0
+        while row < n {
+            v_p := vectors[row * n + p]
+            v_q := vectors[row * n + q]
+            vectors[row * n + p] = c * v_p - s * v_q
+            vectors[row * n + q] = s * v_p + c * v_q
+            row = row + 1
+        }
+        iteration = iteration + 1
+    }
+    if !converged { return Err("warp.eigh did not converge") }
+    let mut order = []
+    row = 0
+    while row < n {
+        order = push(order, row)
+        row = row + 1
+    }
+    let mut i = 0
+    while i < n {
+        let mut best = i
+        let mut j = i + 1
+        while j < n {
+            if matrix[order[j] * n + order[j]] < matrix[order[best] * n + order[best]] { best = j }
+            j = j + 1
+        }
+        swap := order[i]
+        order[i] = order[best]
+        order[best] = swap
+        i = i + 1
+    }
+    let mut values = []
+    let mut eigen_column = 0
+    while eigen_column < n {
+        source := order[eigen_column]
+        values = push(values, matrix[source * n + source])
+        eigen_column = eigen_column + 1
+    }
+    let mut sorted_vectors = []
+    row = 0
+    while row < n {
+        eigen_column = 0
+        while eigen_column < n {
+            sorted_vectors = push(sorted_vectors, vectors[row * n + order[eigen_column]])
+            eigen_column = eigen_column + 1
+        }
+        row = row + 1
+    }
+    Ok({"values": array(values, [n]), "vectors": array(sorted_vectors, [n, n])})
+}
+
+// Stable 2x2 thin-SVD helper used by the public general path below.
+fn _svd_2x2(a) -> Result[any] {
+    if !_is_arr(a) || len(a.shape) != 2 || a.shape[0] != 2 || a.shape[1] != 2 {
+        return Err("warp.svd currently expects a 2x2 array")
+    }
+    data := _data(a)
+    if len(data) != 4 { return Err("warp.svd data/shape mismatch") }
+    ata := array([
+        data[0] * data[0] + data[2] * data[2],
+        data[0] * data[1] + data[2] * data[3],
+        data[0] * data[1] + data[2] * data[3],
+        data[1] * data[1] + data[3] * data[3],
+    ], [2, 2])
+    decomposition := eigh(ata)?
+    values := _data(decomposition.values)
+    vectors := _data(decomposition.vectors)
+    let mut s0 = math.sqrt(if values[1] < 0.0 { 0.0 } else { values[1] })
+    let mut s1 = math.sqrt(if values[0] < 0.0 { 0.0 } else { values[0] })
+    if s0 <= 1e-7 { s0 = 0.0 }
+    if s1 <= 1e-7 { s1 = 0.0 }
+    high_x := vectors[1]
+    high_y := vectors[3]
+    low_x := vectors[0]
+    low_y := vectors[2]
+    let mut u0x = 1.0
+    let mut u0y = 0.0
+    if s0 > 1e-12 {
+        u0x = (data[0] * high_x + data[1] * high_y) / s0
+        u0y = (data[2] * high_x + data[3] * high_y) / s0
+    }
+    let mut u1x = -u0y
+    let mut u1y = u0x
+    if s1 > 1e-12 {
+        u1x = (data[0] * low_x + data[1] * low_y) / s1
+        u1y = (data[2] * low_x + data[3] * low_y) / s1
+    }
+    Ok({
+        "u": array([u0x, u1x, u0y, u1y], [2, 2]),
+        "s": array([s0, s1], [2]),
+        "vh": array([high_x, high_y, low_x, low_y], [2, 2]),
+    })
+}
+
+// Bounded real thin SVD for rectangular matrices with max(m,n) <= 32. Tall
+// inputs use AᵀA; wide inputs use AAᵀ. Zero singular values use deterministic
+// orthonormal completion; complex inputs remain unsupported.
+pub fn svd(a) -> Result[any] {
+    if !_is_arr(a) || len(a.shape) != 2 { return Err("warp.svd expects a 2-D real array") }
+    m := a.shape[0]
+    n := a.shape[1]
+    if m == 2 && n == 2 { return _svd_2x2(a) }
+    if m == 0 || n == 0 || n > 32 || m > 32 {
+        return Err("warp.svd supports non-empty real matrices up to 32x32")
+    }
+    data := _data(a)
+    if len(data) != m * n { return Err("warp.svd data/shape mismatch") }
+    if m < n {
+        let mut aat = []
+        let mut row = 0
+        while row < m {
+            let mut column = 0
+            while column < m {
+                let mut total = 0.0
+                let mut sample = 0
+                while sample < n {
+                    total = total + data[row * n + sample] * data[column * n + sample]
+                    sample = sample + 1
+                }
+                aat = push(aat, total)
+                column = column + 1
+            }
+            row = row + 1
+        }
+        decomposition := eigh(array(aat, [m, m]))?
+        eigenvalues := _data(decomposition.values)
+        eigenvectors := _data(decomposition.vectors)
+        let mut singular_values = []
+        let mut u_columns = []
+        let mut vh = []
+        let mut v_columns = []
+        let mut v_basis = []
+        let mut component = 0
+        while component < m {
+            source := m - 1 - component
+            eigenvalue := eigenvalues[source]
+            let mut sigma = math.sqrt(if eigenvalue < 0.0 { 0.0 } else { eigenvalue })
+        if sigma <= 1e-7 { sigma = 0.0 }
+            singular_values = push(singular_values, sigma)
+            let mut u_vector = []
+            let mut row_index = 0
+            while row_index < m {
+                value := eigenvectors[row_index * m + source]
+                u_vector = push(u_vector, value)
+                u_columns = push(u_columns, value)
+                row_index = row_index + 1
+            }
+            let mut v_vector = []
+            if sigma > 1e-12 {
+                let mut column_index = 0
+                while column_index < n {
+                    let mut projection = 0.0
+                    row_index = 0
+                    while row_index < m {
+                        projection = projection + data[row_index * n + column_index] * u_vector[row_index]
+                        row_index = row_index + 1
+                    }
+                    v_vector = push(v_vector, projection / sigma)
+                    column_index = column_index + 1
+                }
+            } else {
+                v_vector = _orthogonal_completion(v_basis, n)?
+            }
+            v_basis = push(v_basis, v_vector)
+            for value in v_vector {
+                vh = push(vh, value)
+                v_columns = push(v_columns, value)
+            }
+            component = component + 1
+        }
+        let mut row_major_u = []
+        row = 0
+        while row < m {
+            component = 0
+            while component < m {
+                row_major_u = push(row_major_u, u_columns[component * m + row])
+                component = component + 1
+            }
+            row = row + 1
+        }
+        return Ok({"u": array(row_major_u, [m, m]), "s": array(singular_values, [m]), "vh": array(vh, [m, n])})
+    }
+    let mut ata = []
+    let mut row = 0
+    while row < n {
+        let mut column = 0
+        while column < n {
+            let mut total = 0.0
+            let mut sample = 0
+            while sample < m {
+                total = total + data[sample * n + row] * data[sample * n + column]
+                sample = sample + 1
+            }
+            ata = push(ata, total)
+            column = column + 1
+        }
+        row = row + 1
+    }
+    decomposition := eigh(array(ata, [n, n]))?
+    eigenvalues := _data(decomposition.values)
+    eigenvectors := _data(decomposition.vectors)
+    let mut singular_values = []
+    let mut vh = []
+    let mut u_columns = []
+    let mut u_basis = []
+    let mut component = 0
+    while component < n {
+        source := n - 1 - component
+        eigenvalue := eigenvalues[source]
+        let mut sigma = math.sqrt(if eigenvalue < 0.0 { 0.0 } else { eigenvalue })
+        if sigma <= 1e-7 { sigma = 0.0 }
+        singular_values = push(singular_values, sigma)
+        let mut vector = []
+        let mut coordinate = 0
+        while coordinate < n {
+            value := eigenvectors[coordinate * n + source]
+            vector = push(vector, value)
+            vh = push(vh, value)
+            coordinate = coordinate + 1
+        }
+        let mut u_vector = []
+        if sigma > 1e-12 {
+            row = 0
+            while row < m {
+                let mut projection = 0.0
+                coordinate = 0
+                while coordinate < n {
+                    projection = projection + data[row * n + coordinate] * vector[coordinate]
+                    coordinate = coordinate + 1
+                }
+                u_vector = push(u_vector, projection / sigma)
+                row = row + 1
+            }
+        } else {
+            u_vector = _orthogonal_completion(u_basis, m)?
+        }
+        u_basis = push(u_basis, u_vector)
+        for value in u_vector { u_columns = push(u_columns, value) }
+        component = component + 1
+    }
+    let mut row_major_u = []
+    row = 0
+    while row < m {
+        component = 0
+        while component < n {
+            row_major_u = push(row_major_u, u_columns[component * m + row])
+            component = component + 1
+        }
+        row = row + 1
+    }
+    Ok({"u": array(row_major_u, [m, n]), "s": array(singular_values, [n]), "vh": array(vh, [n, n])})
+}
+
+fn _orthogonal_completion(existing, dimension) -> Result[any] {
+    let mut candidate = 0
+    while candidate < dimension {
+        let mut vector = []
+        let mut i = 0
+        while i < dimension {
+            vector = push(vector, if i == candidate { 1.0 } else { 0.0 })
+            i = i + 1
+        }
+        for basis in existing {
+            let mut projection = 0.0
+            i = 0
+            while i < dimension {
+                projection = projection + vector[i] * basis[i]
+                i = i + 1
+            }
+            i = 0
+            while i < dimension {
+                vector[i] = vector[i] - projection * basis[i]
+                i = i + 1
+            }
+        }
+        let mut norm_squared = 0.0
+        for value in vector { norm_squared = norm_squared + value * value }
+        norm := math.sqrt(norm_squared)
+        if norm > 1e-12 {
+            let mut normalized = []
+            for value in vector { normalized = push(normalized, value / norm) }
+            return Ok(normalized)
+        }
+        candidate = candidate + 1
+    }
+    Err("warp.svd could not complete an orthonormal basis")
+}
+
 pub fn dot(a, b) {
     matmul(a, b)
 }
@@ -3092,6 +3519,55 @@ pub fn unique_opts(a, return_index, return_counts) {
 pub fn sort_axis(a, axis) { _sort_along_axis(a, axis, false) }
 
 pub fn argsort_axis(a, axis) { _sort_along_axis(a, axis, true) }
+
+// partition/argpartition expose NumPy's kth-selection contract. The current
+// implementation uses the stable axis sorter, which is allowed by NumPy's
+// partition value contract and keeps results deterministic within partitions.
+pub fn partition(a, kth, axis) {
+    if !_is_arr(a) { return Err("warp.partition expects an array") }
+    normalized := _normalize_axis(axis, len(a.shape), false)
+    if normalized == null { return Err("warp.partition axis is out of range") }
+    n := a.shape[normalized]
+    let mut positions = []
+    if _wkind(kth) == "int" {
+        positions = [kth]
+    } else {
+        raw := if _is_arr(kth) { _data(kth) } else { kth }
+        if _wkind(raw) != "list" { return Err("warp.partition kth must be an integer or integer list") }
+        positions = raw
+    }
+    for position in positions {
+        if _wkind(position) != "int" || position < -n || position >= n {
+            return Err("warp.partition kth is out of range")
+        }
+    }
+    result := _sort_along_axis(a, normalized, false)
+    if _wkind(result) == "result" { return result }
+    result
+}
+
+pub fn argpartition(a, kth, axis) {
+    if !_is_arr(a) { return Err("warp.argpartition expects an array") }
+    normalized := _normalize_axis(axis, len(a.shape), false)
+    if normalized == null { return Err("warp.argpartition axis is out of range") }
+    n := a.shape[normalized]
+    let mut positions = []
+    if _wkind(kth) == "int" {
+        positions = [kth]
+    } else {
+        raw := if _is_arr(kth) { _data(kth) } else { kth }
+        if _wkind(raw) != "list" { return Err("warp.argpartition kth must be an integer or integer list") }
+        positions = raw
+    }
+    for position in positions {
+        if _wkind(position) != "int" || position < -n || position >= n {
+            return Err("warp.argpartition kth is out of range")
+        }
+    }
+    result := _sort_along_axis(a, normalized, true)
+    if _wkind(result) == "result" { return result }
+    result
+}
 
 fn _sort_along_axis(a, axis, is_argsort) {
     if !_is_arr(a) { return Err("warp.sort_axis/argsort_axis expects an array") }

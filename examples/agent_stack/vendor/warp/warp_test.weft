@@ -823,6 +823,160 @@ fn test_solve_matrix_rhs {
     test.approx(vals[3], 4.0, 1e-6)
 }
 
+fn test_qr_thin_factorization {
+    a := warp.array([1.0, 1.0, 0.0, 1.0, 0.0, 1.0], [3, 2])
+    result := warp.qr(a)?
+    test.eq(warp.shape(result.q), [3, 2])
+    test.eq(warp.shape(result.r), [2, 2])
+    reconstructed := warp.matmul(result.q, result.r)
+    original := warp.to_list(a)
+    actual := warp.to_list(reconstructed)
+    let mut i = 0
+    while i < len(original) {
+        test.approx(actual[i], original[i], 1e-9)
+        i = i + 1
+    }
+    orthogonal := warp.matmul(warp.transpose(result.q, null), result.q)
+    ortho := warp.to_list(orthogonal)
+    test.approx(ortho[0], 1.0, 1e-9)
+    test.approx(ortho[1], 0.0, 1e-9)
+    test.approx(ortho[2], 0.0, 1e-9)
+    test.approx(ortho[3], 1.0, 1e-9)
+    test.eq(warp.qr(warp.array([1.0, 2.0, 2.0, 4.0], [2, 2])).ok, false)
+}
+
+fn test_eigh_symmetric_2x2 {
+    a := warp.array([2.0, 1.0, 1.0, 2.0], [2, 2])
+    result := warp.eigh(a)?
+    values := warp.to_list(result.values)
+    vectors := warp.to_list(result.vectors)
+    test.approx(values[0], 1.0, 1e-9)
+    test.approx(values[1], 3.0, 1e-9)
+    test.approx(vectors[0] * vectors[0] + vectors[2] * vectors[2], 1.0, 1e-9)
+    test.approx(vectors[1] * vectors[1] + vectors[3] * vectors[3], 1.0, 1e-9)
+    v0 := warp.array([vectors[0], vectors[2]], [2])
+    v1 := warp.array([vectors[1], vectors[3]], [2])
+    av0 := warp.to_list(warp.matmul(a, v0))
+    av1 := warp.to_list(warp.matmul(a, v1))
+    test.approx(av0[0], values[0] * vectors[0], 1e-9)
+    test.approx(av0[1], values[0] * vectors[2], 1e-9)
+    test.approx(av1[0], values[1] * vectors[1], 1e-9)
+    test.approx(av1[1], values[1] * vectors[3], 1e-9)
+    test.eq(warp.eigh(warp.array([1.0, 2.0, 3.0, 4.0], [2, 2])).ok, false)
+}
+
+fn test_eigh_symmetric_3x3 {
+    a := warp.array([2.0, 1.0, 0.0, 1.0, 2.0, 1.0, 0.0, 1.0, 2.0], [3, 3])
+    result := warp.eigh(a)?
+    values := warp.to_list(result.values)
+    vectors := warp.to_list(result.vectors)
+    root_two := math.sqrt(2.0)
+    test.approx(values[0], 2.0 - root_two, 1e-8)
+    test.approx(values[1], 2.0, 1e-8)
+    test.approx(values[2], 2.0 + root_two, 1e-8)
+    let mut column = 0
+    while column < 3 {
+        vector := warp.array([vectors[column], vectors[3 + column], vectors[6 + column]], [3])
+        product := warp.to_list(warp.matmul(a, vector))
+        let mut row = 0
+        while row < 3 {
+            test.approx(product[row], values[column] * vectors[row * 3 + column], 1e-8)
+            row = row + 1
+        }
+        column = column + 1
+    }
+}
+
+fn test_svd_2x2_reconstruction {
+    a := warp.array([1.0, 2.0, 3.0, 4.0], [2, 2])
+    result := warp.svd(a)?
+    values := warp.to_list(result.s)
+    test.is_true(values[0] >= values[1])
+    sigma := warp.array([values[0], 0.0, 0.0, values[1]], [2, 2])
+    reconstructed := warp.matmul(warp.matmul(result.u, sigma), result.vh)
+    original := warp.to_list(a)
+    actual := warp.to_list(reconstructed)
+    let mut i = 0
+    while i < len(original) {
+        test.approx(actual[i], original[i], 1e-8)
+        i = i + 1
+    }
+    test.eq(warp.shape(result.u), [2, 2])
+    test.eq(warp.shape(result.vh), [2, 2])
+    test.eq(warp.svd(warp.array([1.0, 2.0, 3.0], [3])).ok, false)
+    rank_deficient := warp.svd(warp.array([1.0, 2.0, 2.0, 4.0], [2, 2]))?
+    rank_values := warp.to_list(rank_deficient.s)
+    test.approx(rank_values[1], 0.0, 1e-8)
+    rank_sigma := warp.array([rank_values[0], 0.0, 0.0, rank_values[1]], [2, 2])
+    rank_reconstructed := warp.matmul(warp.matmul(rank_deficient.u, rank_sigma), rank_deficient.vh)
+    rank_actual := warp.to_list(rank_reconstructed)
+    rank_original := warp.to_list(warp.array([1.0, 2.0, 2.0, 4.0], [2, 2]))
+    test.approx(rank_actual[0], rank_original[0], 1e-7)
+    test.approx(rank_actual[3], rank_original[3], 1e-7)
+}
+
+fn test_svd_tall_matrix_reconstruction {
+    a := warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [3, 2])
+    result := warp.svd(a)?
+    values := warp.to_list(result.s)
+    test.is_true(values[0] > values[1])
+    test.eq(warp.shape(result.u), [3, 2])
+    test.eq(warp.shape(result.s), [2])
+    test.eq(warp.shape(result.vh), [2, 2])
+    sigma := warp.array([values[0], 0.0, 0.0, values[1]], [2, 2])
+    reconstructed := warp.matmul(warp.matmul(result.u, sigma), result.vh)
+    original := warp.to_list(a)
+    actual := warp.to_list(reconstructed)
+    let mut i = 0
+    while i < len(original) {
+        test.approx(actual[i], original[i], 1e-7)
+        i = i + 1
+    }
+    rank_deficient := warp.svd(warp.array([1.0, 2.0, 2.0, 4.0, 3.0, 6.0], [3, 2]))?
+    rank_values := warp.to_list(rank_deficient.s)
+    test.approx(rank_values[1], 0.0, 1e-8)
+    rank_sigma := warp.array([rank_values[0], 0.0, 0.0, rank_values[1]], [2, 2])
+    rank_reconstructed := warp.matmul(warp.matmul(rank_deficient.u, rank_sigma), rank_deficient.vh)
+    rank_actual := warp.to_list(rank_reconstructed)
+    rank_original := warp.to_list(warp.array([1.0, 2.0, 2.0, 4.0, 3.0, 6.0], [3, 2]))
+    let mut j = 0
+    while j < len(rank_original) {
+        test.approx(rank_actual[j], rank_original[j], 1e-7)
+        j = j + 1
+    }
+}
+
+fn test_svd_wide_matrix_reconstruction {
+    a := warp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+    result := warp.svd(a)?
+    values := warp.to_list(result.s)
+    test.is_true(values[0] > values[1])
+    test.eq(warp.shape(result.u), [2, 2])
+    test.eq(warp.shape(result.s), [2])
+    test.eq(warp.shape(result.vh), [2, 3])
+    sigma := warp.array([values[0], 0.0, 0.0, values[1]], [2, 2])
+    reconstructed := warp.matmul(warp.matmul(result.u, sigma), result.vh)
+    original := warp.to_list(a)
+    actual := warp.to_list(reconstructed)
+    let mut i = 0
+    while i < len(original) {
+        test.approx(actual[i], original[i], 1e-7)
+        i = i + 1
+    }
+    rank_deficient := warp.svd(warp.array([1.0, 2.0, 3.0, 2.0, 4.0, 6.0], [2, 3]))?
+    rank_values := warp.to_list(rank_deficient.s)
+    test.approx(rank_values[1], 0.0, 1e-8)
+    rank_sigma := warp.array([rank_values[0], 0.0, 0.0, rank_values[1]], [2, 2])
+    rank_reconstructed := warp.matmul(warp.matmul(rank_deficient.u, rank_sigma), rank_deficient.vh)
+    rank_actual := warp.to_list(rank_reconstructed)
+    rank_original := warp.to_list(warp.array([1.0, 2.0, 3.0, 2.0, 4.0, 6.0], [2, 3]))
+    let mut j = 0
+    while j < len(rank_original) {
+        test.approx(rank_actual[j], rank_original[j], 1e-7)
+        j = j + 1
+    }
+}
+
 fn test_inv_roundtrip_3x3 {
     // A * inv(A) should be identity
     a := warp.array([1,2,0, 0,1,1, 2,0,1], [3, 3])
@@ -1581,6 +1735,15 @@ fn test_roots {
     // Degree > 2 is an explicit unsupported error, not a bad guess.
     test.eq(warp.roots([1.0, 0.0, -1.0, 0.0]).ok, false)
     test.eq(warp.roots([1.0, 0.0, 0.0, -1.0, 0.0]).ok, false)
+}
+
+fn test_partition_and_argpartition {
+    a := warp.array([3, 1, 4, 1, 5, 2], [2, 3])
+    test.eq(warp.to_list(warp.partition(a, 1, 1)), [1, 3, 4, 1, 2, 5])
+    test.eq(warp.to_list(warp.argpartition(a, 1, 1)), [1, 0, 2, 0, 2, 1])
+    test.eq(warp.shape(warp.partition(a, -1, 0)), [2, 3])
+    test.eq(warp.partition(a, 3, 1).ok, false)
+    test.eq(warp.argpartition(a, "bad", 1).ok, false)
 }
 
 fn test_searchsorted {

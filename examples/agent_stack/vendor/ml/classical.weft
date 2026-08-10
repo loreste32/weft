@@ -1,0 +1,399 @@
+use math
+use warp
+
+fn _kind(value) { type_of(value) }
+
+// Dense, deterministic classical algorithms. These APIs intentionally accept
+// nested numeric lists or 2-D Warp arrays; sparse and categorical inputs are
+// outside the current compatibility profile.
+
+pub fn knn_predict(features, targets, queries, k, weighted) -> Result[any] {
+    rows := _feature_rows(features)
+    query_rows := _feature_rows(queries)
+    shape := _validate_rows(rows)
+    query_shape := _validate_rows(query_rows)
+    if shape == null || query_shape == null || query_shape[1] != shape[1] {
+        return Err("ml.knn_predict expects compatible non-empty numeric matrices")
+    }
+    if _kind(targets) != "list" || len(targets) != shape[0] {
+        return Err("ml.knn_predict targets must match the number of rows")
+    }
+    if _kind(k) != "int" || k <= 0 || k > shape[0] {
+        return Err("ml.knn_predict k must be a positive integer no larger than the training set")
+    }
+    use_weights := if weighted == null { false } else { weighted }
+    if _kind(use_weights) != "bool" {
+        return Err("ml.knn_predict weighted must be boolean or null")
+    }
+    let mut predictions = []
+    for query in query_rows {
+        nearest := _nearest(rows, query, k)
+        let mut labels = []
+        let mut scores = []
+        for item in nearest {
+            label := targets[item.index]
+            weight := if use_weights {
+                if item.distance == 0.0 { 1e12 } else { 1.0 / math.sqrt(item.distance) }
+            } else { 1.0 }
+            let mut found = -1
+            let mut i = 0
+            while i < len(labels) {
+                if labels[i] == label { found = i }
+                i = i + 1
+            }
+            if found < 0 {
+                labels = push(labels, label)
+                scores = push(scores, weight)
+            } else {
+                scores[found] = scores[found] + weight
+            }
+        }
+        let mut best = 0
+        let mut i = 1
+        while i < len(scores) {
+            if scores[i] > scores[best] { best = i }
+            i = i + 1
+        }
+        predictions = push(predictions, labels[best])
+    }
+    Ok(predictions)
+}
+
+pub fn knn(features, targets, queries, k, weighted) -> Result[any] {
+    knn_predict(features, targets, queries, k, weighted)
+}
+
+pub fn kmeans(features, k, opts) -> Result[any] {
+    rows := _feature_rows(features)
+    shape := _validate_rows(rows)
+    if shape == null { return Err("ml.kmeans expects a non-empty numeric matrix") }
+    if _kind(k) != "int" || k <= 0 || k > shape[0] {
+        return Err("ml.kmeans k must be a positive integer no larger than the number of rows")
+    }
+    let mut max_iter = 100
+    let mut tolerance = 1e-6
+    if opts != null && _kind(opts) == "map" {
+        if contains(keys(opts), "max_iter") { max_iter = opts.max_iter }
+        if contains(keys(opts), "tol") { tolerance = opts.tol }
+    }
+    if _kind(max_iter) != "int" || max_iter <= 0 || max_iter > 100000 {
+        return Err("ml.kmeans max_iter must be a positive bounded integer")
+    }
+    if (_kind(tolerance) != "int" && _kind(tolerance) != "float") || tolerance < 0 || tolerance != tolerance || math.isinf(tolerance) {
+        return Err("ml.kmeans tol must be finite and non-negative")
+    }
+    dims := shape[1]
+    let mut centers = []
+    let mut i = 0
+    while i < k {
+        let mut center = []
+        let mut j = 0
+        while j < dims {
+            center = push(center, rows[i][j] + 0.0)
+            j = j + 1
+        }
+        centers = push(centers, center)
+        i = i + 1
+    }
+    let mut labels = []
+    let mut inertia = 0.0
+    let mut iterations = 0
+    while iterations < max_iter {
+        let mut next_labels = []
+        let mut sums = []
+        let mut counts = []
+        i = 0
+        while i < k {
+            let mut zero = []
+            let mut j = 0
+            while j < dims {
+                zero = push(zero, 0.0)
+                j = j + 1
+            }
+            sums = push(sums, zero)
+            counts = push(counts, 0)
+            i = i + 1
+        }
+        inertia = 0.0
+        for row in rows {
+            nearest := _nearest(centers, row, 1)[0]
+            label := nearest.index
+            next_labels = push(next_labels, label)
+            inertia = inertia + nearest.distance
+            counts[label] = counts[label] + 1
+            j = 0
+            while j < dims {
+                sums[label][j] = sums[label][j] + row[j]
+                j = j + 1
+            }
+        }
+        let mut next_centers = []
+        let mut shift = 0.0
+        i = 0
+        while i < k {
+            let mut next = []
+            let mut j = 0
+            while j < dims {
+                value := if counts[i] == 0 { centers[i][j] } else { sums[i][j] / counts[i] }
+                next = push(next, value)
+                delta := value - centers[i][j]
+                shift = shift + delta * delta
+                j = j + 1
+            }
+            next_centers = push(next_centers, next)
+            i = i + 1
+        }
+        centers = next_centers
+        labels = next_labels
+        iterations = iterations + 1
+        if shift <= tolerance * tolerance { break }
+    }
+    Ok({"centers": centers, "labels": labels, "inertia": inertia, "iterations": iterations})
+}
+
+pub fn decision_tree_fit(features, targets, opts) -> Result[any] {
+    rows := _feature_rows(features)
+    shape := _validate_rows(rows)
+    if shape == null || _kind(targets) != "list" || len(targets) != shape[0] {
+        return Err("ml.decision_tree_fit expects a non-empty numeric matrix and matching labels")
+    }
+    if shape[0] > 4096 || shape[0] * shape[1] > 65536 {
+        return Err("ml.decision_tree_fit input exceeds the bounded dense classifier budget")
+    }
+    let mut max_depth = 8
+    let mut min_samples_split = 2
+    if opts != null && _kind(opts) == "map" {
+        if contains(keys(opts), "max_depth") { max_depth = opts.max_depth }
+        if contains(keys(opts), "min_samples_split") { min_samples_split = opts.min_samples_split }
+    }
+    if _kind(max_depth) != "int" || max_depth < 0 || max_depth > 64 {
+        return Err("ml.decision_tree_fit max_depth must be an integer from 0 through 64")
+    }
+    if _kind(min_samples_split) != "int" || min_samples_split < 2 || min_samples_split > shape[0] {
+        return Err("ml.decision_tree_fit min_samples_split must be bounded and at least 2")
+    }
+    let mut indices = []
+    let mut i = 0
+    while i < shape[0] {
+        indices = push(indices, i)
+        i = i + 1
+    }
+    tree := _build_tree(rows, targets, indices, 0, max_depth, min_samples_split)
+    Ok({"kind": "decision_tree_classifier", "features": shape[1], "tree": tree, "max_depth": max_depth})
+}
+
+pub fn tree_fit(features, targets, opts) -> Result[any] {
+    decision_tree_fit(features, targets, opts)
+}
+
+pub fn decision_tree_predict(model, features) -> Result[any] {
+    if model == null || _kind(model) != "map" || model.kind != "decision_tree_classifier" || model.tree == null {
+        return Err("ml.decision_tree_predict expects a fitted decision tree classifier")
+    }
+    rows := _feature_rows(features)
+    shape := _validate_rows(rows)
+    if shape == null || shape[1] != model.features {
+        return Err("ml.decision_tree_predict feature dimensions do not match the model")
+    }
+    let mut predictions = []
+    for row in rows { predictions = push(predictions, _tree_predict(model.tree, row)) }
+    Ok(predictions)
+}
+
+pub fn tree_predict(model, features) -> Result[any] {
+    decision_tree_predict(model, features)
+}
+
+fn _build_tree(rows, targets, indices, depth, max_depth, min_samples_split) {
+    prediction := _majority_label(targets, indices)
+    if depth >= max_depth || len(indices) < min_samples_split || _pure_labels(targets, indices) {
+        return {"leaf": true, "prediction": prediction, "samples": len(indices)}
+    }
+    split := _best_split(rows, targets, indices)
+    if split == null || split.gain <= 0.0 {
+        return {"leaf": true, "prediction": prediction, "samples": len(indices)}
+    }
+    left_tree := _build_tree(rows, targets, split.left, depth + 1, max_depth, min_samples_split)
+    right_tree := _build_tree(rows, targets, split.right, depth + 1, max_depth, min_samples_split)
+    {"leaf": false, "feature": split.feature, "threshold": split.threshold,
+     "prediction": prediction, "samples": len(indices), "gain": split.gain,
+     "left": left_tree, "right": right_tree}
+}
+
+fn _best_split(rows, targets, indices) {
+    parent := _gini(targets, indices)
+    let mut best = null
+    let mut best_score = math.inf
+    let mut feature = 0
+    dims := len(rows[0])
+    while feature < dims {
+        let mut a = 0
+        while a < len(indices) {
+            let mut b = a + 1
+            while b < len(indices) {
+                left_value := rows[indices[a]][feature]
+                right_value := rows[indices[b]][feature]
+                if left_value != right_value {
+                    threshold := (left_value + right_value) / 2.0
+                    groups := _tree_split(rows, indices, feature, threshold)
+                    if len(groups.left) > 0 && len(groups.right) > 0 {
+                        score := (len(groups.left) * 1.0 * _gini(targets, groups.left) + len(groups.right) * 1.0 * _gini(targets, groups.right)) / len(indices)
+                        if score < best_score {
+                            best_score = score
+                            best = {"feature": feature, "threshold": threshold,
+                                    "left": groups.left, "right": groups.right,
+                                    "gain": parent - score}
+                        }
+                    }
+                }
+                b = b + 1
+            }
+            a = a + 1
+        }
+        feature = feature + 1
+    }
+    best
+}
+
+fn _tree_split(rows, indices, feature, threshold) {
+    let mut left = []
+    let mut right = []
+    for index in indices {
+        if rows[index][feature] <= threshold { left = push(left, index) }
+        else { right = push(right, index) }
+    }
+    {"left": left, "right": right}
+}
+
+fn _gini(targets, indices) {
+    if len(indices) == 0 { return 0.0 }
+    let mut labels = []
+    let mut counts = []
+    for index in indices {
+        let mut found = -1
+        let mut i = 0
+        while i < len(labels) {
+            if labels[i] == targets[index] { found = i }
+            i = i + 1
+        }
+        if found < 0 {
+            labels = push(labels, targets[index])
+            counts = push(counts, 1)
+        } else { counts[found] = counts[found] + 1 }
+    }
+    let mut impurity = 1.0
+    for count in counts {
+        probability := count * 1.0 / len(indices)
+        impurity = impurity - probability * probability
+    }
+    impurity
+}
+
+fn _majority_label(targets, indices) {
+    let mut labels = []
+    let mut counts = []
+    for index in indices {
+        let mut found = -1
+        let mut i = 0
+        while i < len(labels) {
+            if labels[i] == targets[index] { found = i }
+            i = i + 1
+        }
+        if found < 0 {
+            labels = push(labels, targets[index])
+            counts = push(counts, 1)
+        } else { counts[found] = counts[found] + 1 }
+    }
+    let mut best = 0
+    let mut i = 1
+    while i < len(counts) {
+        if counts[i] > counts[best] { best = i }
+        i = i + 1
+    }
+    labels[best]
+}
+
+fn _pure_labels(targets, indices) {
+    first := targets[indices[0]]
+    for index in indices { if targets[index] != first { return false } }
+    true
+}
+
+fn _tree_predict(node, row) {
+    if node.leaf { return node.prediction }
+    if row[node.feature] <= node.threshold { return _tree_predict(node.left, row) }
+    _tree_predict(node.right, row)
+}
+
+fn _nearest(rows, query, k) {
+    let mut used = []
+    let mut result = []
+    let mut rank = 0
+    while rank < k {
+        let mut best = -1
+        let mut best_distance = math.inf
+        let mut i = 0
+        while i < len(rows) {
+            let mut already = false
+            for chosen in used { if chosen == i { already = true } }
+            if !already {
+                distance := _distance_squared(rows[i], query)
+                if distance < best_distance {
+                    best = i
+                    best_distance = distance
+                }
+            }
+            i = i + 1
+        }
+        used = push(used, best)
+        result = push(result, {"index": best, "distance": best_distance})
+        rank = rank + 1
+    }
+    result
+}
+
+fn _distance_squared(left, right) {
+    let mut total = 0.0
+    let mut i = 0
+    while i < len(left) {
+        delta := left[i] - right[i]
+        total = total + delta * delta
+        i = i + 1
+    }
+    total
+}
+
+fn _feature_rows(features) {
+    if _kind(features) == "map" && contains(keys(features), "_warp") && features._warp == true {
+        shape := warp.shape(features)
+        if _kind(shape) != "list" || len(shape) != 2 { return null }
+        flat := warp.to_list(features)
+        if _kind(flat) != "list" || len(flat) != shape[0] * shape[1] { return null }
+        let mut rows = []
+        let mut i = 0
+        while i < shape[0] {
+            let mut row = []
+            let mut j = 0
+            while j < shape[1] {
+                row = push(row, flat[i * shape[1] + j])
+                j = j + 1
+            }
+            rows = push(rows, row)
+            i = i + 1
+        }
+        return rows
+    }
+    features
+}
+
+fn _validate_rows(rows) {
+    if _kind(rows) != "list" || len(rows) == 0 || _kind(rows[0]) != "list" || len(rows[0]) == 0 { return null }
+    dims := len(rows[0])
+    for row in rows {
+        if _kind(row) != "list" || len(row) != dims { return null }
+        for value in row {
+            if (_kind(value) != "int" && _kind(value) != "float") || value != value || math.isinf(value) { return null }
+        }
+    }
+    [len(rows), dims]
+}

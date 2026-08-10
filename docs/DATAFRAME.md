@@ -168,6 +168,7 @@ Series when the column needs a name and explicit labels:
 | `series_unique` / `series_value_counts` | Stable unique values or typed count map |
 | `series_reindex` | Reorder or add labeled values with an explicit fill value |
 | `series_add` / `series_sub` / `series_mul` / `series_div` | Label-align two Series; optional fill value handles missing labels |
+| `align(left, right, join?, fill?)` | Return two DataFrames on the same outer/inner/left/right label index; supported profile assumes unique labels |
 | `index(t)` | Read the DataFrame index, defaulting to `0..n-1` |
 | `index_name(t)` | Read the explicit index name, if present (single-level) |
 | `index_levels(t)` | Level names: multi → `_index_levels`, single named → `[name]`, default → `[null]` |
@@ -244,6 +245,19 @@ subset := df.select_(t, ["name", "salary"])
 seniors := df.query(t, "age", ">=", 30)
 eng := df.filter_(t, fn(r) { r.dept == "eng" })
 selected := df.isin(t, "status", ["active", "pending"])
+```
+
+## Resampling
+
+`resample(t, time_column, rule, aggs, origin?)` groups finite numeric
+timestamps measured in seconds into fixed-width bins and applies the same
+aggregation map accepted by `group_by`. `rule` may be a positive number or a
+string such as `"10s"`, `"5m"`, `"1h"`, or `"1d"`. Bins are sorted by their
+numeric start time. Datetime parsing, timezone-aware values, calendar-aware
+offsets, and empty-bin materialization are not claimed yet.
+
+```weft
+binned := df.resample(events, "timestamp", "1m", {"latency": "mean"}, null)?
 ```
 
 ## Sorting
@@ -501,13 +515,14 @@ maps/lists on read, so such strings do not round-trip.
 - There is no categorical dtype, timezone-aware datetime, or pandas
   extension-array protocol.
 - `pivot` rejects duplicate index/column pairs; use `pivot_table(t, {index, columns, values, aggfunc, fill_value?})` to aggregate duplicates instead.
-- No datetime parsing (use `time.*` stdlib manually).
+- No datetime parsing or timezone-aware resampling (use numeric seconds from
+  `time.*` manually).
 - `corr`/`cov` are pairwise, not correlation matrices, and use pairwise non-null numeric rows.
 
 ## API count
 
-127 exported functions, including aligned Series, single-level index APIs,
-index set operations, `sort_index`, `xs` cross-sections, and a minimal
-multi-level index foundation. Regression tests live in
+129 exported functions, including aligned Series/DataFrames, numeric-second
+resampling, single-level index APIs, index set operations, `sort_index`,
+`xs` cross-sections, and a minimal multi-level index foundation. Regression tests live in
 `packages/dataframe/dataframe_test.weft` and
 `packages/dataframe/sql_test.weft` (SQL bridge + CSV policies).

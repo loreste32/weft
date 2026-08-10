@@ -1,0 +1,23 @@
+use "./esl.weft" as esl
+use "./ari.weft" as ari
+
+// Environment-gated release smoke. It exercises the actual Weft ESL and ARI
+// clients; parser/mock tests remain the ordinary CI path.
+fn main -> Result[any] {
+    fs_host := env.require("FREESWITCH_HOST")?
+    fs_port := env.get("FREESWITCH_ESL_PORT", "8021")
+    fs_password := env.require("FREESWITCH_ESL_PASSWORD")?
+    connection := esl.connect(fs_host, fs_port, fs_password)?
+    status := esl.status(connection)?
+    esl.close(connection)?
+
+    ari_client := ari.connect({
+        "host": env.require("ASTERISK_HOST")?,
+        "port": env.get("ASTERISK_ARI_PORT", "8088"),
+        "username": env.require("ASTERISK_ARI_USER")?,
+        "password": env.require("ASTERISK_ARI_PASSWORD")?,
+        "app": env.get("ASTERISK_ARI_APP", "weft-live"),
+    })
+    channels := ari.channels(ari_client)?
+    Ok({"freeswitch": status, "asterisk_channels": channels})
+}

@@ -68,7 +68,8 @@ claiming support for a new operation, dtype, edge case, or performance tier.
   (rolling/expanding share the `sum/mean/count/min/max/first/last/std/var`
   op set, and `ewm_mean`/`ewm_sum`/`ewm_var`/`ewm_std` replicate the pandas
   3.0 ewm recursions with `alpha`/`span`/`halflife`, `adjust`, `ignore_na`,
-  and `bias`; resample and time-based windows remain open);
+  and `bias`; `align` and numeric-second fixed-width `resample` are available,
+  while datetime/timezone-aware resampling remains open);
 - Arrow/Parquet/SQL-class I/O and memory-efficient 100k+ row execution.
 
 The current DataFrame slice preserves explicit indexes through filtering,
@@ -79,8 +80,9 @@ conformance fixture, but they do not imply complete pandas indexing parity.
 ### ML and providers
 
 - `packages/ml` has reverse-mode autodiff, SGD/Adam, linear/sequential modules,
-  checkpoints, and deterministic seeds; sparse/complex tensors, higher-order
-  gradients, device placement, and async pools remain open;
+  checkpoints, deterministic seeds, dense numeric k-means/KNN, array HVPs, and
+  a numerical array Hessian; sparse/complex tensors, regression trees, exact array-level
+  nested reverse mode, device placement, and async pools remain open;
 - device selection, streams, asynchronous execution, memory pools, and
   deterministic fallback behavior;
 - real hardware conformance jobs for every declared vendor provider.
@@ -108,6 +110,8 @@ not. When one of these is implemented, remove the entry and add conformance
 coverage in the same change.
 
 ### `warp` vs NumPy
+
+The bounded real `warp.qr` API returns a thin modified Gram-Schmidt factorization for full-column-rank matrices with `m >= n`; complex, rank-deficient, and wide matrices are rejected. `warp.eigh` supports symmetric real square matrices of sizes 1–32, with ascending values and eigenvectors as columns. `warp.svd` supports tall and wide real matrices up to 32×32, returning descending singular values with thin factors; rank-deficient factors are completed deterministically, while complex inputs remain unsupported.
 
 - **Unsupported dtypes:** complex, datetime64, timedelta64, structured/record
   arrays, and explicit byte-order (endianness) dtypes. No `float16` yet;
@@ -201,7 +205,8 @@ coverage in the same change.
   evaluation per input direction, so it suits few-input functions; reverse
   mode remains the cheap path for few-output losses. There is no JIT-fused
   vmap/jvp composition. Nested `create_graph` reverse mode is scalar —
-  array-level higher-order gradients are numeric (finite difference), and
+  array-level higher-order gradients are numeric (finite-difference HVPs and
+  the public dense `hessian` helper), and
   nested duals cover the scalar second-derivative case.
 - **No gradient checkpointing, anomaly detection, or sparse/autodiff-aware
   device placement.** Device tags remain advisory without a plugin; bound

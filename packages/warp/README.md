@@ -63,8 +63,9 @@ backend.
   higher degrees.
 - Searching/binning: `searchsorted(a, v, side)` (the input is assumed sorted,
   as in NumPy — out-of-order data is not validated) and `digitize(x, bins,
-  right)` with monotonicity validation.
-- Linear algebra: 1D/2D `dot` and `matmul`, norms, `outer`, `cross`, `trace`,
+  right)` with monotonicity validation; `partition`/`argpartition` validate
+  kth positions and currently return deterministic fully sorted axis slices.
+- Linear algebra: 1D/2D `dot` and `matmul`, thin real full-column-rank `qr`, bounded symmetric real `eigh` (sizes 1–32), bounded real thin `svd` for rectangular matrices up to 32×32 with deterministic rank-deficient completion, norms, `outer`, `cross`, `trace`,
   `det`, `inv`, `solve`, plus `slogdet` (sign/log-magnitude determinant,
   {0, -inf} for exactly singular matrices), `matrix_rank` (row-echelon pivot
   count with an optional tolerance — not NumPy's SVD-based default), and
@@ -81,7 +82,8 @@ backend.
 - Manipulation: `concat`, axis-aware `concatenate`, `stack`, equal-section
   `split`, `take`, `put` (returns a new array), validated `vstack`/`hstack`,
   `tile`, `repeat`, `repeat_axis`, `flip`, `flip_axis`, stable O(n log n)
-  `sort`/`argsort` with axis-aware `sort_axis`/`argsort_axis`, `unique`, and
+  `sort`/`argsort` with axis-aware `sort_axis`/`argsort_axis`,
+  `partition`/`argpartition`, `unique`, and
   `unique_opts` with `return_index`/`return_counts`, and masking.
 
 Arrays are immutable values: `set` and every arithmetic operation return new

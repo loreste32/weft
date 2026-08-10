@@ -388,6 +388,45 @@ fn test_hvp_array_quadratic {
     test.eq(warp.to_list(ml.value(w)?), [1.0, 2.0, 3.0])
 }
 
+fn test_hessian_array_quadratic {
+    w := ml.variable(warp.array([1.0, 2.0], [2]))?
+    mul := ml.mul
+    sum_fn := ml.sum
+    h := ml.hessian(fn(params) {
+        product := mul(params[0], params[0])?
+        sum_fn(product)
+    }, w, 1e-5)?
+    test.eq(warp.shape(h), [2, 2])
+    test.approx(warp.to_list(h)[0], 2.0, 1e-3)
+    test.approx(warp.to_list(h)[1], 0.0, 1e-3)
+    test.approx(warp.to_list(h)[2], 0.0, 1e-3)
+    test.approx(warp.to_list(h)[3], 2.0, 1e-3)
+    test.eq(warp.to_list(ml.value(w)?), [1.0, 2.0])
+}
+
+fn test_knn_and_kmeans {
+    features := [[0.0], [0.1], [9.9], [10.0]]
+    labels := ["low", "low", "high", "high"]
+    predictions := ml.knn_predict(features, labels, [[0.2], [9.8]], 3, null)?
+    test.eq(predictions, ["low", "high"])
+    test.eq(ml.knn(features, labels, [[0.2]], 2, false)?, ["low"])
+    clusters := ml.kmeans(features, 2, {"max_iter": 20, "tol": 1e-9})?
+    test.eq(clusters.labels, [0, 0, 1, 1])
+    test.approx(clusters.centers[0][0], 0.05, 1e-9)
+    test.approx(clusters.centers[1][0], 9.95, 1e-9)
+    test.eq(ml.kmeans(features, 0, null).ok, false)
+}
+
+fn test_decision_tree_classifier {
+    features := [[0.0], [1.0], [2.0], [3.0]]
+    labels := ["low", "low", "high", "high"]
+    model := ml.decision_tree_fit(features, labels, {"max_depth": 3})?
+    predictions := ml.decision_tree_predict(model, [[0.25], [2.75]])?
+    test.eq(predictions, ["low", "high"])
+    test.eq(ml.tree_predict(model, [[1.0]])?, ["low"])
+    test.eq(ml.decision_tree_fit(features, labels, {"max_depth": -1}).ok, false)
+}
+
 fn test_hvp_rejects_mismatched_vector {
     x := ml.variable(1.0)?
     r := ml.hvp(fn(params) { params[0] }, [x], [1.0, 2.0], 1e-5)

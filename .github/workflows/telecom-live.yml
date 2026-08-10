@@ -1,0 +1,38 @@
+name: Telecom live validation
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+  schedule:
+    - cron: "30 5 1 * *"
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: FreeSWITCH + Asterisk ARI + SIPp
+    runs-on: [self-hosted, linux, x64, telecom]
+    timeout-minutes: 20
+    env:
+      WEFT_LIVE_REQUIRED: "1"
+      FREESWITCH_HOST: ${{ secrets.FREESWITCH_HOST }}
+      FREESWITCH_ESL_PORT: ${{ secrets.FREESWITCH_ESL_PORT }}
+      FREESWITCH_ESL_PASSWORD: ${{ secrets.FREESWITCH_ESL_PASSWORD }}
+      ASTERISK_HOST: ${{ secrets.ASTERISK_HOST }}
+      ASTERISK_ARI_PORT: ${{ secrets.ASTERISK_ARI_PORT }}
+      ASTERISK_ARI_USER: ${{ secrets.ASTERISK_ARI_USER }}
+      ASTERISK_ARI_PASSWORD: ${{ secrets.ASTERISK_ARI_PASSWORD }}
+      ASTERISK_ARI_APP: ${{ secrets.ASTERISK_ARI_APP }}
+      SIPP_TARGET: ${{ secrets.SIPP_TARGET }}
+      SIPP_SCENARIO: ${{ secrets.SIPP_SCENARIO }}
+      SIPP_CALLS: ${{ vars.SIPP_CALLS }}
+      SIPP_TIMEOUT: ${{ vars.SIPP_TIMEOUT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Run live telecom gate
+        run: bash scripts/telecom-live.sh

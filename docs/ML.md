@@ -47,8 +47,13 @@ provide validated optimizer updates for scalar and Warp-array parameters.
 `linear_module` and `linear_forward` provide a tested trainable two-dimensional
 module. `state_dict`, `save_checkpoint`, and `load_checkpoint` persist values,
 optimizer state, and metadata without serializing executable graph links.
-Schedulers, sparse/complex autodiff, higher-order derivatives, and a complete
-deep-learning framework remain future work.
+Schedulers, sparse/complex autodiff, exact array-level higher-order reverse
+mode, and a complete deep-learning framework remain future work; numerical
+array HVP/Hessian helpers are available.
+
+## Classical algorithms
+
+`kmeans(features, k, opts)` provides deterministic dense numeric Lloyd iterations and returns centers, labels, inertia, and iteration count. `knn_predict(features, targets, queries, k, weighted?)` and its `knn` alias provide dense numeric nearest-neighbor classification with deterministic tie-breaking; labels may be arbitrary comparable values. `decision_tree_fit`/`decision_tree_predict` provide bounded numeric classification trees (up to 4,096 rows and 65,536 input cells). These APIs do not claim sparse matrices, categorical encoders, regression trees, or accelerator-resident execution.
 
 ## Native GPU/provider execution
 
@@ -100,7 +105,8 @@ Weft can replace Python for the supported classical training, tabular, array,
 and provider-dispatch workflows. It is not yet a drop-in replacement for all
 NumPy/pandas APIs, dtype systems, sparse arrays, FFTs, the full breadth of
 deep-learning module/scheduler APIs (ml covers linear/activation modules and
-step/exponential/cosine LR schedules), array-level higher-order autodiff, or
-Python ecosystem libraries. Each native provider must be benchmarked and numerically
+step/exponential/cosine LR schedules), exact array-level higher-order autodiff,
+or Python ecosystem libraries. Numerical array HVP/Hessian helpers do not
+claim exact nested reverse-mode or device-resident Hessians. Each native provider must be benchmarked and numerically
 validated independently; an ABI load success is not evidence that a GPU
 operation is correct.

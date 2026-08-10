@@ -510,6 +510,97 @@ pub fn reindex(t, labels, fill_value) {
     _frame_with_index(t.columns, result, labels, t)
 }
 
+// align returns two frames indexed by the same label sequence. It mirrors
+// the common pandas DataFrame.align contract for the supported unique-label
+// profile and preserves MultiIndex metadata through reindex().
+pub fn align(left, right, join, fill_value) {
+    if _kind(left) != "map" || left._df != true || _kind(right) != "map" || right._df != true {
+        return Err("dataframe.align expects two DataFrames")
+    }
+    mode := if join == null { "outer" } else { join }
+    if mode != "outer" && mode != "inner" && mode != "left" && mode != "right" {
+        return Err("dataframe.align join must be outer, inner, left, or right")
+    }
+    labels := if mode == "outer" { index_union(left, right) } else if mode == "inner" { index_intersection(left, right) } else if mode == "left" { index(left) } else { index(right) }
+    if _kind(labels) == "result" { return labels }
+    left_aligned := reindex(left, labels, fill_value)
+    if _kind(left_aligned) == "result" { return left_aligned }
+    right_aligned := reindex(right, labels, fill_value)
+    if _kind(right_aligned) == "result" { return right_aligned }
+    Ok({"left": left_aligned, "right": right_aligned})
+}
+
+fn _resample_interval(rule) -> Result[any] {
+    if _kind(rule) == "int" || _kind(rule) == "float" {
+        if rule <= 0 || rule != rule || math.isinf(rule) { return Err("dataframe.resample rule must be finite positive") }
+        return Ok(rule + 0.0)
+    }
+    if _kind(rule) != "str" || len(rule) < 2 { return Err("dataframe.resample rule must be seconds or a positive interval") }
+    suffix := str.slice(rule, len(rule) - 1, len(rule))
+    multiplier := if suffix == "s" { 1.0 } else if suffix == "m" { 60.0 } else if suffix == "h" { 3600.0 } else if suffix == "d" { 86400.0 } else { 0.0 }
+    if multiplier == 0.0 { return Err("dataframe.resample rule suffix must be s, m, h, or d") }
+    parsed := json.parse(str.slice(rule, 0, len(rule) - 1))
+    if !parsed.ok || (_kind(parsed.value) != "int" && _kind(parsed.value) != "float") || parsed.value <= 0 {
+        return Err("dataframe.resample rule interval must be finite positive")
+    }
+    interval := parsed.value * multiplier
+    if interval != interval || math.isinf(interval) { return Err("dataframe.resample rule is too large") }
+    Ok(interval)
+}
+
+// resample groups numeric timestamp values into fixed-width bins. Timestamps
+// are seconds from the numeric origin; string rules accept Ns/Nm/Nh/Nd. This
+// explicit numeric profile avoids pretending that Weft has pandas' timezone
+// and datetime extension dtypes before those types are implemented.
+pub fn resample(t, time_column, rule, aggs, origin) -> Result[any] {
+    if _kind(t) != "map" || t._df != true { return Err("dataframe.resample expects a DataFrame") }
+    if _kind(time_column) != "str" || !contains(t.columns, time_column) { return Err("dataframe.resample unknown time column") }
+    if _kind(aggs) != "map" { return Err("dataframe.resample expects an aggregation map") }
+    interval := _resample_interval(rule)?
+    base := if origin == null { 0.0 } else { origin }
+    if (_kind(base) != "int" && _kind(base) != "float") || base != base || math.isinf(base) { return Err("dataframe.resample origin must be finite numeric") }
+    if len(t.rows) == 0 {
+        let mut columns = [time_column]
+        for agg_name in keys(aggs) {
+            spec := aggs[agg_name]
+            if _kind(spec) == "map" {
+                if !contains(t.columns, spec.col) || !_valid_agg(spec.op) { return Err("dataframe.resample invalid aggregation") }
+                columns = push(columns, agg_name)
+            } else if _kind(spec) == "list" || _kind(spec) == "str" {
+                ops := if _kind(spec) == "list" { spec } else { [spec] }
+                if !contains(t.columns, agg_name) { return Err("dataframe.resample unknown aggregation column") }
+                for op in ops {
+                    if !_valid_agg(op) { return Err("dataframe.resample invalid aggregation") }
+                    columns = push(columns, agg_name + "_" + op)
+                }
+            } else {
+                return Err("dataframe.resample invalid aggregation spec")
+            }
+        }
+        return Ok({"_df": true, "columns": columns, "rows": []})
+    }
+    let mut rows = []
+    for row in t.rows {
+        timestamp := row[time_column]
+        if (_kind(timestamp) != "int" && _kind(timestamp) != "float") || timestamp != timestamp || math.isinf(timestamp) {
+            return Err("dataframe.resample timestamps must be finite numeric seconds")
+        }
+        bucket := math.floor((timestamp - base) / interval) * interval + base
+        let mut next = {}
+        for column in t.columns { next[column] = row[column] }
+        next["__weft_resample_bucket"] = bucket
+        rows = push(rows, next)
+    }
+    temp := from_rows(rows)
+    grouped := group_by(temp, "__weft_resample_bucket", aggs)
+    if _kind(grouped) == "result" { return grouped }
+    renamed := rename(grouped, {"__weft_resample_bucket": time_column})
+    if _kind(renamed) == "result" { return renamed }
+    sorted := sort_by(renamed, time_column, false)
+    if _kind(sorted) == "result" { return sorted }
+    Ok(sorted)
+}
+
 pub fn set_index(t, column, drop) {
     if !contains(t.columns, column) { return Err("dataframe.set_index: unknown column " + column) }
     remove := if drop == null { true } else { drop }

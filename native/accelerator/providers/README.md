@@ -7,7 +7,8 @@ operations it actually supports.
 
 All three providers implement the same bounded JSON `matmul` operation and
 binary `tensor_matmul` plus the same-shape elementwise operations
-`tensor_add`, `tensor_sub`, `tensor_mul`, and `tensor_div`. The binary
+`tensor_add`, `tensor_sub`, `tensor_mul`, and `tensor_div`. CUDA and ROCm
+also implement the full-reduction `tensor_sum` operation. The binary
 operations are the required paths for large batches; JSON remains a
 diagnostic/reference path. The elementwise ops accept contiguous, same-shape
 float32 tensors of rank 1 or 2 and do not claim NumPy-style broadcasting —
@@ -27,17 +28,17 @@ non-same-shape inputs are rejected with an explicit error:
 | `health`, `matmul` (JSON) | yes (float64) | yes (float32) | yes (float32) | yes (float32) |
 | `tensor_matmul` | yes (float64) | yes (float32) | yes (float32) | yes (float32) |
 | `tensor_add` / `tensor_sub` / `tensor_mul` / `tensor_div` | yes (float32 + float64) | yes (float32) | yes (float32) | yes (float32) |
-| `tensor_sum` (full reduction → rank-0) | yes (float32 + float64) | no | no | no |
+| `tensor_sum` (full reduction → rank-0) | yes (float32 + float64) | yes (float32) | yes (float32) | no |
 | broadcasting elementwise | no (explicit rejection) | no (explicit rejection) | no (explicit rejection) | no (explicit rejection) |
 
-`tensor_sum` stays out of the vendor manifests on purpose: a correct parallel
-reduction (CUDA/HIP) and the `mlx_sum` axis contract (MLX) are not
-pattern-matched to the hardware-validated code, and providers must not
-declare ops they cannot implement correctly — the conformance gate
+CUDA and ROCm currently use a deterministic single-device-thread reduction.
+That is a correctness/conformance implementation, not a performance claim;
+large reductions still need a parallel-kernel benchmark before release
+claims. MLX does not declare `tensor_sum` until its installed `mlx-c` axis
+contract is compile-verified. The conformance gate
 (`TestExternalProviderTensorCoverage`) fails any declared op that errors.
-Only the CPU reference row is exercised in ordinary CI; the vendor rows are
-compile-unverified on hosts without the SDKs and must be re-validated on
-their hardware runners.
+Only the CPU reference row is exercised in ordinary CI; vendor rows must be
+compiled and run on their labeled hardware runners.
 
 `matmul` returns `{"data":[19,22,43,50],"shape":[2,2]}` plus mandatory
 execution reporting fields: `"device"` (e.g. `"cuda:0"`, `"rocm:0"`,

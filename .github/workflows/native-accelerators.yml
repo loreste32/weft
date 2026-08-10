@@ -1,6 +1,8 @@
 name: Native accelerators
 
 on:
+  push:
+    tags: ["v*"]
   workflow_dispatch:
   schedule:
     # Hardware validation is intentionally separate from ordinary PR CI.
@@ -31,6 +33,15 @@ jobs:
         env:
           WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_cuda.so
         run: go test ./internal/accelerator -run '^TestExternalProvider' -count=1 -timeout=120s
+      - name: Benchmark provider
+        env:
+          WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_cuda.so
+        run: go test ./internal/accelerator -run '^$' -bench '^BenchmarkExternalProvider' -benchtime=10x -count=1 -timeout=120s | tee "$RUNNER_TEMP/weft-cuda-bench.txt"
+      - name: Upload CUDA evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: accelerator-cuda-evidence
+          path: ${{ runner.temp }}/weft-cuda-bench.txt
 
   rocm:
     name: ROCm provider conformance
@@ -53,6 +64,15 @@ jobs:
         env:
           WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_rocm.so
         run: go test ./internal/accelerator -run '^TestExternalProvider' -count=1 -timeout=120s
+      - name: Benchmark provider
+        env:
+          WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_rocm.so
+        run: go test ./internal/accelerator -run '^$' -bench '^BenchmarkExternalProvider' -benchtime=10x -count=1 -timeout=120s | tee "$RUNNER_TEMP/weft-rocm-bench.txt"
+      - name: Upload ROCm evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: accelerator-rocm-evidence
+          path: ${{ runner.temp }}/weft-rocm-bench.txt
 
   mlx:
     name: MLX provider conformance
@@ -80,6 +100,16 @@ jobs:
           WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_mlx.dylib
           DYLD_LIBRARY_PATH: ${{ vars.MLX_C_PREFIX }}/lib
         run: go test ./internal/accelerator -run '^TestExternalProvider' -count=1 -timeout=120s
+      - name: Benchmark provider
+        env:
+          WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_mlx.dylib
+          DYLD_LIBRARY_PATH: ${{ vars.MLX_C_PREFIX }}/lib
+        run: go test ./internal/accelerator -run '^$' -bench '^BenchmarkExternalProvider' -benchtime=10x -count=1 -timeout=120s | tee "$RUNNER_TEMP/weft-mlx-bench.txt"
+      - name: Upload MLX evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: accelerator-mlx-evidence
+          path: ${{ runner.temp }}/weft-mlx-bench.txt
 
   report:
     name: Capability report

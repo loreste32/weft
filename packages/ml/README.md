@@ -43,6 +43,14 @@ DataFrame → Warp → model boundary. Packed inputs are materialized once at th
 trainer boundary; this remains a classical CPU model layer, separate from the
 differentiable array API below.
 
+## Classical algorithms
+
+- `kmeans(features, k, opts)` runs deterministic dense numeric Lloyd iterations and returns `centers`, `labels`, `inertia`, and `iterations`. `opts.max_iter` and `opts.tol` are bounded and validated.
+- `knn_predict(features, targets, queries, k, weighted?)` classifies dense numeric query rows by nearest-neighbor vote. `knn` is an alias; labels can be comparable scalar values and ties are deterministic.
+- `decision_tree_fit(features, targets, opts)` and `decision_tree_predict(model, queries)` provide a bounded numeric classification tree (at most 4,096 rows and 65,536 input cells). `tree_fit` and `tree_predict` are aliases; `max_depth` and `min_samples_split` are validated.
+
+Sparse matrices, categorical encoders, regression trees, and accelerator-resident classical algorithms remain outside this profile.
+
 ## Learning-rate schedules
 
 Pure, deterministic functions of the zero-based epoch:
@@ -198,6 +206,9 @@ differences of analytical first gradients. `hvp` remains finite-diff only.
 
 - `second_derivative`: scalar variable; e.g. \(f(x)=x^3\) yields \(f''=6x\).
 - `hvp`: Hessian-vector product \(Hv \approx (\nabla L(\theta+\varepsilon v)-\nabla L(\theta-\varepsilon v))/(2\varepsilon)\).
+- `hessian`: dense numerical Hessian for one Warp-array parameter, assembled
+  from basis HVPs; useful for small arrays, but not sparse, device-resident,
+  or an exact nested-reverse implementation.
 
 ## Device placement and plugin dispatch
 

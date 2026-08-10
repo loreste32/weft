@@ -141,6 +141,37 @@ pub fn hvp(loss_fn, parameters, vector, eps) -> Result[any] {
     Ok(out)
 }
 
+/// Dense Hessian for one scalar-loss array parameter. Each column is obtained
+/// from the validated HVP path with a basis direction. This is intentionally
+/// a numerical HVP-based API: it is correct for the supported array graph and
+/// has O(n) loss evaluations, but it is not advertised as a sparse or device
+/// resident Hessian implementation.
+pub fn hessian(loss_fn, parameter, eps) -> Result[any] {
+    if !_is_node(parameter) || !parameter.requires_grad || !_is_array(parameter.value) {
+        return Err("ml.hessian expects one trainable Warp array parameter")
+    }
+    shape := warp.shape(parameter.value)
+    count := warp.size(parameter.value)
+    let mut result = []
+    let mut column = 0
+    while column < count {
+        let mut direction_data = []
+        let mut row = 0
+        while row < count {
+            direction_data = push(direction_data, if row == column { 1.0 } else { 0.0 })
+            row = row + 1
+        }
+        direction := warp.array(direction_data, shape)
+        hv := hvp(loss_fn, [parameter], [direction], eps)?
+        if _kind(hv[0]) != "list" || len(hv[0]) != count {
+            return Err("ml.hessian HVP returned an incompatible array gradient")
+        }
+        for value in hv[0] { result = push(result, value) }
+        column = column + 1
+    }
+    Ok(warp.array(result, [count, count]))
+}
+
 fn _restore_parameters(parameters, bases) {
     let mut p = 0
     while p < len(parameters) {
