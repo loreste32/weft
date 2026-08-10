@@ -2,6 +2,20 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
+## [0.6.1] — 2026-08-10
+
+### Added
+- **Warp partition/argpartition** — NumPy-style kth-selection with axis support
+- **ML classical** — k-means, KNN, decision-tree classifiers with weighted voting
+- **Warp SVD, polynomial roots, searchsorted** — expanded linear algebra and search surface
+- **CUDA/ROCm tensor_sum** — vendor providers declare full-reduction ops
+- **Telecom live smoke script** — `scripts/telecom-live.sh` for real FreeSWITCH ESL testing
+
+### Fixed
+- **SVD sigma indentation** — `warp/lib.weft:1882` had wrong indentation causing the sigma clamp to run outside the loop body
+- **partition/argpartition missing Result type** — functions returned `Err()` but lacked `-> Result[any]` annotation
+- **KNN empty-neighbor crash** — `knn_predict` now returns an explicit error when no neighbors are found instead of indexing an empty list
+
 ## [0.6.0] — 2026-08-07
 
 ### Added

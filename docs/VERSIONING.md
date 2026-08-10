@@ -4,14 +4,14 @@
 
 | | |
 |--|--|
-| Toolchain | **`0.6.0`** (`pkg/weft.Version` / `weft version`) |
-| VS Code extension | **`0.6.0`** (`editors/vscode/package.json`) |
+| Toolchain | **`0.6.1`** (`pkg/weft.Version` / `weft version`) |
+| VS Code extension | **`0.6.1`** (`editors/vscode/package.json`) |
 | Branch | `main` |
 
 0.3.x–0.5.x are **complete**. 0.6.x is the current development line: forward autodiff, loc/iloc assignment, warp NumPy surface, ML training, SQL bridge, signed releases.
 
 ```text
-0.3.x (complete) → 0.4.0 → 0.6.0 → …
+0.3.x (complete) → 0.4.0 → 0.6.1 → …
 ```
 
 ## Where the number lives

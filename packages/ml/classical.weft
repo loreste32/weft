@@ -48,6 +48,9 @@ pub fn knn_predict(features, targets, queries, k, weighted) -> Result[any] {
                 scores[found] = scores[found] + weight
             }
         }
+        if len(labels) == 0 {
+            return Err("knn: no neighbors found for query")
+        }
         let mut best = 0
         let mut i = 1
         while i < len(scores) {

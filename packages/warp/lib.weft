@@ -1879,7 +1879,7 @@ pub fn svd(a) -> Result[any] {
             source := m - 1 - component
             eigenvalue := eigenvalues[source]
             let mut sigma = math.sqrt(if eigenvalue < 0.0 { 0.0 } else { eigenvalue })
-        if sigma <= 1e-7 { sigma = 0.0 }
+            if sigma <= 1e-7 { sigma = 0.0 }
             singular_values = push(singular_values, sigma)
             let mut u_vector = []
             let mut row_index = 0
@@ -3523,7 +3523,7 @@ pub fn argsort_axis(a, axis) { _sort_along_axis(a, axis, true) }
 // partition/argpartition expose NumPy's kth-selection contract. The current
 // implementation uses the stable axis sorter, which is allowed by NumPy's
 // partition value contract and keeps results deterministic within partitions.
-pub fn partition(a, kth, axis) {
+pub fn partition(a, kth, axis) -> Result[any] {
     if !_is_arr(a) { return Err("warp.partition expects an array") }
     normalized := _normalize_axis(axis, len(a.shape), false)
     if normalized == null { return Err("warp.partition axis is out of range") }
@@ -3546,7 +3546,7 @@ pub fn partition(a, kth, axis) {
     result
 }
 
-pub fn argpartition(a, kth, axis) {
+pub fn argpartition(a, kth, axis) -> Result[any] {
     if !_is_arr(a) { return Err("warp.argpartition expects an array") }
     normalized := _normalize_axis(axis, len(a.shape), false)
     if normalized == null { return Err("warp.argpartition axis is out of range") }
