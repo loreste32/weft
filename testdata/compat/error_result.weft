@@ -1,0 +1,10 @@
+fn might_fail(x) -> Result[any] {
+    if x < 0 { return Err("negative") }
+    Ok(x * 2)
+}
+fn main {
+    r1 := might_fail(5)
+    say(r1?)
+    r2 := might_fail(-1)
+    say(is_err(r2))
+}

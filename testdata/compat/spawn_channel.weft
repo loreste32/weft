@@ -1,0 +1,9 @@
+fn worker(ch) {
+    send(ch, "done")
+}
+fn main {
+    ch := channel(1)
+    spawn(worker, ch)
+    result := recv(ch)
+    say(result?)
+}

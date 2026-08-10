@@ -464,19 +464,73 @@ func (s *session) onEvaluate(id json.RawMessage, params json.RawMessage) error {
 		Expression string `json:"expression"`
 	}
 	_ = json.Unmarshal(params, &p)
-	name := strings.TrimSpace(p.Expression)
+	expr := strings.TrimSpace(p.Expression)
+
+	// Try direct local lookup first
 	s.mu.Lock()
-	v, ok := s.locals[name]
+	v, ok := s.locals[expr]
 	s.mu.Unlock()
-	if !ok {
+	if ok {
 		return s.replyCmd(id, "evaluate", map[string]any{
-			"result":             fmt.Sprintf("undefined: %s", name),
+			"result":             v.String(),
+			"type":               v.KindName(),
 			"variablesReference": 0,
 		})
 	}
+
+	// Try field access: "x.y" → lookup x, then access field y
+	if dot := strings.Index(expr, "."); dot > 0 {
+		root := expr[:dot]
+		field := expr[dot+1:]
+		s.mu.Lock()
+		rv, rok := s.locals[root]
+		s.mu.Unlock()
+		if rok && rv.Kind == runtime.KindMap {
+			if mo, mok := rv.Obj.(*runtime.MapObj); mok {
+				if fv, fok := mo.Vals[field]; fok {
+					return s.replyCmd(id, "evaluate", map[string]any{
+						"result":             fv.String(),
+						"type":               fv.KindName(),
+						"variablesReference": 0,
+					})
+				}
+			}
+		}
+		if rok && rv.Kind == runtime.KindStruct {
+			if so, sok := rv.Obj.(*runtime.StructObj); sok {
+				if fv, fok := so.Fields[field]; fok {
+					return s.replyCmd(id, "evaluate", map[string]any{
+						"result":             fv.String(),
+						"type":               fv.KindName(),
+						"variablesReference": 0,
+					})
+				}
+			}
+		}
+	}
+
+	// Try bracket access: "x[0]" or "x["key"]"
+	if bracket := strings.Index(expr, "["); bracket > 0 {
+		root := expr[:bracket]
+		s.mu.Lock()
+		rv, rok := s.locals[root]
+		s.mu.Unlock()
+		if rok && rv.Kind == runtime.KindList {
+			idxStr := strings.Trim(expr[bracket+1:], "[] ")
+			if idx, err := strconv.Atoi(idxStr); err == nil {
+				if lo, lok := rv.Obj.(*runtime.ListObj); lok && idx >= 0 && idx < len(lo.Items) {
+					return s.replyCmd(id, "evaluate", map[string]any{
+						"result":             lo.Items[idx].String(),
+						"type":               lo.Items[idx].KindName(),
+						"variablesReference": 0,
+					})
+				}
+			}
+		}
+	}
+
 	return s.replyCmd(id, "evaluate", map[string]any{
-		"result":             v.String(),
-		"type":               v.KindName(),
+		"result":             fmt.Sprintf("undefined: %s", expr),
 		"variablesReference": 0,
 	})
 }

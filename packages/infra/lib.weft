@@ -12,6 +12,21 @@
 
 fn _s(v) { "" + v }
 
+// Reject names that start with "-" (flag injection) or contain shell metacharacters.
+fn _safe_name(name, label) -> Result[any] {
+    n := _s(name)
+    if len(n) == 0 { return Err(label + " cannot be empty") }
+    if str.starts_with(n, "-") { return Err(label + " cannot start with '-'") }
+    if str.contains(n, "/") || str.contains(n, "..") || str.contains(n, "\x00") {
+        return Err(label + " contains invalid characters")
+    }
+    if str.contains(n, " ") || str.contains(n, ";") || str.contains(n, "&") ||
+       str.contains(n, "|") || str.contains(n, "`") || str.contains(n, "$") {
+        return Err(label + " contains shell metacharacters")
+    }
+    Ok(n)
+}
+
 fn _opt(opts, key, default) {
     if opts == null { return default }
     if contains(keys(opts), key) { return opts[key] }
@@ -422,6 +437,7 @@ pub fn retry_until(f, max_retries, delay_sec) -> Result[any] {
 // ── Service management (systemd) ───────────────────────────────────────
 
 fn _systemctl(action, service) -> Result[any] {
+    _safe_name(service, "service name")?
     result := sh.run("systemctl", [action, service])
     if is_err(result) {
         return Err("systemctl " + action + " " + service + ": " + _err_str(result))
@@ -694,6 +710,7 @@ pub fn host_info() -> Result[any] {
 
 // pkg_installed checks if a system package is installed (apt/dnf/brew).
 pub fn pkg_installed(name) -> Result[any] {
+    _safe_name(name, "package name")?
     dpkg := sh.code("dpkg", ["-s", name])
     if !is_err(dpkg) && dpkg? == 0 { return Ok(true) }
     rpm := sh.code("rpm", ["-q", name])
@@ -705,6 +722,7 @@ pub fn pkg_installed(name) -> Result[any] {
 
 // pkg_install installs a system package using the detected package manager.
 pub fn pkg_install(name) -> Result[any] {
+    _safe_name(name, "package name")?
     if sh.ok("which", ["apt-get"]) {
         return sh.run("sudo", ["apt-get", "install", "-y", name])
     }
@@ -729,6 +747,7 @@ pub fn user_exists(username) -> Result[any] {
 
 // user_create creates a system user with optional shell and home directory.
 pub fn user_create(username, opts) -> Result[any] {
+    _safe_name(username, "username")?
     let mut args = ["useradd"]
     if opts != null {
         if contains(keys(opts), "shell") {

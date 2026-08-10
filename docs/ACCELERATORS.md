@@ -2,13 +2,13 @@
 
 ## Maturity status: experimental (CUDA validated)
 
-GPU acceleration in Weft is **experimental**. As of 0.6.1:
+GPU acceleration in Weft is **experimental**. As of 0.6.2:
 
 - **CPU reference provider**: built and conformance-tested in CI on every commit.
 - **CUDA provider**: validated on real hardware (see below). All 6 tensor ops pass conformance.
 - **ROCm / MLX providers**: compile-verified only. No hardware validation yet.
 
-### CUDA hardware validation (0.6.1)
+### CUDA hardware validation (0.6.2)
 
 | Field | Value |
 |-------|-------|
@@ -45,7 +45,7 @@ GPU acceleration in Weft is **experimental**. As of 0.6.1:
 
 **Failure behavior**: a provider that fails to load, build, or run is reported as `failed` or `unavailable`. Silent fallback is rejected.
 
-### MLX hardware validation (0.6.1)
+### MLX hardware validation (0.6.2)
 
 | Field | Value |
 |-------|-------|

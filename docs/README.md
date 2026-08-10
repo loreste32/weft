@@ -12,7 +12,7 @@ Your app
    ↑
 23 registry modules    telecom · auth · router · config · …   (packages/ → vendor/)
    ↑
-83 stdlib packages     llm · mcp · dns · tls · os · http · …  (in the weft binary)
+104 stdlib packages     llm · mcp · dns · tls · os · http · …  (in the weft binary)
    ↑
 Language + VM          Result/? · concurrency · auto-fetch
 ```
@@ -49,7 +49,7 @@ Runnable offline recipes: **[`examples/cookbook/`](../examples/cookbook/)** (`01
 
 ## Agents, telecom & optional modules
 
-23 modules in the [public registry](https://registry.weftproject.dev). Install with `weft get <name>`.
+24 modules in the [public registry](https://registry.weftproject.dev). Install with `weft get <name>`.
 
 | Module | Role | Doc |
 |--------|------|-----|

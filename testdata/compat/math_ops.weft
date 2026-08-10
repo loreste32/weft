@@ -1,0 +1,7 @@
+fn main {
+    say(math.abs(-5))
+    say(math.floor(3.7))
+    say(math.ceil(3.2))
+    say(math.min(3, 7))
+    say(math.max(3, 7))
+}

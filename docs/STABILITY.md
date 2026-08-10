@@ -54,9 +54,26 @@ Prefer actionable diagnostics over generic token names:
 | Missing `}` before `else` | `expected } before else (missing closing brace?)` |
 | Empty `match x {}` | parses; compile: `match has no arms` |
 
+## 0.6 → 1.0 stability policy
+
+| Guarantee | 0.6.x (current) | 1.0.x (planned) |
+|-----------|-----------------|-----------------|
+| Language syntax | Stable — no breaking changes | Frozen |
+| Stdlib function signatures | May add parameters with defaults | Frozen |
+| Package exports | Must pass `scripts/check-exports.sh` | Frozen |
+| Registry wire format | Stable | Frozen |
+| Binary CLI flags | Stable | Frozen |
+| Compat corpus | Must pass on every commit | Must pass |
+| Go embedding API | May add fields to Options | Frozen |
+
+**What "stable" means in 0.6.x**: existing code continues to work. New parameters are always optional with backward-compatible defaults. Removing or renaming a public function is a breaking change and requires a minor version bump with a CHANGELOG entry.
+
+**What triggers 1.0**: all stdlib packages reach `beta` maturity or higher, the compat corpus exceeds 30 cases, and the language specification is published.
+
 ## Compatibility
 
-- **0.6.x** may still break APIs; pin toolchain and package versions.
+- **0.6.x** may still add APIs but will not remove or rename existing ones without notice.
+- Pin toolchain and package versions for production use.
 - Signatures prove *which key* signed a package, not *who* that key belongs to — use `weft registry trust` / `WEFT_REQUIRE_TRUST=1`.
 - No LTS promise yet.
 

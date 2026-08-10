@@ -9,7 +9,7 @@ git clone https://github.com/loreste32/weft.git
 cd weft
 go build -o weft ./cmd/weft
 ./weft doctor
-make test    # 1246 tests
+make test    # 2094 tests
 make ci      # gofmt + vet + tests
 ```
 
@@ -30,7 +30,7 @@ internal/
   compile/         AST → bytecode
   vm/              Stack VM execution
   runtime/         Values, types, env
-  stdlib/          All 83 stdlib packages (one .go file each)
+  stdlib/          All 104 stdlib packages (one .go file each)
   pkgman/          Package manager, registry client/server, signing
   types/           Gradual type checker
   lsp/             Language server

@@ -1,6 +1,6 @@
 # Weft
 
-A scripting language for agent tools, telecom, HTTP glue, and ops work. One binary, no runtime dependencies.
+A scripting language for LLM agents, telecom (FreeSWITCH ESL / Asterisk ARI), and infrastructure automation. One binary, no runtime dependencies.
 
 [![CI](https://github.com/loreste32/weft/actions/workflows/ci.yml/badge.svg)](https://github.com/loreste32/weft/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -9,9 +9,9 @@ A scripting language for agent tools, telecom, HTTP glue, and ops work. One bina
 
 ## What it is
 
-Weft is a small language with its own syntax, a stack VM, and 83 stdlib packages baked into the binary. You write `.weft` files, run them with `weft run`, and ship scripts without setting up environments or installing interpreters.
+Weft is a scripting language purpose-built for three things: **AI agent tooling** (MCP servers, LLM tool calls, structured output), **telecom automation** (FreeSWITCH ESL, Asterisk ARI, SIP, IVR/IVA, call queues), and **infrastructure ops** (health checks, deploy patterns, service management, config automation).
 
-It handles errors with `Result` / `?` instead of exceptions, runs concurrent work without `async`/`await`, and talks to LLMs, databases, SIP servers, and HTTP services out of the box.
+One binary, 104 stdlib packages, no runtime to install. `Result`/`?` error handling, concurrent `map`/`filter` without `async`/`await`, and production-grade integrations with LLMs, databases, message brokers, and VoIP systems out of the box.
 
 | | |
 |--|--|
@@ -20,7 +20,7 @@ It handles errors with `Result` / `?` instead of exceptions, runs concurrent wor
 | Install | `curl -fsSL https://weftproject.dev/install.sh \| sh` |
 | Docs | [weftproject.dev/docs.html](https://weftproject.dev/docs.html) |
 | Playground | [weftproject.dev/playground.html](https://weftproject.dev/playground.html) |
-| Registry | [registry.weftproject.dev](https://registry.weftproject.dev) (23 modules) |
+| Registry | [registry.weftproject.dev](https://registry.weftproject.dev) (24 modules) |
 | VS Code | `editors/vscode/` — syntax, LSP, DAP debugger |
 
 ## Install
@@ -131,7 +131,7 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 
 **Language:** lex → parse → compile → stack VM. Closures (capture by value), sum types with payloads, `match` with destructuring, `defer`, `Result`/`?`. Concurrent `map`/`filter`, `spawn`, channels — no `async`/`await`.
 
-### 83 stdlib packages (in the binary)
+### 104 stdlib packages (in the binary)
 
 | Area | Packages |
 |------|----------|
@@ -149,7 +149,7 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 
 Full list: `weft stdlib`
 
-### 23 registry modules
+### 24 registry modules
 
 Install with `weft get <name>` — or just `use auth` and it auto-fetches from the registry.
 
@@ -223,7 +223,7 @@ Plus: `weft new module|app|cli <name>`, `weft get`, `weft install`, `weft publis
 - Glue benchmarks vs Python (output parity)
 - Browser WASM: async execution, Fetch HTTP, bounded virtual filesystem (path traversal blocked, 16MB/file, 64MB total, 10k file cap)
 - Slim build (`-tags slim`) for smaller binaries
-- Go and package-level tests run in CI; 23 registry modules are cataloged and checked for freshness
+- Go and package-level tests run in CI; 24 registry modules are cataloged and checked for freshness
 - See [docs/STABILITY.md](docs/STABILITY.md)
 
 ### Security

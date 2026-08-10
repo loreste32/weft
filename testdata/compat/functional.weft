@@ -1,0 +1,9 @@
+fn main {
+    nums := [1, 2, 3, 4, 5]
+    evens := filter(nums, fn(x) { x % 2 == 0 })
+    say(evens)
+    doubled := map(nums, fn(x) { x * 2 })
+    say(doubled)
+    total := reduce(nums, 0, fn(acc, x) { acc + x })
+    say(total)
+}

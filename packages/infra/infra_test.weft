@@ -309,3 +309,28 @@ fn test_format_helpers {
     crit := infra.threshold_check("test", 99.0, 80.0, 95.0)
     test.eq(crit.level, "critical")
 }
+
+// ── Security: input validation ──
+
+fn test_safe_name_rejects_flags {
+    // pkg_install should reject flag-like names
+    r := infra.pkg_install("--help")
+    test.eq(r.ok, false)
+}
+
+fn test_safe_name_rejects_traversal {
+    r := infra.pkg_installed("../../../etc/passwd")
+    test.eq(r.ok, false)
+}
+
+fn test_safe_name_rejects_shell_metachar {
+    r := infra.pkg_installed("pkg; rm -rf /")
+    test.eq(r.ok, false)
+}
+
+fn test_safe_name_rejects_empty {
+    r := infra.user_exists("")
+    // user_exists uses sh.code which handles empty, but pkg_install validates
+    r2 := infra.pkg_install("")
+    test.eq(r2.ok, false)
+}

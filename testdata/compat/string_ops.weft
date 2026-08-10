@@ -1,0 +1,9 @@
+fn main {
+    say(str.upper("hello"))
+    say(str.lower("WORLD"))
+    say(str.trim("  hi  "))
+    say(str.replace("aabaa", "a", "x"))
+    say(str.contains("hello world", "world"))
+    say(str.starts_with("hello", "hel"))
+    say(len("café"))
+}

@@ -1,0 +1,6 @@
+fn main {
+    data := {"users": [{"name": "alice"}, {"name": "bob"}]}
+    say(data.users[0].name)
+    say(data.users[1].name)
+    say(len(data.users))
+}

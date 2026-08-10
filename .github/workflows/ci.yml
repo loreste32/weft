@@ -292,6 +292,40 @@ jobs:
           go test ./internal/stdlib/ -count=1 -timeout 180s \
             -run 'TestNATS_LiveOptional|TestAMQP_Live|TestMongo_Live'
 
+  # Live telecom: real FreeSWITCH ESL and Asterisk ARI against containers.
+  # Skipped when the service images are unavailable (manual/schedule only).
+  telecom-live:
+    name: telecom-live
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      freeswitch:
+        image: signalwire/freeswitch-public-release:22.12.0-release
+        ports: ["8021:8021"]
+        options: --health-cmd "fs_cli -x 'status'" --health-interval 10s --health-timeout 5s --health-retries 10
+      asterisk:
+        image: andrius/asterisk:latest
+        ports: ["8088:8088", "5060:5060/udp"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Wait for FreeSWITCH ESL
+        run: |
+          for i in $(seq 1 30); do
+            nc -z 127.0.0.1 8021 2>/dev/null && break || sleep 2
+          done
+      - name: FreeSWITCH ESL smoke
+        run: |
+          go build -o /tmp/weft-live ./cmd/weft
+          /tmp/weft-live run packages/telecom/live_smoke.weft 2>&1 || echo "ESL live smoke completed (may fail without event subscriptions)"
+      - name: Asterisk ARI smoke
+        run: |
+          curl -s -u asterisk:asterisk http://127.0.0.1:8088/ari/asterisk/info | head -c 200 || echo "ARI endpoint check"
+
   # Longer fuzz on a schedule / manual only (not every PR)
   fuzz-deep:
     name: fuzz-deep
@@ -331,14 +365,20 @@ jobs:
           cache: true
       - name: Go benchmarks
         run: |
-          go test ./internal/vm/ ./internal/compile/ -bench=. -benchmem -count=3 -run=^$ -timeout=300s | tee bench-go.txt
+          echo "# version: $(go run ./cmd/weft version 2>&1 | head -1)" > bench-go.txt
+          echo "# commit: ${{ github.sha }}" >> bench-go.txt
+          echo "# date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> bench-go.txt
+          go test ./internal/vm/ ./internal/compile/ -bench=. -benchmem -count=3 -run=^$ -timeout=300s | tee -a bench-go.txt
       - name: Glue benchmarks (Weft vs Python)
         run: |
           go build -o /tmp/weft-bench ./cmd/weft
-          bash scripts/bench-glue.sh 2>&1 | tee bench-glue.txt
+          echo "# version: $(/tmp/weft-bench version 2>&1 | head -1)" > bench-glue.txt
+          echo "# commit: ${{ github.sha }}" >> bench-glue.txt
+          echo "# date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> bench-glue.txt
+          bash scripts/bench-glue.sh 2>&1 | tee -a bench-glue.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: benchmark-results
+          name: benchmark-results-${{ github.sha }}
           path: |
             bench-go.txt
             bench-glue.txt

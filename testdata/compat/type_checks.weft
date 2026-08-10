@@ -1,0 +1,9 @@
+fn main {
+    say(type_of(42))
+    say(type_of(3.14))
+    say(type_of("hello"))
+    say(type_of(true))
+    say(type_of([1, 2]))
+    say(type_of({"a": 1}))
+    say(type_of(null))
+}

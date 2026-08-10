@@ -16,7 +16,7 @@ Weft is on the **0.6.x** line (0.3.x complete — see [VERSIONING.md](VERSIONING
 - Concurrency without `async`/`await` (map/filter fan-out, spawn, channels, race, timeout)  
 - Scientific floats (`1e-6`), hex/bin/oct ints, digit separators  
 
-**83 stdlib packages** (in the binary)
+**104 stdlib packages** (in the binary)
 
 - LLM: `llm` (OpenAI/Anthropic/Ollama/vLLM), `ollama`, `vllm` — chat, tools, streaming, agents  
 - AI integration: `mcp` (Model Context Protocol client + server), `deepgram` (streaming STT), `elevenlabs` (streaming TTS), `mlinfer` (ONNX/Triton/HuggingFace inference)  
@@ -27,7 +27,7 @@ Weft is on the **0.6.x** line (0.3.x complete — see [VERSIONING.md](VERSIONING
 - Collections: `str`, `math`, `time`, `re`, `iter`, `collections`, `heap`, `bisect`, `pipe`, `functools`, `copy`, `traceback`  
 - Full list: `weft stdlib`  
 
-**23 registry modules** at [registry.weftproject.dev](https://registry.weftproject.dev)
+**24 registry modules** at [registry.weftproject.dev](https://registry.weftproject.dev)
 
 | Module | What |
 |--------|------|
@@ -138,7 +138,7 @@ The **0.3.x line is complete** (0.3.31–0.6.2). Everything shipped.
 - Live-broker test coverage for `amqp`/`mongo`/`nats` ([STDLIB_GAPS.md](STDLIB_GAPS.md))  
 - LSP tests for rename / references / extract / auto-import  
 - Bring `install.sh` / APT / DNF / Homebrew packaging automation in-repo (maintained out-of-tree today; this repo alone cannot reproduce those channels)  
-- Audit registry.weftproject.dev contents against `packages/` — publish any of the 23 modules that are missing  
+- Audit registry.weftproject.dev contents against `packages/` — publish any of the 24 modules that are missing  
 
 **Scale & adoption:**
 - Key rotation policy for namespaces  

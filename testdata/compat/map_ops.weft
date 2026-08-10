@@ -1,0 +1,6 @@
+fn main {
+    m := {"a": 1, "b": 2, "c": 3}
+    say(len(keys(m)))
+    say(contains(keys(m), "b"))
+    say(contains(keys(m), "z"))
+}
