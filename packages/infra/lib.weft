@@ -1,0 +1,826 @@
+// infra — infrastructure automation for DevOps scripting.
+//
+// Health checks (TCP, HTTP, DNS, process, disk, memory),
+// service management (systemd), deploy patterns (rolling, canary),
+// certificate monitoring, network diagnostics, host provisioning,
+// config management, and structured alerting.
+//
+// Every function that can fail returns Result[any]. Every structured
+// result uses a consistent shape with a "status" field where applicable.
+
+// ── Internal helpers ───────────────────────────────────────────────────
+
+fn _s(v) { "" + v }
+
+fn _opt(opts, key, default) {
+    if opts == null { return default }
+    if contains(keys(opts), key) { return opts[key] }
+    default
+}
+
+fn _timestamp() { time.now() }
+
+fn _pad_right(s, width) {
+    let mut result = _s(s)
+    while len(result) < width {
+        result = result + " "
+    }
+    result
+}
+
+fn _format_ms(ms) {
+    if ms < 1.0 { return "<1ms" }
+    if ms < 1000.0 { return _s(math.floor(ms)) + "ms" }
+    _s(math.floor(ms / 100.0) / 10.0) + "s"
+}
+
+fn _format_bytes(bytes) {
+    if bytes < 1024 { return _s(bytes) + " B" }
+    if bytes < 1048576 { return _s(math.floor(bytes / 102.4) / 10.0) + " KiB" }
+    if bytes < 1073741824 { return _s(math.floor(bytes / 104857.6) / 10.0) + " MiB" }
+    _s(math.floor(bytes / 107374182.4) / 10.0) + " GiB"
+}
+
+fn _format_duration(seconds) {
+    if seconds < 60 { return _s(math.floor(seconds)) + "s" }
+    if seconds < 3600 {
+        m := math.floor(seconds / 60)
+        s := math.floor(seconds - m * 60)
+        return _s(m) + "m" + _s(s) + "s"
+    }
+    h := math.floor(seconds / 3600)
+    m := math.floor((seconds - h * 3600) / 60)
+    _s(h) + "h" + _s(m) + "m"
+}
+
+fn _err_str(result) {
+    // Extract a clean error message from a Result
+    raw := traceback.format(result)
+    // Strip "Error(user): " prefix if present
+    if str.has_prefix(raw, "Error(") {
+        idx := str.find(raw, "): ")
+        if idx >= 0 { return str.slice(raw, idx + 3) }
+    }
+    raw
+}
+
+// ── Health checks ──────────────────────────────────────────────────────
+
+// health_check_tcp connects to host:port with a timeout in seconds.
+pub fn health_check_tcp(host, port, timeout_sec) -> Result[any] {
+    addr := host + ":" + _s(port)
+    start := time.now()
+    result := socket.dial("tcp", addr)
+    latency := time.since(start) * 1000.0
+    if is_err(result) {
+        return Ok({
+            "check": "tcp", "target": addr, "status": "unhealthy",
+            "latency_ms": latency, "error": _err_str(result), "timestamp": _timestamp()
+        })
+    }
+    conn := result?
+    conn.close()
+    Ok({
+        "check": "tcp", "target": addr, "status": "healthy",
+        "latency_ms": latency, "error": null, "timestamp": _timestamp()
+    })
+}
+
+// health_check_http sends a GET and checks status/body.
+// opts: {timeout, expected_status, expected_body, method, headers}
+pub fn health_check_http(url, opts) -> Result[any] {
+    timeout := _opt(opts, "timeout", 10)
+    expected_status := _opt(opts, "expected_status", null)
+    expected_body := _opt(opts, "expected_body", null)
+    start := time.now()
+    result := http.get(url, {"timeout": timeout})
+    latency := time.since(start) * 1000.0
+    if is_err(result) {
+        return Ok({
+            "check": "http", "target": url, "status": "unhealthy",
+            "latency_ms": latency, "http_status": null,
+            "error": _err_str(result), "timestamp": _timestamp()
+        })
+    }
+    resp := result?
+    let mut status_ok = resp.status >= 200 && resp.status < 300
+    if expected_status != null { status_ok = resp.status == expected_status }
+    let mut body_ok = true
+    if expected_body != null { body_ok = str.contains(resp.body, expected_body) }
+    healthy := status_ok && body_ok
+    let mut error_msg = null
+    if !healthy {
+        let mut parts = ["HTTP " + _s(resp.status)]
+        if !status_ok && expected_status != null {
+            parts = push(parts, "(expected " + _s(expected_status) + ")")
+        }
+        if !body_ok { parts = push(parts, "(body mismatch)") }
+        error_msg = str.join(parts, " ")
+    }
+    Ok({
+        "check": "http", "target": url, "status": if healthy { "healthy" } else { "unhealthy" },
+        "latency_ms": latency, "http_status": resp.status,
+        "error": error_msg, "timestamp": _timestamp()
+    })
+}
+
+// health_check_proc checks if a named process is running.
+pub fn health_check_proc(name) -> Result[any] {
+    procs := proc.find(name)
+    if is_err(procs) {
+        return Ok({
+            "check": "proc", "target": name, "status": "unhealthy",
+            "error": _err_str(procs), "pids": [], "timestamp": _timestamp()
+        })
+    }
+    found := procs?
+    if len(found) == 0 {
+        return Ok({
+            "check": "proc", "target": name, "status": "unhealthy",
+            "error": "process not found", "pids": [], "timestamp": _timestamp()
+        })
+    }
+    Ok({
+        "check": "proc", "target": name, "status": "healthy",
+        "pids": map(found, fn(p) { p.pid }), "error": null, "timestamp": _timestamp()
+    })
+}
+
+// health_check_dns resolves a hostname and checks for results.
+pub fn health_check_dns(hostname, record_type) -> Result[any] {
+    rtype := if record_type != null { record_type } else { "A" }
+    start := time.now()
+    let mut result = null
+    if rtype == "A" || rtype == "AAAA" {
+        result = dns.lookup(hostname)
+    } else if rtype == "MX" {
+        result = dns.mx(hostname)
+    } else if rtype == "TXT" {
+        result = dns.txt(hostname)
+    } else if rtype == "NS" {
+        result = dns.ns(hostname)
+    } else if rtype == "CNAME" {
+        result = dns.cname(hostname)
+    } else if rtype == "SRV" {
+        result = dns.srv(hostname)
+    } else {
+        return Err("unsupported record type: " + rtype)
+    }
+    latency := time.since(start) * 1000.0
+    if is_err(result) {
+        return Ok({
+            "check": "dns", "target": hostname, "record_type": rtype,
+            "status": "unhealthy", "latency_ms": latency,
+            "records": [], "error": _err_str(result), "timestamp": _timestamp()
+        })
+    }
+    records := result?
+    record_list := if type_of(records) == "list" { records } else { [records] }
+    Ok({
+        "check": "dns", "target": hostname, "record_type": rtype,
+        "status": if len(record_list) > 0 { "healthy" } else { "unhealthy" },
+        "latency_ms": latency, "records": record_list,
+        "error": if len(record_list) == 0 { "no records" } else { null },
+        "timestamp": _timestamp()
+    })
+}
+
+// health_check_disk checks if disk usage is below a threshold (percent).
+pub fn health_check_disk(path, threshold_pct) -> Result[any] {
+    threshold := if threshold_pct != null { threshold_pct } else { 90.0 }
+    result := sysinfo.disk(path)
+    if is_err(result) {
+        return Ok({
+            "check": "disk", "target": path, "status": "unhealthy",
+            "error": _err_str(result), "timestamp": _timestamp()
+        })
+    }
+    info := result?
+    healthy := info.percent < threshold
+    Ok({
+        "check": "disk", "target": path, "status": if healthy { "healthy" } else { "unhealthy" },
+        "percent_used": info.percent,
+        "total": _format_bytes(info.total), "used": _format_bytes(info.used),
+        "free": _format_bytes(info.free), "threshold": threshold,
+        "error": if !healthy { "disk usage " + _s(info.percent) + "% >= " + _s(threshold) + "%" } else { null },
+        "timestamp": _timestamp()
+    })
+}
+
+// health_check_memory checks if memory usage is below a threshold (percent).
+pub fn health_check_memory(threshold_pct) -> Result[any] {
+    threshold := if threshold_pct != null { threshold_pct } else { 90.0 }
+    result := sysinfo.memory()
+    if is_err(result) {
+        return Ok({
+            "check": "memory", "target": "system", "status": "unhealthy",
+            "error": _err_str(result), "timestamp": _timestamp()
+        })
+    }
+    info := result?
+    healthy := info.percent < threshold
+    Ok({
+        "check": "memory", "target": "system", "status": if healthy { "healthy" } else { "unhealthy" },
+        "percent_used": info.percent,
+        "total": _format_bytes(info.total), "used": _format_bytes(info.used),
+        "available": _format_bytes(info.available), "threshold": threshold,
+        "error": if !healthy { "memory usage " + _s(info.percent) + "% >= " + _s(threshold) + "%" } else { null },
+        "timestamp": _timestamp()
+    })
+}
+
+// health_check dispatches to a typed check.
+// check_type: "tcp", "http", "proc", "dns", "disk", "memory"
+pub fn health_check(check_type, target, opts) -> Result[any] {
+    if check_type == "tcp" {
+        return health_check_tcp(target, _opt(opts, "port", 80), _opt(opts, "timeout", 5))
+    }
+    if check_type == "http" { return health_check_http(target, opts) }
+    if check_type == "proc" { return health_check_proc(target) }
+    if check_type == "dns" { return health_check_dns(target, _opt(opts, "record_type", "A")) }
+    if check_type == "disk" { return health_check_disk(target, _opt(opts, "threshold", 90.0)) }
+    if check_type == "memory" { return health_check_memory(_opt(opts, "threshold", 90.0)) }
+    Err("unknown check type: " + check_type + " (use tcp, http, proc, dns, disk, or memory)")
+}
+
+// health_check_multi runs multiple checks and returns a summary.
+pub fn health_check_multi(checks) -> Result[any] {
+    let mut results = []
+    let mut healthy_count = 0
+    start := time.now()
+    for check in checks {
+        r := health_check(check["type"], check["target"], check)?
+        if r.status == "healthy" { healthy_count = healthy_count + 1 }
+        results = push(results, r)
+    }
+    total := len(results)
+    let mut status = "healthy"
+    if healthy_count == 0 { status = "unhealthy" }
+    else if healthy_count < total { status = "degraded" }
+    Ok({
+        "status": status, "checks": results,
+        "healthy_count": healthy_count, "total_count": total,
+        "duration_ms": time.since(start) * 1000.0, "timestamp": _timestamp()
+    })
+}
+
+// ── Formatted reports ──────────────────────────────────────────────────
+
+// health_report formats health check results into a well-aligned report.
+pub fn health_report(result) {
+    let mut lines = []
+    if contains(keys(result), "checks") {
+        // Multi-check report
+        lines = push(lines, "")
+        lines = push(lines, "  Health Check Report")
+        lines = push(lines, "  " + str.repeat("─", 56))
+        lines = push(lines, "  Status:  " + str.upper(result.status) +
+            "  (" + _s(result.healthy_count) + "/" + _s(result.total_count) + " checks passing)")
+        lines = push(lines, "  Time:    " + _opt(result, "timestamp", _timestamp()))
+        if contains(keys(result), "duration_ms") {
+            lines = push(lines, "  Duration: " + _format_ms(result.duration_ms))
+        }
+        lines = push(lines, "  " + str.repeat("─", 56))
+        for check in result.checks {
+            mark := if check.status == "healthy" { "  ✓" } else { "  ✗" }
+            target_str := _pad_right(check["target"], 30)
+            let mut line = mark + " " + target_str
+            if contains(keys(check), "latency_ms") {
+                line = line + _pad_right(_format_ms(check.latency_ms), 10)
+            }
+            if check.error != null {
+                line = line + "│ " + check.error
+            }
+            lines = push(lines, line)
+        }
+        lines = push(lines, "  " + str.repeat("─", 56))
+        lines = push(lines, "")
+    } else {
+        // Single check
+        mark := if result.status == "healthy" { "✓" } else { "✗" }
+        let mut line = mark + " " + result["target"]
+        if contains(keys(result), "latency_ms") {
+            line = line + " (" + _format_ms(result.latency_ms) + ")"
+        }
+        if result.error != null {
+            line = line + " — " + result.error
+        }
+        lines = push(lines, line)
+    }
+    str.join(lines, "\n")
+}
+
+// host_report formats system information into a readable summary.
+pub fn host_report() -> Result[any] {
+    info := host_info()?
+    let mut lines = []
+    lines = push(lines, "")
+    lines = push(lines, "  Host Report")
+    lines = push(lines, "  " + str.repeat("─", 48))
+    lines = push(lines, "  Hostname:  " + _s(info.hostname))
+    lines = push(lines, "  Platform:  " + _s(info.platform) + "/" + _s(info.arch))
+    if info.uptime != null {
+        lines = push(lines, "  Uptime:    " + _s(info.uptime.human))
+    }
+    if info.loadavg != null {
+        lines = push(lines, "  Load:      " + _s(info.loadavg))
+    }
+    if info.memory != null {
+        lines = push(lines, "  Memory:    " + info.memory.used_human + " / " +
+            info.memory.total_human + " (" + _s(info.memory.percent_used) + "%)")
+    }
+    if info.disk != null {
+        lines = push(lines, "  Disk (/):  " + info.disk.used_human + " / " +
+            info.disk.total_human + " (" + _s(info.disk.percent_used) + "%)")
+    }
+    lines = push(lines, "  " + str.repeat("─", 48))
+    lines = push(lines, "")
+    Ok(str.join(lines, "\n"))
+}
+
+// cert_report formats certificate monitoring results.
+pub fn cert_report(results) {
+    let mut lines = []
+    lines = push(lines, "")
+    lines = push(lines, "  Certificate Report")
+    lines = push(lines, "  " + str.repeat("─", 56))
+    for r in results {
+        let mut mark = "  ✓"
+        if r.status == "warning" { mark = "  ⚠" }
+        if r.status == "expired" || r.status == "error" { mark = "  ✗" }
+        let mut line = mark + " " + _pad_right(r.host, 30)
+        if contains(keys(r), "days_remaining") {
+            line = line + _pad_right(_s(r.days_remaining) + " days", 12)
+        }
+        if r.status != "ok" {
+            line = line + "│ " + r.status
+        }
+        if contains(keys(r), "error") && r.error != null {
+            line = line + " (" + r.error + ")"
+        }
+        lines = push(lines, line)
+    }
+    lines = push(lines, "  " + str.repeat("─", 56))
+    lines = push(lines, "")
+    str.join(lines, "\n")
+}
+
+// port_report formats port scan results.
+pub fn port_report(host, results) {
+    let mut lines = []
+    lines = push(lines, "")
+    lines = push(lines, "  Port Scan: " + host)
+    lines = push(lines, "  " + str.repeat("─", 36))
+    for r in results {
+        mark := if r.open { "  ✓ OPEN  " } else { "  · CLOSED" }
+        lines = push(lines, mark + "  " + _pad_right(r.port, 8))
+    }
+    open_count := len(filter(results, fn(r) { r.open }))
+    lines = push(lines, "  " + str.repeat("─", 36))
+    lines = push(lines, "  " + _s(open_count) + " open, " +
+        _s(len(results) - open_count) + " closed")
+    lines = push(lines, "")
+    str.join(lines, "\n")
+}
+
+// ── Wait / retry ───────────────────────────────────────────────────────
+
+// wait_for polls a check until it passes or times out.
+pub fn wait_for(check_type, target, opts) -> Result[any] {
+    timeout := _opt(opts, "wait_timeout", 60)
+    interval := _opt(opts, "interval", 2)
+    start := time.now()
+    let mut last_result = null
+    let mut attempts = 0
+    while time.since(start) < timeout {
+        attempts = attempts + 1
+        r := health_check(check_type, target, opts)?
+        if r.status == "healthy" { return Ok(r) }
+        last_result = r
+        time.sleep(interval)
+    }
+    Err("wait_for " + target + " timed out after " + _s(timeout) + "s (" +
+        _s(attempts) + " attempts): " +
+        if last_result != null && last_result.error != null { last_result.error } else { "still unhealthy" })
+}
+
+// retry_until runs a function until it succeeds or retries are exhausted.
+// Returns the first Ok result, or Err after all retries fail.
+pub fn retry_until(f, max_retries, delay_sec) -> Result[any] {
+    let mut attempt = 0
+    let mut last_err = null
+    while attempt < max_retries {
+        result := f()
+        if !is_err(result) { return result }
+        last_err = _err_str(result)
+        attempt = attempt + 1
+        if attempt < max_retries { time.sleep(delay_sec) }
+    }
+    Err("retry exhausted after " + _s(max_retries) + " attempts: " + _s(last_err))
+}
+
+// ── Service management (systemd) ───────────────────────────────────────
+
+fn _systemctl(action, service) -> Result[any] {
+    result := sh.run("systemctl", [action, service])
+    if is_err(result) {
+        return Err("systemctl " + action + " " + service + ": " + _err_str(result))
+    }
+    Ok(null)
+}
+
+pub fn service_start(name) -> Result[any] { _systemctl("start", name) }
+pub fn service_stop(name) -> Result[any] { _systemctl("stop", name) }
+pub fn service_restart(name) -> Result[any] { _systemctl("restart", name) }
+pub fn service_enable(name) -> Result[any] { _systemctl("enable", name) }
+pub fn service_disable(name) -> Result[any] { _systemctl("disable", name) }
+
+// service_status returns structured status for a named service.
+pub fn service_status(name) -> Result[any] {
+    active_result := sh.capture("systemctl", ["is-active", name])
+    let mut active_str = "unknown"
+    if !is_err(active_result) { active_str = str.trim(active_result?) }
+    enabled_result := sh.capture("systemctl", ["is-enabled", name])
+    let mut enabled_str = "unknown"
+    if !is_err(enabled_result) { enabled_str = str.trim(enabled_result?) }
+    Ok({
+        "name": name,
+        "active": active_str == "active",
+        "active_state": active_str,
+        "enabled": enabled_str == "enabled",
+        "enabled_state": enabled_str
+    })
+}
+
+// service_list returns all loaded services.
+pub fn service_list() -> Result[any] {
+    result := sh.capture("systemctl", ["list-units", "--type=service", "--no-pager", "--no-legend"])
+    if is_err(result) { return Err("systemctl list-units: " + _err_str(result)) }
+    let mut services = []
+    for line in str.lines(result?) {
+        parts := str.fields(line)
+        if len(parts) >= 4 {
+            services = push(services, {
+                "unit": parts[0], "load": parts[1],
+                "active": parts[2], "sub": parts[3]
+            })
+        }
+    }
+    Ok(services)
+}
+
+// ── Deploy helpers ─────────────────────────────────────────────────────
+
+// deploy_rolling restarts services one at a time with health checks between.
+pub fn deploy_rolling(services, health) -> Result[any] {
+    let mut results = []
+    start := time.now()
+    for svc in services {
+        svc_start := time.now()
+        io.eprintln("[deploy] restarting " + svc + "...")
+        restart := service_restart(svc)
+        if is_err(restart) {
+            results = push(results, {
+                "service": svc, "status": "failed",
+                "error": _err_str(restart), "duration_s": time.since(svc_start)
+            })
+            return Ok({
+                "strategy": "rolling", "status": "failed",
+                "failed_at": svc, "results": results,
+                "total_duration_s": time.since(start)
+            })
+        }
+        if health != null {
+            time.sleep(_opt(health, "settle_time", 2))
+            check := wait_for(health["type"], health["target"], health)
+            if is_err(check) {
+                results = push(results, {
+                    "service": svc, "status": "unhealthy",
+                    "error": _err_str(check), "duration_s": time.since(svc_start)
+                })
+                return Ok({
+                    "strategy": "rolling", "status": "failed",
+                    "failed_at": svc, "results": results,
+                    "total_duration_s": time.since(start)
+                })
+            }
+            results = push(results, {
+                "service": svc, "status": "healthy",
+                "error": null, "duration_s": time.since(svc_start)
+            })
+        } else {
+            results = push(results, {
+                "service": svc, "status": "unchecked",
+                "error": null, "duration_s": time.since(svc_start)
+            })
+        }
+    }
+    Ok({
+        "strategy": "rolling", "status": "ok",
+        "results": results, "total_duration_s": time.since(start)
+    })
+}
+
+// deploy_canary restarts only the first service, verifies health, then
+// rolls out the rest. Aborts if the canary fails.
+pub fn deploy_canary(services, health) -> Result[any] {
+    if len(services) == 0 { return Err("no services to deploy") }
+    canary := services[0]
+    io.eprintln("[deploy] canary: " + canary + "...")
+    restart := service_restart(canary)
+    if is_err(restart) {
+        return Err("canary " + canary + " failed to restart: " + _err_str(restart))
+    }
+    if health != null {
+        time.sleep(_opt(health, "settle_time", 2))
+        check := wait_for(health["type"], health["target"], health)
+        if is_err(check) {
+            return Err("canary " + canary + " health check failed: " + _err_str(check))
+        }
+    }
+    io.eprintln("[deploy] canary " + canary + " passed, rolling out remaining...")
+    remaining := slice(services, 1)
+    if len(remaining) > 0 { return deploy_rolling(remaining, health) }
+    Ok({"strategy": "canary", "canary": canary, "status": "ok"})
+}
+
+// ── Certificate monitoring ─────────────────────────────────────────────
+
+// cert_check gets TLS certificate info for a host.
+pub fn cert_check(host) -> Result[any] {
+    result := tls.cert_info(host)
+    if is_err(result) { return Err("cert_check " + host + ": " + _err_str(result)) }
+    Ok(result?)
+}
+
+// cert_expiry_days returns days until certificate expires.
+pub fn cert_expiry_days(host) -> Result[any] {
+    result := tls.expiry_check(host)
+    if is_err(result) { return Err("cert_expiry " + host + ": " + _err_str(result)) }
+    Ok(result?)
+}
+
+// cert_monitor checks multiple hosts against an expiry threshold.
+pub fn cert_monitor(hosts, threshold_days) -> Result[any] {
+    threshold := if threshold_days != null { threshold_days } else { 30 }
+    let mut results = []
+    for host in hosts {
+        days := cert_expiry_days(host)
+        if is_err(days) {
+            results = push(results, {
+                "host": host, "status": "error",
+                "days_remaining": null, "expires": null,
+                "error": _err_str(days)
+            })
+        } else {
+            d := days?
+            let mut status = "ok"
+            if d.days_remaining < 0 { status = "expired" }
+            else if d.days_remaining < threshold { status = "warning" }
+            results = push(results, {
+                "host": host, "status": status,
+                "days_remaining": d.days_remaining,
+                "expires": d.expires, "error": null
+            })
+        }
+    }
+    Ok(results)
+}
+
+// ── Network diagnostics ────────────────────────────────────────────────
+
+// ping checks if a host is reachable via ICMP.
+pub fn ping(host, count) -> Result[any] {
+    n := if count != null { count } else { 3 }
+    result := sh.capture("ping", ["-c", _s(n), "-W", "3", host])
+    if is_err(result) {
+        return Ok({
+            "host": host, "reachable": false, "packets_sent": n,
+            "packets_received": 0, "loss_pct": 100.0,
+            "avg_ms": null, "min_ms": null, "max_ms": null,
+            "error": _err_str(result)
+        })
+    }
+    output := result?
+    let mut avg_ms = null
+    let mut min_ms = null
+    let mut max_ms = null
+    let mut loss_pct = 0.0
+    let mut received = n
+    for line in str.lines(output) {
+        if str.contains(line, "packet loss") {
+            // "3 packets transmitted, 3 received, 0% packet loss"
+            for word in str.fields(line) {
+                if str.contains(word, "%") {
+                    loss_pct = float(str.replace(word, "%", ""))
+                }
+            }
+            received = n - math.floor(n * loss_pct / 100.0)
+        }
+        if str.contains(line, "min/avg/max") || str.contains(line, "rtt") {
+            parts := str.split(str.trim(line), "=")
+            if len(parts) >= 2 {
+                stats := str.split(str.trim(parts[len(parts) - 1]), "/")
+                if len(stats) >= 3 {
+                    min_ms = float(stats[0])
+                    avg_ms = float(stats[1])
+                    max_ms = float(stats[2])
+                }
+            }
+        }
+    }
+    Ok({
+        "host": host, "reachable": loss_pct < 100.0,
+        "packets_sent": n, "packets_received": received,
+        "loss_pct": loss_pct,
+        "avg_ms": avg_ms, "min_ms": min_ms, "max_ms": max_ms,
+        "error": null
+    })
+}
+
+// port_open checks if a TCP port is open on a host.
+pub fn port_open(host, port) -> Result[any] {
+    result := health_check_tcp(host, port, 3)?
+    Ok(result.status == "healthy")
+}
+
+// port_scan checks a list of ports and returns which are open.
+pub fn port_scan(host, ports) -> Result[any] {
+    let mut results = []
+    for port in ports {
+        open := port_open(host, port)?
+        results = push(results, {"port": port, "open": open})
+    }
+    Ok(results)
+}
+
+// traceroute runs traceroute to a host and returns parsed hops.
+pub fn traceroute(host) -> Result[any] {
+    result := sh.capture("traceroute", ["-m", "20", "-w", "2", host])
+    if is_err(result) { return Err("traceroute " + host + ": " + _err_str(result)) }
+    let mut hops = []
+    let mut hop_num = 0
+    for line in str.lines(result?) {
+        trimmed := str.trim(line)
+        if len(trimmed) == 0 { continue }
+        first := str.slice(trimmed, 0, 1)
+        if first >= "1" && first <= "9" {
+            hop_num = hop_num + 1
+            hops = push(hops, {"hop": hop_num, "raw": trimmed})
+        }
+    }
+    Ok({"host": host, "hop_count": len(hops), "hops": hops})
+}
+
+// ── Host info and provisioning ─────────────────────────────────────────
+
+// host_info collects system information into a single map.
+pub fn host_info() -> Result[any] {
+    mem := sysinfo.memory()
+    disk := sysinfo.disk("/")
+    up := sysinfo.uptime()
+    load := sysinfo.loadavg()
+    Ok({
+        "hostname": str.trim(sh.capture("hostname", [])?),
+        "platform": platform.os(),
+        "arch": platform.arch(),
+        "uptime": if !is_err(up) { up? } else { null },
+        "memory": if !is_err(mem) { mem? } else { null },
+        "disk": if !is_err(disk) { disk? } else { null },
+        "loadavg": if !is_err(load) { load? } else { null },
+        "timestamp": _timestamp()
+    })
+}
+
+// pkg_installed checks if a system package is installed (apt/dnf/brew).
+pub fn pkg_installed(name) -> Result[any] {
+    dpkg := sh.code("dpkg", ["-s", name])
+    if !is_err(dpkg) && dpkg? == 0 { return Ok(true) }
+    rpm := sh.code("rpm", ["-q", name])
+    if !is_err(rpm) && rpm? == 0 { return Ok(true) }
+    brew := sh.code("brew", ["list", name])
+    if !is_err(brew) && brew? == 0 { return Ok(true) }
+    Ok(false)
+}
+
+// pkg_install installs a system package using the detected package manager.
+pub fn pkg_install(name) -> Result[any] {
+    if sh.ok("which", ["apt-get"]) {
+        return sh.run("sudo", ["apt-get", "install", "-y", name])
+    }
+    if sh.ok("which", ["dnf"]) {
+        return sh.run("sudo", ["dnf", "install", "-y", name])
+    }
+    if sh.ok("which", ["yum"]) {
+        return sh.run("sudo", ["yum", "install", "-y", name])
+    }
+    if sh.ok("which", ["brew"]) {
+        return sh.run("brew", ["install", name])
+    }
+    Err("no supported package manager found (apt-get, dnf, yum, or brew)")
+}
+
+// user_exists checks if a system user exists.
+pub fn user_exists(username) -> Result[any] {
+    result := sh.code("id", [username])
+    if is_err(result) { return Ok(false) }
+    Ok(result? == 0)
+}
+
+// user_create creates a system user with optional shell and home directory.
+pub fn user_create(username, opts) -> Result[any] {
+    let mut args = ["useradd"]
+    if opts != null {
+        if contains(keys(opts), "shell") {
+            args = push(args, "-s")
+            args = push(args, opts.shell)
+        }
+        if contains(keys(opts), "home") {
+            args = push(args, "-m")
+            args = push(args, "-d")
+            args = push(args, opts.home)
+        }
+        if contains(keys(opts), "groups") {
+            args = push(args, "-G")
+            args = push(args, opts.groups)
+        }
+    }
+    args = push(args, username)
+    sh.run("sudo", args)
+}
+
+// ── Config management ──────────────────────────────────────────────────
+
+// config_template reads a template file and replaces {{key}} placeholders.
+pub fn config_template(template_path, vars) -> Result[any] {
+    content := fs.read(template_path)
+    if is_err(content) { return Err("read template: " + _err_str(content)) }
+    let mut result = content?
+    for key in keys(vars) {
+        result = str.replace(result, "{{" + key + "}}", _s(vars[key]))
+    }
+    Ok(result)
+}
+
+// config_diff compares current file content with desired content.
+// Returns {changed: bool, reason: str, lines_added: int, lines_removed: int}
+pub fn config_diff(file_path, desired) -> Result[any] {
+    current := fs.read(file_path)
+    if is_err(current) {
+        desired_lines := str.lines(desired)
+        return Ok({
+            "changed": true, "reason": "file does not exist",
+            "lines_added": len(desired_lines), "lines_removed": 0
+        })
+    }
+    cur := current?
+    if cur == desired { return Ok({"changed": false, "reason": null, "lines_added": 0, "lines_removed": 0}) }
+    cur_lines := str.lines(cur)
+    desired_lines := str.lines(desired)
+    Ok({
+        "changed": true, "reason": "content differs",
+        "lines_added": len(desired_lines), "lines_removed": len(cur_lines)
+    })
+}
+
+// config_apply writes content to a file only if it differs, with optional backup.
+pub fn config_apply(file_path, desired, backup) -> Result[any] {
+    diff := config_diff(file_path, desired)?
+    if !diff.changed { return Ok({"applied": false, "reason": "no changes", "backup": null}) }
+    let mut backup_path = null
+    if backup != null && backup {
+        current := fs.read(file_path)
+        if !is_err(current) {
+            backup_path = file_path + ".bak"
+            fs.write(backup_path, current?)
+        }
+    }
+    write_result := fs.write(file_path, desired)
+    if is_err(write_result) { return Err("config_apply write: " + _err_str(write_result)) }
+    Ok({"applied": true, "reason": diff.reason, "backup": backup_path})
+}
+
+// ── Alerting ───────────────────────────────────────────────────────────
+
+// threshold_check compares a value against warning and critical thresholds.
+// Returns {name, value, level, message}
+pub fn threshold_check(name, value, warning, critical) {
+    if value >= critical {
+        return {
+            "name": name, "value": value, "level": "critical",
+            "message": name + " is " + _s(value) + " (critical >= " + _s(critical) + ")"
+        }
+    }
+    if value >= warning {
+        return {
+            "name": name, "value": value, "level": "warning",
+            "message": name + " is " + _s(value) + " (warning >= " + _s(warning) + ")"
+        }
+    }
+    {"name": name, "value": value, "level": "ok", "message": null}
+}
+
+// alert sends a message to stderr with a severity prefix and timestamp.
+pub fn alert(level, message) {
+    io.eprintln("[" + str.upper(level) + "] " + _timestamp() + " " + message)
+}

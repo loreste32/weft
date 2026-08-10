@@ -1,39 +1,39 @@
 pub fn create(config) {
-    system := "You are a helpful voice assistant. Keep responses concise and conversational. When the caller wants to end the conversation, use the end_call tool."
-    if config.system != null {
+    let mut system = "You are a helpful voice assistant. Keep responses concise and conversational. When the caller wants to end the conversation, use the end_call tool."
+    if contains(keys(config), "system") && config.system != null {
         system = config.system
     }
-    tools := []
-    if config.tools != null {
+    let mut tools = []
+    if contains(keys(config), "tools") && config.tools != null {
         tools = config.tools
     }
-    mut has_end := false
+    let mut has_end := false
     for t in tools {
         if t.name == "end_call" {
             has_end = true
         }
     }
-    if !has_end { push(tools, llm.tool("end_call", fn() { {"action": "hangup"} }, "End the phone call when the caller is done or says goodbye")) }
+    if !has_end { tools = push(tools, llm.tool("end_call", fn() { {"action": "hangup"} }, "End the phone call when the caller is done or says goodbye")) }
     {
         "_type": "iva",
         "system": system,
         "tools": tools,
-        "voice": if config.voice != null { config.voice } else { "default" },
-        "language": if config.language != null { config.language } else { "en-US" },
+        "voice": if contains(keys(config), "voice") && config.voice != null { config.voice } else { "default" },
+        "language": if contains(keys(config), "language") && config.language != null { config.language } else { "en-US" },
         "stt_url": config.stt_url,
         "tts_url": config.tts_url,
-        "stt_opts": if config.stt_opts != null { config.stt_opts } else {
+        "stt_opts": if contains(keys(config), "stt_opts") && config.stt_opts != null { config.stt_opts } else {
             {}
         },
-        "tts_opts": if config.tts_opts != null { config.tts_opts } else {
+        "tts_opts": if contains(keys(config), "tts_opts") && config.tts_opts != null { config.tts_opts } else {
             {}
         },
-        "llm_opts": if config.llm_opts != null { config.llm_opts } else {
+        "llm_opts": if contains(keys(config), "llm_opts") && config.llm_opts != null { config.llm_opts } else {
             {}
         },
         "greeting": config.greeting,
-        "max_turns": if config.max_turns != null { config.max_turns } else { 50 },
-        "end_on": if config.end_on != null { config.end_on } else { ["goodbye", "bye", "hang up", "end call"] },
+        "max_turns": if contains(keys(config), "max_turns") && config.max_turns != null { config.max_turns } else { 50 },
+        "end_on": if contains(keys(config), "end_on") && config.end_on != null { config.end_on } else { ["goodbye", "bye", "hang up", "end call"] },
         "history": [],
         "turn_count": 0,
         "done": false,
@@ -82,7 +82,7 @@ pub fn turn(agent, input) -> Result[any] {
     mut response := ""
     mut tool_calls := []
     mut call_actions := []
-    done := false
+    let mut done = false
     if len(agent.tools) > 0 {
         response = llm.ask(input, agent.tools, llm_opts)?
     } else {

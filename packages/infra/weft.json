@@ -1,0 +1,23 @@
+{
+  "name": "infra",
+  "version": "0.1.0",
+  "description": "Infrastructure automation — health checks (TCP/HTTP/DNS/process/disk/memory), service management (systemd), deploy patterns (rolling/canary), certificate monitoring, network diagnostics, host provisioning, config management, and structured alerting",
+  "entry": "lib.weft",
+  "exports": [
+    "health_check", "health_check_tcp", "health_check_http", "health_check_proc",
+    "health_check_dns", "health_check_disk", "health_check_memory",
+    "health_check_multi", "health_report",
+    "host_report", "cert_report", "port_report",
+    "service_status", "service_start", "service_stop", "service_restart",
+    "service_enable", "service_disable", "service_list",
+    "deploy_rolling", "deploy_canary",
+    "cert_monitor", "cert_check", "cert_expiry_days",
+    "ping", "port_open", "port_scan", "traceroute",
+    "host_info", "pkg_installed", "pkg_install",
+    "user_exists", "user_create",
+    "config_template", "config_diff", "config_apply",
+    "wait_for", "retry_until",
+    "alert", "threshold_check"
+  ],
+  "capabilities": ["sh", "fs", "http", "socket", "sysinfo", "proc", "dns", "tls"]
+}

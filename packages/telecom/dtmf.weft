@@ -1,19 +1,19 @@
 pub fn menu(prompt_text, routes, opts) {
-    timeout := 5
-    max_digits := 1
-    retries := 3
-    invalid_msg := "Invalid selection. Please try again."
+    let mut timeout = 5
+    let mut max_digits = 1
+    let mut retries = 3
+    let mut invalid_msg = "Invalid selection. Please try again."
     if opts != null {
-        if opts.timeout != null {
+        if contains(keys(opts), "timeout") && opts.timeout != null {
             timeout = opts.timeout
         }
-        if opts.max_digits != null {
+        if contains(keys(opts), "max_digits") && opts.max_digits != null {
             max_digits = opts.max_digits
         }
-        if opts.retries != null {
+        if contains(keys(opts), "retries") && opts.retries != null {
             retries = opts.retries
         }
-        if opts.invalid_msg != null {
+        if contains(keys(opts), "invalid_msg") && opts.invalid_msg != null {
             invalid_msg = opts.invalid_msg
         }
     }
@@ -30,13 +30,13 @@ pub fn menu(prompt_text, routes, opts) {
 
 
 pub fn collect(prompt_text, max_digits, opts) {
-    timeout := 10
-    finish_on_key := "#"
+    let mut timeout = 10
+    let mut finish_on_key = "#"
     if opts != null {
-        if opts.timeout != null {
+        if contains(keys(opts), "timeout") && opts.timeout != null {
             timeout = opts.timeout
         }
-        if opts.finish_on_key != null {
+        if contains(keys(opts), "finish_on_key") && opts.finish_on_key != null {
             finish_on_key = opts.finish_on_key
         }
     }
@@ -56,13 +56,13 @@ pub fn collect(prompt_text, max_digits, opts) {
 
 
 pub fn confirm(prompt_text, opts) {
-    yes_key := "1"
-    no_key := "2"
+    let mut yes_key = "1"
+    let mut no_key = "2"
     if opts != null {
-        if opts.yes_key != null {
+        if contains(keys(opts), "yes_key") && opts.yes_key != null {
             yes_key = opts.yes_key
         }
-        if opts.no_key != null {
+        if contains(keys(opts), "no_key") && opts.no_key != null {
             no_key = opts.no_key
         }
     }

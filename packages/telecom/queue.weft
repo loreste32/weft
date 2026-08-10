@@ -1,13 +1,15 @@
+// Call queue with priority, overflow, agent state, estimated wait, and callbacks.
+
 pub fn create(name, opts) {
     q := {
         "name": name,
         "calls": [],
+        "agents": [],
         "max_wait_sec": 600,
         "max_size": 100,
         "music_url": null,
         "announce_position": true,
         "announce_interval": 30,
-        "priority_levels": 3,
         "overflow_action": "voicemail",
         "stats": {
             "total_enqueued": 0,
@@ -17,53 +19,31 @@ pub fn create(name, opts) {
         },
     }
     if opts != null {
-        if opts.max_wait_sec != null {
-            q.max_wait_sec = opts.max_wait_sec
-        }
-        if opts.max_size != null {
-            q.max_size = opts.max_size
-        }
-        if opts.music_url != null {
-            q.music_url = opts.music_url
-        }
-        if opts.announce_position != null {
-            q.announce_position = opts.announce_position
-        }
-        if opts.announce_interval != null {
-            q.announce_interval = opts.announce_interval
-        }
-        if opts.priority_levels != null {
-            q.priority_levels = opts.priority_levels
-        }
-        if opts.overflow_action != null {
-            q.overflow_action = opts.overflow_action
-        }
+        if contains(keys(opts), "max_wait_sec") { q.max_wait_sec = opts.max_wait_sec }
+        if contains(keys(opts), "max_size") { q.max_size = opts.max_size }
+        if contains(keys(opts), "music_url") { q.music_url = opts.music_url }
+        if contains(keys(opts), "announce_position") { q.announce_position = opts.announce_position }
+        if contains(keys(opts), "announce_interval") { q.announce_interval = opts.announce_interval }
+        if contains(keys(opts), "overflow_action") { q.overflow_action = opts.overflow_action }
     }
     q
 }
 
-
 pub fn add(q, call_id, opts) {
     if len(q.calls) >= q.max_size {
-        return {"overflow": true, "action": q.overflow_action}
+        return {"overflow": true, "action": q.overflow_action, "position": 0}
     }
-    priority := 1
-    caller_id := ""
-    skill_tags := []
-    data := {}
+    let mut priority = 1
+    let mut caller_id = ""
+    let mut skill_tags = []
+    let mut data = {}
+    let mut callback = null
     if opts != null {
-        if opts.priority != null {
-            priority = opts.priority
-        }
-        if opts.caller_id != null {
-            caller_id = opts.caller_id
-        }
-        if opts.skill_tags != null {
-            skill_tags = opts.skill_tags
-        }
-        if opts.data != null {
-            data = opts.data
-        }
+        if contains(keys(opts), "priority") { priority = opts.priority }
+        if contains(keys(opts), "caller_id") { caller_id = opts.caller_id }
+        if contains(keys(opts), "skill_tags") { skill_tags = opts.skill_tags }
+        if contains(keys(opts), "data") { data = opts.data }
+        if contains(keys(opts), "callback") { callback = opts.callback }
     }
     entry := {
         "call_id": call_id,
@@ -72,42 +52,33 @@ pub fn add(q, call_id, opts) {
         "caller_id": caller_id,
         "skill_tags": skill_tags,
         "data": data,
+        "callback": callback,
     }
-    mut inserted := false
-    mut i := 0
+    // Insert by priority (higher priority first)
+    let mut inserted = false
+    let mut new_calls = []
+    let mut i = 0
     while i < len(q.calls) {
-        if q.calls[i].priority < priority {
-            mut new_calls := []
-            mut j := 0
-            while j < len(q.calls) {
-                if j == i && !inserted {
-                    push(new_calls, entry)
-                    inserted = true
-                }
-                push(new_calls, q.calls[j])
-                j = j + 1
-            }
-            q.calls = new_calls
+        if !inserted && q.calls[i].priority < priority {
+            new_calls = push(new_calls, entry)
             inserted = true
-            i = len(q.calls)
         }
+        new_calls = push(new_calls, q.calls[i])
         i = i + 1
     }
-    if !inserted { push(q.calls, entry) }
+    if !inserted { new_calls = push(new_calls, entry) }
+    q.calls = new_calls
     q.stats.total_enqueued = q.stats.total_enqueued + 1
     pos := position(q, call_id)
     {
         "position": pos,
-        "estimated_wait_sec": pos * 60,
+        "estimated_wait_sec": estimated_wait(q, call_id),
         "overflow": false,
     }
 }
 
-
 pub fn next(q) {
-    if len(q.calls) == 0 {
-        return null
-    }
+    if len(q.calls) == 0 { return null }
     entry := q.calls[0]
     q.calls = slice(q.calls, 1)
     wait := time.now() - entry.enqueued_at
@@ -117,49 +88,57 @@ pub fn next(q) {
     entry
 }
 
-
 pub fn remove(q, call_id) {
-    mut new_calls := []
-    mut found := false
+    let mut new_calls = []
+    let mut found = false
     for c in q.calls {
         if c.call_id == call_id {
             found = true
             q.stats.total_abandoned = q.stats.total_abandoned + 1
-        } else { push(new_calls, c) }
+        } else {
+            new_calls = push(new_calls, c)
+        }
     }
     q.calls = new_calls
     found
 }
 
-
 pub fn position(q, call_id) {
-    mut i := 0
+    let mut i = 0
     for c in q.calls {
         i = i + 1
-        if c.call_id == call_id {
-            return i
-        }
+        if c.call_id == call_id { return i }
     }
     0
 }
 
+pub fn estimated_wait(q, call_id) {
+    pos := position(q, call_id)
+    if pos == 0 { return 0 }
+    avg := if q.stats.total_dequeued > 0 {
+        q.stats.total_wait_sec / q.stats.total_dequeued
+    } else { 60 }
+    available := len(filter(q.agents, fn(a) { a.state == "available" }))
+    if available > 0 { pos * avg / available } else { pos * avg }
+}
 
 pub fn stats(q) {
-    avg_wait := 0
+    let mut avg_wait = 0
     if q.stats.total_dequeued > 0 {
         avg_wait = q.stats.total_wait_sec / q.stats.total_dequeued
     }
-    longest := 0
+    let mut longest = 0
     now := time.now()
     for c in q.calls {
         w := now - c.enqueued_at
-        if w > longest {
-            longest = w
-        }
+        if w > longest { longest = w }
     }
+    available := len(filter(q.agents, fn(a) { a.state == "available" }))
     {
         "name": q.name,
         "size": len(q.calls),
+        "agents_total": len(q.agents),
+        "agents_available": available,
         "total_enqueued": q.stats.total_enqueued,
         "total_dequeued": q.stats.total_dequeued,
         "total_abandoned": q.stats.total_abandoned,
@@ -168,30 +147,81 @@ pub fn stats(q) {
     }
 }
 
-
 pub fn for_skill(q, skill) {
-    mut result := []
-    for c in q.calls {
-        for s in c.skill_tags {
-            if s == skill { push(result, c) }
-        }
-    }
-    result
+    filter(q.calls, fn(c) {
+        contains(c.skill_tags, skill)
+    })
 }
 
+// ── Agent management ──
+
+pub fn add_agent(q, agent_id, opts) {
+    let mut skills = []
+    if opts != null && contains(keys(opts), "skills") { skills = opts.skills }
+    q.agents = push(q.agents, {
+        "id": agent_id, "state": "available", "skills": skills,
+        "calls_handled": 0, "last_call_at": null,
+    })
+}
+
+pub fn set_agent_state(q, agent_id, state) {
+    let mut i = 0
+    while i < len(q.agents) {
+        if q.agents[i].id == agent_id {
+            q.agents[i].state = state
+        }
+        i = i + 1
+    }
+}
+
+pub fn agent_complete(q, agent_id) {
+    let mut i = 0
+    while i < len(q.agents) {
+        if q.agents[i].id == agent_id {
+            q.agents[i].state = "available"
+            q.agents[i].calls_handled = q.agents[i].calls_handled + 1
+            q.agents[i].last_call_at = time.now()
+        }
+        i = i + 1
+    }
+}
+
+pub fn next_agent(q, required_skill) {
+    let mut best = null
+    let mut i = 0
+    while i < len(q.agents) {
+        agent := q.agents[i]
+        if agent.state == "available" {
+            if required_skill != null {
+                if !contains(agent.skills, required_skill) {
+                    i = i + 1
+                    continue
+                }
+            }
+            if best == null || agent.calls_handled < best.calls_handled {
+                best = agent
+            }
+        }
+        i = i + 1
+    }
+    best
+}
+
+// ── Announcements ──
 
 pub fn announce(q, call_id) {
     pos := position(q, call_id)
     if pos == 0 {
-        return {"text": "You are not currently in the queue."}
+        return {"text": "You are not currently in the queue.", "position": 0}
     }
     if pos == 1 {
-        return {
-            "text": "You are next in line. An agent will be with you shortly.",
-        }
+        return {"text": "You are next in line. An agent will be with you shortly.", "position": 1}
     }
-    wait := pos * 60
-    mins := int(wait / 60)
-    {"text": "You are currently number $pos in the queue. Estimated wait time is approximately $mins minutes. Thank you for your patience."}
+    wait := estimated_wait(q, call_id)
+    mins := math.floor(wait / 60)
+    {
+        "text": "You are currently number " + ("" + pos) + " in the queue. Estimated wait time is approximately " + ("" + mins) + " minutes.",
+        "position": pos,
+        "estimated_wait_sec": wait,
+    }
 }
-

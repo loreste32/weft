@@ -249,6 +249,24 @@ pub fn esl_show(e, what) -> Result[any] { esl_mod.show(e, what) }
 
 pub fn esl_close(e) -> Result[any] { esl_mod.close(e) }
 
+// ESL additions (0.6.x)
+pub fn esl_get_var(e, uuid, name) -> Result[any] { esl_mod.get_var(e, uuid, name) }
+pub fn esl_set_var(e, uuid, name, val) -> Result[any] { esl_mod.set_var(e, uuid, name, val) }
+pub fn esl_uuid_kill(e, uuid, cause) -> Result[any] { esl_mod.uuid_kill(e, uuid, cause) }
+pub fn esl_uuid_park(e, uuid) -> Result[any] { esl_mod.uuid_park(e, uuid) }
+pub fn esl_uuid_hold(e, uuid, toggle) -> Result[any] { esl_mod.uuid_hold(e, uuid, toggle) }
+pub fn esl_linger(e) -> Result[any] { esl_mod.linger(e) }
+pub fn esl_noevents(e) -> Result[any] { esl_mod.noevents(e) }
+pub fn esl_filter(e, header, value) -> Result[any] { esl_mod.filter(e, header, value) }
+pub fn esl_myevents(e, uuid) -> Result[any] { esl_mod.myevents(e, uuid) }
+pub fn esl_bgapi(e, cmd) -> Result[any] { esl_mod.bgapi(e, cmd) }
+pub fn esl_reload(e, module) -> Result[any] { esl_mod.reload(e, module) }
+pub fn esl_sofia_status(e) -> Result[any] { esl_mod.sofia_status(e) }
+pub fn esl_channels_list(e) -> Result[any] { esl_mod.channels_list(e) }
+pub fn esl_connect_with_retry(h, p, pw, retries, delay) -> Result[any] { esl_mod.connect_with_retry(h, p, pw, retries, delay) }
+pub fn esl_recv_event(e) -> Result[any] { esl_mod.recv_event(e) }
+pub fn esl_recv_event_timeout(e, t) -> Result[any] { esl_mod.recv_event_timeout(e, t) }
+
 
 pub fn ari_connect(opts) { ari_mod.connect(opts) }
 
@@ -299,6 +317,34 @@ pub fn ari_snoop(c, id, app_name, opts) -> Result[any] { ari_mod.snoop(c, id, ap
 
 
 pub fn ari_listen(c, handler) -> Result[any] { ari_mod.listen(c, handler) }
+
+// ARI additions (0.6.x)
+pub fn ari_ring(c, id) -> Result[any] { ari_mod.ring(c, id) }
+pub fn ari_ring_stop(c, id) -> Result[any] { ari_mod.ring_stop(c, id) }
+pub fn ari_moh_start(c, id, cls) -> Result[any] { ari_mod.moh_start(c, id, cls) }
+pub fn ari_moh_stop(c, id) -> Result[any] { ari_mod.moh_stop(c, id) }
+pub fn ari_mute(c, id, dir) -> Result[any] { ari_mod.mute(c, id, dir) }
+pub fn ari_unmute(c, id) -> Result[any] { ari_mod.unmute(c, id) }
+pub fn ari_continue(c, id, opts) -> Result[any] { ari_mod.continue_in_dialplan(c, id, opts) }
+pub fn ari_dial(c, id, caller, timeout) -> Result[any] { ari_mod.dial(c, id, caller, timeout) }
+pub fn ari_device_states(c) -> Result[any] { ari_mod.device_states(c) }
+pub fn ari_set_var(c, id, name, val) -> Result[any] { ari_mod.set_variable(c, id, name, val) }
+pub fn ari_get_var(c, id, name) -> Result[any] { ari_mod.get_variable(c, id, name) }
+pub fn ari_bridges(c) -> Result[any] { ari_mod.bridges(c) }
+pub fn ari_bridge_info(c, bid) -> Result[any] { ari_mod.bridge_info(c, bid) }
+pub fn ari_remove_from_bridge(c, bid, cid) -> Result[any] { ari_mod.remove_from_bridge(c, bid, cid) }
+pub fn ari_recordings(c) -> Result[any] { ari_mod.recordings(c) }
+pub fn ari_asterisk_info(c) -> Result[any] { ari_mod.asterisk_info(c) }
+pub fn ari_channel(c, id) -> Result[any] { ari_mod.channel(c, id) }
+
+// Queue additions (0.6.x)
+pub fn queue_add_agent(q, id, opts) { queue_mod.add_agent(q, id, opts) }
+pub fn queue_set_agent_state(q, id, state) { queue_mod.set_agent_state(q, id, state) }
+pub fn queue_agent_complete(q, id) { queue_mod.agent_complete(q, id) }
+pub fn queue_next_agent(q, skill) { queue_mod.next_agent(q, skill) }
+pub fn queue_remove(q, id) { queue_mod.remove(q, id) }
+pub fn queue_position(q, id) { queue_mod.position(q, id) }
+pub fn queue_announce(q, id) { queue_mod.announce(q, id) }
 
 
 pub fn webrtc_signal_server(port, opts) { webrtc_mod.signal_server(port, opts) }

@@ -1,0 +1,311 @@
+use "./lib.weft" as infra
+
+// ── Health checks ──
+
+fn test_health_check_tcp_closed() -> Result[any] {
+    r := infra.health_check_tcp("127.0.0.1", 1, 1)?
+    test.eq(r.status, "unhealthy")
+    test.eq(r.check, "tcp")
+    test.eq(r.target, "127.0.0.1:1")
+    test.is_true(r.latency_ms >= 0.0)
+    test.is_true(r.error != null)
+    test.is_true(r.timestamp != null)
+    Ok(null)
+}
+
+fn test_health_check_proc_self() -> Result[any] {
+    r := infra.health_check_proc("weft")?
+    test.eq(r.status, "healthy")
+    test.eq(r.check, "proc")
+    test.is_true(len(r.pids) > 0)
+    test.is_true(r.timestamp != null)
+    Ok(null)
+}
+
+fn test_health_check_proc_nonexistent() -> Result[any] {
+    r := infra.health_check_proc("__nonexistent_process_xyz__")?
+    test.eq(r.status, "unhealthy")
+    test.eq(r.error, "process not found")
+    test.eq(len(r.pids), 0)
+    Ok(null)
+}
+
+fn test_health_check_dns() -> Result[any] {
+    r := infra.health_check_dns("localhost", "A")?
+    test.eq(r.check, "dns")
+    test.is_true(r.timestamp != null)
+    test.is_true(r.latency_ms >= 0.0)
+    Ok(null)
+}
+
+fn test_health_check_disk() -> Result[any] {
+    r := infra.health_check_disk("/", 99.0)?
+    test.eq(r.check, "disk")
+    test.eq(r.status, "healthy")
+    test.is_true(r.percent_used > 0.0)
+    test.is_true(r.total != null)
+    test.is_true(r.free != null)
+    Ok(null)
+}
+
+fn test_health_check_disk_low_threshold() -> Result[any] {
+    // 1% threshold should trigger unhealthy on any real disk
+    r := infra.health_check_disk("/", 1.0)?
+    test.eq(r.status, "unhealthy")
+    test.is_true(str.contains(r.error, ">="))
+    Ok(null)
+}
+
+fn test_health_check_memory() -> Result[any] {
+    r := infra.health_check_memory(99.0)?
+    test.eq(r.check, "memory")
+    test.eq(r.status, "healthy")
+    test.is_true(r.percent_used > 0.0)
+    test.is_true(r.total != null)
+    test.is_true(r.available != null)
+    Ok(null)
+}
+
+fn test_health_check_unknown_type {
+    r := infra.health_check("bogus", "target", null)
+    test.eq(r.ok, false)
+}
+
+fn test_health_check_multi() -> Result[any] {
+    checks := [
+        {"type": "proc", "target": "weft"},
+        {"type": "proc", "target": "__nonexistent_xyz__"}
+    ]
+    r := infra.health_check_multi(checks)?
+    test.eq(r.status, "degraded")
+    test.eq(r.healthy_count, 1)
+    test.eq(r.total_count, 2)
+    test.is_true(r.duration_ms >= 0.0)
+    test.is_true(r.timestamp != null)
+    Ok(null)
+}
+
+fn test_health_check_multi_all_healthy() -> Result[any] {
+    checks := [
+        {"type": "proc", "target": "weft"},
+        {"type": "disk", "target": "/", "threshold": 99.0}
+    ]
+    r := infra.health_check_multi(checks)?
+    test.eq(r.status, "healthy")
+    test.eq(r.healthy_count, 2)
+    Ok(null)
+}
+
+// ── Reports ──
+
+fn test_health_report_single() -> Result[any] {
+    check := infra.health_check_tcp("127.0.0.1", 1, 1)?
+    report := infra.health_report(check)
+    test.is_true(str.contains(report, "127.0.0.1:1"))
+    test.is_true(str.contains(report, "✗"))
+    Ok(null)
+}
+
+fn test_health_report_multi() -> Result[any] {
+    checks := [
+        {"type": "proc", "target": "weft"},
+        {"type": "proc", "target": "__nonexist__"}
+    ]
+    r := infra.health_check_multi(checks)?
+    report := infra.health_report(r)
+    test.is_true(str.contains(report, "DEGRADED"))
+    test.is_true(str.contains(report, "1/2"))
+    test.is_true(str.contains(report, "Health Check Report"))
+    test.is_true(str.contains(report, "─"))
+    Ok(null)
+}
+
+fn test_host_report() -> Result[any] {
+    report := infra.host_report()?
+    test.is_true(str.contains(report, "Host Report"))
+    test.is_true(str.contains(report, "Hostname:"))
+    test.is_true(str.contains(report, "Platform:"))
+    Ok(null)
+}
+
+fn test_port_report() -> Result[any] {
+    results := infra.port_scan("127.0.0.1", [1, 2])?
+    report := infra.port_report("127.0.0.1", results)
+    test.is_true(str.contains(report, "Port Scan"))
+    test.is_true(str.contains(report, "CLOSED"))
+    test.is_true(str.contains(report, "0 open"))
+    Ok(null)
+}
+
+// ── Retry ──
+
+fn test_retry_until_success() -> Result[any] {
+    result := infra.retry_until(fn() { Ok("done") }, 3, 0)
+    test.eq(result?, "done")
+    Ok(null)
+}
+
+fn test_retry_until_exhausted {
+    result := infra.retry_until(fn() { Err("always fail") }, 3, 0)
+    test.eq(result.ok, false)
+}
+
+// ── Threshold check ──
+
+fn test_threshold_check_ok {
+    r := infra.threshold_check("cpu", 30.0, 80.0, 95.0)
+    test.eq(r.level, "ok")
+    test.eq(r.name, "cpu")
+    test.eq(r.message, null)
+}
+
+fn test_threshold_check_warning {
+    r := infra.threshold_check("cpu", 85.0, 80.0, 95.0)
+    test.eq(r.level, "warning")
+    test.is_true(str.contains(r.message, "85"))
+    test.is_true(str.contains(r.message, "warning"))
+}
+
+fn test_threshold_check_critical {
+    r := infra.threshold_check("cpu", 98.0, 80.0, 95.0)
+    test.eq(r.level, "critical")
+    test.is_true(str.contains(r.message, "98"))
+    test.is_true(str.contains(r.message, "critical"))
+}
+
+// ── Config management ──
+
+fn test_config_template() -> Result[any] {
+    path := fs.temp_file("infra-test-", ".conf")?
+    fs.write(path, "server={{host}}\nport={{port}}\nenv={{env}}\n")
+    result := infra.config_template(path, {"host": "db.local", "port": "5432", "env": "prod"})?
+    test.eq(result, "server=db.local\nport=5432\nenv=prod\n")
+    fs.remove(path)
+    Ok(null)
+}
+
+fn test_config_diff_no_change() -> Result[any] {
+    path := fs.temp_file("infra-test-", ".conf")?
+    content := "key=value\n"
+    fs.write(path, content)
+    diff := infra.config_diff(path, content)?
+    test.eq(diff.changed, false)
+    test.eq(diff.lines_added, 0)
+    test.eq(diff.lines_removed, 0)
+    fs.remove(path)
+    Ok(null)
+}
+
+fn test_config_diff_changed() -> Result[any] {
+    path := fs.temp_file("infra-test-", ".conf")?
+    fs.write(path, "old\n")
+    diff := infra.config_diff(path, "new\nline\n")?
+    test.eq(diff.changed, true)
+    test.eq(diff.reason, "content differs")
+    fs.remove(path)
+    Ok(null)
+}
+
+fn test_config_diff_missing_file() -> Result[any] {
+    diff := infra.config_diff("/tmp/__nonexistent_infra_test__", "content\n")?
+    test.eq(diff.changed, true)
+    test.eq(diff.reason, "file does not exist")
+    test.eq(diff.lines_added, 1)
+    Ok(null)
+}
+
+fn test_config_apply_writes() -> Result[any] {
+    path := fs.temp_file("infra-apply-", ".conf")?
+    fs.write(path, "old content")
+    result := infra.config_apply(path, "new content", true)?
+    test.eq(result.applied, true)
+    test.eq(fs.read(path)?, "new content")
+    test.eq(fs.read(path + ".bak")?, "old content")
+    test.eq(result.backup, path + ".bak")
+    fs.remove(path)
+    fs.remove(path + ".bak")
+    Ok(null)
+}
+
+fn test_config_apply_no_change() -> Result[any] {
+    path := fs.temp_file("infra-apply-", ".conf")?
+    fs.write(path, "same")
+    result := infra.config_apply(path, "same", false)?
+    test.eq(result.applied, false)
+    fs.remove(path)
+    Ok(null)
+}
+
+// ── Network ──
+
+fn test_port_open_closed() -> Result[any] {
+    open := infra.port_open("127.0.0.1", 1)?
+    test.eq(open, false)
+    Ok(null)
+}
+
+fn test_port_scan() -> Result[any] {
+    results := infra.port_scan("127.0.0.1", [1, 2, 3])?
+    test.eq(len(results), 3)
+    for r in results {
+        test.eq(r.open, false)
+    }
+    Ok(null)
+}
+
+// ── Host info ──
+
+fn test_host_info() -> Result[any] {
+    info := infra.host_info()?
+    test.is_true(info.hostname != null && len(info.hostname) > 0)
+    test.is_true(info.platform != null)
+    test.is_true(info.arch != null)
+    test.is_true(info.timestamp != null)
+    Ok(null)
+}
+
+// ── Package check ──
+
+fn test_pkg_installed_nonexistent() -> Result[any] {
+    installed := infra.pkg_installed("__nonexistent_pkg_xyz__")?
+    test.eq(installed, false)
+    Ok(null)
+}
+
+// ── User check ──
+
+fn test_user_exists() -> Result[any] {
+    exists := infra.user_exists("root")?
+    test.eq(exists, true)
+    Ok(null)
+}
+
+fn test_user_exists_nonexistent() -> Result[any] {
+    exists := infra.user_exists("__nonexistent_user_xyz__")?
+    test.eq(exists, false)
+    Ok(null)
+}
+
+// ── Alert ──
+
+fn test_alert {
+    infra.alert("warning", "disk usage above 80%")
+    infra.alert("critical", "service down")
+    infra.alert("info", "deploy started")
+}
+
+// ── Helpers ──
+
+fn test_format_helpers {
+    // threshold_check returns well-structured results
+    ok := infra.threshold_check("test", 50.0, 80.0, 95.0)
+    test.eq(ok.level, "ok")
+    test.eq(ok.value, 50.0)
+
+    warn := infra.threshold_check("test", 82.0, 80.0, 95.0)
+    test.eq(warn.level, "warning")
+    test.is_true(str.contains(warn.message, "82"))
+
+    crit := infra.threshold_check("test", 99.0, 80.0, 95.0)
+    test.eq(crit.level, "critical")
+}

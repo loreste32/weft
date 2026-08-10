@@ -26,7 +26,7 @@ pub fn time_route(routes) {
             return r.handler
         }
         in_time := hour >= r.start && hour < r.end
-        in_day := true
+        let mut in_day = true
         if r.days != null {
             in_day = false
             for d in r.days {
@@ -106,7 +106,7 @@ pub fn round_robin(agents) {
     if len(available) == 0 {
         return null
     }
-    idx := int(time.now() * 1000) % len(available)
+    idx := math.floor(time.now() * 1000) % len(available)
     available[idx]
 }
 

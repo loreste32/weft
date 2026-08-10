@@ -1,10 +1,10 @@
 pub fn answer(opts) {
     a := {"action": "answer"}
     if opts != null {
-        if opts.headers != null {
+        if contains(keys(opts), "headers") && opts.headers != null {
             a.headers = opts.headers
         }
-        if opts.timeout != null {
+        if contains(keys(opts), "timeout") && opts.timeout != null {
             a.timeout = opts.timeout
         }
     }
@@ -15,10 +15,10 @@ pub fn answer(opts) {
 pub fn hangup(opts) {
     a := {"action": "hangup"}
     if opts != null {
-        if opts.reason != null {
+        if contains(keys(opts), "reason") && opts.reason != null {
             a.reason = opts.reason
         }
-        if opts.headers != null {
+        if contains(keys(opts), "headers") && opts.headers != null {
             a.headers = opts.headers
         }
     }
@@ -29,19 +29,19 @@ pub fn hangup(opts) {
 pub fn play(src, opts) {
     a := {"action": "play", "src": src}
     if opts != null {
-        if opts.tts != null {
+        if contains(keys(opts), "tts") && opts.tts != null {
             a.tts = opts.tts
         }
-        if opts.voice != null {
+        if contains(keys(opts), "voice") && opts.voice != null {
             a.voice = opts.voice
         }
-        if opts.language != null {
+        if contains(keys(opts), "language") && opts.language != null {
             a.language = opts.language
         }
-        if opts.loop != null {
+        if contains(keys(opts), "loop") && opts.loop != null {
             a.loop = opts.loop
         }
-        if opts.bargin != null {
+        if contains(keys(opts), "bargin") && opts.bargin != null {
             a.bargin = opts.bargin
         }
     }
@@ -50,11 +50,7 @@ pub fn play(src, opts) {
 
 
 pub fn say_text(text, opts) {
-    o := if opts != null { opts } else {
-        {}
-    }
-    o.tts = true
-    play(text, o)
+    play(text, {"tts": true})
 }
 
 
@@ -63,34 +59,34 @@ pub fn gather(opts) {
     if opts == null {
         return a
     }
-    if opts.kind != null {
+    if contains(keys(opts), "kind") && opts.kind != null {
         a.kind = opts.kind
     }
-    if opts.timeout != null {
+    if contains(keys(opts), "timeout") && opts.timeout != null {
         a.timeout = opts.timeout
     }
-    if opts.max_digits != null {
+    if contains(keys(opts), "max_digits") && opts.max_digits != null {
         a.max_digits = opts.max_digits
     }
-    if opts.finish_on_key != null {
+    if contains(keys(opts), "finish_on_key") && opts.finish_on_key != null {
         a.finish_on_key = opts.finish_on_key
     }
-    if opts.prompt != null {
+    if contains(keys(opts), "prompt") && opts.prompt != null {
         a.prompt = opts.prompt
     }
-    if opts.language != null {
+    if contains(keys(opts), "language") && opts.language != null {
         a.language = opts.language
     }
-    if opts.speech_timeout != null {
+    if contains(keys(opts), "speech_timeout") && opts.speech_timeout != null {
         a.speech_timeout = opts.speech_timeout
     }
-    if opts.hints != null {
+    if contains(keys(opts), "hints") && opts.hints != null {
         a.hints = opts.hints
     }
-    if opts.speech_model != null {
+    if contains(keys(opts), "speech_model") && opts.speech_model != null {
         a.speech_model = opts.speech_model
     }
-    if opts.bargin != null {
+    if contains(keys(opts), "bargin") && opts.bargin != null {
         a.bargin = opts.bargin
     }
     a
@@ -100,22 +96,22 @@ pub fn gather(opts) {
 pub fn record(opts) {
     a := {"action": "record"}
     if opts != null {
-        if opts.max_duration != null {
+        if contains(keys(opts), "max_duration") && opts.max_duration != null {
             a.max_duration = opts.max_duration
         }
-        if opts.beep != null {
+        if contains(keys(opts), "beep") && opts.beep != null {
             a.beep = opts.beep
         }
-        if opts.format != null {
+        if contains(keys(opts), "format") && opts.format != null {
             a.format = opts.format
         }
-        if opts.trim_silence != null {
+        if contains(keys(opts), "trim_silence") && opts.trim_silence != null {
             a.trim_silence = opts.trim_silence
         }
-        if opts.channels != null {
+        if contains(keys(opts), "channels") && opts.channels != null {
             a.channels = opts.channels
         }
-        if opts.callback_url != null {
+        if contains(keys(opts), "callback_url") && opts.callback_url != null {
             a.callback_url = opts.callback_url
         }
     }
@@ -132,19 +128,19 @@ pub fn pause(seconds) { {
 pub fn transfer(dest, opts) {
     a := {"action": "transfer", "destination": dest}
     if opts != null {
-        if opts.kind != null {
+        if contains(keys(opts), "kind") && opts.kind != null {
             a.kind = opts.kind
         }
-        if opts.headers != null {
+        if contains(keys(opts), "headers") && opts.headers != null {
             a.headers = opts.headers
         }
-        if opts.caller_id != null {
+        if contains(keys(opts), "caller_id") && opts.caller_id != null {
             a.caller_id = opts.caller_id
         }
-        if opts.timeout != null {
+        if contains(keys(opts), "timeout") && opts.timeout != null {
             a.timeout = opts.timeout
         }
-        if opts.music_url != null {
+        if contains(keys(opts), "music_url") && opts.music_url != null {
             a.music_url = opts.music_url
         }
     }
@@ -155,10 +151,10 @@ pub fn transfer(dest, opts) {
 pub fn bridge(call_id, opts) {
     a := {"action": "bridge", "call_id": call_id}
     if opts != null {
-        if opts.headers != null {
+        if contains(keys(opts), "headers") && opts.headers != null {
             a.headers = opts.headers
         }
-        if opts.record != null {
+        if contains(keys(opts), "record") && opts.record != null {
             a.record = opts.record
         }
     }
@@ -169,22 +165,22 @@ pub fn bridge(call_id, opts) {
 pub fn conference(room, opts) {
     a := {"action": "conference", "room": room}
     if opts != null {
-        if opts.muted != null {
+        if contains(keys(opts), "muted") && opts.muted != null {
             a.muted = opts.muted
         }
-        if opts.moderator != null {
+        if contains(keys(opts), "moderator") && opts.moderator != null {
             a.moderator = opts.moderator
         }
-        if opts.beep_on_enter != null {
+        if contains(keys(opts), "beep_on_enter") && opts.beep_on_enter != null {
             a.beep_on_enter = opts.beep_on_enter
         }
-        if opts.max_participants != null {
+        if contains(keys(opts), "max_participants") && opts.max_participants != null {
             a.max_participants = opts.max_participants
         }
-        if opts.music_url != null {
+        if contains(keys(opts), "music_url") && opts.music_url != null {
             a.music_url = opts.music_url
         }
-        if opts.record != null {
+        if contains(keys(opts), "record") && opts.record != null {
             a.record = opts.record
         }
     }

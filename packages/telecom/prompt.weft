@@ -1,19 +1,19 @@
 pub fn build(text, opts) {
     p := {"text": text, "tts": true}
     if opts != null {
-        if opts.voice != null {
+        if contains(keys(opts), "voice") && opts.voice != null {
             p.voice = opts.voice
         }
-        if opts.language != null {
+        if contains(keys(opts), "language") && opts.language != null {
             p.language = opts.language
         }
-        if opts.bargin != null {
+        if contains(keys(opts), "bargin") && opts.bargin != null {
             p.bargin = opts.bargin
         }
-        if opts.loop != null {
+        if contains(keys(opts), "loop") && opts.loop != null {
             p.loop = opts.loop
         }
-        if opts.ssml != null {
+        if contains(keys(opts), "ssml") && opts.ssml != null {
             p.ssml = true
             p.text = opts.ssml
         }
@@ -25,10 +25,10 @@ pub fn build(text, opts) {
 pub fn audio(url, opts) {
     p := {"audio_url": url, "tts": false}
     if opts != null {
-        if opts.bargin != null {
+        if contains(keys(opts), "bargin") && opts.bargin != null {
             p.bargin = opts.bargin
         }
-        if opts.loop != null {
+        if contains(keys(opts), "loop") && opts.loop != null {
             p.loop = opts.loop
         }
     }
@@ -37,23 +37,23 @@ pub fn audio(url, opts) {
 
 
 pub fn ssml(parts) {
-    mut out := "<speak>"
+    let mut out = "<speak>"
     for part in parts {
-        if part.text != null {
+        if contains(keys(part), "text") {
             out = out + part.text
         }
-        if part.pause_dur != null {
+        if contains(keys(part), "pause_dur") {
             out = out + "<break time=\"${part.pause_dur}\"/>"
         }
-        if part.say_as != null {
+        if contains(keys(part), "say_as") {
             out = out + "<say-as interpret-as=\"${part.say_as.interpret_as}\">${part.say_as.text}</say-as>"
         }
-        if part.emphasis != null {
+        if contains(keys(part), "emphasis") {
             level := if part.emphasis.level != null { part.emphasis.level } else { "moderate" }
             out = out + "<emphasis level=\"$level\">${part.emphasis.text}</emphasis>"
         }
-        if part.prosody != null {
-            attrs := ""
+        if contains(keys(part), "prosody") {
+            let mut attrs = ""
             if part.prosody.rate != null {
                 attrs = attrs + " rate=\"${part.prosody.rate}\""
             }
@@ -65,16 +65,16 @@ pub fn ssml(parts) {
             }
             out = out + "<prosody$attrs>${part.prosody.text}</prosody>"
         }
-        if part.sub != null {
+        if contains(keys(part), "sub") {
             out = out + "<sub alias=\"${part.sub.alias}\">${part.sub.text}</sub>"
         }
-        if part.audio != null {
+        if contains(keys(part), "audio") {
             out = out + "<audio src=\"${part.audio.src}\"/>"
         }
-        if part.p != null {
+        if contains(keys(part), "p") {
             out = out + "<p>${part.p}</p>"
         }
-        if part.s != null {
+        if contains(keys(part), "s") {
             out = out + "<s>${part.s}</s>"
         }
     }

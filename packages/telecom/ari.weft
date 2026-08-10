@@ -224,8 +224,130 @@ pub fn endpoint(client, tech, resource) -> Result[any] { get(client, "/endpoints
 pub fn sounds(client) -> Result[any] { get(client, "/sounds") }
 
 
-pub fn events_url(client) { client.ws_url }
+// ──────────────────────────────────────────────
+// Channel operations (additional)
+// ──────────────────────────────────────────────
 
+pub fn ring(client, id) -> Result[any] { post(client, "/channels/$id/ring", null) }
+
+pub fn ring_stop(client, id) -> Result[any] { del(client, "/channels/$id/ring") }
+
+pub fn moh_start(client, id, moh_class) -> Result[any] {
+    mc := if moh_class != null { "?mohClass=$moh_class" } else { "" }
+    post(client, "/channels/$id/moh$mc", null)
+}
+
+pub fn moh_stop(client, id) -> Result[any] { del(client, "/channels/$id/moh") }
+
+pub fn silence_start(client, id) -> Result[any] { post(client, "/channels/$id/silence", null) }
+
+pub fn silence_stop(client, id) -> Result[any] { del(client, "/channels/$id/silence") }
+
+pub fn continue_in_dialplan(client, id, opts) -> Result[any] {
+    let mut path = "/channels/$id/continue"
+    let mut params = []
+    if opts != null {
+        if contains(keys(opts), "context") { params = push(params, "context=" + opts.context) }
+        if contains(keys(opts), "extension") { params = push(params, "extension=" + opts.extension) }
+        if contains(keys(opts), "priority") { params = push(params, "priority=" + ("" + opts.priority)) }
+    }
+    if len(params) > 0 { path = path + "?" + str.join(params, "&") }
+    post(client, path, null)
+}
+
+pub fn dial(client, id, caller, timeout) -> Result[any] {
+    let mut path = "/channels/$id/dial"
+    let mut params = []
+    if caller != null { params = push(params, "caller=$caller") }
+    if timeout != null { params = push(params, "timeout=" + ("" + timeout)) }
+    if len(params) > 0 { path = path + "?" + str.join(params, "&") }
+    post(client, path, null)
+}
+
+// ──────────────────────────────────────────────
+// Bridge operations (additional)
+// ──────────────────────────────────────────────
+
+pub fn bridge_info(client, bridge_id) -> Result[any] { get(client, "/bridges/$bridge_id") }
+
+pub fn moh_bridge(client, bridge_id, moh_class) -> Result[any] {
+    mc := if moh_class != null { "?mohClass=$moh_class" } else { "" }
+    post(client, "/bridges/$bridge_id/moh$mc", null)
+}
+
+pub fn moh_bridge_stop(client, bridge_id) -> Result[any] { del(client, "/bridges/$bridge_id/moh") }
+
+pub fn start_recording_bridge(client, bridge_id, name, opts) -> Result[any] {
+    let mut path = "/bridges/$bridge_id/record?name=$name"
+    if opts != null {
+        if contains(keys(opts), "format") { path = path + "&format=" + opts.format }
+        if contains(keys(opts), "max_duration") { path = path + "&maxDurationSeconds=" + ("" + opts.max_duration) }
+        if contains(keys(opts), "beep") { path = path + "&beep=" + ("" + opts.beep) }
+    }
+    post(client, path, null)
+}
+
+// ──────────────────────────────────────────────
+// Device state
+// ──────────────────────────────────────────────
+
+pub fn device_states(client) -> Result[any] { get(client, "/deviceStates") }
+
+pub fn device_state(client, name) -> Result[any] { get(client, "/deviceStates/$name") }
+
+pub fn set_device_state(client, name, state) -> Result[any] {
+    post(client, "/deviceStates/$name?deviceState=$state", null)
+}
+
+// ──────────────────────────────────────────────
+// Mailboxes
+// ──────────────────────────────────────────────
+
+pub fn mailboxes(client) -> Result[any] { get(client, "/mailboxes") }
+
+pub fn mailbox(client, name) -> Result[any] { get(client, "/mailboxes/$name") }
+
+pub fn update_mailbox(client, name, old_msgs, new_msgs) -> Result[any] {
+    post(client, "/mailboxes/$name?oldMessages=$old_msgs&newMessages=$new_msgs", null)
+}
+
+// ──────────────────────────────────────────────
+// Applications
+// ──────────────────────────────────────────────
+
+pub fn applications(client) -> Result[any] { get(client, "/applications") }
+
+pub fn application(client, app_name) -> Result[any] { get(client, "/applications/$app_name") }
+
+pub fn subscribe_event(client, app_name, event_source) -> Result[any] {
+    post(client, "/applications/$app_name/subscription?eventSource=$event_source", null)
+}
+
+pub fn unsubscribe_event(client, app_name, event_source) -> Result[any] {
+    del(client, "/applications/$app_name/subscription?eventSource=$event_source")
+}
+
+// ──────────────────────────────────────────────
+// Asterisk system
+// ──────────────────────────────────────────────
+
+pub fn asterisk_info(client) -> Result[any] { get(client, "/asterisk/info") }
+
+pub fn asterisk_modules(client) -> Result[any] { get(client, "/asterisk/modules") }
+
+pub fn asterisk_reload_module(client, module) -> Result[any] { post(client, "/asterisk/modules/$module", null) }
+
+pub fn asterisk_variable(client, name) -> Result[any] { get(client, "/asterisk/variable?variable=$name") }
+
+pub fn asterisk_set_variable(client, name, value) -> Result[any] {
+    post(client, "/asterisk/variable?variable=$name&value=$value", null)
+}
+
+// ──────────────────────────────────────────────
+// Events
+// ──────────────────────────────────────────────
+
+pub fn events_url(client) { client.ws_url }
 
 pub fn listen(client, handler) -> Result[any] {
     say("ARI connecting to ${client.ws_url}")

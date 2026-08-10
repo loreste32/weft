@@ -135,11 +135,11 @@ pub fn mask(number) {
 
 
 pub fn sip_uri(user, domain, opts) {
-    scheme := "sip"
+    let mut scheme = "sip"
     if opts != null && opts.secure == true {
         scheme = "sips"
     }
-    uri := "$scheme:$user@$domain"
+    let mut uri = "$scheme:$user@$domain"
     if opts != null && opts.port != null {
         uri = "$scheme:$user@$domain:${opts.port}"
     }

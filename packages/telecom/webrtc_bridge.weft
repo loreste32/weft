@@ -15,7 +15,7 @@ pub fn signal_server(port, opts) {
 
 
 fn ice_servers(opts) {
-    stun := "stun:stun.l.google.com:19302"
+    let mut stun = "stun:stun.l.google.com:19302"
     if opts != null && opts.stun != null {
         stun = opts.stun
     }
@@ -24,8 +24,8 @@ fn ice_servers(opts) {
     ]
     if opts != null && opts.turn != null { push(servers, {
         "urls": opts.turn,
-        "username": if opts.turn_user != null { opts.turn_user } else { "" },
-        "credential": if opts.turn_pass != null { opts.turn_pass } else { "" },
+        "username": if contains(keys(opts), "turn_user") && opts.turn_user != null { opts.turn_user } else { "" },
+        "credential": if contains(keys(opts), "turn_pass") && opts.turn_pass != null { opts.turn_pass } else { "" },
     }) }
     {"ice_servers": servers}
 }
@@ -83,7 +83,7 @@ fn handle_webrtc_session(ws, opts) {
 
 
 fn originate_sip_leg(esl, dial_string, opts) -> Result[any] {
-    app := "park"
+    let mut app = "park"
     if opts != null && opts.app != null {
         app = opts.app
     }
@@ -116,13 +116,13 @@ fn extract_uuid(resp) {
 pub fn sip_refer(api_fn, uuid, refer_to, opts) -> Result[any] {
     ensure(uuid != null && uuid != "", "uuid required")?
     ensure(refer_to != null && refer_to != "", "refer_to required")?
-    attended := false
+    let mut attended = false
     if opts != null && opts.attended == true {
         attended = true
     }
     if opts != null {
-        if opts.referred_by != null { run_api(api_fn, "uuid_setvar $uuid sip_h_Referred-By ${opts.referred_by}")? }
-        if opts.replace != null { run_api(api_fn, "uuid_setvar $uuid sip_refer_replace ${opts.replace}")? }
+        if contains(keys(opts), "referred_by") && opts.referred_by != null { run_api(api_fn, "uuid_setvar $uuid sip_h_Referred-By ${opts.referred_by}")? }
+        if contains(keys(opts), "replace") && opts.replace != null { run_api(api_fn, "uuid_setvar $uuid sip_refer_replace ${opts.replace}")? }
         if opts.notify == true { run_api(api_fn, "uuid_setvar $uuid sip_refer_notify true")? }
     }
     mut result := null

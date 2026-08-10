@@ -1,22 +1,22 @@
 pub fn from_event(event) { {
-    "call_id": if event.call_id != null { event.call_id } else { "" },
-    "direction": if event.direction != null { event.direction } else { "inbound" },
-    "from": if event.from != null { event.from } else { "" },
-    "to": if event.to != null { event.to } else { "" },
-    "start_time": if event.start_time != null { event.start_time } else { time.iso(time.now()) },
-    "end_time": if event.end_time != null { event.end_time } else { null },
-    "duration_sec": if event.duration_sec != null { event.duration_sec } else { 0 },
-    "status": if event.status != null { event.status } else { "unknown" },
-    "disposition": if event.disposition != null { event.disposition } else { "" },
-    "sip_code": if event.sip_code != null { event.sip_code } else { 0 },
-    "hangup_cause": if event.hangup_cause != null { event.hangup_cause } else { "" },
-    "recording_url": if event.recording_url != null { event.recording_url } else { null },
-    "ivr_path": if event.ivr_path != null { event.ivr_path } else { [] },
-    "agent_id": if event.agent_id != null { event.agent_id } else { null },
-    "queue_name": if event.queue_name != null { event.queue_name } else { null },
-    "queue_wait_sec": if event.queue_wait_sec != null { event.queue_wait_sec } else { 0 },
-    "tags": if event.tags != null { event.tags } else { [] },
-    "metadata": if event.metadata != null { event.metadata } else {
+    "call_id": if contains(keys(event), "call_id") && event.call_id != null { event.call_id } else { "" },
+    "direction": if contains(keys(event), "direction") && event.direction != null { event.direction } else { "inbound" },
+    "from": if contains(keys(event), "from") && event.from != null { event.from } else { "" },
+    "to": if contains(keys(event), "to") && event.to != null { event.to } else { "" },
+    "start_time": if contains(keys(event), "start_time") && event.start_time != null { event.start_time } else { time.iso(time.now()) },
+    "end_time": if contains(keys(event), "end_time") && event.end_time != null { event.end_time } else { null },
+    "duration_sec": if contains(keys(event), "duration_sec") && event.duration_sec != null { event.duration_sec } else { 0 },
+    "status": if contains(keys(event), "status") && event.status != null { event.status } else { "unknown" },
+    "disposition": if contains(keys(event), "disposition") && event.disposition != null { event.disposition } else { "" },
+    "sip_code": if contains(keys(event), "sip_code") && event.sip_code != null { event.sip_code } else { 0 },
+    "hangup_cause": if contains(keys(event), "hangup_cause") && event.hangup_cause != null { event.hangup_cause } else { "" },
+    "recording_url": if contains(keys(event), "recording_url") && event.recording_url != null { event.recording_url } else { null },
+    "ivr_path": if contains(keys(event), "ivr_path") && event.ivr_path != null { event.ivr_path } else { [] },
+    "agent_id": if contains(keys(event), "agent_id") && event.agent_id != null { event.agent_id } else { null },
+    "queue_name": if contains(keys(event), "queue_name") && event.queue_name != null { event.queue_name } else { null },
+    "queue_wait_sec": if contains(keys(event), "queue_wait_sec") && event.queue_wait_sec != null { event.queue_wait_sec } else { 0 },
+    "tags": if contains(keys(event), "tags") && event.tags != null { event.tags } else { [] },
+    "metadata": if contains(keys(event), "metadata") && event.metadata != null { event.metadata } else {
         {}
     },
 } }
@@ -53,7 +53,7 @@ fn matches(record, filter) {
     if filter.to != null && record.to != filter.to {
         return false
     }
-    if filter.status != null && record.status != filter.status {
+    if filter["status"] != null && record.status != filter["status"] {
         return false
     }
     if filter.agent_id != null && record.agent_id != filter.agent_id {
@@ -67,20 +67,20 @@ fn matches(record, filter) {
 
 
 pub fn summary(records) {
-    mut total := 0
-    mut answered := 0
-    mut missed := 0
-    mut total_duration := 0
-    mut total_queue_wait := 0
+    let mut total = 0
+    let mut answered = 0
+    let mut missed = 0
+    let mut total_duration = 0
+    let mut total_queue_wait = 0
     for r in records {
         total = total + 1
-        if r.status == "answered" || r.status == "completed" {
+        if r["status"] == "answered" || r["status"] == "completed" {
             answered = answered + 1
-            total_duration = total_duration + r.duration_sec
+            total_duration = total_duration + r["duration_sec"]
         } else {
             missed = missed + 1
         }
-        total_queue_wait = total_queue_wait + r.queue_wait_sec
+        total_queue_wait = total_queue_wait + r["queue_wait_sec"]
     }
     avg_duration := if answered > 0 { total_duration / answered } else { 0 }
     avg_queue := if total > 0 { total_queue_wait / total } else { 0 }

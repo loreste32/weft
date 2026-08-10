@@ -1,0 +1,314 @@
+use "./lib.weft" as telecom
+use "./call.weft" as call
+use "./dtmf.weft" as dtmf
+use "./queue.weft" as queue
+use "./routing.weft" as routing
+use "./cdr.weft" as cdr
+use "./dialplan.weft" as dialplan
+use "./prompt.weft" as prompt
+
+// ── Dialplan / number handling ──
+
+fn test_normalize_us_number {
+    test.eq(dialplan.normalize("2125551234", "1"), "+12125551234")
+    test.eq(dialplan.normalize("+12125551234", null), "+12125551234")
+}
+
+fn test_is_e164 {
+    test.eq(dialplan.is_e164("+12125551234"), true)
+    test.eq(dialplan.is_e164("2125551234"), false)
+    test.eq(dialplan.is_e164("+1"), false)
+}
+
+fn test_is_tollfree {
+    test.eq(dialplan.is_tollfree("+18001234567"), true)
+    test.eq(dialplan.is_tollfree("+18881234567"), true)
+    test.eq(dialplan.is_tollfree("+12125551234"), false)
+}
+
+fn test_mask {
+    masked := dialplan.mask("+12125551234")
+    test.is_true(str.contains(masked, "***"))
+    test.is_true(!str.contains(masked, "1234") || str.has_suffix(masked, "1234"))
+}
+
+fn test_sip_uri {
+    uri := dialplan.sip_uri("alice", "sip.example.com", null)
+    test.eq(uri, "sip:alice@sip.example.com")
+}
+
+fn test_caller_id {
+    cid := dialplan.caller_id("Alice", "2125551234")
+    test.eq(cid.name, "Alice")
+    test.is_true(str.starts_with(cid.number, "+"))
+}
+
+// ── Call actions ──
+
+fn test_answer_action {
+    a := call.answer(null)
+    test.eq(a.action, "answer")
+}
+
+fn test_hangup_action {
+    a := call.hangup({"reason": "busy"})
+    test.eq(a.action, "hangup")
+    test.eq(a.reason, "busy")
+}
+
+fn test_play_action {
+    a := call.play("http://example.com/audio.wav", {"loop": 3})
+    test.eq(a.action, "play")
+    test.eq(a.src, "http://example.com/audio.wav")
+    test.eq(a.loop, 3)
+}
+
+fn test_say_text_action {
+    a := call.say_text("Hello world", null)
+    test.eq(a.action, "play")
+    test.eq(a.tts, true)
+}
+
+// ── DTMF ──
+
+fn test_dtmf_menu {
+    m := dtmf.menu("Press 1 for sales", {"1": "sales", "2": "support"}, null)
+    test.eq(m.prompt, "Press 1 for sales")
+    test.is_true(contains(keys(m.routes), "1"))
+}
+
+fn test_dtmf_collect {
+    c := dtmf.collect("Enter your PIN", 4, {"timeout": 5})
+    test.eq(c.max_digits, 4)
+}
+
+fn test_dtmf_confirm {
+    c := dtmf.confirm("Press 1 to confirm", null)
+    test.eq(c.action, "dtmf_menu")
+}
+
+fn test_dtmf_route {
+    routes := {"1": "sales", "2": "support"}
+    test.eq(dtmf.route("1", routes), "sales")
+    test.eq(dtmf.route("2", routes), "support")
+    test.eq(dtmf.route("9", routes), null)
+}
+
+// ── Queue ──
+
+fn test_queue_create_and_add {
+    q := queue.create("support", null)
+    test.eq(q.name, "support")
+    test.eq(len(q.calls), 0)
+    r := queue.add(q, "call-1", null)
+    test.eq(r.overflow, false)
+    test.eq(r.position, 1)
+    test.eq(len(q.calls), 1)
+}
+
+fn test_queue_priority {
+    q := queue.create("vip", null)
+    queue.add(q, "normal-1", {"priority": 1})
+    queue.add(q, "vip-1", {"priority": 3})
+    queue.add(q, "normal-2", {"priority": 1})
+    // VIP should be first
+    test.eq(q.calls[0].call_id, "vip-1")
+    test.eq(q.calls[0].priority, 3)
+}
+
+fn test_queue_next {
+    q := queue.create("test", null)
+    queue.add(q, "c1", null)
+    queue.add(q, "c2", null)
+    entry := queue.next(q)
+    test.eq(entry.call_id, "c1")
+    test.is_true(entry.wait_sec >= 0)
+    test.eq(len(q.calls), 1)
+}
+
+fn test_queue_remove {
+    q := queue.create("test", null)
+    queue.add(q, "c1", null)
+    queue.add(q, "c2", null)
+    removed := queue.remove(q, "c1")
+    test.eq(removed, true)
+    test.eq(len(q.calls), 1)
+    test.eq(q.stats.total_abandoned, 1)
+}
+
+fn test_queue_overflow {
+    q := queue.create("tiny", {"max_size": 2})
+    queue.add(q, "c1", null)
+    queue.add(q, "c2", null)
+    r := queue.add(q, "c3", null)
+    test.eq(r.overflow, true)
+    test.eq(len(q.calls), 2)
+}
+
+fn test_queue_stats {
+    q := queue.create("test", null)
+    queue.add(q, "c1", null)
+    queue.add(q, "c2", null)
+    queue.next(q)
+    s := queue.stats(q)
+    test.eq(s.name, "test")
+    test.eq(s.size, 1)
+    test.eq(s.total_enqueued, 2)
+    test.eq(s.total_dequeued, 1)
+}
+
+fn test_queue_for_skill {
+    q := queue.create("test", null)
+    queue.add(q, "c1", {"skill_tags": ["billing", "spanish"]})
+    queue.add(q, "c2", {"skill_tags": ["tech"]})
+    queue.add(q, "c3", {"skill_tags": ["billing"]})
+    billing := queue.for_skill(q, "billing")
+    test.eq(len(billing), 2)
+    tech := queue.for_skill(q, "tech")
+    test.eq(len(tech), 1)
+}
+
+fn test_queue_agent_management {
+    q := queue.create("test", null)
+    queue.add_agent(q, "agent-1", {"skills": ["billing"]})
+    queue.add_agent(q, "agent-2", {"skills": ["tech"]})
+    test.eq(len(q.agents), 2)
+
+    // Both available initially
+    s := queue.stats(q)
+    test.eq(s.agents_total, 2)
+    test.eq(s.agents_available, 2)
+
+    // Set one busy
+    queue.set_agent_state(q, "agent-1", "busy")
+    s2 := queue.stats(q)
+    test.eq(s2.agents_available, 1)
+
+    // Next agent should be agent-2 (only available)
+    next := queue.next_agent(q, null)
+    test.eq(next.id, "agent-2")
+
+    // Skill-based routing
+    billing_agent := queue.next_agent(q, "billing")
+    test.eq(billing_agent, null)
+
+    // Complete call and mark available
+    queue.agent_complete(q, "agent-1")
+    test.eq(q.agents[0].state, "available")
+    test.eq(q.agents[0].calls_handled, 1)
+}
+
+fn test_queue_announce {
+    q := queue.create("test", null)
+    queue.add(q, "c1", null)
+    queue.add(q, "c2", null)
+    queue.add(q, "c3", null)
+
+    a1 := queue.announce(q, "c1")
+    test.eq(a1.position, 1)
+    test.is_true(str.contains(a1.text, "next in line"))
+
+    a3 := queue.announce(q, "c3")
+    test.eq(a3.position, 3)
+    test.is_true(str.contains(a3.text, "number 3"))
+}
+
+// ── Routing ──
+
+fn test_did_route {
+    routes := {"+12125551234": "sales", "+18001234567": "support"}
+    test.eq(routing.did_route("+12125551234", routes), "sales")
+    test.eq(routing.did_route("+19999999999", routes), null)
+}
+
+fn test_round_robin {
+    agents := [
+        {"name": "a1", "available": true},
+        {"name": "a2", "available": true},
+        {"name": "a3", "available": false},
+    ]
+    r := routing.round_robin(agents)
+    test.is_true(r != null)
+    test.is_true(r.available)
+}
+
+// ── CDR ──
+
+fn test_cdr_from_event {
+    event := {
+        "call_id": "uuid-123",
+        "from": "+12125551234",
+        "to": "+18001234567",
+        "duration_sec": 120,
+        "status": "answered",
+        "hangup_cause": "NORMAL_CLEARING",
+    }
+    record := cdr.from_event(event)
+    test.eq(record.call_id, "uuid-123")
+    test.eq(record.from, "+12125551234")
+    test.eq(record.to, "+18001234567")
+    test.eq(record.duration_sec, 120)
+}
+
+fn test_cdr_summary {
+    records := [
+        {"status": "answered", "duration_sec": 120, "hangup_cause": "NORMAL_CLEARING", "queue_wait_sec": 10},
+        {"status": "answered", "duration_sec": 60, "hangup_cause": "NORMAL_CLEARING", "queue_wait_sec": 5},
+        {"status": "missed", "duration_sec": 30, "hangup_cause": "USER_BUSY", "queue_wait_sec": 20},
+    ]
+    s := cdr.summary(records)
+    test.eq(s.total_calls, 3)
+    test.eq(s.answered, 2)
+}
+
+// ── Prompt / SSML ──
+
+fn test_prompt_build {
+    p := prompt.build("Welcome to our service", {"language": "en-US"})
+    test.eq(p.text, "Welcome to our service")
+    test.eq(p.language, "en-US")
+}
+
+fn test_ssml_generation {
+    s := prompt.ssml([
+        {"text": "Hello "},
+        {"pause_dur": "500ms"},
+        {"text": "World"},
+    ])
+    test.is_true(str.contains(s, "<speak>"))
+    test.is_true(str.contains(s, "Hello"))
+    test.is_true(str.contains(s, "break"))
+}
+
+fn test_prompt_digits {
+    s := prompt.digits("1234")
+    test.is_true(str.contains(s, "<say-as"))
+}
+
+// ── High-level telecom API ──
+
+fn test_telecom_answer {
+    a := telecom.answer(null)
+    test.eq(a.action, "answer")
+}
+
+fn test_telecom_hangup {
+    a := telecom.hangup(null)
+    test.eq(a.action, "hangup")
+}
+
+fn test_telecom_normalize {
+    test.eq(telecom.normalize("+12125551234", null), "+12125551234")
+}
+
+fn test_telecom_is_e164 {
+    test.eq(telecom.is_e164("+12125551234"), true)
+    test.eq(telecom.is_e164("bad"), false)
+}
+
+fn test_telecom_queue_lifecycle {
+    q := telecom.queue_create("test-q", null)
+    telecom.queue_add(q, "call-1", null)
+    s := telecom.queue_stats(q)
+    test.eq(s.size, 1)
+}

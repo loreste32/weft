@@ -608,6 +608,91 @@ pub fn show(e, what) -> Result[any] { api(e, "show $what as json") }
 
 pub fn status(e) -> Result[any] { api(e, "status") }
 
+// ──────────────────────────────────────────────
+// Variable management
+// ──────────────────────────────────────────────
+
+pub fn get_var(e, uuid, name) -> Result[any] { api(e, "uuid_getvar $uuid $name") }
+
+pub fn uuid_kill(e, uuid, cause) -> Result[any] {
+    c := if cause != null { cause } else { "NORMAL_CLEARING" }
+    api(e, "uuid_kill $uuid $c")
+}
+
+pub fn uuid_park(e, uuid) -> Result[any] { api(e, "uuid_park $uuid") }
+
+pub fn uuid_hold(e, uuid, toggle) -> Result[any] {
+    if toggle == false { return api(e, "uuid_hold off $uuid") }
+    api(e, "uuid_hold $uuid")
+}
+
+pub fn uuid_media(e, uuid, on) -> Result[any] {
+    if on == false { return api(e, "uuid_media off $uuid") }
+    api(e, "uuid_media $uuid")
+}
+
+// ──────────────────────────────────────────────
+// Event management
+// ──────────────────────────────────────────────
+
+pub fn noevents(e) -> Result[any] { command(e, "noevents") }
+
+pub fn nixevent(e, event_name) -> Result[any] { command(e, "nixevent $event_name") }
+
+pub fn linger(e) -> Result[any] { command(e, "linger") }
+
+pub fn nolinger(e) -> Result[any] { command(e, "nolinger") }
+
+// ──────────────────────────────────────────────
+// Module/system management
+// ──────────────────────────────────────────────
+
+pub fn reload(e, module) -> Result[any] { api(e, "reload $module") }
+
+pub fn module_load(e, module) -> Result[any] { api(e, "load $module") }
+
+pub fn module_unload(e, module) -> Result[any] { api(e, "unload $module") }
+
+pub fn global_setvar(e, name, value) -> Result[any] { api(e, "global_setvar $name=$value") }
+
+pub fn global_getvar(e, name) -> Result[any] { api(e, "global_getvar $name") }
+
+pub fn sofia_status(e) -> Result[any] { api(e, "sofia status") }
+
+pub fn sofia_profile(e, profile, action) -> Result[any] { api(e, "sofia profile $profile $action") }
+
+pub fn channels_list(e) -> Result[any] { api(e, "show channels as json") }
+
+pub fn calls_list(e) -> Result[any] { api(e, "show calls as json") }
+
+pub fn registrations(e, profile) -> Result[any] { api(e, "sofia status profile $profile reg") }
+
+// ──────────────────────────────────────────────
+// Reconnect with backoff
+// ──────────────────────────────────────────────
+
+pub fn connect_with_retry(host, port, password, max_retries, base_delay) -> Result[any] {
+    let mut attempt = 0
+    let mut delay = if base_delay != null { base_delay } else { 1.0 }
+    retries := if max_retries != null { max_retries } else { 5 }
+    while attempt < retries {
+        result := connect(host, port, password)
+        if !is_err(result) { return result }
+        attempt = attempt + 1
+        if attempt < retries {
+            io.eprintln("ESL connect attempt " + ("" + attempt) + " failed, retrying in " + ("" + delay) + "s...")
+            time.sleep(delay)
+            delay = delay * 2.0
+            if delay > 30.0 { delay = 30.0 }
+        }
+    }
+    Err("ESL: failed to connect after " + ("" + retries) + " attempts")
+}
+
+// ──────────────────────────────────────────────
+// Connection state
+// ──────────────────────────────────────────────
+
 pub fn close(e) -> Result[any] {
     e._conn.close()?
     e.connected = false
@@ -624,18 +709,23 @@ pub fn outbound_server(port, handler) -> Result[any] {
     say("ESL outbound server listening on :$p")
     while true {
         conn := ln.accept()?
-        initial := conn.read()?
-        conn.write("connect\n\n")?
-        frame := _read_frame(conn, initial)?
-        conn.write("myevents json\n\n")?
-        ack := _read_frame(conn, frame._buf)?
-        e := {
-            "_conn": conn,
-            "_buf": ack._buf,
-            "_events": [],
-            "_mode": "outbound",
-            "connected": true,
-        }
-        handler(e)
+        spawn(fn() {
+            initial := conn.read()
+            if is_err(initial) { return }
+            conn.write("connect\n\n")
+            frame := _read_frame(conn, initial?)
+            if is_err(frame) { return }
+            conn.write("myevents json\n\n")
+            ack := _read_frame(conn, frame?.value._buf)
+            if is_err(ack) { return }
+            e := {
+                "_conn": conn,
+                "_buf": ack?.value._buf,
+                "_events": [],
+                "_mode": "outbound",
+                "connected": true,
+            }
+            handler(e)
+        })
     }
 }

@@ -2,6 +2,22 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
+## [0.6.2] — 2026-08-10
+
+### Added
+- **`infra` package** — infrastructure automation: health checks (TCP/HTTP/DNS/process/disk/memory), service management (systemd), deploy patterns (rolling/canary with health checks), certificate monitoring, network diagnostics (ping/port_scan/traceroute), host provisioning (pkg_install, user_create), config management (template/diff/apply with backup), and structured alerting with threshold checks. 33 tests.
+- **ESL expanded** — 18 new FreeSWITCH commands: `get_var`, `uuid_kill/park/hold/media`, `noevents/nixevent/linger/nolinger`, `filter/myevents/bgapi`, `reload/module_load/module_unload`, `global_setvar/getvar`, `sofia_status/profile`, `channels_list/calls_list/registrations`, `connect_with_retry` (exponential backoff). Outbound server now spawns per-call.
+- **ARI expanded** — 24 new Asterisk REST operations: `ring/ring_stop`, `moh_start/stop`, `silence_start/stop`, `continue_in_dialplan`, `dial`, `mute/unmute`, `bridge_info`, recording/playback bridge ops, device state queries, mailbox operations, application subscription, `asterisk_info/modules/reload_module/variable`.
+- **Queue rewritten** — agent state management (`add_agent/set_agent_state/agent_complete/next_agent` with least-calls routing and skill matching), `estimated_wait` accounting for available agents, priority insertion, overflow handling.
+- **35 new telecom unit tests** — dialplan, call actions, DTMF, queue lifecycle, routing, CDR, prompts/SSML, high-level API.
+
+### Fixed
+- **11 immutable binding bugs** across telecom modules (dtmf, iva, prompt, routing, webrtc_bridge, cdr, dialplan) — `x := value` then `x = newvalue` without `let mut`
+- **3 `mut` without `let` bugs** (cdr, prompt, iva) — `mut x := value` should be `let mut x = value`
+- **`push(list, item)` used as statement** (iva, queue) — doesn't mutate; fixed to `list = push(list, item)`
+- **`int()` is not a function** (routing, queue) — replaced with `math.floor()`
+- **Unsafe map field access** across all telecom modules — `opts.field` crashes when key doesn't exist; fixed with `contains(keys(opts), "field")` guard pattern
+
 ## [0.6.1] — 2026-08-10
 
 ### Added

@@ -139,6 +139,12 @@
       "path": "./router",
       "version": "0.1.0",
       "summary": "HTTP routing — path params, middleware chains, CORS, rate limiting"
+    },
+    {
+      "name": "infra",
+      "path": "./infra",
+      "version": "0.1.0",
+      "summary": "Infrastructure automation — health checks, service management, deploy helpers, cert monitoring, network diagnostics, config management"
     }
   ]
 }

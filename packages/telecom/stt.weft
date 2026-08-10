@@ -11,31 +11,31 @@ pub fn config(opts) {
         "profanity_filter": false,
     }
     if opts != null {
-        if opts.url != null {
+        if contains(keys(opts), "url") && opts.url != null {
             cfg.url = opts.url
         }
-        if opts.api_key != null {
+        if contains(keys(opts), "api_key") && opts.api_key != null {
             cfg.api_key = opts.api_key
         }
-        if opts.language != null {
+        if contains(keys(opts), "language") && opts.language != null {
             cfg.language = opts.language
         }
-        if opts.model != null {
+        if contains(keys(opts), "model") && opts.model != null {
             cfg.model = opts.model
         }
-        if opts.sample_rate != null {
+        if contains(keys(opts), "sample_rate") && opts.sample_rate != null {
             cfg.sample_rate = opts.sample_rate
         }
-        if opts.encoding != null {
+        if contains(keys(opts), "encoding") && opts.encoding != null {
             cfg.encoding = opts.encoding
         }
-        if opts.channels != null {
+        if contains(keys(opts), "channels") && opts.channels != null {
             cfg.channels = opts.channels
         }
-        if opts.punctuate != null {
+        if contains(keys(opts), "punctuate") && opts.punctuate != null {
             cfg.punctuate = opts.punctuate
         }
-        if opts.profanity_filter != null {
+        if contains(keys(opts), "profanity_filter") && opts.profanity_filter != null {
             cfg.profanity_filter = opts.profanity_filter
         }
     }
