@@ -178,7 +178,7 @@ static int mlx_run_tensor_elementwise(const char* name, int op,
   mlx_stream stream = mlx_default_gpu_stream_new();
   mlx_array result = mlx_array_new();
   int status = 0;
-  if (a_array.ctx == nullptr || b_array.ctx == nullptr || stream.ctx == nullptr || result.ctx == nullptr) {
+  if (a_array.ctx == nullptr || b_array.ctx == nullptr || stream.ctx == nullptr) {
     last_error = std::string("MLX ") + name + " array or GPU stream allocation failed";
     status = 1;
   } else if (mlx_elementwise_op(&result, a_array, b_array, stream, op) != 0 ||
@@ -250,7 +250,7 @@ extern "C" int weft_accel_run_tensor(const char* operation,
     mlx_stream stream = mlx_default_gpu_stream_new();
     mlx_array result = mlx_array_new();
     int status = 0;
-    if (a_array.ctx == nullptr || b_array.ctx == nullptr || stream.ctx == nullptr || result.ctx == nullptr) {
+    if (a_array.ctx == nullptr || b_array.ctx == nullptr || stream.ctx == nullptr) {
       last_error = "MLX tensor add array or GPU stream allocation failed";
       status = 1;
     } else if (mlx_add(&result, a_array, b_array, stream) != 0 ||
@@ -313,7 +313,7 @@ extern "C" int weft_accel_run_tensor(const char* operation,
   mlx_stream stream = mlx_default_gpu_stream_new();
   mlx_array result = mlx_array_new();
   int status = 0;
-  if (a_array.ctx == nullptr || b_array.ctx == nullptr || stream.ctx == nullptr || result.ctx == nullptr) {
+  if (a_array.ctx == nullptr || b_array.ctx == nullptr || stream.ctx == nullptr) {
     last_error = "MLX tensor array or GPU stream allocation failed";
     status = 1;
   } else if (mlx_matmul(&result, a_array, b_array, stream) != 0 ||

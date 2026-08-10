@@ -45,7 +45,35 @@ GPU acceleration in Weft is **experimental**. As of 0.6.1:
 
 **Failure behavior**: a provider that fails to load, build, or run is reported as `failed` or `unavailable`. Silent fallback is rejected.
 
-**Not yet validated**: ROCm (requires AMD GPU), MLX (requires Apple Silicon with mlx-c). Broadcasting, axis reductions, convolutions, RNG, and linalg beyond matmul are not declared by any provider.
+### MLX hardware validation (0.6.1)
+
+| Field | Value |
+|-------|-------|
+| SoC | Apple M4 |
+| OS | macOS 15.6 (Sequoia), darwin 24.6.0 |
+| mlx-c | 0.6.0_3 (Homebrew) |
+
+**Operations tested and passed**:
+
+| Operation | Status | DType | Tolerance |
+|-----------|--------|-------|-----------|
+| `tensor_matmul` | PASS | float32 | 1e-4 |
+| `tensor_add` | PASS | float32 | exact |
+| `tensor_sub` | PASS | float32 | exact |
+| `tensor_mul` | PASS | float32 | exact |
+| `tensor_div` | PASS | float32 | exact |
+
+MLX does not declare `tensor_sum` (axis reduction API not compile-verified).
+
+**Benchmark** (2×2 matmul — measures ABI overhead):
+
+| Operation | ns/op | B/op | allocs/op |
+|-----------|------:|-----:|----------:|
+| `tensor_matmul` | 198,617 | 18,321 | 46 |
+
+**Execution reporting**: all ops report `device: "mlx:0"`, `fallback: false`, classification `honest`.
+
+**Not yet validated**: ROCm (requires AMD GPU). Broadcasting, axis reductions, convolutions, RNG, and linalg beyond matmul are not declared by any provider.
 
 ---
 
