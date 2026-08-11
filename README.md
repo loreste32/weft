@@ -11,7 +11,7 @@ A scripting language for LLM agents, telecom (FreeSWITCH ESL / Asterisk ARI), an
 
 Weft is a scripting language purpose-built for three things: **AI agent tooling** (MCP servers, LLM tool calls, structured output), **telecom automation** (FreeSWITCH ESL, Asterisk ARI, SIP, IVR/IVA, call queues), and **infrastructure ops** (health checks, deploy patterns, service management, config automation).
 
-One binary, 104 stdlib packages, no runtime to install. `Result`/`?` error handling, concurrent `map`/`filter` without `async`/`await`, and production-grade integrations with LLMs, databases, message brokers, and VoIP systems out of the box.
+One binary, 83 stdlib packages, no runtime to install. `Result`/`?` error handling, concurrent `map`/`filter` without `async`/`await`, and production-grade integrations with LLMs, databases, message brokers, and VoIP systems out of the box.
 
 | | |
 |--|--|
@@ -131,7 +131,7 @@ Full syntax: [docs/SYNTAX.md](docs/SYNTAX.md) | Language reference: [docs/LANGUA
 
 **Language:** lex → parse → compile → stack VM. Closures (capture by value), sum types with payloads, `match` with destructuring, `defer`, `Result`/`?`. Concurrent `map`/`filter`, `spawn`, channels — no `async`/`await`.
 
-### 104 stdlib packages (in the binary)
+### 83 stdlib packages (in the binary)
 
 | Area | Packages |
 |------|----------|

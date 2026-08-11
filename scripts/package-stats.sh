@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Count stdlib packages
-STDLIB_COUNT=$(go build -o /tmp/weft-stats ./cmd/weft 2>/dev/null && /tmp/weft-stats stdlib 2>/dev/null | wc -l | tr -d ' ')
+STDLIB_COUNT=$(go build -o /tmp/weft-stats ./cmd/weft 2>/dev/null && /tmp/weft-stats stdlib 2>/dev/null | grep -c 'members' | tr -d ' ')
 
 # Count registry modules
 REGISTRY_COUNT=$(python3 -c "import json; d=json.load(open('packages/index.json')); print(len(d['packages']))")
