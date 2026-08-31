@@ -79,7 +79,7 @@ export VSCE_PAT=...   # create at https://dev.azure.com → User settings → Pe
 npx @vscode/vsce publish
 ```
 
-Publisher id: `weft` · extension id: `weft.weft` · current VSIX: `weft-0.4.2.vsix`.
+Publisher id: `weft` · extension id: `weft.weft` · current VSIX: `weft-0.6.2.vsix`.
 
 ## JetBrains
 

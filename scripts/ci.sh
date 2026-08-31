@@ -54,6 +54,7 @@ echo "== format roundtrip =="
 go test ./internal/format/ -count=1 -run TestCompatFormatRoundTrip
 echo "== build =="
 go build -o /tmp/weft-ci ./cmd/weft
+go build -o /tmp/weft-playground-ci ./cmd/weft-playground
 echo "== vendor package sync =="
 bash scripts/check-vendor-sync.sh
 echo "== catalog package sync =="

@@ -27,7 +27,8 @@ checksums. Generate a capability report with `make accelerator-report`.
 Providers may additionally export `weft_accel_run_tensor` and
 `weft_accel_free_tensor` and declare the operation in their manifest. Tensor
 descriptors carry one of the ABI dtypes (`bool`, `int8`, `int16`, `int32`,
-`int64`, `uint8`, `uint16`, `uint32`, `uint64`, `float32`, or `float64`), rank,
+`int64`, `uint8`, `uint16`, `uint32`, `uint64`, `float16`, `float32`, or
+`float64`), rank,
 shape, element strides, byte length, and data. Inputs are borrowed for the
 duration of the call; output storage remains provider-owned until the free
 callback. The host validates dtype, rank, shape, byte length, and the 256 MiB
@@ -36,8 +37,12 @@ C-contiguous output; providers may reject unsupported layouts explicitly.
 
 The reference provider implements float64 `tensor_matmul`, bounded same-shape
 elementwise `tensor_add` / `tensor_sub` / `tensor_mul` / `tensor_div`
-(float32 and float64), and full-reduction `tensor_sum` (float32 and float64)
-for rank-1/rank-2 tensors. `tensor_sum` returns a rank-0 tensor holding one
+(float16, float32, and float64), and full-reduction `tensor_sum` (float16,
+float32, and float64) for rank-1/rank-2 tensors. float16 uses ABI dtype code
+12 with binary16 storage: the reference provider widens inputs to float32 for
+the computation and rounds results back to half precision with
+round-to-nearest-even, matching the host tensor package's NumPy 2.x
+conversion semantics. `tensor_sum` returns a rank-0 tensor holding one
 element of the input dtype, matching NumPy `np.sum` full-reduction semantics.
 Vendor providers implement binary symbols for float32 `tensor_matmul` and the
 same-shape elementwise ops; `tensor_sum` is currently reference-only because a
@@ -93,9 +98,9 @@ GPU dependency and implements `health`, `identity`, validated float64 `matmul`
 JSON operations, and binary `tensor_matmul`, same-shape elementwise
 `tensor_add` / `tensor_sub` / `tensor_mul` / `tensor_div`, and
 full-reduction `tensor_sum` (rank-0 output, NumPy `np.sum` semantics). The
-elementwise ops accept contiguous same-shape float32 or float64 tensors of
-rank 1 or 2; they are explicitly same-shape and unsupported broadcasting must
-return an error. Health and matmul JSON include explicit `device` /
+elementwise ops accept contiguous same-shape float16, float32, or float64
+tensors of rank 1 or 2; they are explicitly same-shape and unsupported
+broadcasting must return an error. Health and matmul JSON include explicit `device` /
 `fallback` fields so hosts never treat silent CPU fallback as device success:
 
 ```sh
@@ -129,6 +134,8 @@ adapter. Vendor-specific CI must run on CUDA, ROCm, and Apple Silicon runners.
 The JSON adapter remains a correctness and ABI reference for diagnostics. The
 reference provider declares `tensor_matmul`, the four same-shape elementwise
 ops, and `tensor_sum`; the CUDA, ROCm/HIP, and MLX providers declare
-`tensor_matmul` plus the four elementwise ops (float32). Vendor hardware jobs
+`tensor_matmul` plus the four elementwise ops (float32 — they reject ABI
+dtype code 12, float16, along with every other dtype outside their claim).
+Vendor hardware jobs
 must still validate them on real devices before large training batches are
 considered release-ready.

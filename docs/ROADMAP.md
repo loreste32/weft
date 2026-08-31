@@ -50,8 +50,11 @@ Weft is on the **0.6.x** line (0.3.x complete — see [VERSIONING.md](VERSIONING
 | `config` | Unified config: .env/JSON/YAML/TOML with validation |
 | `logger` | Structured logging: levels, JSON/text, child loggers |
 | `router` | HTTP routing, path params, middleware, CORS |
-
-Plus 4 local ML-stack packages in `packages/` (`dataframe`, `embed`, `experiment`, `metrics`) — install via path/git.
+| `dataframe` | Validated tabular data: null-aware stats, joins, rolling, CSV/JSON |
+| `embed` | Embeddings client + vector store |
+| `experiment` | Experiment tracking: runs, params, metrics |
+| `metrics` | ML metrics: accuracy, F1, precision, recall |
+| `infra` | Infrastructure automation: health checks, service management, deploy patterns, alerting |
 
 **Registry and packages**
 
@@ -94,11 +97,10 @@ Plus 4 local ML-stack packages in `packages/` (`dataframe`, `embed`, `experiment
 - Binary is convenience-first (~40MB with drivers); not a minimal embed  
 - Concurrent-by-default `map`/`filter` need discipline (`seq_map` for stateful work)  
 - Package signatures prove key identity, not human ownership (trust store helps)  
-- DAP `evaluate` resolves identifiers only — no expression evaluation, `setVariable`, or restart yet  
-- Windows `sysinfo` memory/disk return "not implemented"; Unix is full  
+- DAP `evaluate` supports a practical expression subset (literals, locals/globals, `x.y`/`x[i]`, unary/binary operators, list/map literals, f-strings — no function calls), plus `setVariable` and break-on-throw exception breakpoints; no restart yet
+- Windows `sysinfo` memory/disk are implemented (GlobalMemoryStatusEx / GetDiskFreeSpaceExW); only `loadavg` is unavailable there
 - Browser Wasm playground supports the language core, browser `fetch`, bounded virtual `fs`, and async execution; host-only packages return explicit capability errors
-- Slim build stubs the db/broker packages (clear runtime error, but no build-time warning)  
-- CI executes on Linux only; macOS/Windows are cross-compiled, never run  
+- Slim build stubs the db/broker packages (clear runtime error, but no build-time warning)
 
 In one line: **useful for agents, telecom, and ops scripts when versions are pinned and tested; not a finished ecosystem.**
 
@@ -110,7 +112,7 @@ The **0.3.x line is complete** (0.3.31–0.6.2). Everything shipped.
 
 ## 0.6.x — make it solid
 
-**Shipped (0.4.0–0.6.2):** optional type annotations + `--strict`, DAP debugging, browser Wasm playground, registry namespace trust, telecom SIP REFER / WebRTC bridge, VS Code 0.6.2 (LSP types + DAP), bytecode validation, fuzz/race/bench smoke targets, grouped imports, registry auto-fetch, third-party git imports, LSP references/rename/extract/auto-import, REPL tab completion + multi-line polish, compat corpus expansion, glue benchmarks vs Python, reference apps, tag-triggered release workflow, crypto.argon2id + crypto.pbkdf2, ESL Content-Length frame parser, LU decomposition for warp det/inv/solve, maturity labels for all 81+23 packages, supply-chain tests, benchmark CI publishing.
+**Shipped (0.4.0–0.6.2):** optional type annotations + `--strict`, DAP debugging, browser Wasm playground, registry namespace trust, telecom SIP REFER / WebRTC bridge, VS Code 0.4.3 (LSP types + DAP), bytecode validation, fuzz/race/bench smoke targets, grouped imports, registry auto-fetch, third-party git imports, LSP references/rename/extract/auto-import, REPL tab completion + multi-line polish, compat corpus expansion, glue benchmarks vs Python, reference apps, tag-triggered release workflow, crypto.argon2id + crypto.pbkdf2, ESL Content-Length frame parser, LU decomposition for warp det/inv/solve, maturity labels for all 83+24 packages, supply-chain tests, benchmark CI publishing.
 
 **Reliability (priority now — prove the core):**
 - Language/VM fuzzing and malformed-input testing (`make fuzz-smoke`) — done (smoke + weekly deep)  
@@ -128,20 +130,17 @@ The **0.3.x line is complete** (0.3.31–0.6.2). Everything shipped.
 
 **IDE & tooling:**
 - LSP: locals, multi-file rename, extract-function — done  
-- VS Code extension 0.6.2 VSIX packaged; Marketplace publish needs `VSCE_PAT`
+- VS Code extension 0.4.3 VSIX packaged; Marketplace publish needs `VSCE_PAT`
 
 **Release & platform gaps (next):**
-- macOS + Windows CI runners — today those targets are cross-compiled, never executed  
-- Dockerfile built and smoke-tested in CI (currently unverified)  
-- Windows `sysinfo` memory/disk implementation  
-- DAP: real expression evaluation, `setVariable`, exception breakpoints  
-- Live-broker test coverage for `amqp`/`mongo`/`nats` ([STDLIB_GAPS.md](STDLIB_GAPS.md))  
-- LSP tests for rename / references / extract / auto-import  
+- Windows `sysinfo` loadavg implementation (memory/disk done)  
+- DAP: function calls in `evaluate`, restart request
+- LSP tests for references / auto-import (rename and extract covered)  
 - Bring `install.sh` / APT / DNF / Homebrew packaging automation in-repo (maintained out-of-tree today; this repo alone cannot reproduce those channels)  
 - Audit registry.weftproject.dev contents against `packages/` — publish any of the 24 modules that are missing  
 
 **Scale & adoption:**
-- Key rotation policy for namespaces  
+- Key rotation policy for namespaces — done (`weft registry trust-rotate`; see [STABILITY.md](STABILITY.md))  
 - More telecom (SIP REFER already partially in-module)  
 - More production-quality reference apps (initial set shipped in 0.4.2; polish and expand)  
 

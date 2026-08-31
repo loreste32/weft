@@ -47,7 +47,8 @@ provide validated optimizer updates for scalar and Warp-array parameters.
 `linear_module` and `linear_forward` provide a tested trainable two-dimensional
 module. `state_dict`, `save_checkpoint`, and `load_checkpoint` persist values,
 optimizer state, and metadata without serializing executable graph links.
-Schedulers, sparse/complex autodiff, exact array-level higher-order reverse
+`step_lr`, `exponential_lr`, and `cosine_lr` learning-rate schedulers are
+available; sparse/complex autodiff, exact array-level higher-order reverse
 mode, and a complete deep-learning framework remain future work; numerical
 array HVP/Hessian helpers are available.
 

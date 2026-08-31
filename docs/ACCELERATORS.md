@@ -156,7 +156,7 @@ Status vocabulary used in the JSON report:
 
 ## Operation coverage
 
-The binary tensor ABI (`weft_accel_run_tensor`) transports dtype (11 fixed
+The binary tensor ABI (`weft_accel_run_tensor`) transports dtype (12 fixed
 codes), rank, shape, element strides, byte length, and data — so strided and
 broadcast layouts are representable on the wire. What each provider actually
 covers is a separate, manifest-declared claim, and the conformance gate
@@ -171,8 +171,13 @@ Current coverage:
 | Operation | CPU reference | Vendor (CUDA / ROCm / MLX) |
 |-----------|---------------|-----------------------------|
 | `tensor_matmul` | float64 rank-2 | float32 rank-2 |
-| `tensor_add` / `tensor_sub` / `tensor_mul` / `tensor_div` | float32 + float64, same-shape, rank 1–2 | float32, same-shape, rank 1–2 |
-| `tensor_sum` (full reduction → rank-0, NumPy `np.sum` semantics) | float32 + float64, rank 1–2 | CUDA/ROCm float32, rank 1–2; MLX not declared |
+| `tensor_add` / `tensor_sub` / `tensor_mul` / `tensor_div` | float16 + float32 + float64, same-shape, rank 1–2 | float32, same-shape, rank 1–2 |
+| `tensor_sum` (full reduction → rank-0, NumPy `np.sum` semantics) | float16 + float32 + float64, rank 1–2 | CUDA/ROCm float32, rank 1–2; MLX not declared |
+
+The CPU reference implements float16 (ABI code 12, binary16 storage) by
+widening inputs to float32 for the computation and rounding results back to
+half precision with round-to-nearest-even, matching the host tensor package's
+NumPy 2.x `np.float16` conversion semantics.
 
 Deliberate non-claims (providers reject these with explicit errors rather
 than silent approximations):

@@ -27,7 +27,7 @@ examples/data/out/
 # editor / local noise
 editors/vscode/node_modules/
 wasm/node_modules/
-# editors/vscode/*.vsix  — tracked for release workflow
+# editors/vscode/*.vsix — ignored below; untrack via git rm --cached
 editors/vscode/package-lock.json
 # tokensave / local train memory (never publish)
 .memory.json
@@ -71,3 +71,8 @@ ci_mod/
 .tokensave/
 libweft_accel_mlx.dylib
 libweft_accel_cuda.so
+
+# build artifacts (regenerated locally; do not commit)
+*.vsix
+wasm/weft.wasm
+/libweft_accel_*.dylib

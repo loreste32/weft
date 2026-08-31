@@ -76,12 +76,13 @@ type session struct {
 	program string
 
 	// runtime
-	ds          *vm.DebugState
-	machine     *vm.VM
-	prog        *compile.Program
-	running     bool
-	finished    bool
-	stopOnEntry bool
+	ds           *vm.DebugState
+	machine      *vm.VM
+	prog         *compile.Program
+	running      bool
+	finished     bool
+	stopOnEntry  bool
+	breakOnError bool
 
 	// pause snapshot
 	paused     bool
@@ -117,11 +118,15 @@ func (s *session) handle(raw []byte) error {
 			"supportsStepInTargetsRequest":     false,
 			"supportsStepBack":                 false,
 			"supportsRestartRequest":           false,
-			"supportsSetVariable":              false,
+			"supportsSetVariable":              true,
 			"supportsGotoTargetsRequest":       false,
 			"supportTerminateDebuggee":         true,
 			"supportsCancelRequest":            false,
 			"supportsEvaluateForHovers":        false,
+			// Break-on-throw: pause when a runtime error is raised.
+			"exceptionBreakpointFilters": []map[string]any{
+				{"filter": "all", "label": "All runtime errors", "default": false},
+			},
 		}); err != nil {
 			return err
 		}
@@ -134,6 +139,8 @@ func (s *session) handle(raw []byte) error {
 		return s.onLaunch(env.ID, env.Params)
 	case "setBreakpoints":
 		return s.onSetBreakpoints(env.ID, env.Params)
+	case "setExceptionBreakpoints":
+		return s.onSetExceptionBreakpoints(env.ID, env.Params)
 	case "configurationDone":
 		return s.onConfigurationDone(env.ID)
 	case "threads":
@@ -144,6 +151,8 @@ func (s *session) handle(raw []byte) error {
 		return s.onScopes(env.ID)
 	case "variables":
 		return s.onVariables(env.ID, env.Params)
+	case "setVariable":
+		return s.onSetVariable(env.ID, env.Params)
 	case "continue":
 		return s.onContinue(env.ID)
 	case "next", "stepIn", "stepOut":
@@ -210,6 +219,7 @@ func (s *session) prepare(path string) error {
 	}
 	s.prog = prog
 	s.ds = vm.NewDebugState()
+	s.ds.BreakOnError = s.breakOnError
 	s.ds.OnPause = s.onPause
 	s.machine = vm.New(env)
 	s.machine.Debug = s.ds
@@ -228,14 +238,24 @@ func (s *session) onPause(loc vm.FrameLoc, locals map[string]runtime.Value) {
 	s.mu.Unlock()
 
 	reason := "breakpoint"
-	if s.ds != nil && s.ds.StepMode {
-		reason = "step"
+	text := ""
+	if s.ds != nil {
+		if s.ds.PauseReason != "" {
+			reason = s.ds.PauseReason
+		} else if s.ds.StepMode {
+			reason = "step"
+		}
+		text = s.ds.PauseText
 	}
-	_ = s.event("stopped", map[string]any{
+	body := map[string]any{
 		"reason":            reason,
 		"threadId":          1,
 		"allThreadsStopped": true,
-	})
+	}
+	if text != "" {
+		body["text"] = text
+	}
+	_ = s.event("stopped", body)
 
 	// Block VM until client continues/steps/disconnects
 	act := <-s.cont
@@ -327,6 +347,37 @@ func (s *session) onSetBreakpoints(id json.RawMessage, params json.RawMessage) e
 		})
 	}
 	return s.replyCmd(id, "setBreakpoints", map[string]any{"breakpoints": out})
+}
+
+// onSetExceptionBreakpoints enables/disables break-on-throw. Semantics: the
+// adapter pauses when a runtime error is raised, before the stack unwinds
+// (see vm.DebugState.BreakOnError); Err values carried through Result/?
+// are ordinary values and do not trigger a pause.
+func (s *session) onSetExceptionBreakpoints(id json.RawMessage, params json.RawMessage) error {
+	var p struct {
+		Filters []string `json:"filters"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return s.replyError(id, 1, "bad setExceptionBreakpoints params")
+	}
+	enabled := false
+	for _, f := range p.Filters {
+		if f == "all" {
+			enabled = true
+		}
+	}
+	s.breakOnError = enabled
+	if s.ds != nil {
+		s.ds.BreakOnError = enabled
+	}
+	out := make([]map[string]any, 0, len(p.Filters))
+	for _, f := range p.Filters {
+		out = append(out, map[string]any{
+			"verified": f == "all",
+			"filter":   f,
+		})
+	}
+	return s.replyCmd(id, "setExceptionBreakpoints", map[string]any{"breakpoints": out})
 }
 
 func (s *session) onConfigurationDone(id json.RawMessage) error {
@@ -465,72 +516,92 @@ func (s *session) onEvaluate(id json.RawMessage, params json.RawMessage) error {
 	}
 	_ = json.Unmarshal(params, &p)
 	expr := strings.TrimSpace(p.Expression)
-
-	// Try direct local lookup first
-	s.mu.Lock()
-	v, ok := s.locals[expr]
-	s.mu.Unlock()
-	if ok {
-		return s.replyCmd(id, "evaluate", map[string]any{
-			"result":             v.String(),
-			"type":               v.KindName(),
-			"variablesReference": 0,
-		})
+	if expr == "" {
+		return s.replyError(id, 1, "evaluate: empty expression")
 	}
 
-	// Try field access: "x.y" → lookup x, then access field y
-	if dot := strings.Index(expr, "."); dot > 0 {
-		root := expr[:dot]
-		field := expr[dot+1:]
-		s.mu.Lock()
-		rv, rok := s.locals[root]
-		s.mu.Unlock()
-		if rok && rv.Kind == runtime.KindMap {
-			if mo, mok := rv.Obj.(*runtime.MapObj); mok {
-				if fv, fok := mo.Vals[field]; fok {
-					return s.replyCmd(id, "evaluate", map[string]any{
-						"result":             fv.String(),
-						"type":               fv.KindName(),
-						"variablesReference": 0,
-					})
-				}
-			}
-		}
-		if rok && rv.Kind == runtime.KindStruct {
-			if so, sok := rv.Obj.(*runtime.StructObj); sok {
-				if fv, fok := so.Fields[field]; fok {
-					return s.replyCmd(id, "evaluate", map[string]any{
-						"result":             fv.String(),
-						"type":               fv.KindName(),
-						"variablesReference": 0,
-					})
-				}
-			}
-		}
+	v, err := s.evalInFrame(expr)
+	if err != nil {
+		return s.replyError(id, 1, fmt.Sprintf("evaluate: %v", err))
 	}
-
-	// Try bracket access: "x[0]" or "x["key"]"
-	if bracket := strings.Index(expr, "["); bracket > 0 {
-		root := expr[:bracket]
-		s.mu.Lock()
-		rv, rok := s.locals[root]
-		s.mu.Unlock()
-		if rok && rv.Kind == runtime.KindList {
-			idxStr := strings.Trim(expr[bracket+1:], "[] ")
-			if idx, err := strconv.Atoi(idxStr); err == nil {
-				if lo, lok := rv.Obj.(*runtime.ListObj); lok && idx >= 0 && idx < len(lo.Items) {
-					return s.replyCmd(id, "evaluate", map[string]any{
-						"result":             lo.Items[idx].String(),
-						"type":               lo.Items[idx].KindName(),
-						"variablesReference": 0,
-					})
-				}
-			}
-		}
-	}
-
 	return s.replyCmd(id, "evaluate", map[string]any{
-		"result":             fmt.Sprintf("undefined: %s", expr),
+		"result":             v.String(),
+		"type":               v.KindName(),
+		"variablesReference": 0,
+	})
+}
+
+// evalInFrame evaluates a Weft expression against the paused frame's locals
+// (see eval.go for the supported subset).
+func (s *session) evalInFrame(expr string) (runtime.Value, error) {
+	s.mu.Lock()
+	locals := s.locals
+	var env *runtime.Env
+	if s.machine != nil {
+		env = s.machine.Env
+	}
+	s.mu.Unlock()
+	return evalExpression(expr, locals, env)
+}
+
+func (s *session) onSetVariable(id json.RawMessage, params json.RawMessage) error {
+	var p struct {
+		VariablesReference int    `json:"variablesReference"`
+		Name               string `json:"name"`
+		Value              string `json:"value"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return s.replyError(id, 1, "bad setVariable params")
+	}
+	s.mu.Lock()
+	paused := s.paused
+	s.mu.Unlock()
+	if !paused {
+		return s.replyError(id, 1, "setVariable: not paused")
+	}
+	if p.VariablesReference != 1 {
+		return s.replyError(id, 1, "setVariable: only the Locals scope is writable")
+	}
+
+	s.mu.Lock()
+	locals := s.locals
+	var env *runtime.Env
+	if s.machine != nil {
+		env = s.machine.Env
+	}
+	var setLocal func(string, runtime.Value) bool
+	if s.ds != nil {
+		setLocal = s.ds.SetLocal
+	}
+	s.mu.Unlock()
+
+	// The value is evaluated as an expression in the paused frame (so other
+	// locals and literals work); if that fails it is taken as a bare string,
+	// which is what most clients send for unquoted text.
+	val, err := assignExpression(p.Name, p.Value, locals, env, setLocal)
+	if err != nil {
+		if _, ok := s.locals[p.Name]; ok && setLocal != nil {
+			if setLocal(p.Name, runtime.Str(p.Value)) {
+				val = runtime.Str(p.Value)
+				err = nil
+			}
+		}
+	}
+	if err != nil {
+		return s.replyError(id, 1, fmt.Sprintf("setVariable: %v", err))
+	}
+
+	s.mu.Lock()
+	// Keep the pause snapshot in sync for plain locals; field/index writes
+	// mutate objects shared with the frame and need no snapshot update.
+	if _, ok := s.locals[p.Name]; ok {
+		s.locals[p.Name] = val
+	}
+	s.rebuildVariables()
+	s.mu.Unlock()
+	return s.replyCmd(id, "setVariable", map[string]any{
+		"value":              val.String(),
+		"type":               val.KindName(),
 		"variablesReference": 0,
 	})
 }

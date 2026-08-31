@@ -66,6 +66,17 @@ func makeProbeTensor(t *testing.T, dtype tensor.DType, shape []int, values []flo
 		}
 		return result
 	}
+	if dtype == tensor.Float16 {
+		list := make([]any, len(values))
+		for i, value := range values {
+			list[i] = value
+		}
+		result, err := tensor.FromList(tensor.Float16, shape, list)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
 	result, err := tensor.FromFloat64(shape, values)
 	if err != nil {
 		t.Fatal(err)
@@ -324,6 +335,51 @@ func TestExampleTensorSum(t *testing.T) {
 	}
 	if _, _, err := plugin.RunTensor("tensor_neg", input); err == nil {
 		t.Fatal("undeclared tensor_neg was not rejected")
+	}
+}
+
+// TestExampleTensorFloat16 covers the reference provider's float16 support
+// (ABI dtype code 12) end to end: same-shape elementwise ops and the full
+// reduction, computed in float32 with binary16 storage. The probe values are
+// exactly representable in binary16, so the checks carry no rounding noise
+// beyond tensor_div's 0.1 (within the shared 1e-4 probe tolerance).
+func TestExampleTensorFloat16(t *testing.T) {
+	plugin := loadExampleProvider(t)
+
+	for _, op := range []string{"tensor_add", "tensor_sub", "tensor_mul", "tensor_div"} {
+		probeElementwise(t, plugin, op, tensor.Float16, probeShape, probeLeft, probeRight, probeExpect[op])
+	}
+	probeElementwise(t, plugin, "tensor_add", tensor.Float16, []int{4},
+		[]float64{1.5, 2.5, 3.5, 4.5}, []float64{0.5, 0.5, 2.0, 1.5}, []float64{2, 3, 5.5, 6})
+
+	// Full reduction: a rank-0 float16 tensor holding the rounded total.
+	input := makeProbeTensor(t, tensor.Float16, probeShape, probeLeft)
+	result, info, err := plugin.RunTensor("tensor_sum", input)
+	if err != nil {
+		t.Fatal("tensor_sum float16: ", err)
+	}
+	defer tensor.Release(result)
+	checkTensorExecInfo(t, "tensor_sum", info)
+	if result.DType() != tensor.Float16 || len(result.Shape()) != 0 {
+		t.Fatalf("tensor_sum float16 metadata: dtype=%s shape=%v, want float16 rank-0",
+			result.DType(), result.Shape())
+	}
+	values, err := result.Float64Values()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 1 || values[0] != 21 {
+		t.Fatalf("tensor_sum float16 = %v, want [21]", values)
+	}
+
+	// Mixed dtypes and mismatched shapes are still rejected for float16.
+	f32 := makeProbeTensor(t, tensor.Float32, probeShape, probeLeft)
+	if _, _, err := plugin.RunTensor("tensor_add", input, f32); err == nil {
+		t.Fatal("tensor_add accepted mixed float16/float32 dtypes")
+	}
+	mismatched := makeProbeTensor(t, tensor.Float16, []int{3, 2}, probeLeft)
+	if _, _, err := plugin.RunTensor("tensor_mul", input, mismatched); err == nil {
+		t.Fatal("tensor_mul accepted mismatched float16 shapes")
 	}
 }
 

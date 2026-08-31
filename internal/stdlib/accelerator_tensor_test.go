@@ -56,6 +56,14 @@ fn main -> Result {
     ensure(result.shape == [2, 2], "unexpected shape")?
     ensure(result.data[0] == 19.0 && result.data[1] == 22.0, "unexpected first row")?
     ensure(result.data[2] == 43.0 && result.data[3] == 50.0, "unexpected second row")?
+    f16 := accelerator.run_tensor(plugin, "tensor_add", [
+        {"dtype": "float16", "shape": [4], "data": [1.5, 2.5, 3.5, 4.5]},
+        {"dtype": "float16", "shape": [4], "data": [0.5, 0.5, 2.0, 1.5]},
+    ])?
+    ensure(f16.dtype == "float16", "unexpected float16 dtype")?
+    ensure(f16.shape == [4], "unexpected float16 shape")?
+    ensure(f16.data[0] == 2.0 && f16.data[1] == 3.0, "unexpected float16 first values")?
+    ensure(f16.data[2] == 5.5 && f16.data[3] == 6.0, "unexpected float16 last values")?
     info := accelerator.last_exec_info(plugin)?
     ensure(info.reported == true, "tensor exec info unreported")?
     ensure(info.device == "cpu", "tensor exec info device")?

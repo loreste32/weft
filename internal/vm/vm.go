@@ -29,9 +29,24 @@ type DebugState struct {
 	Paused      bool
 	// SkipBP is a "file:line" key ignored once after continue (avoids re-hit).
 	SkipBP string
+	// BreakOnError pauses (via OnPause) when a runtime error is raised, before
+	// the stack unwinds — break-on-throw semantics: execution stops at the
+	// raise site with the failing frame's locals intact. Err values flowing
+	// through the Result/? machinery are values, not raised errors, and do
+	// not trigger this.
+	BreakOnError bool
+	// PauseReason is set before each OnPause call: "step", "breakpoint", or
+	// "exception".
+	PauseReason string
+	// PauseText is a human-readable detail for the pause (error message for
+	// exception pauses, empty otherwise).
+	PauseText string
 	// LastStack is filled before OnPause (deepest frame first).
 	LastStack []FrameLoc
-	OnPause   func(loc FrameLoc, locals map[string]runtime.Value) // callback when paused
+	// SetLocal is non-nil only while paused; it writes a top-frame local by
+	// name and reports whether the name resolved to a slot.
+	SetLocal func(name string, v runtime.Value) bool
+	OnPause  func(loc FrameLoc, locals map[string]runtime.Value) // callback when paused
 }
 
 type deferredCall struct {
@@ -563,6 +578,9 @@ type FrameLoc struct {
 type RuntimeError struct {
 	Msg   string
 	Stack []FrameLoc
+	// dbgNotified is set once the debug hook has paused on this error, so the
+	// same error does not pause again while unwinding.
+	dbgNotified bool
 }
 
 func (e *RuntimeError) Error() string {
@@ -632,10 +650,12 @@ func (vm *VM) stackTrace() []FrameLoc {
 }
 
 func (vm *VM) errf(format string, args ...any) error {
-	return &RuntimeError{
+	err := &RuntimeError{
 		Msg:   fmt.Sprintf(format, args...),
 		Stack: vm.stackTrace(),
 	}
+	vm.notifyError(err)
+	return err
 }
 
 func (vm *VM) wrapErr(err error) error {
@@ -650,12 +670,39 @@ func (vm *VM) wrapErr(err error) error {
 		if len(re.Stack) == 0 {
 			re.Stack = vm.stackTrace()
 		}
+		vm.notifyError(re)
 		return re
 	}
-	return &RuntimeError{
+	re := &RuntimeError{
 		Msg:   err.Error(),
 		Stack: vm.stackTrace(),
 	}
+	vm.notifyError(re)
+	return re
+}
+
+// notifyError pauses at an error's raise site when break-on-exception is
+// enabled. The pause happens before the stack unwinds so the debugger can
+// inspect the failing frame; each error pauses at most once. Observation-only:
+// after the pause the error propagates exactly as before.
+func (vm *VM) notifyError(err *RuntimeError) {
+	ds := vm.Debug
+	if ds == nil || !ds.BreakOnError || ds.OnPause == nil || ds.Paused || err.dbgNotified {
+		return
+	}
+	err.dbgNotified = true
+	if len(vm.frames) == 0 {
+		return
+	}
+	fr := &vm.frames[len(vm.frames)-1]
+	ds.LastStack = vm.stackTrace()
+	ds.PauseReason = "exception"
+	ds.PauseText = err.Msg
+	ds.Paused = true
+	ds.SetLocal = makeSetLocal(fr)
+	ds.OnPause(frameLoc(fr), frameLocals(fr))
+	ds.SetLocal = nil
+	ds.Paused = false
 }
 
 // maxFrames caps call depth to catch infinite recursion before Go stack overflow.
@@ -772,21 +819,55 @@ func (vm *VM) debugCheck(fr *frame) {
 			// continue will skip this line until IP moves to another line
 			vm.Debug.SkipBP = fmt.Sprintf("%s:%d", loc.File, loc.Line)
 		}
-		// Collect locals for inspection
-		locals := map[string]runtime.Value{}
-		for i, slot := range fr.slots {
-			name := fmt.Sprintf("local_%d", i)
-			if fr.fn != nil && fr.fn.Chunk != nil {
-				if ch, ok := fr.fn.Chunk.(*compile.Chunk); ok && i < len(ch.LocalNames) {
-					name = ch.LocalNames[i]
-				}
-			}
-			locals[name] = slot
-		}
+		locals := frameLocals(fr)
 		vm.Debug.LastStack = vm.stackTrace()
+		if vm.Debug.StepMode {
+			vm.Debug.PauseReason = "step"
+		} else {
+			vm.Debug.PauseReason = "breakpoint"
+		}
+		vm.Debug.PauseText = ""
 		vm.Debug.Paused = true
+		vm.Debug.SetLocal = makeSetLocal(fr)
 		vm.Debug.OnPause(loc, locals)
+		vm.Debug.SetLocal = nil
 		vm.Debug.Paused = false
+	}
+}
+
+// frameLocals snapshots the frame's local slots by name for inspection.
+func frameLocals(fr *frame) map[string]runtime.Value {
+	locals := map[string]runtime.Value{}
+	for i, slot := range fr.slots {
+		name := fmt.Sprintf("local_%d", i)
+		if fr.fn != nil && fr.fn.Chunk != nil {
+			if ch, ok := fr.fn.Chunk.(*compile.Chunk); ok && i < len(ch.LocalNames) {
+				name = ch.LocalNames[i]
+			}
+		}
+		locals[name] = slot
+	}
+	return locals
+}
+
+// makeSetLocal returns a writer for the frame's locals, used by debugger
+// setVariable requests. It is only valid while the frame is paused.
+func makeSetLocal(fr *frame) func(string, runtime.Value) bool {
+	return func(name string, v runtime.Value) bool {
+		if fr.fn == nil || fr.fn.Chunk == nil {
+			return false
+		}
+		ch, ok := fr.fn.Chunk.(*compile.Chunk)
+		if !ok {
+			return false
+		}
+		for i, n := range ch.LocalNames {
+			if n == name && i < len(fr.slots) {
+				fr.slots[i] = v
+				return true
+			}
+		}
+		return false
 	}
 }
 

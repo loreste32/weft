@@ -11,7 +11,7 @@ Detail pages stay short and point back here when you get lost.
 ├─────────────────────────────────────────────────────────────┤
 │  Optional modules  (registry → vendor/ — NOT in the binary)  │
 │    telecom · auth · router · config · logger · queue ·       │
-│    mold · ml · tokensave · retry · cache · jwt · …  (23)     │
+│    mold · ml · tokensave · retry · cache · jwt · …  (24)     │
 ├─────────────────────────────────────────────────────────────┤
 │  Stdlib  (IN the binary — 83 packages)                       │
 │    llm · mcp · deepgram · elevenlabs · mlinfer · http ·     │
@@ -26,8 +26,8 @@ Detail pages stay short and point back here when you get lost.
 | Layer | Lives where | You get it by |
 |-------|-------------|----------------|
 | Language / VM | `weft` binary | `curl -fsSL https://weftproject.dev/install.sh \| sh` |
-| Stdlib (81 pkgs) | same binary | `use http` / `use llm` / `use dns` / … |
-| Registry modules (23) | `packages/` → `vendor/` | `weft get name` or auto-fetch on `use` |
+| Stdlib (83 pkgs) | same binary | `use http` / `use llm` / `use dns` / … |
+| Registry modules (24) | `packages/` → `vendor/` | `weft get name` or auto-fetch on `use` |
 | Your code | project dir | `weft run` |
 
 **Rule:** if it is domain-specific (telecom, embeddings, structured tool args), it is a **module**. If most agent/ops scripts need it (HTTP, LLM chat, files, DNS), it is **stdlib**.
@@ -152,7 +152,7 @@ Doc: [SYSOPS.md](SYSOPS.md)
 
 ---
 
-## Registry modules (23 packages)
+## Registry modules (24 packages)
 
 All available at [registry.weftproject.dev](https://registry.weftproject.dev). Install with `weft get <name>` or they auto-fetch on first `use` (disable with `WEFT_NO_AUTO_FETCH=1`).
 
@@ -181,6 +181,7 @@ All available at [registry.weftproject.dev](https://registry.weftproject.dev). I
 | **embed** | Embeddings client + vector store |
 | **experiment** | Experiment tracking: runs, params, metrics |
 | **metrics** | ML metrics: accuracy, F1, precision, recall |
+| **infra** | Infrastructure automation: health checks, service management, deploy patterns, alerting |
 
 ### Install
 

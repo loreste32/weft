@@ -1,5 +1,5 @@
 # Weft — weave agents into code
-.PHONY: build build-slim test ci install clean fmt vet doctor examples wasm wasm-test wasm-serve race-smoke fuzz-smoke bench bench-glue bench-numerical bench-scale vendor-sync vendor-check catalog-check accelerator-report accelerator-conformance capability-matrix capability-matrix-check release-smoke sbom repro-check
+.PHONY: build build-slim test ci install clean fmt vet doctor examples wasm wasm-test wasm-serve race-smoke fuzz-smoke bench bench-glue bench-numerical bench-scale vendor-sync vendor-check catalog-check accelerator-report accelerator-conformance capability-matrix capability-matrix-check publish-accelerator-report package-stats release-smoke sbom repro-check
 
 PREFIX ?= $(HOME)/.local
 BIN    ?= weft
@@ -105,6 +105,14 @@ capability-matrix:
 # Fail CI when committed capability reports drift from the generator
 capability-matrix-check:
 	python3 scripts/capability-matrix.py --check
+
+# Publish the accelerator capability report (see docs/ACCELERATORS.md)
+publish-accelerator-report:
+	bash scripts/publish-accelerator-report.sh
+
+# Per-package statistics for packages/* (see scripts/package-stats.sh)
+package-stats:
+	bash scripts/package-stats.sh
 
 # Scale budgets (warp matmul/elementwise + dataframe); soft budgets unless WEFT_SCALE_STRICT=1
 bench-scale:

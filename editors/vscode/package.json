@@ -2,7 +2,7 @@
   "name": "weft",
   "displayName": "Weft",
   "description": "Weft language support — syntax, LSP (types/hover/completion/extract/rename), snippets, and DAP debugging",
-  "version": "0.4.3",
+  "version": "0.6.2",
   "publisher": "weft",
   "license": "Apache-2.0",
   "icon": "media/icon.png",
@@ -12,12 +12,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/loreste/weft"
+    "url": "https://github.com/loreste32/weft"
   },
   "bugs": {
-    "url": "https://github.com/loreste/weft/issues"
+    "url": "https://github.com/loreste32/weft/issues"
   },
-  "homepage": "https://github.com/loreste/weft#readme",
+  "homepage": "https://github.com/loreste32/weft#readme",
   "engines": {
     "vscode": "^1.85.0"
   },

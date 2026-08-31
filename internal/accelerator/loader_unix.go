@@ -201,8 +201,8 @@ func (p *nativeSharedLibrary) runTensor(operation string, inputs []*tensor.Tenso
 	if len(inputs) == 0 || len(inputs) > MaxTensorInputs {
 		return nil, fmt.Errorf("native tensor input count must be between 1 and %d", MaxTensorInputs)
 	}
-	// The ABI dtype codes are frozen at 1-11; dtypes without a code (such as
-	// float16) must never reach the native provider.
+	// The ABI dtype codes are frozen at 1-12; dtypes without a code must never
+	// reach the native provider.
 	for i, input := range inputs {
 		if dtypeCode(input.DType()) == 0 {
 			return nil, fmt.Errorf("native tensor input %d has dtype %q with no ABI code", i, input.DType())
@@ -344,6 +344,8 @@ func dtypeCode(dtype tensor.DType) uint32 {
 		return 10
 	case tensor.UInt64:
 		return 11
+	case tensor.Float16:
+		return 12
 	default:
 		return 0
 	}
@@ -373,6 +375,8 @@ func dtypeName(code uint32) (tensor.DType, error) {
 		return tensor.UInt32, nil
 	case 11:
 		return tensor.UInt64, nil
+	case 12:
+		return tensor.Float16, nil
 	default:
 		return "", fmt.Errorf("native tensor provider returned unsupported dtype code %d", code)
 	}

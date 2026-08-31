@@ -51,7 +51,11 @@ enum {
   WEFT_TENSOR_UINT8 = 8,
   WEFT_TENSOR_UINT16 = 9,
   WEFT_TENSOR_UINT32 = 10,
-  WEFT_TENSOR_UINT64 = 11
+  WEFT_TENSOR_UINT64 = 11,
+  // Codes 1–11 are frozen. float16 (IEEE 754 binary16, 2-byte little-endian
+  // storage) appends as code 12; existing providers keep their meanings and
+  // may simply reject it.
+  WEFT_TENSOR_FLOAT16 = 12
 };
 
 typedef struct {

@@ -1,6 +1,7 @@
 #include "weft_accelerator.h"
 
 #include <errno.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -41,7 +42,7 @@ const char *weft_accel_manifest(void) {
            "\"abi\":1,\"vendors\":[\"example\"],"
            "\"operations\":[\"health\",\"identity\",\"matmul\",\"tensor_matmul\","
            "\"tensor_add\",\"tensor_sub\",\"tensor_mul\",\"tensor_div\",\"tensor_sum\"],"
-           "\"metadata\":{\"tensor_abi\":\"1\",\"dtype\":\"float64\",\"dtypes\":\"float32,float64\"}}";
+           "\"metadata\":{\"tensor_abi\":\"1\",\"dtype\":\"float64\",\"dtypes\":\"float16,float32,float64\"}}";
 }
 
 const char *weft_accel_last_error(void) { return last_error; }
@@ -334,10 +335,79 @@ static double apply_op_double(elementwise_op op, double a, double b) {
     }
 }
 
+/* IEEE 754 binary16 (float16) conversions. The reference provider implements
+   float16 as float32 compute with binary16 storage: inputs widen exactly to
+   float, the operation runs in single precision, and the result rounds back
+   to half with the same round-to-nearest-even, subnormal, and
+   overflow-to-infinity semantics as the host tensor package
+   (internal/tensor/float16.go, NumPy 2.x np.float16). */
+static float half_to_float(uint16_t bits) {
+    unsigned sign = bits >> 15;
+    unsigned exp = (bits >> 10) & 0x1f;
+    unsigned mant = bits & 0x3ff;
+    float value;
+    if (exp == 0x1f) {
+        value = mant != 0 ? NAN : INFINITY;
+    } else if (exp == 0) {
+        value = ldexpf((float)mant, -24); /* subnormal or zero */
+    } else {
+        value = ldexpf((float)(mant | 0x400), (int)exp - 25);
+    }
+    return sign != 0 ? -value : value;
+}
+
+static uint16_t round_to_nearest_even(uint64_t keep, uint64_t rem, unsigned shift) {
+    uint64_t halfway = (uint64_t)1 << (shift - 1);
+    if (rem > halfway || (rem == halfway && (keep & 1) != 0)) keep++;
+    return (uint16_t)keep;
+}
+
+/* Round a float (widened to double, which is exact) to its binary16 bit
+   pattern. Mirrors internal/tensor Float16FromFloat64: round to nearest,
+   ties to even, subnormals handled, overflow yields ±Inf. */
+static uint16_t float_to_half(float f) {
+    uint64_t dbits;
+    uint16_t sign;
+    int exp;
+    uint64_t mant;
+    int e;
+    uint64_t sig;
+    double wide = (double)f;
+    memcpy(&dbits, &wide, sizeof(dbits));
+    sign = (uint16_t)(dbits >> 63) << 15;
+    exp = (int)(dbits >> 52) & 0x7ff;
+    mant = dbits & 0xfffffffffffffULL;
+    if (exp == 0x7ff) {
+        return (uint16_t)(sign | (mant != 0 ? 0x7e00 : 0x7c00)); /* NaN quieted / ±Inf */
+    }
+    if (exp == 0) return sign; /* float64 subnormals are far below the half range */
+    e = exp - 1023;
+    sig = mant | ((uint64_t)1 << 52);
+    if (e > 15) return (uint16_t)(sign | 0x7c00); /* magnitude >= 2^16 overflows to Inf */
+    if (e >= -14) {
+        /* Normal half: keep the implicit bit plus 10 mantissa bits. */
+        uint16_t keep = round_to_nearest_even(sig >> 42, sig & (((uint64_t)1 << 42) - 1), 42);
+        if (keep == 0x800) { /* mantissa carry: rounds up to the next power of two */
+            keep = 0x400;
+            e++;
+            if (e > 15) return (uint16_t)(sign | 0x7c00);
+        }
+        return (uint16_t)(sign | (uint16_t)(e + 15) << 10 | (keep & 0x3ff));
+    }
+    if (e < -25) return sign; /* below half of the smallest subnormal (2^-25 midpoint) */
+    {
+        /* Subnormal half: the quantum is 2^-24. */
+        unsigned shift = (unsigned)(28 - e);
+        uint16_t keep = round_to_nearest_even(sig >> shift, sig & (((uint64_t)1 << shift) - 1), shift);
+        return (uint16_t)(sign | keep);
+    }
+}
+
 /* Same-shape elementwise binary op (tensor_add, tensor_sub, tensor_mul,
-   tensor_div) for float32 or float64 tensors of rank 1 or 2. Non-same-shape
-   inputs are rejected outright: broadcasting is not part of this provider's
-   coverage claim. */
+   tensor_div) for float16, float32, or float64 tensors of rank 1 or 2.
+   Non-same-shape inputs are rejected outright: broadcasting is not part of
+   this provider's coverage claim. float16 inputs widen to float32 for the
+   computation and the result rounds back to binary16 storage. */
 static int run_tensor_elementwise(elementwise_op op, const char *name,
                                   const weft_accel_tensor_input *inputs,
                                   weft_accel_tensor_output *output) {
@@ -345,15 +415,18 @@ static int run_tensor_elementwise(elementwise_op op, const char *name,
     size_t count;
     uint32_t axis;
     if (inputs[0].dtype != inputs[1].dtype ||
-        (inputs[0].dtype != WEFT_TENSOR_FLOAT64 && inputs[0].dtype != WEFT_TENSOR_FLOAT32)) {
-        fail("reference elementwise operations require matching float32 or float64 dtypes");
+        (inputs[0].dtype != WEFT_TENSOR_FLOAT64 && inputs[0].dtype != WEFT_TENSOR_FLOAT32 &&
+         inputs[0].dtype != WEFT_TENSOR_FLOAT16)) {
+        fail("reference elementwise operations require matching float16, float32, or float64 dtypes");
         return 0;
     }
-    item_size = inputs[0].dtype == WEFT_TENSOR_FLOAT64 ? sizeof(double) : sizeof(float);
+    item_size = inputs[0].dtype == WEFT_TENSOR_FLOAT64 ? sizeof(double)
+              : inputs[0].dtype == WEFT_TENSOR_FLOAT16 ? sizeof(uint16_t)
+              : sizeof(float);
     if (!tensor_elementwise_shape(&inputs[0], &inputs[1], item_size, &count)) {
         static char message[128];
         snprintf(message, sizeof(message),
-                 "reference %s requires contiguous same-shape float32/float64 tensors of rank 1 or 2",
+                 "reference %s requires contiguous same-shape float16/float32/float64 tensors of rank 1 or 2",
                  name);
         fail(message);
         return 0;
@@ -381,6 +454,14 @@ static int run_tensor_elementwise(elementwise_op op, const char *name,
         for (size_t index = 0; index < count; index++) {
             result[index] = apply_op_double(op, left[index], right[index]);
         }
+    } else if (inputs[0].dtype == WEFT_TENSOR_FLOAT16) {
+        const uint16_t *left = (const uint16_t *)inputs[0].data;
+        const uint16_t *right = (const uint16_t *)inputs[1].data;
+        uint16_t *result = (uint16_t *)output->data;
+        for (size_t index = 0; index < count; index++) {
+            result[index] = float_to_half(apply_op_float(op, half_to_float(left[index]),
+                                                             half_to_float(right[index])));
+        }
     } else {
         const float *left = (const float *)inputs[0].data;
         const float *right = (const float *)inputs[1].data;
@@ -392,20 +473,22 @@ static int run_tensor_elementwise(elementwise_op op, const char *name,
     return 1;
 }
 
-/* Full-reduction sum over a contiguous float32/float64 tensor of rank 1 or 2.
-   The output is a rank-0 tensor (NumPy `np.sum` semantics for a full
+/* Full-reduction sum over a contiguous float16/float32/float64 tensor of rank
+   1 or 2. The output is a rank-0 tensor (NumPy `np.sum` semantics for a full
    reduction), holding one element of the input dtype. The accumulation runs
    in double precision for stability; the stored value matches the input
-   dtype. shape/strides are allocated (but empty of dimensions) so hosts never
-   see NULL arrays for a rank-0 result. */
+   dtype, with float16 rounding through the same binary16 conversion as the
+   elementwise ops. shape/strides are allocated (but empty of dimensions) so
+   hosts never see NULL arrays for a rank-0 result. */
 static int run_tensor_sum(const weft_accel_tensor_input *input,
                           weft_accel_tensor_output *output) {
     size_t item_size;
     size_t count = 1;
     uint32_t axis;
     double total = 0.0;
-    if (input->dtype != WEFT_TENSOR_FLOAT64 && input->dtype != WEFT_TENSOR_FLOAT32) {
-        fail("reference tensor_sum requires a float32 or float64 tensor");
+    if (input->dtype != WEFT_TENSOR_FLOAT64 && input->dtype != WEFT_TENSOR_FLOAT32 &&
+        input->dtype != WEFT_TENSOR_FLOAT16) {
+        fail("reference tensor_sum requires a float16, float32, or float64 tensor");
         return 0;
     }
     if (input->rank == 0 || input->rank > 2 || input->shape == NULL ||
@@ -424,7 +507,9 @@ static int run_tensor_sum(const weft_accel_tensor_input *input,
         }
         count *= (size_t)input->shape[axis];
     }
-    item_size = input->dtype == WEFT_TENSOR_FLOAT64 ? sizeof(double) : sizeof(float);
+    item_size = input->dtype == WEFT_TENSOR_FLOAT64 ? sizeof(double)
+              : input->dtype == WEFT_TENSOR_FLOAT16 ? sizeof(uint16_t)
+              : sizeof(float);
     if (count > SIZE_MAX / item_size || input->bytes != count * item_size ||
         (count != 0 && input->data == NULL)) {
         fail("reference tensor_sum byte length does not match its shape");
@@ -433,6 +518,9 @@ static int run_tensor_sum(const weft_accel_tensor_input *input,
     if (input->dtype == WEFT_TENSOR_FLOAT64) {
         const double *values = (const double *)input->data;
         for (size_t index = 0; index < count; index++) total += values[index];
+    } else if (input->dtype == WEFT_TENSOR_FLOAT16) {
+        const uint16_t *values = (const uint16_t *)input->data;
+        for (size_t index = 0; index < count; index++) total += (double)half_to_float(values[index]);
     } else {
         const float *values = (const float *)input->data;
         for (size_t index = 0; index < count; index++) total += (double)values[index];
@@ -450,6 +538,8 @@ static int run_tensor_sum(const weft_accel_tensor_input *input,
     }
     if (input->dtype == WEFT_TENSOR_FLOAT64) {
         *(double *)output->data = total;
+    } else if (input->dtype == WEFT_TENSOR_FLOAT16) {
+        *(uint16_t *)output->data = float_to_half((float)total);
     } else {
         *(float *)output->data = (float)total;
     }

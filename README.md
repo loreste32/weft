@@ -178,6 +178,7 @@ Install with `weft get <name>` — or just `use auth` and it auto-fetches from t
 | [embed](packages/embed/) | Embeddings client + vector store |
 | [experiment](packages/experiment/) | Experiment tracking: runs, params, metrics |
 | [metrics](packages/metrics/) | ML metrics: accuracy, F1, precision, recall |
+| [infra](packages/infra/) | Infrastructure automation: health checks, deploys, cert/service monitoring, alerting |
 
 Browse all: [registry.weftproject.dev](https://registry.weftproject.dev)
 
@@ -256,7 +257,7 @@ More in [`examples/`](examples/) and [`examples/cookbook/`](examples/cookbook/).
 | | |
 |---|---|
 | [weftproject.dev/docs.html](https://weftproject.dev/docs.html) | Full docs (on-site, searchable) |
-| [weftproject.dev/cookbook.html](https://weftproject.dev/cookbook.html) | 22 searchable recipes |
+| [weftproject.dev/cookbook.html](https://weftproject.dev/cookbook.html) | 20 searchable recipes |
 | [weftproject.dev/playground.html](https://weftproject.dev/playground.html) | Try Weft in the browser |
 | [weftproject.dev/download.html](https://weftproject.dev/download.html) | Install guides (apt, dnf, brew, Docker) |
 | [docs/TUTORIAL.md](docs/TUTORIAL.md) | Guided first hour |

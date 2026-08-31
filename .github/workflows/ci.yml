@@ -33,6 +33,32 @@ jobs:
       - name: Run CI
         run: bash scripts/ci.sh
 
+      - name: Build playground binary
+        run: |
+          go build -o /tmp/weft-playground-ci ./cmd/weft-playground
+          ls -lah /tmp/weft-playground-ci
+
+  # Dependency vulnerability scan (uses the vendored module graph)
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
   # Pinned NumPy/pandas are an offline oracle only; this job compares their
   # results with the checked-in Weft warp/dataframe programs.
   conformance:

@@ -10,7 +10,7 @@ One Go binary; optional modules vendored into `vendor/`.
 ```text
 Your app
    ↑
-23 registry modules    telecom · auth · router · config · …   (packages/ → vendor/)
+24 registry modules    telecom · auth · router · config · …   (packages/ → vendor/)
    ↑
 83 stdlib packages     llm · mcp · dns · tls · os · http · …  (in the weft binary)
    ↑
@@ -64,13 +64,14 @@ Runnable offline recipes: **[`examples/cookbook/`](../examples/cookbook/)** (`01
 | **queue** | Job queue with retries and dead-letter | [registry](https://registry.weftproject.dev) |
 | **retry** · **semver** · **cache** · **color** · **jwt** · **warp** | Ops utilities | [registry](https://registry.weftproject.dev) |
 | **http_router** · **template** · **validate** · **cron** | Web & app utilities | [registry](https://registry.weftproject.dev) |
+| **infra** | Infrastructure automation: health checks, service management, deploy patterns, alerting | [registry](https://registry.weftproject.dev) |
 
 | Stdlib (binary) | Role | Doc |
 |-----------------|------|-----|
 | `llm` · `ollama` · `vllm` | Chat, tools, stream, local hosts | [LLM_PROVIDERS.md](LLM_PROVIDERS.md) · [LLM_LOCAL.md](LLM_LOCAL.md) |
 | `mcp` | MCP client + server for AI assistants | [MCP.md](MCP.md) |
-| `deepgram` · `elevenlabs` | Streaming STT/TTS (WebSocket) | [STDLIB.md](STDLIB.md) |
-| `mlinfer` | ONNX Runtime / Triton / HuggingFace inference | [STDLIB.md](STDLIB.md) |
+| `deepgram` · `elevenlabs` | Streaming STT/TTS (WebSocket) | [DEEPGRAM.md](DEEPGRAM.md) · [ELEVENLABS.md](ELEVENLABS.md) |
+| `mlinfer` | ONNX Runtime / Triton / HuggingFace inference | [MLINFER.md](MLINFER.md) |
 | train CLI | Private fine-tune orchestration | [FINETUNE.md](FINETUNE.md) |
 
 ```bash
@@ -84,7 +85,7 @@ weft get mold
 
 | Topic | Doc | Scope |
 |-------|-----|-------|
-| NumPy-style arrays | [ML.md](ML.md) · [`packages/warp/`](../packages/warp/) | Broadcasting, reductions, linear algebra, FFTs, dtypes, and explicit accelerator dispatch |
+| NumPy-style arrays | [WARP.md](WARP.md) · [ML.md](ML.md) · [`packages/warp/`](../packages/warp/) | Broadcasting, reductions, linear algebra, FFTs, dtypes, and explicit accelerator dispatch |
 | DataFrames | [DATAFRAME.md](DATAFRAME.md) · [`packages/dataframe/`](../packages/dataframe/) | Null-aware tabular operations, joins, windows, CSV/JSON/SQL, and documented pandas boundaries |
 | Classical ML and autodiff | [ML.md](ML.md) · [`packages/ml/`](../packages/ml/) | Linear/logistic models, minibatches, optimizers, forward/reverse autodiff, and selected higher-order tests |
 | Native CUDA, ROCm, and MLX | [ACCELERATORS.md](ACCELERATORS.md) · [native ABI](../native/accelerator/README.md) | Capability-gated plugins with explicit device/fallback reporting; hardware claims require provider conformance |
@@ -158,11 +159,23 @@ fn main {
 
 ---
 
+## Additional topics
+
+| Topic | Doc |
+|-------|-----|
+| Building example applications | [BUILDING.md](BUILDING.md) |
+| Cluster, governor & supervisor | [CLUSTER.md](CLUSTER.md) |
+| ETL pipelines (`map`/`filter`/`reduce`, jsonl) | [PIPELINES.md](PIPELINES.md) |
+| Contributing | [CONTRIBUTING_GUIDE.md](CONTRIBUTING_GUIDE.md) |
+
+---
+
 ## Design history
 
 | Doc | Audience |
 |------|----------|
 | [weft-design.md](weft-design.md) | Full design notes (phases, acceptance) |
+| [DESIGN_0_4.md](DESIGN_0_4.md) | 0.4.x–0.6.x design: type system, Wasm, DAP |
 | [BRAND.md](BRAND.md) | Brand / mascot |
 
 ## What Weft is not

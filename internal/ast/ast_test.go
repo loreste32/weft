@@ -128,3 +128,52 @@ func TestMatchArmType(t *testing.T) {
 		t.Fatal("match arm wildcard")
 	}
 }
+
+func TestFilePosFirstDecl(t *testing.T) {
+	f := &File{
+		Path: "test.weft",
+		Decls: []Decl{
+			&FnDecl{Pos_: token.Pos{Line: 3, Column: 1}},
+			&FnDecl{Pos_: token.Pos{Line: 9, Column: 1}},
+		},
+	}
+	if f.Pos().Line != 3 {
+		t.Fatalf("file pos should be first decl, got line %d", f.Pos().Line)
+	}
+}
+
+func TestConstDeclDualInterface(t *testing.T) {
+	// ConstDecl is both a top-level declaration and a statement.
+	pos := token.Pos{Line: 4, Column: 2}
+	c := &ConstDecl{Pos_: pos, Name: "x"}
+	var d Decl = c
+	var s Stmt = c
+	if d.Pos() != pos {
+		t.Fatal("ConstDecl as Decl pos")
+	}
+	if s.Pos() != pos {
+		t.Fatal("ConstDecl as Stmt pos")
+	}
+}
+
+func TestEnumVariant(t *testing.T) {
+	unit := EnumVariant{Name: "A"}
+	if unit.Fields != nil {
+		t.Fatal("unit variant should have nil fields")
+	}
+	payload := EnumVariant{Name: "B", Fields: []string{"x", "y"}}
+	if len(payload.Fields) != 2 || payload.Fields[0] != "x" || payload.Fields[1] != "y" {
+		t.Fatalf("payload fields: %v", payload.Fields)
+	}
+}
+
+func TestFStringPart(t *testing.T) {
+	text := FStringPart{Text: "hello"}
+	if text.Expr != nil {
+		t.Fatal("text part should have nil expr")
+	}
+	expr := FStringPart{Expr: &Ident{Name: "x"}}
+	if expr.Text != "" || expr.Expr == nil {
+		t.Fatal("expr part should have empty text and non-nil expr")
+	}
+}
