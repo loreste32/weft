@@ -2,7 +2,7 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
-## [Unreleased]
+## [0.6.3] — 2026-08-31
 
 ### Added
 - **DAP `setVariable`** — write locals, struct fields, map keys, and list indexes from the IDE variables pane during a debug pause

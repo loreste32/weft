@@ -15,7 +15,7 @@ One binary, 83 stdlib packages, no runtime to install. `Result`/`?` error handli
 
 | | |
 |--|--|
-| Version | 0.6.2 (`main` branch) |
+| Version | 0.6.3 (`main` branch) |
 | Website | [weftproject.dev](https://weftproject.dev) |
 | Install | `curl -fsSL https://weftproject.dev/install.sh \| sh` |
 | Docs | [weftproject.dev/docs.html](https://weftproject.dev/docs.html) |

@@ -20,7 +20,7 @@ import (
 
 // Version of the Weft toolchain.
 // Release line: 0.6.x (docs/VERSIONING.md). 0.3.x–0.5.x are complete.
-const Version = "0.6.2"
+const Version = "0.6.3"
 
 // Options configure a Weft context.
 type Options struct {
