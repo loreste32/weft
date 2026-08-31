@@ -89,10 +89,11 @@ func getIndex(x, idx runtime.Value) (runtime.Value, error) {
 		if err != nil {
 			return runtime.Null(), err
 		}
-		if i < 0 || i >= int64(len(lo.Items)) {
-			return runtime.Null(), fmt.Errorf("index %d out of range (list has %d elements)", i, len(lo.Items))
+		n := len(lo.Items)
+		if i < 0 || i >= int64(n) {
+			return runtime.Null(), fmt.Errorf("index %d out of range (list has %d elements)", i, n)
 		}
-		return lo.Items[int(i)], nil
+		return lo.Items[i], nil
 	case runtime.KindMap:
 		mo := x.Obj.(*runtime.MapObj)
 		k := idx.String()
@@ -107,10 +108,11 @@ func getIndex(x, idx runtime.Value) (runtime.Value, error) {
 			return runtime.Null(), err
 		}
 		runes := []rune(x.S)
-		if i < 0 || i >= int64(len(runes)) {
-			return runtime.Null(), fmt.Errorf("index %d out of range (string has %d characters)", i, len(runes))
+		n := len(runes)
+		if i < 0 || i >= int64(n) {
+			return runtime.Null(), fmt.Errorf("index %d out of range (string has %d characters)", i, n)
 		}
-		return runtime.Str(string(runes[int(i)])), nil
+		return runtime.Str(string(runes[i])), nil
 	default:
 		return runtime.Null(), fmt.Errorf("cannot index %s", x.KindName())
 	}
@@ -124,10 +126,11 @@ func setIndex(x, idx, val runtime.Value) error {
 		if err != nil {
 			return err
 		}
-		if i < 0 || i >= int64(len(lo.Items)) {
-			return fmt.Errorf("index %d out of range (list has %d elements)", i, len(lo.Items))
+		n := len(lo.Items)
+		if i < 0 || i >= int64(n) {
+			return fmt.Errorf("index %d out of range (list has %d elements)", i, n)
 		}
-		lo.Items[int(i)] = val
+		lo.Items[i] = val
 		return nil
 	case runtime.KindMap:
 		mo := x.Obj.(*runtime.MapObj)

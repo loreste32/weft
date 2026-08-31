@@ -379,7 +379,7 @@ func packageTime() runtime.Value {
 		if len(args) >= 6 {
 			s, _ = runtime.AsInt(args[5])
 		}
-		t := time.Date(safeTimeInt(y), time.Month(mo), safeTimeInt(d), safeTimeInt(h), safeTimeInt(mi), safeTimeInt(s), 0, time.UTC)
+		t := time.Date(safeTimeInt(y), time.Month(safeTimeInt(mo)), safeTimeInt(d), safeTimeInt(h), safeTimeInt(mi), safeTimeInt(s), 0, time.UTC)
 		return runtime.Int(t.Unix()), nil
 	}, -1)
 
