@@ -1,4 +1,4 @@
-FROM golang:1.25-alpine AS build
+FROM golang:1.27-alpine AS build
 WORKDIR /src
 # Dependencies are pinned by go.sum (vendor/ is a local-only, gitignored
 # convention in this repo — never COPY it; a clean clone has none).
