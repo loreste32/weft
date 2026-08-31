@@ -2,6 +2,19 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
+## [Unreleased]
+
+### Added
+- **DAP `setVariable`** — write locals, struct fields, map keys, and list indexes from the IDE variables pane during a debug pause
+- **DAP break-on-throw** — `setExceptionBreakpoints` pauses at the raise site before the stack unwinds, with the failing frame's locals intact
+- **DAP expression evaluator rewrite** — `evaluate` now uses the real Weft parser (`internal/dap/eval.go`): literals, unary/binary operators, field/index access, list/map literals, f-strings, globals; replaces ad-hoc string splitting
+- **Float16 native ABI support** — dtype code 12 for half-precision tensors in the accelerator ABI and stdlib tensor serialization path
+- **Expanded test coverage** — new tests for AST, token, diag, llmconfig, accelerator tensor ops, DAP, LSP references/auto-import, playground
+
+### Changed
+- **CI hardening** — added CodeQL analysis workflow and Dependabot configuration
+- Removed stale `.vsix` binaries from the repository (now built by CI)
+
 ## [0.6.2] — 2026-08-10
 
 ### Added

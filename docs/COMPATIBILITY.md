@@ -114,8 +114,9 @@ coverage in the same change.
 The bounded real `warp.qr` API returns a thin modified Gram-Schmidt factorization for full-column-rank matrices with `m >= n`; complex, rank-deficient, and wide matrices are rejected. `warp.eigh` supports symmetric real square matrices of sizes 1–32, with ascending values and eigenvectors as columns. `warp.svd` supports tall and wide real matrices up to 32×32, returning descending singular values with thin factors; rank-deficient factors are completed deterministically, while complex inputs remain unsupported.
 
 - **Unsupported dtypes:** complex, datetime64, timedelta64, structured/record
-  arrays, and explicit byte-order (endianness) dtypes. No `float16` yet;
-  reduced-precision floats are `float32` only.
+  arrays, and explicit byte-order (endianness) dtypes. `float16` is supported
+  in the native accelerator ABI (code 12) and tensor serialization path;
+  host computation widens to float32 and rounds back to half precision.
 - **`object` dtype** is declared and functional but stored on the portable
   list path, not packed host storage; performance and some view semantics
   differ from numeric dtypes.

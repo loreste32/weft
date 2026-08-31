@@ -134,7 +134,7 @@ The **0.3.x line is complete** (0.3.31–0.6.2). Everything shipped.
 
 **Release & platform gaps (next):**
 - Windows `sysinfo` loadavg implementation (memory/disk done)  
-- DAP: function calls in `evaluate`, restart request
+- DAP: function calls in `evaluate`, restart request  
 - LSP tests for references / auto-import (rename and extract covered)  
 - Bring `install.sh` / APT / DNF / Homebrew packaging automation in-repo (maintained out-of-tree today; this repo alone cannot reproduce those channels)  
 - Audit registry.weftproject.dev contents against `packages/` — publish any of the 24 modules that are missing  
@@ -230,8 +230,9 @@ hardware is environment-dependent).
 - **Partially done:** dtype promotion now matches NumPy 2.4.3
   `promote_types` for all 121 supported pairs (exhaustive differential
   fixture + Go matrix test); casts are range-checked (float→int overflow is
-  an explicit `Err`). Open: float16 packed storage; object dtype packed
-  storage. Complex, datetime, timedelta, structured, and byte-order semantics
+  an explicit `Err`). Float16 is now supported in the native accelerator
+  ABI (code 12) and the stdlib tensor serialization path. Open: object
+  dtype packed storage. Complex, datetime, timedelta, structured, and byte-order semantics
   are documented as unsupported in `docs/COMPATIBILITY.md`.
 - Complete shape and memory semantics: zero-sized dimensions, broadcasting,
   strides, offsets, contiguous and non-contiguous views, memory order,

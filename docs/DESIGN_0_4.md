@@ -178,11 +178,17 @@ IDE                       weft debug --dap
 - `terminated` (script finished)
 - `output` (say/println → debug console)
 
-**Minimum viable DAP:**
+**Minimum viable DAP:** (all shipped)
 - Set breakpoints by line
 - Continue, step over, step in, step out
 - Inspect local variables at breakpoint
 - See call stack
+
+**Beyond MVP (shipped):**
+- `setVariable` — write locals, struct fields, map keys, list indexes from the IDE
+- `setExceptionBreakpoints` — break-on-throw pauses at the raise site before stack unwind
+- Expression evaluator using the real Weft parser (literals, operators, field/index access, list/map literals, f-strings; no function calls)
+- `evaluate` replaces ad-hoc string splitting with a proper AST-walking evaluator (`internal/dap/eval.go`)
 
 ### VS Code integration
 
