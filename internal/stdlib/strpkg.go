@@ -148,11 +148,15 @@ func packageStr() runtime.Value {
 		if len(args) < 2 {
 			return runtime.Str(""), nil
 		}
-		n, _ := runtime.AsInt(args[1])
-		if n < 0 {
-			n = 0
+		n64, _ := runtime.AsInt(args[1])
+		if n64 < 0 {
+			n64 = 0
 		}
-		return runtime.Str(strings.Repeat(args[0].String(), int(n))), nil
+		n, err := safeInt(n64)
+		if err != nil {
+			return errRes("str.repeat: count too large", "str"), nil
+		}
+		return runtime.Str(strings.Repeat(args[0].String(), n)), nil
 	}, 2)
 
 	// str.slice(s, start, end?) — rune-safe-ish via bytes for v1 scripts
@@ -192,16 +196,20 @@ func packageStr() runtime.Value {
 			return runtime.Str(""), nil
 		}
 		s := args[0].String()
-		w, _ := runtime.AsInt(args[1])
+		w64, _ := runtime.AsInt(args[1])
+		wi, err := safeInt(w64)
+		if err != nil {
+			return errRes("str.pad_left: width too large", "str"), nil
+		}
 		fill := " "
 		if len(args) >= 3 && args[2].String() != "" {
 			fill = args[2].String()
 		}
-		for int64(len(s)) < w {
+		for len(s) < wi {
 			s = fill + s
 		}
-		if int64(len(s)) > w {
-			s = s[len(s)-int(w):]
+		if len(s) > wi {
+			s = s[len(s)-wi:]
 		}
 		return runtime.Str(s), nil
 	}, 3)
@@ -211,16 +219,20 @@ func packageStr() runtime.Value {
 			return runtime.Str(""), nil
 		}
 		s := args[0].String()
-		w, _ := runtime.AsInt(args[1])
+		w64, _ := runtime.AsInt(args[1])
+		wi, err := safeInt(w64)
+		if err != nil {
+			return errRes("str.pad_right: width too large", "str"), nil
+		}
 		fill := " "
 		if len(args) >= 3 && args[2].String() != "" {
 			fill = args[2].String()
 		}
-		for int64(len(s)) < w {
+		for len(s) < wi {
 			s = s + fill
 		}
-		if int64(len(s)) > w {
-			s = s[:w]
+		if len(s) > wi {
+			s = s[:wi]
 		}
 		return runtime.Str(s), nil
 	}, 3)
@@ -233,7 +245,9 @@ func packageStr() runtime.Value {
 		width := 70
 		if len(args) >= 2 {
 			if n, err := runtime.AsInt(args[1]); err == nil && n > 0 {
-				width = int(n)
+				if v, e := safeInt(n); e == nil {
+					width = v
+				}
 			}
 		}
 		return runtime.Str(strings.Join(textWrap(args[0].String(), width), "\n")), nil
@@ -247,7 +261,9 @@ func packageStr() runtime.Value {
 		width := 70
 		if len(args) >= 2 {
 			if n, err := runtime.AsInt(args[1]); err == nil && n > 0 {
-				width = int(n)
+				if v, e := safeInt(n); e == nil {
+					width = v
+				}
 			}
 		}
 		s := strings.ReplaceAll(args[0].String(), "\r\n", "\n")
@@ -350,15 +366,19 @@ func packageStr() runtime.Value {
 			return runtime.Str(""), nil
 		}
 		s := args[0].String()
-		width, _ := runtime.AsInt(args[1])
+		width64, _ := runtime.AsInt(args[1])
+		wi, err := safeInt(width64)
+		if err != nil {
+			return errRes("str.center: width too large", "str"), nil
+		}
 		fill := " "
 		if len(args) >= 3 && args[2].String() != "" {
 			fill = string([]rune(args[2].String())[0])
 		}
-		if int(width) <= len(s) {
+		if wi <= len(s) {
 			return runtime.Str(s), nil
 		}
-		pad := int(width) - len(s)
+		pad := wi - len(s)
 		left := pad / 2
 		right := pad - left
 		return runtime.Str(strings.Repeat(fill, left) + s + strings.Repeat(fill, right)), nil

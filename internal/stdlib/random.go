@@ -112,7 +112,9 @@ func packageRandom() runtime.Value {
 		k := 1
 		if len(args) >= 2 {
 			if n, err := runtime.AsInt(args[1]); err == nil && n >= 0 {
-				k = int(n)
+				if v, e := safeInt(n); e == nil {
+					k = v
+				}
 			}
 		}
 		if k > len(items) {
@@ -139,7 +141,9 @@ func packageRandom() runtime.Value {
 		n := 16
 		if len(args) >= 1 {
 			if x, err := runtime.AsInt(args[0]); err == nil && x > 0 {
-				n = int(x)
+				if v, e := safeInt(x); e == nil {
+					n = v
+				}
 			}
 		}
 		if n > 1<<20 {

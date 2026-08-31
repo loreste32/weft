@@ -73,7 +73,7 @@ func parseOpts(v runtime.Value) chartOpts {
 	if s := mapGetStr(v, "y_label", ""); s != "" {
 		o.YLabel = s
 	}
-	if n := mapGetInt(v, "bins", 0); n > 0 {
+	if n := mapGetInt(v, "bins", 0); n > 0 && n <= math.MaxInt32 {
 		o.Bins = int(n)
 	}
 	if c, ok := mapGet(v, "colors"); ok && c.Kind == runtime.KindList {

@@ -13,14 +13,18 @@ func packagePipe(env *runtime.Env) runtime.Value {
 		if len(args) < 2 || args[0].Kind != runtime.KindList {
 			return errRes("pipe.batch(list, size)", "pipe"), nil
 		}
-		n, err := runtime.AsInt(args[1])
-		if err != nil || n <= 0 {
+		n64, err := runtime.AsInt(args[1])
+		if err != nil || n64 <= 0 {
 			return errRes("pipe.batch: size > 0", "pipe"), nil
+		}
+		n, err := safeInt(n64)
+		if err != nil {
+			return errRes("pipe.batch: size too large", "pipe"), nil
 		}
 		items := args[0].Obj.(*runtime.ListObj).Items
 		var batches []runtime.Value
-		for i := 0; i < len(items); i += int(n) {
-			end := i + int(n)
+		for i := 0; i < len(items); i += n {
+			end := i + n
 			if end > len(items) {
 				end = len(items)
 			}

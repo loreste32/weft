@@ -3,10 +3,20 @@ package stdlib
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 
 	"github.com/loreste/weft/internal/runtime"
 )
+
+// safeInt converts int64 to int, returning an error if the value overflows
+// a 32-bit int (safe on both 32-bit and 64-bit platforms).
+func safeInt(n int64) (int, error) {
+	if n < math.MinInt32 || n > math.MaxInt32 {
+		return 0, fmt.Errorf("integer %d out of safe range", n)
+	}
+	return int(n), nil
+}
 
 func pkg() runtime.Value {
 	return runtime.NewMap()

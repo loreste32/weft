@@ -32,12 +32,16 @@ func packageSupervisor(env *runtime.Env) runtime.Value {
 			}
 			if v, ok := mo.Vals["max_restarts"]; ok {
 				if n, e := runtime.AsInt(v); e == nil {
-					s.maxRestarts = int(n)
+					if si, e2 := safeInt(n); e2 == nil {
+						s.maxRestarts = si
+					}
 				}
 			}
 			if v, ok := mo.Vals["within_seconds"]; ok {
 				if n, e := runtime.AsInt(v); e == nil {
-					s.withinSeconds = int(n)
+					if si, e2 := safeInt(n); e2 == nil {
+						s.withinSeconds = si
+					}
 				}
 			}
 		}

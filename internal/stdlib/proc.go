@@ -58,12 +58,16 @@ func packageProc() runtime.Value {
 		if len(args) < 1 {
 			return errRes("proc.kill(pid, signal?)", "proc"), nil
 		}
-		pid, err := runtime.AsInt(args[0])
+		pid64, err := runtime.AsInt(args[0])
 		if err != nil {
 			return errRes("pid must be int", "proc"), nil
 		}
-		if pid <= 0 {
+		if pid64 <= 0 {
 			return errRes("pid must be a positive process id", "proc"), nil
+		}
+		pid, err := safeInt(pid64)
+		if err != nil {
+			return errRes("pid out of range", "proc"), nil
 		}
 		sig := syscall.SIGTERM
 		if len(args) >= 2 {
@@ -72,7 +76,7 @@ func packageProc() runtime.Value {
 		if sig < 0 {
 			return errRes("signal must be non-negative", "proc"), nil
 		}
-		proc, err := os.FindProcess(int(pid))
+		proc, err := os.FindProcess(pid)
 		if err != nil {
 			return errRes(err.Error(), "proc"), nil
 		}
@@ -87,14 +91,18 @@ func packageProc() runtime.Value {
 		if len(args) < 1 {
 			return runtime.Bool(false), nil
 		}
-		pid, err := runtime.AsInt(args[0])
+		pid64, err := runtime.AsInt(args[0])
 		if err != nil {
 			return runtime.Bool(false), nil
 		}
-		if pid <= 0 {
+		if pid64 <= 0 {
 			return runtime.Bool(false), nil
 		}
-		proc, err := os.FindProcess(int(pid))
+		pid, err := safeInt(pid64)
+		if err != nil {
+			return runtime.Bool(false), nil
+		}
+		proc, err := os.FindProcess(pid)
 		if err != nil {
 			return runtime.Bool(false), nil
 		}

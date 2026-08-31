@@ -37,10 +37,14 @@ func packageRatelimit() runtime.Value {
 			return errRes("unit must be second/minute/hour", "ratelimit"), nil
 		}
 
+		safeRate, err := safeInt(rate)
+		if err != nil {
+			return errRes("rate too large", "ratelimit"), nil
+		}
 		bucket := &tokenBucket{
-			rate:     int(rate),
+			rate:     safeRate,
 			interval: interval,
-			tokens:   int(rate),
+			tokens:   safeRate,
 			last:     time.Now(),
 		}
 

@@ -94,7 +94,11 @@ func packageTokenizer() runtime.Value {
 		} else {
 			tok = makeSimpleTokenizer()
 		}
-		chunks := chunkText(tok, text, int(maxTok))
+		safeMax, err := safeInt(maxTok)
+		if err != nil {
+			return errRes("max_tokens too large", "tokenizer"), nil
+		}
+		chunks := chunkText(tok, text, safeMax)
 		items := make([]runtime.Value, len(chunks))
 		for i, c := range chunks {
 			items[i] = runtime.Str(c)

@@ -188,29 +188,29 @@ func packageTable(env *runtime.Env) runtime.Value {
 		if len(args) < 2 || args[0].Kind != runtime.KindList {
 			return runtime.List(), nil
 		}
-		n, _ := runtime.AsInt(args[1])
+		n64, _ := runtime.AsInt(args[1])
 		items := args[0].Obj.(*runtime.ListObj).Items
-		if n < 0 {
-			n = 0
+		if n64 < 0 {
+			n64 = 0
 		}
-		if int(n) > len(items) {
-			n = int64(len(items))
+		if n64 > int64(len(items)) {
+			n64 = int64(len(items))
 		}
-		return runtime.List(items[:n]...), nil
+		return runtime.List(items[:int(n64)]...), nil
 	}, 2)
 	set(p, "drop", func(args []runtime.Value) (runtime.Value, error) {
 		if len(args) < 2 || args[0].Kind != runtime.KindList {
 			return runtime.List(), nil
 		}
-		n, _ := runtime.AsInt(args[1])
+		n64, _ := runtime.AsInt(args[1])
 		items := args[0].Obj.(*runtime.ListObj).Items
-		if n <= 0 {
+		if n64 <= 0 {
 			return runtime.List(items...), nil
 		}
-		if int(n) >= len(items) {
+		if n64 >= int64(len(items)) {
 			return runtime.List(), nil
 		}
-		return runtime.List(items[n:]...), nil
+		return runtime.List(items[int(n64):]...), nil
 	}, 2)
 
 	// table.set(rows, field, value) -> copy rows with field set (constant)

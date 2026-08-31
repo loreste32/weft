@@ -35,7 +35,9 @@ func packageRedis(env *runtime.Env) runtime.Value {
 		}
 		if len(args) >= 2 {
 			if n := mapGetInt(args[1], "db", -1); n >= 0 {
-				opt.DB = int(n)
+				if v, e := safeInt(n); e == nil {
+					opt.DB = v
+				}
 			}
 			if s := mapGetStr(args[1], "password", ""); s != "" {
 				opt.Password = s

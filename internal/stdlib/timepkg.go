@@ -1,10 +1,22 @@
 package stdlib
 
 import (
+	"math"
 	"time"
 
 	"github.com/loreste/weft/internal/runtime"
 )
+
+// safeTimeInt converts int64 to int for time.Date args, clamped to safe range.
+func safeTimeInt(n int64) int {
+	if n < math.MinInt32 {
+		return math.MinInt32
+	}
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int(n)
+}
 
 // packageTime — clocks and sleeps for devops CLIs.
 func packageTime() runtime.Value {
@@ -367,7 +379,7 @@ func packageTime() runtime.Value {
 		if len(args) >= 6 {
 			s, _ = runtime.AsInt(args[5])
 		}
-		t := time.Date(int(y), time.Month(mo), int(d), int(h), int(mi), int(s), 0, time.UTC)
+		t := time.Date(safeTimeInt(y), time.Month(mo), safeTimeInt(d), safeTimeInt(h), safeTimeInt(mi), safeTimeInt(s), 0, time.UTC)
 		return runtime.Int(t.Unix()), nil
 	}, -1)
 
