@@ -1,6 +1,6 @@
 module github.com/loreste/weft
 
-go 1.25.3
+go 1.27.0
 
 require (
 	github.com/alicebob/miniredis/v2 v2.38.0
