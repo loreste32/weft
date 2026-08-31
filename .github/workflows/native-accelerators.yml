@@ -38,7 +38,7 @@ jobs:
           WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_cuda.so
         run: go test ./internal/accelerator -run '^$' -bench '^BenchmarkExternalProvider' -benchtime=10x -count=1 -timeout=120s | tee "$RUNNER_TEMP/weft-cuda-bench.txt"
       - name: Upload CUDA evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: accelerator-cuda-evidence
           path: ${{ runner.temp }}/weft-cuda-bench.txt
@@ -69,7 +69,7 @@ jobs:
           WEFT_ACCELERATOR_PLUGIN: ${{ runner.temp }}/weft_accel_rocm.so
         run: go test ./internal/accelerator -run '^$' -bench '^BenchmarkExternalProvider' -benchtime=10x -count=1 -timeout=120s | tee "$RUNNER_TEMP/weft-rocm-bench.txt"
       - name: Upload ROCm evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: accelerator-rocm-evidence
           path: ${{ runner.temp }}/weft-rocm-bench.txt
@@ -106,7 +106,7 @@ jobs:
           DYLD_LIBRARY_PATH: ${{ vars.MLX_C_PREFIX }}/lib
         run: go test ./internal/accelerator -run '^$' -bench '^BenchmarkExternalProvider' -benchtime=10x -count=1 -timeout=120s | tee "$RUNNER_TEMP/weft-mlx-bench.txt"
       - name: Upload MLX evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: accelerator-mlx-evidence
           path: ${{ runner.temp }}/weft-mlx-bench.txt
@@ -128,7 +128,7 @@ jobs:
           WEFT_BIN: /tmp/weft-report
         run: bash scripts/accelerator-report.sh "$RUNNER_TEMP/weft-accelerator-report.json"
       - name: Upload report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: accelerator-report
           path: ${{ runner.temp }}/weft-accelerator-report.json
