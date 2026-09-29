@@ -45,11 +45,14 @@ differentiable array API below.
 
 ## Classical algorithms
 
-- `kmeans(features, k, opts)` runs deterministic dense numeric Lloyd iterations and returns `centers`, `labels`, `inertia`, and `iterations`. `opts.max_iter` and `opts.tol` are bounded and validated.
+The estimators are split across `rows.weft`, `knn.weft`, `kmeans.weft`, and `tree.weft`. `classical.weft` re-exports the public functions. `opts` and knn's `weighted` default to null and may be omitted. A non-map `opts` is ignored. An explicit null field uses the default; `0` and `false` are kept.
+
+- `kmeans(features, k, opts = null)` runs deterministic dense numeric Lloyd iterations and returns `centers`, `labels`, `inertia`, and `iterations`. `opts.max_iter` and `opts.tol` are bounded and validated.
 - `knn_predict(features, targets, queries, k, weighted?)` classifies dense numeric query rows by nearest-neighbor vote. `knn` is an alias; labels can be comparable scalar values and ties are deterministic.
 - `decision_tree_fit(features, targets, opts)` and `decision_tree_predict(model, queries)` provide a bounded numeric classification tree (at most 4,096 rows and 65,536 input cells). `tree_fit` and `tree_predict` are aliases; `max_depth` and `min_samples_split` are validated.
+- `decision_tree_regressor_fit(features, targets, opts)` and `decision_tree_regressor_predict(model, queries)` provide a bounded dense CART regressor. Splits minimize squared error, thresholds are midpoints between adjacent sorted feature values, `x <= threshold` goes left, and each leaf predicts the mean of its targets. `opts` accepts `max_depth` (default 8, max 64), `min_samples_split` (default 2), and `min_samples_leaf` (default 1). The same 4,096-row / 65,536-cell budget applies. Targets may be a numeric list or a 1-D Warp array. `tree_predict` dispatches on the fitted model kind.
 
-Sparse matrices, categorical encoders, regression trees, and accelerator-resident classical algorithms remain outside this profile.
+Sparse matrices, categorical encoders, sample weights, multi-output trees, and accelerator-resident classical algorithms remain outside this profile.
 
 ## Learning-rate schedules
 

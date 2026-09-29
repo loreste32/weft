@@ -390,12 +390,85 @@ fn main {
 }
 
 func TestFieldMissing(t *testing.T) {
-	if err := runErr(t, `
+	// Map keys missing through dot are null, same as index. Struct fields still error.
+	out := run(t, `
 fn main {
     x := {"a": 1}
     say(x.b)
-}`); err == nil {
-		t.Fatal("missing field")
+    say(x.b ?? 1)
+}`)
+	if out != "null\n1" {
+		t.Fatalf("missing map field: %q", out)
+	}
+	if err := runErr(t, `
+type Point { x: int }
+fn main {
+    p := Point{x: 1}
+    say(p.y)
+}`); err == nil || !strings.Contains(err.Error(), "no field") {
+		t.Fatalf("missing struct field: %v", err)
+	}
+}
+
+func TestQuestionThenField(t *testing.T) {
+	if err := runErr(t, `
+fn main { say(null.missing) }`); err == nil {
+		t.Fatal("null.field should error")
+	}
+	out := run(t, `
+fn read() -> Result { Ok({"city": "Paris", "n": 0}) }
+fn main -> Result {
+    say(read()?.city)
+    say(read()?.n ?? 8)
+    say(read()?.missing ?? 8)
+}`)
+	if out != "Paris\n0\n8" {
+		t.Fatalf("unwrap then field: %q", out)
+	}
+}
+
+func TestDefaultParams(t *testing.T) {
+	out := run(t, `
+fn f(a = 1) { a }
+fn g(a: int, b: int = 1) { a + b }
+fn h(a = 0, b = false, c = "x", d = -2) {
+    say(a)
+    say(b)
+    say(c)
+    say(d)
+}
+fn main {
+    say(f())
+    say(f(4))
+    say(g(2))
+    h()
+    say(fn(a = 3) { a }())
+}`)
+	if out != "1\n4\n3\n0\nfalse\nx\n-2\n3" {
+		t.Fatalf("defaults = %q", out)
+	}
+	err := runErr(t, `
+fn need(a, b = 1) { a + b }
+fn main { say(need()) }
+`)
+	if err == nil || !strings.Contains(err.Error(), "want at least 1") {
+		t.Fatalf("under-arity with defaults: %v", err)
+	}
+}
+
+func TestChunksBuiltin(t *testing.T) {
+	out := run(t, `
+fn main {
+    say(chunks([1, 2, 3, 4, 5], 2))
+    say(chunks("héllo", 2))
+    say(chunks([], 3))
+}`)
+	if out != "[[1, 2], [3, 4], [5]]\n[hé, ll, o]\n[]" {
+		t.Fatalf("chunks = %q", out)
+	}
+	err := runErr(t, `fn main { chunks([1], 0) }`)
+	if err == nil || !strings.Contains(err.Error(), "size must be an integer") {
+		t.Fatalf("chunks size: %v", err)
 	}
 }
 

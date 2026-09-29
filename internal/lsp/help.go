@@ -32,6 +32,7 @@ var memberCatalog = map[string]memberHelp{
 	"group":      {Sig: "group() -> task group", Detail: ".go(fn) / .wait()?"},
 	"len":        {Sig: "len(x) -> int", Detail: "length of list/str/map"},
 	"push":       {Sig: "push(list, v)", Detail: "append to list"},
+	"chunks":     {Sig: "chunks(list | str, size)", Detail: "split into pieces of at most size"},
 	"range":      {Sig: "range(n | start, end)", Detail: "numeric sequence"},
 	"Ok":         {Sig: "Ok(value) -> Result", Detail: "success Result"},
 	"Err":        {Sig: "Err(msg, kind?) -> Result", Detail: "failure Result"},

@@ -307,11 +307,25 @@ func (p *Parser) parseParams() []*ast.Param {
 			p.next()
 			pr.Type = p.parseTypeExpr()
 		}
+		if p.tok.Kind == token.Assign {
+			p.next()
+			pr.Default = p.parseExpr()
+		}
 		params = append(params, pr)
 		if p.tok.Kind == token.Comma {
 			p.next()
 		} else {
 			break
+		}
+	}
+	seenDefault := false
+	for _, pr := range params {
+		if pr.Default != nil {
+			seenDefault = true
+			continue
+		}
+		if seenDefault {
+			p.errorf(pr.Pos(), "parameter %q needs a default; it follows an optional parameter", pr.Name)
 		}
 	}
 	p.expect(token.RParen)

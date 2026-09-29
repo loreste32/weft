@@ -358,6 +358,43 @@ func (e *Env) RegisterPrelude() {
 		out = append(out, b...)
 		return List(out...), nil
 	})
+	// chunks(list|str, size) splits into pieces of at most size.
+	// A short final piece is kept. size must be an integer >= 1.
+	e.Globals["chunks"] = MakeBuiltin("chunks", 2, func(args []Value) (Value, error) {
+		if len(args) < 2 {
+			return Null(), fmt.Errorf("chunks(list, size) or chunks(str, size)")
+		}
+		if args[1].Kind != KindInt || args[1].I < 1 || args[1].I > 1<<30 {
+			return Null(), fmt.Errorf("chunks: size must be an integer from 1 through 1073741824")
+		}
+		step := int(args[1].I)
+		switch args[0].Kind {
+		case KindList:
+			items := args[0].Obj.(*ListObj).Items
+			out := make([]Value, 0, (len(items)+step-1)/step)
+			for i := 0; i < len(items); i += step {
+				j := i + step
+				if j > len(items) {
+					j = len(items)
+				}
+				out = append(out, List(items[i:j]...))
+			}
+			return List(out...), nil
+		case KindStr:
+			runes := []rune(args[0].S)
+			out := make([]Value, 0, (len(runes)+step-1)/step)
+			for i := 0; i < len(runes); i += step {
+				j := i + step
+				if j > len(runes) {
+					j = len(runes)
+				}
+				out = append(out, Str(string(runes[i:j])))
+			}
+			return List(out...), nil
+		default:
+			return Null(), fmt.Errorf("chunks: expected a list or string")
+		}
+	})
 	// slice(list, start, end?) — end exclusive; negative from end
 	e.Globals["slice"] = MakeBuiltin("slice", -1, func(args []Value) (Value, error) {
 		if len(args) < 2 || args[0].Kind != KindList {

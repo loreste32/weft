@@ -17,6 +17,10 @@ Full language notes: [LANGUAGE.md](LANGUAGE.md). Cookbook: [COOKBOOK.md](COOKBOO
 | `"hi $name"` / `"${expr}"` | string interpolation (JSON-safe) |
 | `fn main { }` | empty `()` optional |
 | `expr?` | propagate `Result` error |
+| `expr?.field` | `(expr?).field`, unwrap then field |
+| `m.missing ?? 1` | a missing map key is null; `0` and `false` stay |
+| `fn f(a, b = 1)` | literal defaults on a trailing parameter suffix |
+| `chunks(list, size)` | split a list or string into pieces of at most `size` |
 | `x \|> f` / `x \|> f(extra)` | pipeline |
 | `match x { ... }` | string enums / patterns |
 | braces `{ }` | required on blocks |

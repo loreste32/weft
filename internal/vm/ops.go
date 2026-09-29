@@ -159,10 +159,11 @@ func getField(x runtime.Value, name string) (runtime.Value, error) {
 		}
 		return v, nil
 	case runtime.KindMap:
+		// Missing keys are null, same as m["missing"]. Structs still error.
 		mo := x.Obj.(*runtime.MapObj)
 		v, ok := mo.Vals[name]
 		if !ok {
-			return runtime.Null(), fmt.Errorf("no key %q", name)
+			return runtime.Null(), nil
 		}
 		return v, nil
 	case runtime.KindResult:

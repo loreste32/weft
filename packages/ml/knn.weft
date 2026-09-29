@@ -1,0 +1,99 @@
+use math
+use "./rows.weft" as row
+
+pub fn knn_predict(features, targets, queries, k, weighted = null) -> Result[any] {
+    rows := row.feature_rows(features)
+    query_rows := row.feature_rows(queries)
+    shape := row.validate_rows(rows)
+    query_shape := row.validate_rows(query_rows)
+    if shape == null || query_shape == null || query_shape[1] != shape[1] {
+        return Err("ml.knn_predict expects compatible non-empty numeric matrices")
+    }
+    if row.kind(targets) != "list" || len(targets) != shape[0] {
+        return Err("ml.knn_predict targets must match the number of rows")
+    }
+    if row.kind(k) != "int" || k <= 0 || k > shape[0] {
+        return Err("ml.knn_predict k must be a positive integer no larger than the training set")
+    }
+    use_weights := if weighted == null { false } else { weighted }
+    if row.kind(use_weights) != "bool" {
+        return Err("ml.knn_predict weighted must be boolean or null")
+    }
+    let mut predictions = []
+    for query in query_rows {
+        nearest := nearest(rows, query, k)
+        let mut labels = []
+        let mut scores = []
+        for item in nearest {
+            label := targets[item.index]
+            weight := if use_weights {
+                if item.distance == 0.0 { 1e12 } else { 1.0 / math.sqrt(item.distance) }
+            } else { 1.0 }
+            let mut found = -1
+            let mut i = 0
+            while i < len(labels) {
+                if labels[i] == label { found = i }
+                i = i + 1
+            }
+            if found < 0 {
+                labels = push(labels, label)
+                scores = push(scores, weight)
+            } else {
+                scores[found] = scores[found] + weight
+            }
+        }
+        if len(labels) == 0 {
+            return Err("knn: no neighbors found for query")
+        }
+        let mut best = 0
+        let mut i = 1
+        while i < len(scores) {
+            if scores[i] > scores[best] { best = i }
+            i = i + 1
+        }
+        predictions = push(predictions, labels[best])
+    }
+    Ok(predictions)
+}
+
+pub fn knn(features, targets, queries, k, weighted = null) -> Result[any] {
+    knn_predict(features, targets, queries, k, weighted)
+}
+
+pub fn nearest(rows, query, k) {
+    let mut used = []
+    let mut result = []
+    let mut rank = 0
+    while rank < k {
+        let mut best = -1
+        let mut best_distance = math.inf
+        let mut i = 0
+        while i < len(rows) {
+            let mut already = false
+            for chosen in used { if chosen == i { already = true } }
+            if !already {
+                distance := distance_squared(rows[i], query)
+                if distance < best_distance {
+                    best = i
+                    best_distance = distance
+                }
+            }
+            i = i + 1
+        }
+        used = push(used, best)
+        result = push(result, {"index": best, "distance": best_distance})
+        rank = rank + 1
+    }
+    result
+}
+
+fn distance_squared(left, right) {
+    let mut total = 0.0
+    let mut i = 0
+    while i < len(left) {
+        delta := left[i] - right[i]
+        total = total + delta * delta
+        i = i + 1
+    }
+    total
+}

@@ -1,6 +1,6 @@
 # Weft capability matrix
 
-- **Generated:** 2026-08-07T19:37:27Z
+- **Generated:** 2026-09-29T02:19:39Z
 - **Format:** `weft.capability.matrix` v1
 - **Honesty:** Statuses are conservative. implemented ≠ complete NumPy/pandas/ML framework parity. See docs/COMPATIBILITY.md.
 
@@ -18,11 +18,11 @@
 |---------|--------------|----------|
 | `warp` | 204 | `packages/warp/weft.json` |
 | `dataframe` | 134 | `packages/dataframe/weft.json` |
-| `ml` | 114 | `packages/ml/weft.json` |
+| `ml` | 123 | `packages/ml/weft.json` |
 
 ## Claim summary
 
-- implemented: **19** · partial: **13** · unsupported: **6**
+- implemented: **19** · partial: **14** · unsupported: **6**
 
 ## warp
 
@@ -67,6 +67,7 @@
 | vectors (dot/cosine/norm/topk) | `implemented` | Pure Weft |
 | embeddings + local index (RAG helpers) | `partial` | Provider-backed embed; needs network/keys |
 | classical linear / logistic fit + score | `implemented` | CPU minibatch; 100k-row train tested; accepts nested lists and packed Warp inputs |
+| classical k-means / knn / CART trees | `partial` | Dense numeric k-means, knn classification, gini classifier, and squared-error regressor (leaf means, adjacent-midpoint thresholds). Capped at 4096 rows and 65536 cells. No sparse, categorical, sample-weight, or multi-output trees |
 | reverse-mode autodiff (scalars + warp) | `implemented` | Tape ops; not full framework |
 | forward-mode autodiff (dual numbers / JVP) | `implemented` | Exact jvp/jacobian/derivative over scalars + warp arrays; jacobian costs one evaluation per input; nested duals give scalar second derivatives; three-way checked vs reverse mode + gradcheck |
 | SGD / Adam optimizers | `implemented` | Scalar + Warp parameters; skip frozen params; grad clipping (global-norm PyTorch formula + elementwise value) |

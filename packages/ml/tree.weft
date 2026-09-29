@@ -1,0 +1,370 @@
+use math
+use warp
+use "./rows.weft" as row
+
+// Bounded dense CART. Classifier splits use Gini; the regressor minimizes
+// squared error. A regressor threshold is the midpoint between two adjacent
+// sorted feature values, x <= threshold goes left, and each leaf predicts
+// the mean of its targets.
+
+pub fn decision_tree_fit(features, targets, opts = null) -> Result[any] {
+    rows := row.feature_rows(features)
+    shape := row.validate_rows(rows)
+    if shape == null || row.kind(targets) != "list" || len(targets) != shape[0] {
+        return Err("ml.decision_tree_fit expects a non-empty numeric matrix and matching labels")
+    }
+    if shape[0] > 4096 || shape[0] * shape[1] > 65536 {
+        return Err("ml.decision_tree_fit input exceeds the bounded dense classifier budget")
+    }
+    max_depth := row.opt(opts, "max_depth", 8)
+    min_samples_split := row.opt(opts, "min_samples_split", 2)
+    if row.kind(max_depth) != "int" || max_depth < 0 || max_depth > 64 {
+        return Err("ml.decision_tree_fit max_depth must be an integer from 0 through 64")
+    }
+    if row.kind(min_samples_split) != "int" || min_samples_split < 2 || min_samples_split > shape[0] {
+        return Err("ml.decision_tree_fit min_samples_split must be bounded and at least 2")
+    }
+    let mut indices = []
+    let mut i = 0
+    while i < shape[0] {
+        indices = push(indices, i)
+        i = i + 1
+    }
+    tree := build_tree(rows, targets, indices, 0, max_depth, min_samples_split)
+    Ok({"kind": "decision_tree_classifier", "features": shape[1], "tree": tree, "max_depth": max_depth})
+}
+
+pub fn tree_fit(features, targets, opts = null) -> Result[any] {
+    decision_tree_fit(features, targets, opts)
+}
+
+pub fn decision_tree_predict(model, features) -> Result[any] {
+    if model == null || row.kind(model) != "map" || model.kind != "decision_tree_classifier" || model.tree == null {
+        return Err("ml.decision_tree_predict expects a fitted decision tree classifier")
+    }
+    rows := row.feature_rows(features)
+    shape := row.validate_rows(rows)
+    if shape == null || shape[1] != model.features {
+        return Err("ml.decision_tree_predict feature dimensions do not match the model")
+    }
+    let mut predictions = []
+    for sample in rows { predictions = push(predictions, tree_predict_node(model.tree, sample)) }
+    Ok(predictions)
+}
+
+pub fn tree_predict(model, features) -> Result[any] {
+    if model != null && row.kind(model) == "map" && model.kind == "decision_tree_regressor" {
+        return decision_tree_regressor_predict(model, features)
+    }
+    decision_tree_predict(model, features)
+}
+
+pub fn decision_tree_regressor_fit(features, targets, opts = null) -> Result[any] {
+    rows := row.feature_rows(features)
+    shape := row.validate_rows(rows)
+    ys := if shape == null { null } else { numeric_targets(targets, shape[0]) }
+    if shape == null || ys == null {
+        return Err("ml.decision_tree_regressor_fit expects a non-empty numeric matrix and matching numeric targets")
+    }
+    if shape[0] > 4096 || shape[0] * shape[1] > 65536 {
+        return Err("ml.decision_tree_regressor_fit input exceeds the bounded dense regressor budget")
+    }
+    max_depth := row.opt(opts, "max_depth", 8)
+    min_samples_split := row.opt(opts, "min_samples_split", 2)
+    min_samples_leaf := row.opt(opts, "min_samples_leaf", 1)
+    if row.kind(max_depth) != "int" || max_depth < 0 || max_depth > 64 {
+        return Err("ml.decision_tree_regressor_fit max_depth must be an integer from 0 through 64")
+    }
+    if row.kind(min_samples_split) != "int" || min_samples_split < 2 || min_samples_split > shape[0] {
+        return Err("ml.decision_tree_regressor_fit min_samples_split must be bounded and at least 2")
+    }
+    if row.kind(min_samples_leaf) != "int" || min_samples_leaf < 1 || min_samples_leaf > shape[0] {
+        return Err("ml.decision_tree_regressor_fit min_samples_leaf must be a positive integer no larger than the number of rows")
+    }
+    let mut indices = []
+    let mut i = 0
+    while i < shape[0] {
+        indices = push(indices, i)
+        i = i + 1
+    }
+    tree := build_regression_tree(rows, ys, indices, 0, max_depth, min_samples_split, min_samples_leaf)
+    Ok({"kind": "decision_tree_regressor", "features": shape[1], "tree": tree,
+        "max_depth": max_depth, "criterion": "squared_error"})
+}
+
+pub fn decision_tree_regressor_predict(model, features) -> Result[any] {
+    if model == null || row.kind(model) != "map" || model.kind != "decision_tree_regressor" || model.tree == null {
+        return Err("ml.decision_tree_regressor_predict expects a fitted decision tree regressor")
+    }
+    rows := row.feature_rows(features)
+    shape := row.validate_rows(rows)
+    if shape == null || shape[1] != model.features {
+        return Err("ml.decision_tree_regressor_predict feature dimensions do not match the model")
+    }
+    let mut predictions = []
+    for sample in rows { predictions = push(predictions, tree_predict_node(model.tree, sample)) }
+    Ok(predictions)
+}
+
+fn build_tree(rows, targets, indices, depth, max_depth, min_samples_split) {
+    prediction := majority_label(targets, indices)
+    if depth >= max_depth || len(indices) < min_samples_split || pure_labels(targets, indices) {
+        return {"leaf": true, "prediction": prediction, "samples": len(indices)}
+    }
+    split := best_split(rows, targets, indices)
+    if split == null || split.gain <= 0.0 {
+        return {"leaf": true, "prediction": prediction, "samples": len(indices)}
+    }
+    left_tree := build_tree(rows, targets, split.left, depth + 1, max_depth, min_samples_split)
+    right_tree := build_tree(rows, targets, split.right, depth + 1, max_depth, min_samples_split)
+    {"leaf": false, "feature": split.feature, "threshold": split.threshold,
+     "prediction": prediction, "samples": len(indices), "gain": split.gain,
+     "left": left_tree, "right": right_tree}
+}
+
+fn best_split(rows, targets, indices) {
+    parent := gini(targets, indices)
+    let mut best = null
+    let mut best_score = math.inf
+    let mut feature = 0
+    dims := len(rows[0])
+    while feature < dims {
+        let mut a = 0
+        while a < len(indices) {
+            let mut b = a + 1
+            while b < len(indices) {
+                left_value := rows[indices[a]][feature]
+                right_value := rows[indices[b]][feature]
+                if left_value != right_value {
+                    threshold := (left_value + right_value) / 2.0
+                    groups := tree_split(rows, indices, feature, threshold)
+                    if len(groups.left) > 0 && len(groups.right) > 0 {
+                        score := (len(groups.left) * 1.0 * gini(targets, groups.left) + len(groups.right) * 1.0 * gini(targets, groups.right)) / len(indices)
+                        if score < best_score {
+                            best_score = score
+                            best = {"feature": feature, "threshold": threshold,
+                                    "left": groups.left, "right": groups.right,
+                                    "gain": parent - score}
+                        }
+                    }
+                }
+                b = b + 1
+            }
+            a = a + 1
+        }
+        feature = feature + 1
+    }
+    best
+}
+
+fn tree_split(rows, indices, feature, threshold) {
+    let mut left = []
+    let mut right = []
+    for index in indices {
+        if rows[index][feature] <= threshold { left = push(left, index) }
+        else { right = push(right, index) }
+    }
+    {"left": left, "right": right}
+}
+
+fn gini(targets, indices) {
+    if len(indices) == 0 { return 0.0 }
+    let mut labels = []
+    let mut counts = []
+    for index in indices {
+        let mut found = -1
+        let mut i = 0
+        while i < len(labels) {
+            if labels[i] == targets[index] { found = i }
+            i = i + 1
+        }
+        if found < 0 {
+            labels = push(labels, targets[index])
+            counts = push(counts, 1)
+        } else { counts[found] = counts[found] + 1 }
+    }
+    let mut impurity = 1.0
+    for count in counts {
+        probability := count * 1.0 / len(indices)
+        impurity = impurity - probability * probability
+    }
+    impurity
+}
+
+fn majority_label(targets, indices) {
+    let mut labels = []
+    let mut counts = []
+    for index in indices {
+        let mut found = -1
+        let mut i = 0
+        while i < len(labels) {
+            if labels[i] == targets[index] { found = i }
+            i = i + 1
+        }
+        if found < 0 {
+            labels = push(labels, targets[index])
+            counts = push(counts, 1)
+        } else { counts[found] = counts[found] + 1 }
+    }
+    let mut best = 0
+    let mut i = 1
+    while i < len(counts) {
+        if counts[i] > counts[best] { best = i }
+        i = i + 1
+    }
+    labels[best]
+}
+
+fn pure_labels(targets, indices) {
+    first := targets[indices[0]]
+    for index in indices { if targets[index] != first { return false } }
+    true
+}
+
+fn tree_predict_node(node, sample) {
+    if node.leaf { return node.prediction }
+    if sample[node.feature] <= node.threshold { return tree_predict_node(node.left, sample) }
+    tree_predict_node(node.right, sample)
+}
+
+fn numeric_targets(targets, n) {
+    let mut values = null
+    if row.kind(targets) == "list" {
+        values = targets
+    } else if row.kind(targets) == "map" && targets._warp == true {
+        shape := warp.shape(targets)
+        if row.kind(shape) != "list" || len(shape) != 1 || shape[0] != n { return null }
+        values = warp.to_list(targets)
+    } else {
+        return null
+    }
+    if row.kind(values) != "list" || len(values) != n { return null }
+    let mut out = []
+    for value in values {
+        if (row.kind(value) != "int" && row.kind(value) != "float") || value != value || math.isinf(value) {
+            return null
+        }
+        out = push(out, value + 0.0)
+    }
+    out
+}
+
+fn mean_at(targets, indices) {
+    let mut total = 0.0
+    for index in indices { total = total + targets[index] }
+    total / (len(indices) + 0.0)
+}
+
+fn sse_at(targets, indices) {
+    if len(indices) == 0 { return 0.0 }
+    let mut sum = 0.0
+    let mut sumsq = 0.0
+    for index in indices {
+        y := targets[index]
+        sum = sum + y
+        sumsq = sumsq + y * y
+    }
+    sse := sumsq - (sum * sum) / (len(indices) + 0.0)
+    if sse < 0.0 { return 0.0 }
+    sse
+}
+
+fn sort_indices_by_feature(rows, indices, feature) {
+    let mut remaining = []
+    for index in indices { remaining = push(remaining, index) }
+    let mut order = []
+    while len(remaining) > 0 {
+        let mut best = 0
+        let mut i = 1
+        while i < len(remaining) {
+            if rows[remaining[i]][feature] < rows[remaining[best]][feature] { best = i }
+            i = i + 1
+        }
+        order = push(order, remaining[best])
+        let mut next = []
+        i = 0
+        while i < len(remaining) {
+            if i != best { next = push(next, remaining[i]) }
+            i = i + 1
+        }
+        remaining = next
+    }
+    order
+}
+
+fn build_regression_tree(rows, targets, indices, depth, max_depth, min_samples_split, min_samples_leaf) {
+    prediction := mean_at(targets, indices)
+    if depth >= max_depth || len(indices) < min_samples_split {
+        return {"leaf": true, "prediction": prediction, "samples": len(indices)}
+    }
+    split := best_regression_split(rows, targets, indices, min_samples_leaf)
+    if split == null || split.gain <= 0.0 {
+        return {"leaf": true, "prediction": prediction, "samples": len(indices)}
+    }
+    left_tree := build_regression_tree(rows, targets, split.left, depth + 1, max_depth, min_samples_split, min_samples_leaf)
+    right_tree := build_regression_tree(rows, targets, split.right, depth + 1, max_depth, min_samples_split, min_samples_leaf)
+    {"leaf": false, "feature": split.feature, "threshold": split.threshold,
+     "prediction": prediction, "samples": len(indices), "gain": split.gain,
+     "left": left_tree, "right": right_tree}
+}
+
+fn best_regression_split(rows, targets, indices, min_samples_leaf) {
+    let mut best = null
+    let mut best_score = math.inf
+    let mut feature = 0
+    dims := len(rows[0])
+    while feature < dims {
+        order := sort_indices_by_feature(rows, indices, feature)
+        n := len(order)
+        let mut prefix = []
+        let mut sqprefix = []
+        let mut acc = 0.0
+        let mut accsq = 0.0
+        for index in order {
+            y := targets[index]
+            acc = acc + y
+            accsq = accsq + y * y
+            prefix = push(prefix, acc)
+            sqprefix = push(sqprefix, accsq)
+        }
+        total := acc
+        totalsq := accsq
+        let mut i = 0
+        while i < n - 1 {
+            left_value := rows[order[i]][feature]
+            right_value := rows[order[i + 1]][feature]
+            if left_value != right_value {
+                n_left := i + 1
+                n_right := n - n_left
+                if n_left >= min_samples_leaf && n_right >= min_samples_leaf {
+                    left_sum := prefix[i]
+                    right_sum := total - left_sum
+                    let mut sse_left = sqprefix[i] - (left_sum * left_sum) / (n_left + 0.0)
+                    let mut sse_right = (totalsq - sqprefix[i]) - (right_sum * right_sum) / (n_right + 0.0)
+                    if sse_left < 0.0 { sse_left = 0.0 }
+                    if sse_right < 0.0 { sse_right = 0.0 }
+                    score := (sse_left + sse_right) / (n + 0.0)
+                    if score < best_score {
+                        best_score = score
+                        best = {"feature": feature, "threshold": (left_value + right_value) / 2.0,
+                                "cut": i, "order": order, "score": score}
+                    }
+                }
+            }
+            i = i + 1
+        }
+        feature = feature + 1
+    }
+    if best == null { return null }
+    let mut left = []
+    let mut right = []
+    let mut k = 0
+    while k < len(best.order) {
+        if k <= best.cut { left = push(left, best.order[k]) }
+        else { right = push(right, best.order[k]) }
+        k = k + 1
+    }
+    parent := sse_at(targets, indices)
+    gain := parent / (len(indices) + 0.0) - best.score
+    {"feature": best.feature, "threshold": best.threshold, "left": left, "right": right, "gain": gain}
+}

@@ -1,7 +1,7 @@
 {
   "name": "ml",
-  "version": "0.8.0",
-  "description": "Weft ML module: vectors, classical training on lists or packed Warp arrays, reverse- and forward-mode (dual-number JVP) autodiff, higher-order grads, plugin-backed tensor matmul with honest CPU fallback, optimizers, gradient clipping, parameter freezing, linear/sequential modules, and resumable checkpoints",
+  "version": "0.8.1",
+  "description": "Weft ML module: vectors, classical training on lists or packed Warp arrays, reverse- and forward-mode (dual-number JVP) autodiff, higher-order grads, plugin-backed tensor matmul with honest CPU fallback, optimizers, gradient clipping, parameter freezing, linear/sequential modules, resumable checkpoints, and bounded CART classification and regression trees",
   "type": "module",
   "entry": "lib.weft",
   "exports": [
@@ -118,7 +118,16 @@
     "gelu_module",
     "softmax_module",
     "sequential",
-    "module_forward"
+    "module_forward",
+    "knn_predict",
+    "knn",
+    "kmeans",
+    "decision_tree_fit",
+    "tree_fit",
+    "decision_tree_predict",
+    "tree_predict",
+    "decision_tree_regressor_fit",
+    "decision_tree_regressor_predict"
   ],
   "maturity": "experimental",
   "license": "Apache-2.0",

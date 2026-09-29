@@ -53,7 +53,9 @@ func Infer(file *ast.File) (Info, diag.List) {
 			if d.Ret != nil {
 				ret = FromAST(d.Ret)
 			}
-			inf.globals[d.Name] = tyFn(params, ret)
+			ft := tyFn(params, ret)
+			ft.OptionalTail = optionalTail(d.Params)
+			inf.globals[d.Name] = ft
 		case *ast.TypeDecl:
 			nt := tyNamed(d.Name)
 			if d.Alias != nil {
@@ -181,6 +183,7 @@ func (inf *inferrer) installPrelude() {
 	inf.globals["pop"] = tyFn([]*Type{tyList(tyAny())}, tyAny())
 	inf.globals["concat"] = tyFn([]*Type{tyList(tyAny()), tyList(tyAny())}, tyList(tyAny()))
 	inf.globals["slice"] = tyFn([]*Type{tyList(tyAny()), tyInt(), tyAny()}, tyList(tyAny())) // slice(xs, i) | slice(xs, i, j)
+	inf.globals["chunks"] = tyFn([]*Type{tyAny(), tyInt()}, tyList(tyAny()))
 	inf.globals["contains"] = tyFn([]*Type{tyAny(), tyAny()}, tyBool())
 	inf.globals["keys"] = tyFn([]*Type{tyAny()}, tyList(tyStr()))
 	inf.globals["values"] = tyFn([]*Type{tyAny()}, tyList(tyAny()))
@@ -331,7 +334,20 @@ func (inf *inferrer) inferFn(d *ast.FnDecl) {
 		}
 	}
 	inf.fnRet[d.Name] = finalRet
-	inf.globals[d.Name] = tyFn(params, finalRet)
+	ft := tyFn(params, finalRet)
+	ft.OptionalTail = optionalTail(d.Params)
+	inf.globals[d.Name] = ft
+}
+
+func optionalTail(params []*ast.Param) int {
+	n := 0
+	for i := len(params) - 1; i >= 0; i-- {
+		if params[i] == nil || params[i].Default == nil {
+			break
+		}
+		n++
+	}
+	return n
 }
 
 func (inf *inferrer) inferBlock(b *ast.Block, locals map[string]*Type, expectedRet *Type) *Type {
@@ -552,15 +568,24 @@ func (inf *inferrer) inferExpr(e ast.Expr, locals map[string]*Type) *Type {
 			return inf.inferMethod(fe, argTs)
 		}
 		if ft != nil && ft.Kind == TyFn {
-			// Arity: required = last index of a non-any param + 1 (trailing TyAny = optional).
+			// Arity: explicit defaults (OptionalTail) may be omitted. Otherwise a
+			// trailing untyped param is treated as optional, matching map/filter workers.
 			// Over-arity only when every param is concrete (no optional trail).
 			required := 0
 			allConcrete := len(ft.Params) > 0
-			for i, p := range ft.Params {
-				if p != nil && p.Kind != TyAny {
-					required = i + 1
-				} else {
-					allConcrete = false
+			if ft.OptionalTail > 0 {
+				required = len(ft.Params) - ft.OptionalTail
+				if required < 0 {
+					required = 0
+				}
+				allConcrete = false
+			} else {
+				for i, p := range ft.Params {
+					if p != nil && p.Kind != TyAny {
+						required = i + 1
+					} else {
+						allConcrete = false
+					}
 				}
 			}
 			if required > 0 && len(argTs) < required {
@@ -750,7 +775,9 @@ func (inf *inferrer) inferExpr(e ast.Expr, locals map[string]*Type) *Type {
 		if exp != nil {
 			ret = exp
 		}
-		return tyFn(params, ret)
+		ft := tyFn(params, ret)
+		ft.OptionalTail = optionalTail(e.Params)
+		return ft
 	default:
 		return tyAny()
 	}

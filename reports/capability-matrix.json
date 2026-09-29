@@ -1,7 +1,7 @@
 {
   "format": "weft.capability.matrix",
   "version": 1,
-  "generated_at": "2026-08-07T19:37:27Z",
+  "generated_at": "2026-09-29T02:19:39Z",
   "honesty": "Statuses are conservative. implemented \u2260 complete NumPy/pandas/ML framework parity. See docs/COMPATIBILITY.md.",
   "status_vocabulary": {
     "implemented": "Present and covered at smoke/semantics level for the claim",
@@ -11,7 +11,7 @@
   "export_counts": {
     "warp": 204,
     "dataframe": 134,
-    "ml": 114
+    "ml": 123
   },
   "exports": {
     "warp": {
@@ -23,7 +23,7 @@
       "package_path": "packages/dataframe/weft.json"
     },
     "ml": {
-      "count": 114,
+      "count": 123,
       "package_path": "packages/ml/weft.json"
     }
   },
@@ -204,6 +204,12 @@
     },
     {
       "area": "ml",
+      "claim": "classical k-means / knn / CART trees",
+      "status": "partial",
+      "notes": "Dense numeric k-means, knn classification, gini classifier, and squared-error regressor (leaf means, adjacent-midpoint thresholds). Capped at 4096 rows and 65536 cells. No sparse, categorical, sample-weight, or multi-output trees"
+    },
+    {
+      "area": "ml",
       "claim": "reverse-mode autodiff (scalars + warp)",
       "status": "implemented",
       "notes": "Tape ops; not full framework"
@@ -259,7 +265,7 @@
   ],
   "counts": {
     "implemented": 19,
-    "partial": 13,
+    "partial": 14,
     "unsupported": 6
   }
 }

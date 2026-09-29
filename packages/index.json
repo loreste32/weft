@@ -17,8 +17,8 @@
     {
       "name": "ml",
       "path": "./ml",
-      "version": "0.8.0",
-      "summary": "ML vectors, training on lists or packed Warp arrays, reverse- and forward-mode autodiff, higher-order derivatives, modules, losses, schedulers, optimizers, checkpoints with resume, freezing, and device tags"
+      "version": "0.8.1",
+      "summary": "ML vectors, training on lists or packed Warp arrays, reverse- and forward-mode autodiff, higher-order derivatives, modules, losses, schedulers, optimizers, checkpoints with resume, freezing, CART classification and regression, and device tags"
     },
     {
       "name": "warp",

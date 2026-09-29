@@ -175,7 +175,7 @@ All available at [registry.weftproject.dev](https://registry.weftproject.dev). I
 | **color** | Terminal color output (ANSI 256 / truecolor) |
 | **mold** | Structured models, JSON Schema, tool params |
 | **tokensave** | Thrift context, memory, teach → train gold |
-| **ml** | Embeddings, vectors, RAG index, classical training |
+| **ml** | Embeddings, vectors, classical training, CART classification and regression |
 | **warp** | Validated NumPy-style arrays and native CUDA/ROCm/MLX dispatch |
 | **dataframe** | Validated tabular data: null-aware stats, joins, rolling, CSV/JSON |
 | **embed** | Embeddings client + vector store |

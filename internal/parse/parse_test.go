@@ -246,6 +246,39 @@ func TestParseNullCoalesce(t *testing.T) {
 	_ = f
 }
 
+func TestParseQuestionThenField(t *testing.T) {
+	// `expr?.field` stays unwrap-then-field, not a separate operator.
+	src := `fn main {
+    say(null?.city)
+}`
+	f, errs := ParseFile("t.weft", src)
+	if len(errs) > 0 {
+		t.Fatalf("errors: %v", errs)
+	}
+	fn := f.Decls[0].(*ast.FnDecl)
+	call := fn.Body.Stmts[0].(*ast.ExprStmt).X.(*ast.CallExpr)
+	field := call.Args[0].(*ast.FieldExpr)
+	if _, ok := field.X.(*ast.QuestionExpr); !ok || field.Name != "city" {
+		t.Fatalf("want (null?).city, got %#v", field.X)
+	}
+}
+
+func TestParseParamDefaults(t *testing.T) {
+	src := `fn f(a: int, b: int = 1, c = "x") { a }`
+	f, errs := ParseFile("t.weft", src)
+	if len(errs) > 0 {
+		t.Fatalf("errors: %v", errs)
+	}
+	fn := f.Decls[0].(*ast.FnDecl)
+	if fn.Params[0].Default != nil || fn.Params[1].Default == nil || fn.Params[2].Default == nil {
+		t.Fatal("expected trailing defaults")
+	}
+	_, errs = ParseFile("t.weft", `fn f(a = 1, b) { a }`)
+	if !errs.HasErrors() || !stringsContains(errs.Error(), "needs a default") {
+		t.Fatalf("required after optional: %v", errs)
+	}
+}
+
 func TestParseQuestion(t *testing.T) {
 	src := `fn f() -> Result {
     x := Ok(1)?

@@ -71,6 +71,7 @@ CLAIMS: list[dict] = [
     {"area": "ml", "claim": "vectors (dot/cosine/norm/topk)", "status": "implemented", "notes": "Pure Weft"},
     {"area": "ml", "claim": "embeddings + local index (RAG helpers)", "status": "partial", "notes": "Provider-backed embed; needs network/keys"},
     {"area": "ml", "claim": "classical linear / logistic fit + score", "status": "implemented", "notes": "CPU minibatch; 100k-row train tested; accepts nested lists and packed Warp inputs"},
+    {"area": "ml", "claim": "classical k-means / knn / CART trees", "status": "partial", "notes": "Dense numeric k-means, knn classification, gini classifier, and squared-error regressor (leaf means, adjacent-midpoint thresholds). Capped at 4096 rows and 65536 cells. No sparse, categorical, sample-weight, or multi-output trees"},
     {"area": "ml", "claim": "reverse-mode autodiff (scalars + warp)", "status": "implemented", "notes": "Tape ops; not full framework"},
     {"area": "ml", "claim": "forward-mode autodiff (dual numbers / JVP)", "status": "implemented", "notes": "Exact jvp/jacobian/derivative over scalars + warp arrays; jacobian costs one evaluation per input; nested duals give scalar second derivatives; three-way checked vs reverse mode + gradcheck"},
     {"area": "ml", "claim": "SGD / Adam optimizers", "status": "implemented", "notes": "Scalar + Warp parameters; skip frozen params; grad clipping (global-norm PyTorch formula + elementwise value)"},

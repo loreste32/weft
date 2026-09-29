@@ -74,13 +74,15 @@ pub fn train(kind, features, targets, opts) -> Result[any] { tr.train(kind, feat
 pub fn predict(model, features) -> Result[any] { tr.predict(model, features) }
 pub fn predict_classes(model, features, threshold) -> Result[any] { tr.predict_classes(model, features, threshold) }
 pub fn score(model, features, targets) -> Result[any] { tr.score(model, features, targets) }
-pub fn knn_predict(features, targets, queries, k, weighted) -> Result[any] { classical.knn_predict(features, targets, queries, k, weighted) }
-pub fn knn(features, targets, queries, k, weighted) -> Result[any] { classical.knn(features, targets, queries, k, weighted) }
-pub fn kmeans(features, k, opts) -> Result[any] { classical.kmeans(features, k, opts) }
-pub fn decision_tree_fit(features, targets, opts) -> Result[any] { classical.decision_tree_fit(features, targets, opts) }
-pub fn tree_fit(features, targets, opts) -> Result[any] { classical.tree_fit(features, targets, opts) }
+pub fn knn_predict(features, targets, queries, k, weighted = null) -> Result[any] { classical.knn_predict(features, targets, queries, k, weighted) }
+pub fn knn(features, targets, queries, k, weighted = null) -> Result[any] { classical.knn(features, targets, queries, k, weighted) }
+pub fn kmeans(features, k, opts = null) -> Result[any] { classical.kmeans(features, k, opts) }
+pub fn decision_tree_fit(features, targets, opts = null) -> Result[any] { classical.decision_tree_fit(features, targets, opts) }
+pub fn tree_fit(features, targets, opts = null) -> Result[any] { classical.tree_fit(features, targets, opts) }
 pub fn decision_tree_predict(model, features) -> Result[any] { classical.decision_tree_predict(model, features) }
 pub fn tree_predict(model, features) -> Result[any] { classical.tree_predict(model, features) }
+pub fn decision_tree_regressor_fit(features, targets, opts = null) -> Result[any] { classical.decision_tree_regressor_fit(features, targets, opts) }
+pub fn decision_tree_regressor_predict(model, features) -> Result[any] { classical.decision_tree_regressor_predict(model, features) }
 pub fn standardize(features) -> Result[any] { tr.standardize(features) }
 pub fn batches(features, targets, batch_size, opts) -> Result[any] { tr.batches(features, targets, batch_size, opts) }
 pub fn step_lr(base_lr, epoch, step_size, gamma) { sched.step_lr(base_lr, epoch, step_size, gamma) }

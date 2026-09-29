@@ -133,6 +133,9 @@ Logic: `&&` `||` `!` (short-circuit)
 Nullish: `??`  
 Pipeline: `x |> f` · `x |> f |> g`  
 Error unwrap: `expr?`  
+Unwrap then field: `expr?.field` is `(expr?).field`. It is not optional chaining.
+
+A missing map key read with `.` is null, the same as `m["missing"]`. `m.missing ?? "unknown"` therefore works, and `??` still keeps `0` and `false`. A missing struct field is an error. `null.field` is an error; test the receiver first.
 
 Indexing / fields: `xs[i]`, `obj.field`, `m["key"]`  
 Call: `f(a, b)`
@@ -229,6 +232,16 @@ fn main {
 - Parentheses are optional when there are no parameters: `fn main { … }`  
 - `pub fn` marks exports for modules  
 - Return type `-> Result` enables `?` and auto-wraps bare last values as `Ok(...)`
+- A trailing parameter may take a literal default (`null`, bool, number, or string, including a leading minus). After the first default, every later parameter needs one. Callers may omit those arguments. `0` and `false` are real values, not missing.
+
+```weft
+fn greet(name = "weft") { "hello, $name" }
+
+fn main {
+    say(greet())
+    say(greet("ada"))
+}
+```
 
 ### Closures
 
@@ -338,6 +351,8 @@ say(xs[0])
 
 m := {"city": "Paris", "temp": 21}
 say(m.city)
+say(m.missing ?? "unknown")
+say(chunks([1, 2, 3, 4, 5], 2))
 
 // concurrent by default (order preserved)
 out := map(urls, fetch)
@@ -350,7 +365,7 @@ out := seq_map(urls, fetch)
 21 |> double |> say
 ```
 
-Prelude helpers include `map`, `seq_map`, `filter`, `seq_filter`, `reduce`, `each`, `par_map`, `find`, `any`, `all`, `sort`, `reverse`, `unique`, `zip`, `flatten`, `enumerate`, `count`, `range`, `push`, `len`, `say` / `println`.
+Prelude helpers include `map`, `seq_map`, `filter`, `seq_filter`, `reduce`, `each`, `par_map`, `find`, `any`, `all`, `sort`, `reverse`, `unique`, `zip`, `flatten`, `enumerate`, `count`, `range`, `chunks`, `push`, `len`, `say` / `println`. `chunks(list, size)` and `chunks(str, size)` split into pieces of at most `size`; a short tail is kept. `iter.chunk` remains the list-only package form.
 
 See [PIPELINES.md](PIPELINES.md) and [STDLIB.md](STDLIB.md).
 

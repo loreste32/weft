@@ -409,8 +409,13 @@ fn test_knn_and_kmeans {
     labels := ["low", "low", "high", "high"]
     predictions := ml.knn_predict(features, labels, [[0.2], [9.8]], 3, null)?
     test.eq(predictions, ["low", "high"])
+    test.eq(ml.knn_predict(features, labels, [[0.2], [9.8]], 3)?, ["low", "high"])
     test.eq(ml.knn(features, labels, [[0.2]], 2, false)?, ["low"])
     clusters := ml.kmeans(features, 2, {"max_iter": 20, "tol": 1e-9})?
+    plain_clusters := ml.kmeans(features, 2)?
+    test.eq(plain_clusters.labels, [0, 0, 1, 1])
+    ignored_opts := ml.kmeans(features, 2, 1)?
+    test.eq(ignored_opts.labels, [0, 0, 1, 1])
     test.eq(clusters.labels, [0, 0, 1, 1])
     test.approx(clusters.centers[0][0], 0.05, 1e-9)
     test.approx(clusters.centers[1][0], 9.95, 1e-9)
@@ -424,7 +429,70 @@ fn test_decision_tree_classifier {
     predictions := ml.decision_tree_predict(model, [[0.25], [2.75]])?
     test.eq(predictions, ["low", "high"])
     test.eq(ml.tree_predict(model, [[1.0]])?, ["low"])
+    plain := ml.decision_tree_fit(features, labels)?
+    test.eq(ml.decision_tree_predict(plain, [[0.25], [2.75]])?, ["low", "high"])
     test.eq(ml.decision_tree_fit(features, labels, {"max_depth": -1}).ok, false)
+}
+
+fn test_decision_tree_regressor {
+    features := [[0.0], [1.0], [2.0], [3.0]]
+    targets := [0.0, 0.0, 10.0, 10.0]
+    model := ml.decision_tree_regressor_fit(features, targets, {"max_depth": 3})?
+    test.eq(model.kind, "decision_tree_regressor")
+    test.eq(model.criterion, "squared_error")
+    test.eq(model.tree.leaf, false)
+    test.eq(model.tree.feature, 0)
+    test.approx(model.tree.threshold, 1.5, 1e-12)
+    predictions := ml.decision_tree_regressor_predict(model, [[0.25], [1.5], [1.51], [2.75]])?
+    test.approx(predictions[0], 0.0, 1e-12)
+    test.approx(predictions[1], 0.0, 1e-12)
+    test.approx(predictions[2], 10.0, 1e-12)
+    test.approx(predictions[3], 10.0, 1e-12)
+    routed := ml.tree_predict(model, [[2.0]])?
+    test.approx(routed[0], 10.0, 1e-12)
+
+    stump := ml.decision_tree_regressor_fit(features, targets, {"max_depth": 0})?
+    test.eq(stump.tree.leaf, true)
+    test.approx(stump.tree.prediction, 5.0, 1e-12)
+    means := ml.decision_tree_regressor_predict(stump, [[100.0]])?
+    test.approx(means[0], 5.0, 1e-12)
+
+    held := ml.decision_tree_regressor_fit(features, targets, {"min_samples_leaf": 3})?
+    test.eq(held.tree.leaf, true)
+
+    second := ml.decision_tree_regressor_fit([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], [0.0, 0.0, 5.0, 5.0], null)?
+    test.eq(second.tree.feature, 1)
+    test.approx(second.tree.threshold, 0.5, 1e-12)
+
+    tied := ml.decision_tree_regressor_fit([[0.0, 0.0], [0.0, 0.0], [1.0, 1.0], [1.0, 1.0]], [1.0, 1.0, 3.0, 3.0], null)?
+    test.eq(tied.tree.feature, 0)
+    test.approx(tied.tree.threshold, 0.5, 1e-12)
+
+    packed_x := warp.array([0.0, 1.0, 2.0, 3.0], [4, 1])
+    packed_y := warp.array([0.0, 0.0, 10.0, 10.0], [4])
+    packed := ml.decision_tree_regressor_fit(packed_x, packed_y, {"max_depth": 2})?
+    packed_pred := ml.decision_tree_regressor_predict(packed, packed_x)?
+    test.approx(packed_pred[0], 0.0, 1e-12)
+    test.approx(packed_pred[3], 10.0, 1e-12)
+
+    omitted := ml.decision_tree_regressor_fit(features, targets)?
+    test.approx(ml.decision_tree_regressor_predict(omitted, [[1.51]])?[0], 10.0, 1e-12)
+    again := ml.decision_tree_regressor_predict(ml.decision_tree_regressor_fit(features, targets, null)?, [[1.51]])?
+    test.approx(again[0], predictions[2], 1e-12)
+
+    test.eq(ml.decision_tree_regressor_fit(features, ["a", "b", "c", "d"], null).ok, false)
+    test.eq(ml.decision_tree_regressor_fit(features, [0.0, 0.0, 0.0], null).ok, false)
+    test.eq(ml.decision_tree_regressor_fit(features, [0.0, 0.0, math.nan, 1.0], null).ok, false)
+    test.eq(ml.decision_tree_regressor_fit(features, [0.0, math.inf, 1.0, 2.0], null).ok, false)
+    test.eq(ml.decision_tree_regressor_fit(features, targets, {"max_depth": -1}).ok, false)
+    test.eq(ml.decision_tree_regressor_fit(features, targets, {"max_depth": 65}).ok, false)
+    test.eq(ml.decision_tree_regressor_fit(features, targets, {"min_samples_split": 1}).ok, false)
+    test.eq(ml.decision_tree_regressor_fit(features, targets, {"min_samples_leaf": 0}).ok, false)
+    test.eq(ml.decision_tree_regressor_fit(features, targets, {"min_samples_leaf": 5}).ok, false)
+    classifier := ml.decision_tree_fit(features, ["low", "low", "high", "high"], null)?
+    test.eq(ml.decision_tree_regressor_predict(classifier, features).ok, false)
+    test.eq(ml.decision_tree_predict(model, features).ok, false)
+    test.eq(ml.tree_predict(classifier, [[0.25]])?, ["low"])
 }
 
 fn test_hvp_rejects_mismatched_vector {

@@ -13,7 +13,7 @@ Order matches the agent stack (`llm` → mold → tokensave / ml).
 |--------|------|----------------|------|
 | [`mold`](mold/) | Structure & validate JSON; `tool_params` / `tool_spec` | none (pure) | [docs/MOLD.md](../docs/MOLD.md) |
 | [`tokensave`](tokensave/) | Context thrift, memory, teach → train export | `@agent` + fs + env | [README](tokensave/README.md) |
-| [`ml`](ml/) | Embeddings, vectors, RAG index, metrics | `@agent` + fs + env | [docs/ML.md](../docs/ML.md) |
+| [`ml`](ml/) | Embeddings, vectors, classical training, CART classification and regression | `@agent` + fs + env | [docs/ML.md](../docs/ML.md) |
 
 **Cohesive offline demo** (all three):
 

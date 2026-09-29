@@ -332,6 +332,16 @@ fn main {
 	}
 }
 
+func TestCompileParamDefaultMustBeLiteral(t *testing.T) {
+	err := runErr(t, `
+fn f(a = 1 + 2) { a }
+fn main { say(f()) }
+`)
+	if err == nil || !strings.Contains(err.Error(), "must be a literal") {
+		t.Fatalf("non-literal default: %v", err)
+	}
+}
+
 func TestCompileQuestionExpr(t *testing.T) {
 	out := run(t, `
 fn f() -> Result { Ok(5) }

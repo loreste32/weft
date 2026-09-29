@@ -560,7 +560,7 @@ func sha256sum(data []byte) []byte {
 func IsPackageReserved(name string) bool {
 	reserved := map[string]bool{
 		"map": true, "filter": true, "reduce": true, "say": true,
-		"print": true, "len": true, "push": true, "range": true,
+		"print": true, "len": true, "push": true, "range": true, "chunks": true,
 		"spawn": true, "channel": true, "send": true, "recv": true,
 		"close": true, "parallel": true, "race": true, "timeout": true,
 		"ok": true, "err": true, "ensure": true, "bail": true,

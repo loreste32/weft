@@ -55,7 +55,7 @@ Runnable offline recipes: **[`examples/cookbook/`](../examples/cookbook/)** (`01
 |--------|------|-----|
 | **telecom** | IVA voice agents, FreeSWITCH ESL, Asterisk ARI, STT/TTS, DTMF, routing, queues, CDR | [TELECOM.md](TELECOM.md) |
 | **mold** | Validate / coerce structured JSON; JSON Schema & tool params | [MOLD.md](MOLD.md) |
-| **ml** | Embeddings, vectors, RAG index, metrics | [ML.md](ML.md) |
+| **ml** | Embeddings, vectors, classical training, CART classification and regression | [ML.md](ML.md) |
 | **tokensave** | Context thrift, memory, teach → train | [`packages/tokensave`](../packages/tokensave/) |
 | **auth** | HMAC, password hashing, tokens, OAuth helpers | [registry](https://registry.weftproject.dev) |
 | **config** | Unified config loader (.env/JSON/YAML/TOML) | [registry](https://registry.weftproject.dev) |

@@ -87,13 +87,28 @@ func Struct(name string, fields map[string]Value, order []string) Value {
 // FuncObj is a compiled function.
 type FuncObj struct {
 	Name     string
-	Arity    int
+	Arity    int // total parameters, including ones with defaults
+	MinArity int // required parameters; 0 with a nil Defaults means "same as Arity"
+	// Defaults fills omitted trailing arguments. Nil when every parameter is required.
+	Defaults []Value
 	Chunk    any // *compile.Chunk — avoid cycle; set by compiler
 	TypeInfo *TypeInfo
 	// Env is the module environment to run in (nil = caller's env).
 	Env *Env
 	// for closures
 	Upvalues []Value
+}
+
+// RequiredArity is the number of arguments the caller must pass.
+// Functions compiled before defaults existed leave MinArity at 0 and Defaults nil.
+func (fn *FuncObj) RequiredArity() int {
+	if fn == nil {
+		return 0
+	}
+	if fn.Defaults == nil && fn.MinArity == 0 {
+		return fn.Arity
+	}
+	return fn.MinArity
 }
 
 func Func(f *FuncObj) Value { return Value{Kind: KindFunc, Obj: f} }

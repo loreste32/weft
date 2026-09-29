@@ -58,7 +58,7 @@ represent both `1` and `1.0` as the same text.
 |------|------|
 | `say` / `println` | Print |
 | `Ok` / `Err` | Results |
-| `len` / `push` / `range` | Basics |
+| `len` / `push` / `range` / `chunks` | Basics. `chunks(list \| str, size)` splits into pieces of at most `size` |
 | `map` / `seq_map` / `filter` / `seq_filter` | List transform (map/filter concurrent by default) |
 | `reduce` / `each` / `par_map` | More pipelines |
 | `find` / `any` / `all` / `sort` / `reverse` / `unique` | Queries |
@@ -405,7 +405,7 @@ Not listed by `weft stdlib` — they live under `packages/` and install into `ve
 | Module | Job | Doc |
 |--------|-----|-----|
 | `mold` | Structured models, LLM JSON validate, JSON Schema / tool params | [MOLD.md](MOLD.md) |
-| `ml` | Embeddings, vectors, RAG index, metrics | [ML.md](ML.md) |
+| `ml` | Embeddings, vectors, classical training, CART classification and regression | [ML.md](ML.md) |
 | `tokensave` | Context thrift, memory, teach → train | [`packages/tokensave`](../packages/tokensave/) |
 
 ```bash

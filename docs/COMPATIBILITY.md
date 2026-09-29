@@ -80,9 +80,10 @@ conformance fixture, but they do not imply complete pandas indexing parity.
 ### ML and providers
 
 - `packages/ml` has reverse-mode autodiff, SGD/Adam, linear/sequential modules,
-  checkpoints, deterministic seeds, dense numeric k-means/KNN, array HVPs, and
-  a numerical array Hessian; sparse/complex tensors, regression trees, exact array-level
-  nested reverse mode, device placement, and async pools remain open;
+  checkpoints, deterministic seeds, dense numeric k-means/KNN, a bounded CART
+  classifier and regressor, array HVPs, and a numerical array Hessian;
+  sparse/complex tensors, exact array-level nested reverse mode, device
+  placement, and async pools remain open;
 - device selection, streams, asynchronous execution, memory pools, and
   deterministic fallback behavior;
 - real hardware conformance jobs for every declared vendor provider.
@@ -213,8 +214,13 @@ The bounded real `warp.qr` API returns a thin modified Gram-Schmidt factorizatio
   device placement.** Device tags remain advisory without a plugin; bound
   providers currently dispatch only tensor matmul, and every provider report
   is validated for truthful fallback/device status.
-- **Classical ML coverage is linear/logistic regression** plus preprocessing;
-  sparse and categorical estimator inputs are unsupported.
+- **Classical ML coverage is linear/logistic regression** plus preprocessing,
+  dense numeric k-means, k-nearest neighbors, and bounded CART classification
+  and regression trees. The regressor uses squared error, adjacent-midpoint
+  thresholds, and leaf means. It is not a full `DecisionTreeRegressor`: no
+  sample weights, multi-output targets, pruning, or random splits; `max_depth`
+  defaults to 8; inputs are capped at 4,096 rows and 65,536 cells. Sparse and
+  categorical estimator inputs are unsupported.
 
 ## Release gates
 

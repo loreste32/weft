@@ -473,8 +473,25 @@ func (c *Compiler) compileFnWithFree(d *ast.FnDecl, free []string) (*runtime.Fun
 		anonID:        c.anonID,
 		typeFields:    c.typeFields, // struct defaults / optional null fill
 	}
+	minArity := 0
+	var defaults []runtime.Value
+	seenDefault := false
 	for _, p := range d.Params {
 		sub.locals = append(sub.locals, local{name: p.Name, mut: false})
+		if p.Default != nil {
+			seenDefault = true
+			v, ok := constDefault(p.Default)
+			if !ok {
+				sub.errorf(p.Pos(), "default for %q must be a literal (null, bool, number, or string)", p.Name)
+				v = runtime.Null()
+			}
+			defaults = append(defaults, v)
+			continue
+		}
+		if seenDefault {
+			sub.errorf(p.Pos(), "parameter %q needs a default; it follows an optional parameter", p.Name)
+		}
+		minArity++
 	}
 	// Captured names: immutable bindings of values frozen at closure creation.
 	for _, name := range free {
@@ -497,9 +514,11 @@ func (c *Compiler) compileFnWithFree(d *ast.FnDecl, free []string) (*runtime.Fun
 	}
 
 	fn := &runtime.FuncObj{
-		Name:  d.Name,
-		Arity: len(d.Params),
-		Chunk: sub.chunk,
+		Name:     d.Name,
+		Arity:    len(d.Params),
+		MinArity: minArity,
+		Defaults: defaults,
+		Chunk:    sub.chunk,
 		TypeInfo: &runtime.TypeInfo{
 			Name: d.Name,
 			Kind: "fn",
@@ -1389,6 +1408,36 @@ func constEval(expr ast.Expr) (runtime.Value, bool) {
 		return m, true
 	}
 	return runtime.Null(), false
+}
+
+// constDefault accepts the literal forms allowed as parameter defaults.
+func constDefault(e ast.Expr) (runtime.Value, bool) {
+	switch e := e.(type) {
+	case *ast.BasicLit:
+		v, err := litValue(e)
+		if err != nil {
+			return runtime.Null(), false
+		}
+		return v, true
+	case *ast.UnaryExpr:
+		if e.Op != token.Minus {
+			return runtime.Null(), false
+		}
+		v, ok := constDefault(e.X)
+		if !ok {
+			return runtime.Null(), false
+		}
+		switch v.Kind {
+		case runtime.KindInt:
+			return runtime.Int(-v.I), true
+		case runtime.KindFloat:
+			return runtime.Float(-v.F), true
+		default:
+			return runtime.Null(), false
+		}
+	default:
+		return runtime.Null(), false
+	}
 }
 
 func litValue(e *ast.BasicLit) (runtime.Value, error) {

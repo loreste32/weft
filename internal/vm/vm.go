@@ -78,9 +78,7 @@ func (vm *VM) RunFunc(fn *runtime.FuncObj, args []runtime.Value) (runtime.Value,
 		return runtime.Null(), err
 	}
 	slots := make([]runtime.Value, chunk.NumLocs)
-	for i := 0; i < fn.Arity && i < len(args); i++ {
-		slots[i] = args[i]
-	}
+	bindArgs(fn, slots, args)
 	for i, uv := range fn.Upvalues {
 		slot := fn.Arity + i
 		if slot < len(slots) {
@@ -709,20 +707,50 @@ func (vm *VM) notifyError(err *RuntimeError) {
 const maxFrames = 10_000
 
 // arityErr reports under-arity for user functions. Extra args are still ignored
-// (matches historical behavior); missing args used to silently become null and
-// produce misleading errors like "numeric op on int and null".
+// (matches historical behavior). Omitted trailing parameters with literal
+// defaults are filled in bindArgs; a missing required argument is an error
+// rather than a silent null.
 func arityErr(fn *runtime.FuncObj, args []runtime.Value) error {
 	if fn == nil || fn.Arity < 0 {
 		return nil
 	}
-	if len(args) >= fn.Arity {
+	need := fn.RequiredArity()
+	if len(args) >= need {
 		return nil
 	}
 	name := fn.Name
 	if name == "" {
 		name = "<fn>"
 	}
-	return fmt.Errorf("wrong number of arguments to %s: have %d, want %d", name, len(args), fn.Arity)
+	if need == fn.Arity {
+		return fmt.Errorf("wrong number of arguments to %s: have %d, want %d", name, len(args), fn.Arity)
+	}
+	return fmt.Errorf("wrong number of arguments to %s: have %d, want at least %d", name, len(args), need)
+}
+
+// bindArgs copies provided arguments into parameter slots and fills omitted
+// trailing defaults. slots must already be allocated to the frame size.
+func bindArgs(fn *runtime.FuncObj, slots []runtime.Value, args []runtime.Value) {
+	if fn == nil {
+		return
+	}
+	n := fn.Arity
+	if n > len(slots) {
+		n = len(slots)
+	}
+	for i := 0; i < n && i < len(args); i++ {
+		slots[i] = args[i]
+	}
+	if len(fn.Defaults) == 0 {
+		return
+	}
+	min := fn.RequiredArity()
+	for i := len(args); i < n; i++ {
+		di := i - min
+		if di >= 0 && di < len(fn.Defaults) {
+			slots[i] = fn.Defaults[di]
+		}
+	}
 }
 
 func (vm *VM) call(callee runtime.Value, args []runtime.Value) (runtime.Value, error) {
@@ -768,9 +796,7 @@ func (vm *VM) call(callee runtime.Value, args []runtime.Value) (runtime.Value, e
 		}
 		chunk := fn.Chunk.(*compile.Chunk)
 		slots := make([]runtime.Value, chunk.NumLocs)
-		for i := 0; i < fn.Arity && i < len(args); i++ {
-			slots[i] = args[i]
-		}
+		bindArgs(fn, slots, args)
 		// Captured locals sit after params (by-value snapshot from OpClose).
 		for i, uv := range fn.Upvalues {
 			slot := fn.Arity + i

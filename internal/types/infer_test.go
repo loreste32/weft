@@ -66,6 +66,23 @@ fn main {
 	}
 }
 
+func TestInferDefaultParams(t *testing.T) {
+	_, err := inferSrc(t, `
+fn f(a: int, b: int = 1) { a + b }
+fn main { say(f(2)) }
+`)
+	if err != "" {
+		t.Fatal(err)
+	}
+	_, err = inferSrc(t, `
+fn f(a: int, b: int = 1) { a + b }
+fn main { say(f()) }
+`)
+	if !strings.Contains(err, "want at least 1") {
+		t.Fatalf("omitted required: %q", err)
+	}
+}
+
 func TestInferFnReturn(t *testing.T) {
 	info, err := inferSrc(t, `
 fn add(a, b) { a + b }

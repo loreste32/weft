@@ -1,0 +1,87 @@
+use math
+use "./rows.weft" as row
+use "./knn.weft" as knn
+
+pub fn kmeans(features, k, opts = null) -> Result[any] {
+    rows := row.feature_rows(features)
+    shape := row.validate_rows(rows)
+    if shape == null { return Err("ml.kmeans expects a non-empty numeric matrix") }
+    if row.kind(k) != "int" || k <= 0 || k > shape[0] {
+        return Err("ml.kmeans k must be a positive integer no larger than the number of rows")
+    }
+    max_iter := row.opt(opts, "max_iter", 100)
+    tolerance := row.opt(opts, "tol", 1e-6)
+    if row.kind(max_iter) != "int" || max_iter <= 0 || max_iter > 100000 {
+        return Err("ml.kmeans max_iter must be a positive bounded integer")
+    }
+    if (row.kind(tolerance) != "int" && row.kind(tolerance) != "float") || tolerance < 0 || tolerance != tolerance || math.isinf(tolerance) {
+        return Err("ml.kmeans tol must be finite and non-negative")
+    }
+    dims := shape[1]
+    let mut centers = []
+    let mut i = 0
+    while i < k {
+        let mut center = []
+        let mut j = 0
+        while j < dims {
+            center = push(center, rows[i][j] + 0.0)
+            j = j + 1
+        }
+        centers = push(centers, center)
+        i = i + 1
+    }
+    let mut labels = []
+    let mut inertia = 0.0
+    let mut iterations = 0
+    while iterations < max_iter {
+        let mut next_labels = []
+        let mut sums = []
+        let mut counts = []
+        i = 0
+        while i < k {
+            let mut zero = []
+            let mut j = 0
+            while j < dims {
+                zero = push(zero, 0.0)
+                j = j + 1
+            }
+            sums = push(sums, zero)
+            counts = push(counts, 0)
+            i = i + 1
+        }
+        inertia = 0.0
+        for sample in rows {
+            nearest := knn.nearest(centers, sample, 1)[0]
+            label := nearest.index
+            next_labels = push(next_labels, label)
+            inertia = inertia + nearest.distance
+            counts[label] = counts[label] + 1
+            j = 0
+            while j < dims {
+                sums[label][j] = sums[label][j] + sample[j]
+                j = j + 1
+            }
+        }
+        let mut next_centers = []
+        let mut shift = 0.0
+        i = 0
+        while i < k {
+            let mut next = []
+            let mut j = 0
+            while j < dims {
+                value := if counts[i] == 0 { centers[i][j] } else { sums[i][j] / counts[i] }
+                next = push(next, value)
+                delta := value - centers[i][j]
+                shift = shift + delta * delta
+                j = j + 1
+            }
+            next_centers = push(next_centers, next)
+            i = i + 1
+        }
+        centers = next_centers
+        labels = next_labels
+        iterations = iterations + 1
+        if shift <= tolerance * tolerance { break }
+    }
+    Ok({"centers": centers, "labels": labels, "inertia": inertia, "iterations": iterations})
+}

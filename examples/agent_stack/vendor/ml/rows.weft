@@ -1,0 +1,48 @@
+use math
+use warp
+
+// Shared numeric-matrix helpers for the classical estimators.
+
+pub fn kind(value) { type_of(value) }
+
+// opt reads one map field. A missing field and an explicit null both use fallback.
+// 0 and false are kept. A non-map opts is ignored.
+pub fn opt(opts, key, fallback) {
+    if kind(opts) != "map" { return fallback }
+    opts[key] ?? fallback
+}
+
+pub fn feature_rows(features) {
+    if kind(features) == "map" && features._warp == true {
+        shape := warp.shape(features)
+        if kind(shape) != "list" || len(shape) != 2 { return null }
+        flat := warp.to_list(features)
+        if kind(flat) != "list" || len(flat) != shape[0] * shape[1] { return null }
+        let mut rows = []
+        let mut i = 0
+        while i < shape[0] {
+            let mut row = []
+            let mut j = 0
+            while j < shape[1] {
+                row = push(row, flat[i * shape[1] + j])
+                j = j + 1
+            }
+            rows = push(rows, row)
+            i = i + 1
+        }
+        return rows
+    }
+    features
+}
+
+pub fn validate_rows(rows) {
+    if kind(rows) != "list" || len(rows) == 0 || kind(rows[0]) != "list" || len(rows[0]) == 0 { return null }
+    dims := len(rows[0])
+    for row in rows {
+        if kind(row) != "list" || len(row) != dims { return null }
+        for value in row {
+            if (kind(value) != "int" && kind(value) != "float") || value != value || math.isinf(value) { return null }
+        }
+    }
+    [len(rows), dims]
+}

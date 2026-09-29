@@ -9,7 +9,8 @@ package dap
 // Supported subset:
 //   - literals: int, float, string, raw string, bool, null, unit
 //   - identifiers: frame locals first, then VM globals (read-only)
-//   - field access x.y (structs, maps, Result ok/value/err-style fields)
+//   - field access x.y (structs, maps, Result ok/value/err-style fields;
+//     a missing map key is null; x?.y is unwrap-then-field and is not evaluated here)
 //   - index access x[i] (lists, maps, strings)
 //   - unary: -x, !x
 //   - binary: + - * / % == != < <= > >= && || ?? (VM semantics:
@@ -453,7 +454,7 @@ func getFieldValue(x runtime.Value, name string) (runtime.Value, error) {
 		mo := x.Obj.(*runtime.MapObj)
 		v, ok := mo.Vals[name]
 		if !ok {
-			return runtime.Null(), fmt.Errorf("no key %q", name)
+			return runtime.Null(), nil
 		}
 		return v, nil
 	case runtime.KindResult:

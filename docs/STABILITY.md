@@ -48,7 +48,7 @@ Prefer actionable diagnostics over generic token names:
 
 | Situation | Message shape |
 |-----------|----------------|
-| Too few args to `fn` | `wrong number of arguments to name: have N, want M` |
+| Too few args to `fn` | `wrong number of arguments to name: have N, want M`, or `want at least M` when later parameters have literal defaults |
 | Unterminated string | `… got unterminated string` (not bare `ILLEGAL`) |
 | Rust-style `use a::b` | `invalid use path: write use a or use "path" (not pkg::name)` |
 | Missing `}` before `else` | `expected } before else (missing closing brace?)` |

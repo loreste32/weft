@@ -470,6 +470,36 @@ func TestPush(t *testing.T) {
 	}
 }
 
+func TestChunks(t *testing.T) {
+	env := runtime.NewEnv()
+	list := runtime.List(runtime.Int(1), runtime.Int(2), runtime.Int(3))
+	v, err := callBuiltin(env, "chunks", []runtime.Value{list, runtime.Int(2)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := v.Obj.(*runtime.ListObj).Items
+	if len(parts) != 2 || len(parts[0].Obj.(*runtime.ListObj).Items) != 2 || len(parts[1].Obj.(*runtime.ListObj).Items) != 1 {
+		t.Fatalf("list chunks: %s", v)
+	}
+	v, err = callBuiltin(env, "chunks", []runtime.Value{runtime.Str("héllo"), runtime.Int(2)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts = v.Obj.(*runtime.ListObj).Items
+	if len(parts) != 3 || parts[0].S != "hé" || parts[1].S != "ll" || parts[2].S != "o" {
+		t.Fatalf("string chunks: %s", v)
+	}
+	if _, err = callBuiltin(env, "chunks", []runtime.Value{list, runtime.Float(2)}); err == nil {
+		t.Fatal("float size")
+	}
+	if _, err = callBuiltin(env, "chunks", []runtime.Value{runtime.Int(1), runtime.Int(2)}); err == nil {
+		t.Fatal("int input")
+	}
+	if _, err = callBuiltin(env, "chunks", []runtime.Value{list}); err == nil {
+		t.Fatal("arity")
+	}
+}
+
 func TestConcat(t *testing.T) {
 	env := runtime.NewEnv()
 	a := runtime.List(runtime.Int(1))

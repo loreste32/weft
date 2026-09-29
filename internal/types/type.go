@@ -34,7 +34,9 @@ type Type struct {
 	Elem   *Type  // list/result/optional
 	Key    *Type  // map key
 	Params []*Type
-	Ret    *Type
+	// OptionalTail is how many trailing function parameters may be omitted.
+	OptionalTail int
+	Ret          *Type
 	Fields map[string]*Type // struct fields for named types from `type Name { ... }`
 	// FieldHasDefault marks fields with `= expr` in the type decl (optional at construction).
 	FieldHasDefault map[string]bool

@@ -423,6 +423,21 @@ func TestFormatNullCoalesce(t *testing.T) {
 	}
 }
 
+func TestFormatDefaultsAndQuestionField(t *testing.T) {
+	src := `fn f(a: int, b: int = -1) -> Result {
+    Ok({"name": "a"})?.name
+}
+fn main { say(f(1)) }
+`
+	out, err := format.Source("t.weft", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "b: int = -1") || !strings.Contains(out, "?.name") {
+		t.Fatal(out)
+	}
+}
+
 func TestFormatQuestion(t *testing.T) {
 	src := `fn f() -> Result {
     Ok(1)?

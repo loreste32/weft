@@ -2,6 +2,16 @@
 
 All notable changes to Weft. Releases at [github.com/loreste32/weft/releases](https://github.com/loreste32/weft/releases).
 
+## [0.6.4] — 2026-09-28
+
+### Added
+- **ML regression trees** — `ml.decision_tree_regressor_fit` / `decision_tree_regressor_predict`: bounded dense CART (squared error, adjacent-midpoint thresholds, leaf means) with `max_depth`, `min_samples_split`, and `min_samples_leaf`. `tree_predict` dispatches on classifier vs regressor models. Same 4,096-row / 65,536-cell budget as the classifier. `ml` is now 0.8.1, and the classical tree/knn/k-means functions are listed in the module exports.
+- **Shorter calls** — trailing parameters may declare literal defaults (`fn f(a, b = 1)`). `chunks(list, size)` and `chunks(str, size)` split a value into pieces of at most `size`.
+- **Smaller classical modules** — knn, k-means, and CART live in `knn.weft`, `kmeans.weft`, and `tree.weft`, with shared matrix helpers in `rows.weft`. `classical.weft` re-exports the same public functions. `weighted` and `opts` default to null and may be omitted.
+
+### Changed
+- **Missing map keys** — `m.missing` is null, the same as `m["missing"]`. `??` still replaces only null, so `0` and `false` stay. A missing struct field and `null.field` still error. `expr?.field` is still `(expr?).field`.
+
 ## [0.6.3] — 2026-08-31
 
 ### Added

@@ -163,7 +163,7 @@ func isReservedPackageName(name string) bool {
 	// prelude globals often used bare — packaging them would clobber call sites
 	switch name {
 	case "map", "filter", "reduce", "each", "find", "any", "all", "flat_map", "par_map",
-		"print", "println", "len", "push", "pop", "range", "slice", "concat",
+		"print", "println", "len", "push", "pop", "range", "slice", "chunks", "concat",
 		"contains", "keys", "values", "delete",
 		"Ok", "Err", "Error", "int", "unit", "spawn", "parallel", "group",
 		"channel", "send", "recv", "try_recv", "close", "select_recv", "args", "os":

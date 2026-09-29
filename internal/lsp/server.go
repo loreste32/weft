@@ -398,7 +398,7 @@ func (s *server) completions(uri, text string, line, character int) []map[string
 		"map", "seq_map", "filter", "seq_filter", "reduce", "each", "par_map",
 		"spawn", "parallel", "gather", "race", "timeout", "group",
 		"channel", "send", "recv", "close", "select_recv", "try_recv",
-		"say", "println", "Ok", "Err", "len", "range", "push",
+		"say", "println", "Ok", "Err", "len", "range", "push", "chunks",
 		"ensure", "bail",
 	} {
 		items = append(items, map[string]any{"label": n, "kind": 3, "detail": "prelude"})

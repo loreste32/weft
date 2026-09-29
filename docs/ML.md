@@ -9,7 +9,7 @@ ROCm/HIP, and Apple MLX providers are loaded through the capability-gated
 
 | Layer | Role |
 |---|---|
-| `packages/ml` | vectors, embeddings, metrics, standardization, minibatch linear/logistic training |
+| `packages/ml` | vectors, embeddings, metrics, standardization, minibatch linear/logistic training, bounded CART classification and regression |
 | `packages/warp` | N-dimensional CPU arrays, broadcasting, reductions, linear algebra, native dispatch |
 | `accelerator` | explicit shared-library loading and bounded JSON operation dispatch |
 | `mlinfer` | remote ONNX Runtime, Triton, HuggingFace, and custom HTTP inference |
@@ -54,7 +54,7 @@ array HVP/Hessian helpers are available.
 
 ## Classical algorithms
 
-`kmeans(features, k, opts)` provides deterministic dense numeric Lloyd iterations and returns centers, labels, inertia, and iteration count. `knn_predict(features, targets, queries, k, weighted?)` and its `knn` alias provide dense numeric nearest-neighbor classification with deterministic tie-breaking; labels may be arbitrary comparable values. `decision_tree_fit`/`decision_tree_predict` provide bounded numeric classification trees (up to 4,096 rows and 65,536 input cells). These APIs do not claim sparse matrices, categorical encoders, regression trees, or accelerator-resident execution.
+`kmeans(features, k, opts = null)` provides deterministic dense numeric Lloyd iterations and returns centers, labels, inertia, and iteration count. `knn_predict(features, targets, queries, k, weighted = null)` and its `knn` alias provide dense numeric nearest-neighbor classification with deterministic tie-breaking; labels may be arbitrary comparable values. The trailing `opts` and `weighted` arguments may be omitted. `decision_tree_fit`/`decision_tree_predict` provide bounded numeric classification trees (up to 4,096 rows and 65,536 input cells). `decision_tree_regressor_fit`/`decision_tree_regressor_predict` provide a bounded dense CART regressor on the same budget: squared-error splits, adjacent-midpoint thresholds, and leaf means (`max_depth` default 8, `min_samples_split` default 2, `min_samples_leaf` default 1). These APIs do not claim sparse matrices, categorical encoders, sample weights, multi-output trees, or accelerator-resident execution.
 
 ## Native GPU/provider execution
 

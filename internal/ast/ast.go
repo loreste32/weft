@@ -73,11 +73,13 @@ type FnDecl struct {
 func (d *FnDecl) Pos() token.Pos { return d.Pos_ }
 func (d *FnDecl) declNode()      {}
 
-// Param is a function parameter.
+// Param is a function parameter. Default, when set, is a literal used when
+// the caller omits the argument. Defaults must be a trailing suffix.
 type Param struct {
-	Pos_ token.Pos
-	Name string
-	Type TypeExpr
+	Pos_    token.Pos
+	Name    string
+	Type    TypeExpr
+	Default Expr
 }
 
 func (p *Param) Pos() token.Pos { return p.Pos_ }
@@ -358,7 +360,7 @@ type IndexExpr struct {
 func (e *IndexExpr) Pos() token.Pos { return e.Pos_ }
 func (e *IndexExpr) exprNode()      {}
 
-// FieldExpr: x.field
+// FieldExpr: x.field. `x?.field` is a QuestionExpr inside a FieldExpr: (x?).field.
 type FieldExpr struct {
 	Pos_ token.Pos
 	X    Expr

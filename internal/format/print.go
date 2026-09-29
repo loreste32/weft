@@ -43,6 +43,21 @@ type printer struct {
 	bol    bool // beginning of line
 }
 
+func (p *printer) writeParam(par *ast.Param) {
+	if par == nil {
+		return
+	}
+	p.write(par.Name)
+	if par.Type != nil {
+		p.write(": ")
+		p.typeExpr(par.Type)
+	}
+	if par.Default != nil {
+		p.write(" = ")
+		p.expr(par.Default, 0)
+	}
+}
+
 func (p *printer) write(s string) {
 	if p.bol && s != "\n" && s != "" {
 		for i := 0; i < p.depth; i++ {
@@ -129,11 +144,7 @@ func (p *printer) decl(d ast.Decl) {
 				if i > 0 {
 					p.write(", ")
 				}
-				p.write(par.Name)
-				if par.Type != nil {
-					p.write(": ")
-					p.typeExpr(par.Type)
-				}
+				p.writeParam(par)
 			}
 			p.write(")")
 		}
@@ -580,11 +591,7 @@ func (p *printer) expr(e ast.Expr, parentPrec int) {
 			if i > 0 {
 				p.write(", ")
 			}
-			p.write(par.Name)
-			if par.Type != nil {
-				p.write(": ")
-				p.typeExpr(par.Type)
-			}
+			p.writeParam(par)
 		}
 		p.write(")")
 		if e.Ret != nil {
